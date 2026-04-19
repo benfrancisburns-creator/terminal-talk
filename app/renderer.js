@@ -1340,15 +1340,15 @@ if (window.api.onPausePlaybackOnly) {
     bumpActivity();
   });
 }
-// Orientation changes: main sends { kind: 'horizontal'|'vertical', edge }.
-// We toggle CSS classes on body so styles can restyle the bar top row,
-// dot row, and collapsed strip appropriately without runtime JS layout.
+// Dock-edge class. Main.js sends { kind: 'horizontal', edge: 'top'|'bottom' }
+// after a snap — vertical mode was removed so we just track which horizontal
+// edge we're glued to (for the dock-bottom rule in styles.css that flattens
+// the bottom corners). Kept the IPC for forward-compat with future dock
+// variants; `kind` is ignored.
 if (window.api.onSetOrientation) {
-  window.api.onSetOrientation(({ kind, edge }) => {
-    document.body.classList.toggle('vertical', kind === 'vertical');
-    document.body.classList.remove('dock-left', 'dock-right', 'dock-top', 'dock-bottom');
-    if (edge) document.body.classList.add(`dock-${edge}`);
-    renderDots();  // re-render so dot order reflects the new orientation
+  window.api.onSetOrientation(({ edge }) => {
+    document.body.classList.remove('dock-top', 'dock-bottom');
+    if (edge === 'top' || edge === 'bottom') document.body.classList.add(`dock-${edge}`);
   });
 }
 

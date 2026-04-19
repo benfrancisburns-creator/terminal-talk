@@ -185,11 +185,6 @@ function saveWindowPosition() {
 // as tall as the workArea minus margins — fits all controls stacked plus
 // room for dots running downward.
 const DIM_HORIZONTAL = { width: 680, height: 114 };
-const DIM_VERTICAL_WIDTH = 56;
-function verticalHeight() {
-  const { height } = screen.getPrimaryDisplay().workArea;
-  return Math.min(600, height - 24);
-}
 
 // Drag-intent tracking. Without this, snapping from a diagonal drag to a
 // corner picks whichever of (horizontal-edge | vertical-edge) happens to
