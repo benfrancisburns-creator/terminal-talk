@@ -42,10 +42,30 @@ async function applyCollapsed(collapsed) {
   isCollapsed = collapsed;
   if (collapsed) {
     barEl.classList.add('collapsed');
-    try { await window.api.setClickthrough(true); } catch {}
   } else {
     barEl.classList.remove('collapsed');
-    try { await window.api.setClickthrough(false); } catch {}
+  }
+  // Click-through state is decided by cursor position (see mousemove
+  // handler), not by collapsed state — so clicks in the transparent
+  // margin outside the visible bar pass through to the app below,
+  // even when the toolbar is expanded. applyCollapsed no longer
+  // toggles click-through directly; updateClickthrough() does it.
+  updateClickthrough();
+}
+
+// Track current click-through state so we don't IPC on every mousemove.
+let clickthroughOn = true;
+async function updateClickthrough() {
+  // Click-through ON (pass clicks to app below) whenever the cursor
+  // is NOT over the visible bar pixels. This is what lets the user
+  // interact with other apps while the toolbar is visible — the
+  // 680 × 114 window becomes effectively "only the bar rectangle
+  // is mine; everything else is transparent".
+  const overBar = isMouseOverBar();
+  const want = !overBar;
+  if (want !== clickthroughOn) {
+    clickthroughOn = want;
+    try { await window.api.setClickthrough(want); } catch {}
   }
 }
 
@@ -1057,15 +1077,15 @@ settingsBtn.addEventListener('click', async () => {
 // -------------------------------------------------------------------
 // Hover + interaction triggers for collapse/expand
 // -------------------------------------------------------------------
-// mousemove: update known cursor position. Expand if we're currently
-// collapsed and the cursor has entered the bar's rect. That's all —
-// the poll above handles the collapse decision.
+// mousemove: update cursor position, toggle click-through on the fly
+// so clicks in the transparent margin / outside the visible bar pass
+// through to apps below. Expansion + activity bump also happen here
+// when the cursor is actually over the bar.
 document.addEventListener('mousemove', (e) => {
   cursorX = e.clientX;
   cursorY = e.clientY;
-  if (isMouseOverBar()) {
-    bumpActivity();
-  }
+  updateClickthrough();
+  if (isMouseOverBar()) bumpActivity();
 });
 // Click on the toolbar = user actively engaging → reset inactivity timer.
 // NB: we deliberately do NOT listen for keydown at the window level.
