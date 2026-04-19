@@ -30,7 +30,7 @@ How it works:
 
 Stack is small and visible: Electron toolbar (~500 lines JS/HTML/CSS), Python
 for wake-word (openWakeWord, runs offline on CPU) and edge-tts wrapper, a few
-PowerShell hooks. ~3,900 LOC, 54-test harness, MIT.
+PowerShell hooks. ~6,000 LOC, 76-test harness, MIT.
 
 Free tier uses Microsoft Edge's neural voices — same endpoint Edge browser
 uses for "Read Aloud", no API key needed. Optional OpenAI TTS fallback if
