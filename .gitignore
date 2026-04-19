@@ -1,0 +1,28 @@
+# Node
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime state (shouldn't be committed)
+app/listening.state
+app/node_modules/
+
+# User queue + logs (created at install time, not tracked)
+queue/
+*.log
+*.wav
+*.mp3
+*.partial
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp

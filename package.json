@@ -1,0 +1,28 @@
+{
+  "name": "terminal-talk",
+  "version": "0.1.0",
+  "description": "Hands-free voice workflow for Claude Code: TTS playback for Claude responses + 'hey jarvis' highlight-to-speak. Free by default (Edge TTS + openWakeWord).",
+  "homepage": "https://github.com/YOUR-USERNAME/terminal-talk",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "test": "node scripts/run-tests.cjs",
+    "test:verbose": "node scripts/run-tests.cjs --verbose",
+    "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "claude-code",
+    "tts",
+    "text-to-speech",
+    "wake-word",
+    "voice",
+    "edge-tts",
+    "openwakeword",
+    "electron",
+    "windows",
+    "accessibility"
+  ]
+}

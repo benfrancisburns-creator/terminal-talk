@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal Talk</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bar" id="bar">
+    <div class="dots" id="dots"></div>
+    <div class="divider"></div>
+    <button class="icon-btn" id="back10" title="Back 10s">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <button class="icon-btn play" id="playPause" title="Play/Pause">
+      <svg id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="pauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button class="icon-btn" id="fwd10" title="Forward 10s">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <input type="range" id="scrubber" min="0" max="1000" value="0" step="1">
+    <span id="time">0:00 / 0:00</span>
+    <button class="icon-btn" id="clearPlayed" title="Clear all played">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button class="icon-btn close" id="close" title="Hide (Esc)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <section class="panel-section">
+        <header>Playback</header>
+        <div class="row">
+          <label for="speedSlider">Speed</label>
+          <input type="range" id="speedSlider" min="50" max="250" step="5" value="125">
+          <span id="speedValue" class="readout">1.25x</span>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <header>Sessions</header>
+        <div id="sessionsTable" class="sessions-table"></div>
+      </section>
+
+      <section class="panel-section about">
+        <header>About Terminal Talk</header>
+<pre class="ascii-banner">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        ████████╗ █████╗ ██╗     ██╗  ██╗
+        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
+           ██║   ███████║██║     █████╔╝
+           ██║   ██╔══██║██║     ██╔═██╗
+           ██║   ██║  ██║███████╗██║  ██╗
+           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
+        <p class="panel-hint">
+          Hands-free voice workflow for Claude Code. Say "hey jarvis" with text highlighted anywhere
+          and it's read aloud. Claude's replies are auto-spoken. Each terminal gets its own colour,
+          shown as an emoji in its statusline and as a dot on the toolbar.
+        </p>
+        <p class="panel-hint shortcuts-title">Global shortcuts</p>
+        <table class="shortcuts">
+          <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
+          <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
+          <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
+          <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
+          <tr><td><kbd>Space</kbd></td><td>Play / pause current clip (when toolbar is focused)</td></tr>
+          <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Skip -10s / +10s</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Hide the toolbar</td></tr>
+        </table>
+        <p class="panel-hint">
+          Tip: labels you set on a session show up next to its emoji in that terminal's statusline
+          (e.g. <code>&#x1f7e2; Frontend</code>).
+        </p>
+      </section>
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+  <script src="renderer.js"></script>
+</body>
+</html>

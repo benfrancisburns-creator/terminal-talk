@@ -1,0 +1,473 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+  user-select: none;
+  /* Tell Chromium the UI is dark so native <select> dropdowns render dark. */
+  color-scheme: dark;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  margin: 6px;
+  padding: 0 10px 0 14px;
+  background: rgba(24, 26, 32, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-app-region: drag;
+}
+
+.bar > * { -webkit-app-region: no-drag; }
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 20px;
+}
+
+.dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.3s ease, box-shadow 0.2s ease;
+}
+
+.dot:hover {
+  filter: brightness(1.2);
+  transform: scale(1.2);
+}
+
+/* Currently playing: no colour change, just size + subtle white ring */
+.dot.active {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.25);
+  animation: activePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes activePulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 8px rgba(255, 255, 255, 0.2); }
+  50%      { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55), 0 0 14px rgba(255, 255, 255, 0.4); }
+}
+
+/* Heard: user has manually played -> fades to white, then auto-deletes */
+.dot.heard {
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: none;
+  animation: none;
+}
+
+/* Highlight-to-speak clip: show "J" for Jarvis centered on the dot.
+   Colour is inherited from the dot's background (session colour or neutral);
+   heard clips flip to black text on white so the J stays legible. */
+.dot.clip {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 1px; /* optical centering of the J's descender */
+}
+
+.dot.clip.heard {
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.icon-btn:active {
+  transform: scale(0.93);
+}
+
+.icon-btn.play {
+  background: rgba(79, 163, 255, 0.18);
+  color: #9ccaff;
+  width: 32px;
+  height: 32px;
+}
+
+.icon-btn.play:hover {
+  background: rgba(79, 163, 255, 0.3);
+  color: #fff;
+}
+
+.icon-btn.close {
+  background: transparent;
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 2px;
+}
+
+.icon-btn.close:hover {
+  background: rgba(255, 70, 70, 0.18);
+  color: #ff6b6b;
+}
+
+#scrubber {
+  flex: 1;
+  min-width: 140px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  cursor: pointer;
+  margin: 0 4px;
+}
+
+#scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 rgba(79, 163, 255, 0);
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+#scrubber:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(79, 163, 255, 0.18);
+}
+
+#scrubber::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+}
+
+#time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  min-width: 78px;
+  text-align: right;
+  letter-spacing: 0.01em;
+}
+
+/* --- Settings panel (expandable) --- */
+.panel {
+  display: none;
+  margin: 0 6px 6px;
+  padding: 0;
+  background: rgba(24, 26, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(140%);
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+}
+body.settings-open .panel { display: block; }
+
+.panel-inner { padding: 14px 16px; }
+
+.panel-section {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.panel-section header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+}
+
+.panel-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 8px;
+}
+
+.panel .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.panel .row label {
+  min-width: 160px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.panel .row select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  /* Force per-element dark scheme so the popup options render dark too. */
+  color-scheme: dark;
+}
+/* Native dropdown popup options. Chromium honours these in most builds. */
+select option, .panel .row select option, .session-row select option {
+  background-color: #1f2128;
+  color: #ffffff;
+}
+select option:checked, .panel .row select option:checked {
+  background-color: #2c3245;
+  color: #ffffff;
+}
+
+.panel .row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  -webkit-appearance: none;
+}
+.panel .row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.panel .readout {
+  min-width: 48px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkbox-row {
+  flex-wrap: wrap;
+  gap: 14px !important;
+}
+.checkbox-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: unset !important;
+  cursor: pointer;
+}
+.checkbox-row input[type="checkbox"] {
+  accent-color: #4FA3FF;
+}
+
+/* Sessions table */
+.sessions-table { display: flex; flex-direction: column; gap: 4px; }
+.session-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.session-row {
+  display: grid;
+  grid-template-columns: 18px 24px 90px 1fr 180px;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.chevron {
+  width: 18px !important;
+  height: 18px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.5);
+}
+.chevron:hover { color: #fff; background: rgba(255,255,255,0.08) !important; }
+
+/* Expanded per-session settings */
+.session-expanded {
+  margin: 8px 0 4px;
+  padding: 8px 28px 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expanded-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.expanded-row label {
+  min-width: 180px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.expanded-row select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color-scheme: dark;
+}
+.expanded-subheader {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+}
+.tri-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+}
+.tri-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.tri-label { color: rgba(255, 255, 255, 0.75); }
+.tri-ctrl { display: inline-flex; }
+.tri-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+.tri-btn:first-child { border-radius: 4px 0 0 4px; }
+.tri-btn:last-child  { border-radius: 0 4px 4px 0; border-left: none; }
+.tri-btn:not(:first-child):not(:last-child) { border-left: none; }
+.tri-btn:hover { color: #fff; }
+.tri-btn.active.def { background: rgba(255,255,255,0.18); color: #fff; }
+.tri-btn.active.on  { background: #4ade80; color: #08240f; }
+.tri-btn.active.off { background: #ff5e5e; color: #260606; }
+.session-row .swatch {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.session-row .short {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+}
+.session-row input[type="text"] {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #fff;
+  font-size: 12px;
+}
+.session-row select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.sessions-empty {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+/* About section */
+.panel-section.about { padding-top: 4px; }
+.ascii-banner {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 8px;
+  line-height: 1.05;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  overflow-x: auto;
+  white-space: pre;
+}
+.shortcuts-title {
+  margin-top: 10px !important;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+.shortcuts {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+.shortcuts td {
+  padding: 3px 6px;
+  color: rgba(255, 255, 255, 0.8);
+  vertical-align: top;
+}
+.shortcuts td:first-child {
+  white-space: nowrap;
+  width: 140px;
+  color: rgba(255, 255, 255, 0.6);
+}
+kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: #fff;
+}
+code {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}

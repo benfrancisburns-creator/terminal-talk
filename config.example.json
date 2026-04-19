@@ -1,0 +1,20 @@
+{
+  "_comment": "Copy to ~/.terminal-talk/config.json and edit. All fields optional; defaults apply.",
+
+  "voices": {
+    "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are fallback voices used only when edge-tts is unreachable. Full voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",
+    "edge_clip": "en-GB-SoniaNeural",
+    "edge_response": "en-GB-RyanNeural",
+    "openai_clip": "shimmer",
+    "openai_response": "onyx"
+  },
+
+  "hotkeys": {
+    "_comment": "Electron accelerator syntax: https://www.electronjs.org/docs/latest/api/accelerator",
+    "toggle_window": "Control+Shift+A",
+    "speak_clipboard": "Control+Shift+S",
+    "toggle_listening": "Control+Shift+J"
+  },
+
+  "openai_api_key": null
+}

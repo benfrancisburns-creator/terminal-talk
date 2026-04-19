@@ -1,0 +1,14 @@
+{
+  "name": "terminal-talk",
+  "version": "0.1.0",
+  "description": "Voice wake word + TTS playback for Claude Code and any highlight-to-speak workflow",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^32.2.0"
+  }
+}
