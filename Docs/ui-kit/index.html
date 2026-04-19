@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Terminal Talk — UI Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="kit.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- palette — plain ESM replaced with window export -->
+<script>
+  (function(){
+    // 24-arrangement palette: 8 solid + 8 hsplit + 8 vsplit (complementary pairs).
+    const BASE_COLOURS = ['#ff5e5e','#ffa726','#ffd93d','#4ade80','#60a5fa','#c084fc','#c97b50','#e0e0e0'];
+    const NEUTRAL = '#8a8a8a'; const SIZE = 24;
+    const NAMES = ['Red','Orange','Yellow','Green','Blue','Purple','Brown','White'];
+    const HEX = { Red:'#ff5e5e', Orange:'#ffa726', Yellow:'#ffd93d', Green:'#4ade80', Blue:'#60a5fa', Purple:'#c084fc', Brown:'#c97b50', White:'#e0e0e0' };
+    const HSPLIT_PAIRS = [
+      ['Red','Green'],   ['Green','Red'],
+      ['Orange','Blue'], ['Blue','Orange'],
+      ['Yellow','Purple'], ['Purple','Yellow'],
+      ['Brown','White'], ['White','Brown'],
+    ];
+    const VSPLIT_PAIRS = [
+      ['Red','Blue'],   ['Blue','Red'],
+      ['Orange','Purple'], ['Purple','Orange'],
+      ['Yellow','Brown'], ['Brown','Yellow'],
+      ['Green','White'], ['White','Green'],
+    ];
+    function arrangementForIndex(idx) {
+      const i = ((idx % SIZE) + SIZE) % SIZE;
+      if (i < 8)  return { kind:'solid',  colours:[BASE_COLOURS[i]] };
+      if (i < 16) { const [a,b] = HSPLIT_PAIRS[i-8];  return { kind:'hsplit', colours:[HEX[a], HEX[b]] }; }
+      const [a,b] = VSPLIT_PAIRS[i-16]; return { kind:'vsplit', colours:[HEX[a], HEX[b]] };
+    }
+    function backgroundForArrangement(arr) {
+      if (!arr) return NEUTRAL;
+      const c = arr.colours;
+      if (arr.kind === 'solid')  return c[0];
+      if (arr.kind === 'hsplit') return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
+      if (arr.kind === 'vsplit') return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
+      return c[0];
+    }
+    function primaryColourForArrangement(arr) { return arr && arr.colours ? arr.colours[0] : NEUTRAL; }
+    function arrangementLabel(i) {
+      if (i < 8)  return NAMES[i];
+      if (i < 16) { const [a,b] = HSPLIT_PAIRS[i-8];  return `${a} / ${b} — top/bottom`; }
+      const [a,b] = VSPLIT_PAIRS[i-16]; return `${a} / ${b} — left/right`;
+    }
+    function hashToIndex(s) { let n = 0; for (const c of (s||'')) n += c.charCodeAt(0); return n % SIZE; }
+    window.TTPalette = { arrangementForIndex, backgroundForArrangement, primaryColourForArrangement, arrangementLabel, hashToIndex, PALETTE_SIZE: SIZE };
+  })();
+</script>
+
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="IconButton.jsx"></script>
+<script type="text/babel" src="Dot.jsx"></script>
+<script type="text/babel" src="Scrubber.jsx"></script>
+<script type="text/babel" src="Toolbar.jsx"></script>
+<script type="text/babel" src="AsciiBanner.jsx"></script>
+<script type="text/babel" src="SessionsTable.jsx"></script>
+<script type="text/babel" src="SettingsPanel.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function shortHex() {
+  return Array.from({length:8}, () => '0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
+}
+
+function demoInitialSessions() {
+  return {
+    'abcd1234': { index: 3,  label: 'Frontend',  session_id: 'abcd1234', pinned: true,  last_seen: Date.now()/1000 },
+    'a08f2b71': { index: 12, label: 'Auth API',  session_id: 'a08f2b71', pinned: false, last_seen: Date.now()/1000 },
+    '7e5c9a04': { index: 18, label: '',          session_id: '7e5c9a04', pinned: false, last_seen: Date.now()/1000, voice: 'en-US-AriaNeural' },
+  };
+}
+
+function App() {
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [speed, setSpeed] = useState(1.25);
+  const [sessions, setSessions] = useState(demoInitialSessions());
+  const [expanded, setExpanded] = useState(new Set(['7e5c9a04']));
+  const [queue, setQueue] = useState(() => [
+    { id: 'c1', short: 'abcd1234', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-20000, duration: 130 },
+    { id: 'c2', short: 'a08f2b71', paletteIndex: 12, clip: false, heard: false, mtime: Date.now()-15000, duration: 90 },
+    { id: 'c3', short: 'abcd1234', paletteIndex: 3,  clip: true,  heard: false, mtime: Date.now()-10000, duration: 18 },
+    { id: 'c4', short: '7e5c9a04', paletteIndex: 18, clip: false, heard: true,  mtime: Date.now()-5000,  duration: 74 },
+  ]);
+  const [currentId, setCurrentId] = useState('c2');
+  const [playing, setPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(41);
+
+  // Tick playback when playing
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => {
+      setCurrentTime(t => {
+        const cur = queue.find(c => c.id === currentId);
+        if (!cur) return t;
+        if (t >= cur.duration) { setPlaying(false); return 0; }
+        return t + 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [playing, currentId, queue]);
+
+  const actions = {
+    playPause: () => setPlaying(p => !p),
+    back10: () => setCurrentTime(t => Math.max(0, t - 10)),
+    fwd10: () => setCurrentTime(t => t + 10),
+    userPlay: (id) => {
+      setCurrentId(id); setCurrentTime(0); setPlaying(true);
+      setQueue(q => q.map(c => c.id === id ? { ...c, heard: true } : c));
+    },
+    remove: (id) => setQueue(q => q.filter(c => c.id !== id)),
+    clearPlayed: () => setQueue(q => q.filter(c => !c.heard)),
+    scrubPreview: (v) => {
+      const cur = queue.find(c => c.id === currentId); if (!cur) return;
+      setCurrentTime((v/1000) * cur.duration);
+    },
+    seek: (v) => { const cur = queue.find(c => c.id === currentId); if (!cur) return; setCurrentTime((v/1000) * cur.duration); },
+    toggleSettings: () => setSettingsOpen(o => !o),
+    hide: () => alert('(demo) would hide the toolbar'),
+  };
+
+  const addFakeClip = () => {
+    const sessionKeys = Object.keys(sessions);
+    const pick = sessionKeys[Math.floor(Math.random() * sessionKeys.length)];
+    setQueue(q => [...q, {
+      id: 'c' + (q.length + 1) + '-' + Math.random().toString(36).slice(2,5),
+      short: pick, paletteIndex: sessions[pick].index,
+      clip: Math.random() < 0.3, heard: false,
+      mtime: Date.now(), duration: 30 + Math.floor(Math.random() * 120)
+    }]);
+  };
+
+  const toggleExpand = (shortId) => setExpanded(e => {
+    const n = new Set(e); n.has(shortId) ? n.delete(shortId) : n.add(shortId); return n;
+  });
+  const updateSession = (shortId, entry) => setSessions(s => ({ ...s, [shortId]: entry }));
+
+  return (
+    <div className="tt-demo-chrome">
+      <Toolbar state={{ queue, currentId, currentTime, playing }} actions={actions} />
+      {settingsOpen && (
+        <SettingsPanel speed={speed} onSpeedChange={setSpeed}
+                       sessions={sessions} expanded={expanded}
+                       onToggleSession={toggleExpand} onUpdateSession={updateSession} />
+      )}
+      <div className="tt-demo-controls">
+        <button onClick={addFakeClip}>＋ Add fake clip</button>
+        <button onClick={() => { setQueue([]); setCurrentId(null); setPlaying(false); }}>Clear queue</button>
+        <button onClick={() => setSettingsOpen(o => !o)}>{settingsOpen ? 'Collapse panel' : 'Expand panel'}</button>
+      </div>
+      <div className="tt-demo-caption">UI-kit recreation · not wired to real audio · click a dot to replay</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

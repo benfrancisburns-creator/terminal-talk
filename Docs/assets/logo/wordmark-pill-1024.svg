@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Terminal Talk — wordmark pill · 1024</title>
+  <defs>
+    <linearGradient id="tt-palette" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff5e5e"></stop>
+      <stop offset="14.28%" stop-color="#ffa726"></stop>
+      <stop offset="28.57%" stop-color="#ffd93d"></stop>
+      <stop offset="42.85%" stop-color="#4ade80"></stop>
+      <stop offset="57.14%" stop-color="#60a5fa"></stop>
+      <stop offset="71.43%" stop-color="#c084fc"></stop>
+      <stop offset="85.71%" stop-color="#c97b50"></stop>
+      <stop offset="100%" stop-color="#e0e0e0"></stop>
+    </linearGradient>
+    <linearGradient id="tt-shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.14)"></stop>
+      <stop offset="50%" stop-color="rgba(255,255,255,0)"></stop>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.1)"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#14161d"></rect>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2"></rect>
+  <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="url(#tt-palette)"></rect>
+  <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="url(#tt-shine)"></rect>
+  <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="3"></rect>
+  <text x="512" y="528" text-anchor="middle" dominant-baseline="middle" font-family="&#39;Segoe UI&#39;, &#39;Inter&#39;, system-ui, sans-serif" font-weight="800" font-size="124" textLength="820" lengthAdjust="spacingAndGlyphs" fill="rgba(0,0,0,0.78)">TERMINAL-TALK</text>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="TERMINAL TALK">
+  <title>Terminal Talk — lettered dots · 1200×630</title>
+  <rect x="0" y="0" width="1200" height="630" rx="24" ry="24" fill="#14161d"></rect>
+  <defs>
+    <clipPath id="cp-top"><rect x="-100" y="-100" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-bot"><rect x="-100" y="0" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-lft"><rect x="-100" y="-100" width="100" height="200"></rect></clipPath>
+    <clipPath id="cp-rgt"><rect x="0" y="-100" width="100" height="200"></rect></clipPath>
+  </defs>
+  <g font-family="&#39;Segoe UI&#39;, &#39;Inter&#39;, &#39;Helvetica Neue&#39;, system-ui, sans-serif" font-weight="800" font-size="60" text-anchor="middle" dominant-baseline="central" fill="rgba(0,0,0,0.78)">
+    <circle cx="60" cy="270" r="42" fill="#ff5e5e"></circle><text x="60" y="271">T</text>
+    <circle cx="150" cy="270" r="42" fill="#ffa726"></circle><text x="150" y="271">E</text>
+    <circle cx="240" cy="270" r="42" fill="#ffd93d"></circle><text x="240" y="271">R</text>
+    <circle cx="330" cy="270" r="42" fill="#4ade80"></circle><text x="330" y="271">M</text>
+    <circle cx="420" cy="270" r="42" fill="#60a5fa"></circle><text x="420" y="271">I</text>
+    <circle cx="510" cy="270" r="42" fill="#c084fc"></circle><text x="510" y="271">N</text>
+    <circle cx="600" cy="270" r="42" fill="#c97b50"></circle><text x="600" y="271">A</text>
+    <circle cx="690" cy="270" r="42" fill="#e0e0e0"></circle><text x="690" y="271">L</text>
+    <g transform="translate(870 270)">
+      <circle cx="0" cy="0" r="42" fill="#ff5e5e" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">T</text>
+    </g>
+    <g transform="translate(960 270)">
+      <circle cx="0" cy="0" r="42" fill="#ffa726" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#60a5fa" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">A</text>
+    </g>
+    <g transform="translate(1050 270)">
+      <circle cx="0" cy="0" r="42" fill="#ffd93d" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#c084fc" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">L</text>
+    </g>
+    <g transform="translate(1140 270)">
+      <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#e0e0e0" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">K</text>
+    </g>
+  </g>
+  <text x="600" y="450" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, ui-monospace, &#39;Cascadia Mono&#39;, monospace" font-weight="500" font-size="28" letter-spacing="2" fill="rgba(255,255,255,0.55)">HANDS-FREE VOICE WORKFLOW FOR CLAUDE CODE</text>
+</svg>

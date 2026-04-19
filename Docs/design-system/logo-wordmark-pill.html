@@ -1,0 +1,566 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Terminal Talk — Wordmark Pill Icon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(60,80,140,0.22) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 90%, rgba(140,80,180,0.2) 0%, transparent 55%),
+      #0b0c10;
+    color: #fff;
+    font-family: var(--tt-font-ui);
+    min-height: 100vh;
+  }
+  header {
+    padding: 56px 60px 28px;
+    max-width: 1400px; margin: 0 auto;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 40px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  header h1 { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { font-size: 14px; color: rgba(255,255,255,0.6); margin: 0; max-width: 640px; line-height: 1.55; }
+  header .stamp { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(255,255,255,0.4); letter-spacing: 0.08em; text-transform: uppercase; text-align: right; line-height: 1.7; }
+
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 60px 80px;
+    display: flex; flex-direction: column; gap: 48px;
+  }
+
+  .section-label {
+    font: 600 11px/1 var(--tt-font-ui);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* HERO */
+  .hero {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  .hero-canvas {
+    width: 420px; height: 420px;
+    background:
+      radial-gradient(circle at 30% 30%, rgba(255,255,255,0.02), transparent 60%),
+      #14161d;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 28px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 40px 80px -20px rgba(0,0,0,0.7);
+    position: relative; overflow: hidden;
+  }
+  .hero-canvas::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  .hero-info h2 {
+    margin: 0 0 10px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .hero-info p {
+    font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.65;
+    margin: 0 0 14px; max-width: 540px;
+  }
+  .hero-info .specs {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 16px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+  }
+  .hero-info .specs dt { color: rgba(255,255,255,0.4); }
+
+  /* SIZE GRID */
+  .size-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+  }
+  .size-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 24px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    min-height: 280px;
+    justify-content: center;
+  }
+  .size-card .size-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.08em;
+  }
+  .size-card .size-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  /* Banner card */
+  .banner-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 36px;
+    display: flex; flex-direction: column; gap: 20px; align-items: center;
+  }
+
+  /* Context */
+  .context-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .ctx-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 14px;
+    padding: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    min-height: 200px;
+    justify-content: center;
+  }
+  .ctx-card .ctx-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* macOS dock */
+  .dock-slot {
+    width: 68px; height: 68px;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .gh-avatar {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  /* Favicon tab */
+  .tab {
+    width: 220px;
+    background: #1e2028;
+    border-radius: 8px 8px 0 0;
+    padding: 8px 12px 12px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 2px solid #3b82f6;
+  }
+  .tab .favicon { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .tab .title { font-size: 11px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Variants block */
+  .variants-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .variant-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .variant-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+  }
+  .variant-card p {
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    margin: 0 0 22px;
+    line-height: 1.5;
+  }
+  .variant-card .display {
+    background: #14161d;
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 12px;
+    padding: 40px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 180px;
+  }
+
+  /* Download list */
+  .downloads {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .download-chip {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+    text-decoration: none;
+  }
+  .download-chip:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.15);
+  }
+  .download-chip .ext { color: rgba(255,255,255,0.4); font-size: 10px; }
+</style>
+</head>
+<body>
+
+  <header>
+  <div>
+    <h1>Logo · wordmark pill + lettered dots</h1>
+    <p>Two pill marks that share one shape. <b>Primary</b>: the toolbar silhouette filled with the 8-stop palette gradient, wordmark optically centred in weighty Segoe UI. <b>Alternate</b>: the same pill rebuilt from 12 unique session-dot arrangements — each letter of TERMINAL TALK on its own dot, no colour repeats, drawn from the product's 24-dot palette (8 solids + 16 splits).</p>
+  </div>
+  <div class="stamp">
+    2 marks · 4 sizes<br>
+    3 contexts · 2 banners<br>
+    12 unique lettered dots
+  </div>
+</header>
+
+<main>
+
+  <!-- HERO -->
+  <section>
+    <div class="section-label">Primary mark</div>
+    <div class="hero" style="grid-template-columns: 720px 1fr;">
+      <div class="hero-canvas" style="width: 720px; height: 260px; border-radius: 20px;">
+        <svg viewBox="0 0 1200 240" width="640" height="128">
+          <use href="#mark-dots-banner"/>
+        </svg>
+      </div>
+      <div class="hero-info">
+        <h2>TERMINAL TALK — lettered dots</h2>
+        <p>Twelve unique session-dot arrangements, one per letter of TERMINAL TALK. Eight solids + four splits, no colour repeats, drawn straight from the product's 24-dot palette. Each letter sits on its dot in the same dark weighty Segoe UI used for the "J" clip glyph in the live product.</p>
+        <dl class="specs">
+          <dt>Shape</dt><dd>12 dots · session palette · single row</dd>
+          <dt>Fill</dt><dd>8 solids + 4 unique splits · no repeats</dd>
+          <dt>Letter</dt><dd>Segoe UI · 800 · rgba(0,0,0,0.78)</dd>
+          <dt>Source</dt><dd>Pure SVG · resolution-independent</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- SIZE LADDER -->
+  <section>
+    <div class="section-label">Sizes</div>
+    <div class="size-grid">
+      <div class="size-card">
+        <svg viewBox="0 0 1024 1024" width="200" height="200"><use href="#mark-wordmark-square"/></svg>
+        <div class="size-label">1024 × 1024</div>
+        <div class="size-sub">App icon · primary export</div>
+      </div>
+      <div class="size-card">
+        <svg viewBox="0 0 1024 1024" width="140" height="140"><use href="#mark-wordmark-square"/></svg>
+        <div class="size-label">512 × 512</div>
+        <div class="size-sub">Social / OG / store</div>
+      </div>
+      <div class="size-card">
+        <svg viewBox="0 0 1024 1024" width="88" height="88"><use href="#mark-wordmark-square"/></svg>
+        <div class="size-label">256 × 256</div>
+        <div class="size-sub">macOS / Linux app icon</div>
+      </div>
+      <div class="size-card" style="gap: 20px;">
+        <svg viewBox="0 0 1024 1024" width="32" height="32"><use href="#mark-favicon"/></svg>
+        <div class="size-label">32 × 32 · favicon</div>
+        <div class="size-sub">Gradient pill silhouette ·<br>no wordmark at this size</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BANNER -->
+  <section>
+    <div class="section-label">README / landing hero banner · 1200 × 400</div>
+    <div class="banner-card">
+      <svg viewBox="0 0 1200 400" width="900" height="300"><use href="#mark-banner"/></svg>
+      <div class="size-sub" style="color: rgba(255,255,255,0.45);">Drop-in top-of-README banner · pill dominates, tagline below</div>
+    </div>
+  </section>
+
+  <!-- IN CONTEXT -->
+  <section>
+    <div class="section-label">In context</div>
+    <div class="context-grid">
+      <div class="ctx-card">
+        <div class="dock-slot"><svg viewBox="0 0 1024 1024" width="68" height="68"><use href="#mark-wordmark-square"/></svg></div>
+        <div class="ctx-label">macOS dock · 68px</div>
+      </div>
+      <div class="ctx-card">
+        <div class="gh-avatar"><svg viewBox="0 0 1024 1024" width="56" height="56"><use href="#mark-wordmark-square"/></svg></div>
+        <div class="ctx-label">GitHub avatar · 56px</div>
+      </div>
+      <div class="ctx-card">
+        <div class="tab">
+          <div class="favicon"><svg viewBox="0 0 1024 1024" width="16" height="16"><use href="#mark-favicon"/></svg></div>
+          <div class="title">terminal-talk — build voice-driven …</div>
+        </div>
+        <div class="ctx-label">Browser tab · 16px favicon</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOTS VARIANT -->
+  <section>
+    <div class="section-label">Alternate variant · the dots pill (tray / busy surfaces)</div>
+    <div class="variants-grid">
+      <div class="variant-card">
+        <h3>Wordmark pill — primary</h3>
+        <p>The default. Use on surfaces that can breathe (app icon, GitHub avatar, README hero, social preview).</p>
+        <div class="display">
+          <svg viewBox="0 0 1024 1024" width="220" height="220"><use href="#mark-wordmark-square"/></svg>
+        </div>
+      </div>
+      <div class="variant-card">
+        <h3>Dots pill — lettered (every dot unique)</h3>
+        <p>Each letter of TERMINAL TALK gets its own dot — 8 solid session colours, then 4 unique splits (red↔green, orange↔blue, yellow↔purple, green↔white) for the repeated letters. Drawn from the 24 session-dot arrangements, no repeats.</p>
+        <div class="display">
+          <svg viewBox="0 0 1024 1024" width="220" height="220"><use href="#mark-dots-square"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Horizontal lettered banner -->
+    <div class="banner-card" style="margin-top: 24px;">
+      <svg viewBox="0 0 1200 240" width="900" height="180"><use href="#mark-dots-banner"/></svg>
+      <div class="size-sub" style="color: rgba(255,255,255,0.45);">Single-row lettered dots · alternate banner for README / landing</div>
+    </div>
+  </section>
+
+</main>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SVG SYMBOLS — all marks defined here, <use>d everywhere above
+     ═══════════════════════════════════════════════════════════════ -->
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+  <defs>
+
+    <!-- Palette gradient: 8 stops, sweeping through session colours -->
+    <linearGradient id="tt-palette-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"    stop-color="#ff5e5e"/>  <!-- red -->
+      <stop offset="14.28%" stop-color="#ffa726"/> <!-- orange -->
+      <stop offset="28.57%" stop-color="#ffd93d"/> <!-- yellow -->
+      <stop offset="42.85%" stop-color="#4ade80"/> <!-- green -->
+      <stop offset="57.14%" stop-color="#60a5fa"/> <!-- blue -->
+      <stop offset="71.43%" stop-color="#c084fc"/> <!-- purple -->
+      <stop offset="85.71%" stop-color="#c97b50"/> <!-- brown -->
+      <stop offset="100%"   stop-color="#e0e0e0"/> <!-- white -->
+    </linearGradient>
+
+    <!-- Soft shine on top of the pill -->
+    <linearGradient id="tt-pill-shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="rgba(255,255,255,0.14)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.1)"/>
+    </linearGradient>
+
+    <!-- === PRIMARY: 1024 × 1024 square wordmark pill === -->
+    <!-- Pill dominates the square; vertical breathing room above/below -->
+    <symbol id="mark-wordmark-square" viewBox="0 0 1024 1024">
+      <!-- Outer square frame: subtle rounded dark field so it sits on any bg -->
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#14161d"/>
+      <!-- Inner vignette edge -->
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2"/>
+
+      <!-- The pill: centred, wide, letterbox proportions -->
+      <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="url(#tt-palette-gradient)"/>
+      <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="url(#tt-pill-shine)"/>
+      <rect x="40" y="360" width="944" height="304" rx="152" ry="152" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="3"/>
+
+      <!-- Wordmark: optically centred, dark weighty sans -->
+      <text x="512" y="528"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            font-family="'Segoe UI', 'Inter', system-ui, sans-serif"
+            font-weight="800"
+            font-size="124"
+            letter-spacing="0"
+            textLength="820"
+            lengthAdjust="spacingAndGlyphs"
+            fill="rgba(0,0,0,0.78)">TERMINAL-TALK</text>
+    </symbol>
+
+    <!-- === FAVICON: 32×32 — gradient pill silhouette only, no wordmark === -->
+    <symbol id="mark-favicon" viewBox="0 0 1024 1024">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#14161d"/>
+      <!-- A taller, simpler pill fills the canvas more at small sizes -->
+      <rect x="72" y="300" width="880" height="424" rx="212" ry="212" fill="url(#tt-palette-gradient)"/>
+      <rect x="72" y="300" width="880" height="424" rx="212" ry="212" fill="url(#tt-pill-shine)"/>
+    </symbol>
+
+    <!-- === DOTS PILL (alternate variant: lettered dots spelling TERMINAL TALK) ===
+         12 letters, each on a UNIQUE session-dot arrangement (no colour repeats).
+         8 solids cover the first 8 letters; the last 4 use splits to stay unique.
+         Black weighty Segoe UI glyph per dot (matches the "J" clip treatment). -->
+    <symbol id="mark-dots-square" viewBox="0 0 1024 1024">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="#14161d"/>
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2"/>
+      <!-- Dark pill surface behind the dots -->
+      <rect x="72" y="300" width="880" height="424" rx="80" ry="80" fill="#1a1d26" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
+
+      <!-- Split-dot clip paths (half-circle masks) -->
+      <defs>
+        <clipPath id="cp-top"><rect x="-100" y="-100" width="200" height="100"/></clipPath>
+        <clipPath id="cp-bot"><rect x="-100" y="0"    width="200" height="100"/></clipPath>
+        <clipPath id="cp-lft"><rect x="-100" y="-100" width="100" height="200"/></clipPath>
+        <clipPath id="cp-rgt"><rect x="0"    y="-100" width="100" height="200"/></clipPath>
+      </defs>
+
+      <g font-family="'Segoe UI', 'Inter', system-ui, sans-serif" font-weight="800" font-size="88" text-anchor="middle" dominant-baseline="central" fill="rgba(0,0,0,0.78)">
+
+        <!-- Row 1: T E R M I N (solids: red orange yellow green blue purple) -->
+        <circle cx="196" cy="440" r="62" fill="#ff5e5e"/><text x="196" y="442">T</text>
+        <circle cx="322" cy="440" r="62" fill="#ffa726"/><text x="322" y="442">E</text>
+        <circle cx="448" cy="440" r="62" fill="#ffd93d"/><text x="448" y="442">R</text>
+        <circle cx="574" cy="440" r="62" fill="#4ade80"/><text x="574" y="442">M</text>
+        <circle cx="700" cy="440" r="62" fill="#60a5fa"/><text x="700" y="442">I</text>
+        <circle cx="826" cy="440" r="62" fill="#c084fc"/><text x="826" y="442">N</text>
+
+        <!-- Row 2: A L T A L K  (solids brown white, then 4 unique splits) -->
+        <!-- A on brown (solid) -->
+        <circle cx="196" cy="584" r="62" fill="#c97b50"/><text x="196" y="586">A</text>
+        <!-- L on white (solid) -->
+        <circle cx="322" cy="584" r="62" fill="#e0e0e0"/><text x="322" y="586">L</text>
+
+        <!-- T on red↔green hsplit -->
+        <g transform="translate(448 584)">
+          <circle cx="0" cy="0" r="62" fill="#ff5e5e" clip-path="url(#cp-top)"/>
+          <circle cx="0" cy="0" r="62" fill="#4ade80" clip-path="url(#cp-bot)"/>
+          <text x="0" y="2">T</text>
+        </g>
+        <!-- A on orange↔blue hsplit -->
+        <g transform="translate(574 584)">
+          <circle cx="0" cy="0" r="62" fill="#ffa726" clip-path="url(#cp-top)"/>
+          <circle cx="0" cy="0" r="62" fill="#60a5fa" clip-path="url(#cp-bot)"/>
+          <text x="0" y="2">A</text>
+        </g>
+        <!-- L on yellow↔purple vsplit -->
+        <g transform="translate(700 584)">
+          <circle cx="0" cy="0" r="62" fill="#ffd93d" clip-path="url(#cp-lft)"/>
+          <circle cx="0" cy="0" r="62" fill="#c084fc" clip-path="url(#cp-rgt)"/>
+          <text x="0" y="2">L</text>
+        </g>
+        <!-- K on green↔white vsplit -->
+        <g transform="translate(826 584)">
+          <circle cx="0" cy="0" r="62" fill="#4ade80" clip-path="url(#cp-lft)"/>
+          <circle cx="0" cy="0" r="62" fill="#e0e0e0" clip-path="url(#cp-rgt)"/>
+          <text x="0" y="2">K</text>
+        </g>
+      </g>
+    </symbol>
+
+    <!-- === DOTS BANNER (wide, single row: 12 unique dots for TERMINAL TALK) === -->
+    <symbol id="mark-dots-banner" viewBox="0 0 1200 240">
+      <rect x="0" y="0" width="1200" height="240" rx="24" ry="24" fill="#14161d"/>
+      <defs>
+        <clipPath id="cp-top-b"><rect x="-100" y="-100" width="200" height="100"/></clipPath>
+        <clipPath id="cp-bot-b"><rect x="-100" y="0"    width="200" height="100"/></clipPath>
+        <clipPath id="cp-lft-b"><rect x="-100" y="-100" width="100" height="200"/></clipPath>
+        <clipPath id="cp-rgt-b"><rect x="0"    y="-100" width="100" height="200"/></clipPath>
+      </defs>
+      <g font-family="'Segoe UI', 'Inter', system-ui, sans-serif" font-weight="800" font-size="60" text-anchor="middle" dominant-baseline="central" fill="rgba(0,0,0,0.78)">
+        <!-- T E R M I N A L  (8 solids) -->
+        <circle cx="80"   cy="120" r="42" fill="#ff5e5e"/><text x="80"   y="121">T</text>
+        <circle cx="170"  cy="120" r="42" fill="#ffa726"/><text x="170"  y="121">E</text>
+        <circle cx="260"  cy="120" r="42" fill="#ffd93d"/><text x="260"  y="121">R</text>
+        <circle cx="350"  cy="120" r="42" fill="#4ade80"/><text x="350"  y="121">M</text>
+        <circle cx="440"  cy="120" r="42" fill="#60a5fa"/><text x="440"  y="121">I</text>
+        <circle cx="530"  cy="120" r="42" fill="#c084fc"/><text x="530"  y="121">N</text>
+        <circle cx="620"  cy="120" r="42" fill="#c97b50"/><text x="620"  y="121">A</text>
+        <circle cx="710"  cy="120" r="42" fill="#e0e0e0"/><text x="710"  y="121">L</text>
+        <!-- T A L K  (4 unique splits) -->
+        <g transform="translate(820 120)">
+          <circle cx="0" cy="0" r="42" fill="#ff5e5e" clip-path="url(#cp-top-b)"/>
+          <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-bot-b)"/>
+          <text x="0" y="1">T</text>
+        </g>
+        <g transform="translate(910 120)">
+          <circle cx="0" cy="0" r="42" fill="#ffa726" clip-path="url(#cp-top-b)"/>
+          <circle cx="0" cy="0" r="42" fill="#60a5fa" clip-path="url(#cp-bot-b)"/>
+          <text x="0" y="1">A</text>
+        </g>
+        <g transform="translate(1000 120)">
+          <circle cx="0" cy="0" r="42" fill="#ffd93d" clip-path="url(#cp-lft-b)"/>
+          <circle cx="0" cy="0" r="42" fill="#c084fc" clip-path="url(#cp-rgt-b)"/>
+          <text x="0" y="1">L</text>
+        </g>
+        <g transform="translate(1090 120)">
+          <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-lft-b)"/>
+          <circle cx="0" cy="0" r="42" fill="#e0e0e0" clip-path="url(#cp-rgt-b)"/>
+          <text x="0" y="1">K</text>
+        </g>
+      </g>
+    </symbol>
+
+    <!-- === BANNER: 1200 × 400 — pill + tagline === -->
+    <symbol id="mark-banner" viewBox="0 0 1200 400">
+      <rect x="0" y="0" width="1200" height="400" rx="24" ry="24" fill="#14161d"/>
+
+      <!-- Main pill: dominates horizontal space -->
+      <!-- bounds: x=140 → 1060 (width 920), y=110 → 260 (height 150), rx=75 -->
+      <rect x="140" y="110" width="920" height="150" rx="75" ry="75" fill="url(#tt-palette-gradient)"/>
+      <rect x="140" y="110" width="920" height="150" rx="75" ry="75" fill="url(#tt-pill-shine)"/>
+      <rect x="140" y="110" width="920" height="150" rx="75" ry="75" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
+
+      <!-- Wordmark -->
+      <text x="600" y="197"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            font-family="'Segoe UI', 'Inter', system-ui, sans-serif"
+            font-weight="800"
+            font-size="78"
+            letter-spacing="1"
+            textLength="800"
+            lengthAdjust="spacingAndGlyphs"
+            fill="rgba(0,0,0,0.78)">TERMINAL-TALK</text>
+
+      <!-- Tagline below -->
+      <text x="600" y="320"
+            text-anchor="middle"
+            font-family="'JetBrains Mono', monospace"
+            font-weight="500"
+            font-size="20"
+            letter-spacing="2"
+            fill="rgba(255,255,255,0.5)">VOICE FOR THE TERMINAL · HEAR CLAUDE · SPEAK BACK</text>
+    </symbol>
+
+  </defs>
+</svg>
+
+</body>
+</html>

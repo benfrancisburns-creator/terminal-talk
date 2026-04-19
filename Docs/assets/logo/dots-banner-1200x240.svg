@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" width="1200" height="240">
+  <title>Terminal Talk — dots banner · 1200×240</title>
+  <defs>
+    <clipPath id="cp-top"><rect x="-100" y="-100" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-bot"><rect x="-100" y="0" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-lft"><rect x="-100" y="-100" width="100" height="200"></rect></clipPath>
+    <clipPath id="cp-rgt"><rect x="0" y="-100" width="100" height="200"></rect></clipPath>
+  </defs>
+  <rect x="0" y="0" width="1200" height="240" rx="24" ry="24" fill="#14161d"></rect>
+  <g font-family="&#39;Segoe UI&#39;, &#39;Inter&#39;, system-ui, sans-serif" font-weight="800" font-size="60" text-anchor="middle" dominant-baseline="central" fill="rgba(0,0,0,0.78)">
+    <circle cx="80" cy="120" r="42" fill="#ff5e5e"></circle><text x="80" y="121">T</text>
+    <circle cx="170" cy="120" r="42" fill="#ffa726"></circle><text x="170" y="121">E</text>
+    <circle cx="260" cy="120" r="42" fill="#ffd93d"></circle><text x="260" y="121">R</text>
+    <circle cx="350" cy="120" r="42" fill="#4ade80"></circle><text x="350" y="121">M</text>
+    <circle cx="440" cy="120" r="42" fill="#60a5fa"></circle><text x="440" y="121">I</text>
+    <circle cx="530" cy="120" r="42" fill="#c084fc"></circle><text x="530" y="121">N</text>
+    <circle cx="620" cy="120" r="42" fill="#c97b50"></circle><text x="620" y="121">A</text>
+    <circle cx="710" cy="120" r="42" fill="#e0e0e0"></circle><text x="710" y="121">L</text>
+    <g transform="translate(820 120)">
+      <circle cx="0" cy="0" r="42" fill="#ff5e5e" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">T</text>
+    </g>
+    <g transform="translate(910 120)">
+      <circle cx="0" cy="0" r="42" fill="#ffa726" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#60a5fa" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">A</text>
+    </g>
+    <g transform="translate(1000 120)">
+      <circle cx="0" cy="0" r="42" fill="#ffd93d" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#c084fc" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">L</text>
+    </g>
+    <g transform="translate(1090 120)">
+      <circle cx="0" cy="0" r="42" fill="#4ade80" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="42" fill="#e0e0e0" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">K</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TERMINAL TALK">
+  <title>Terminal Talk — lettered dots · 256×256</title>
+  <rect x="0" y="0" width="256" height="256" rx="56" ry="56" fill="#14161d"></rect>
+  <defs>
+    <clipPath id="cp-top"><rect x="-100" y="-100" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-bot"><rect x="-100" y="0" width="200" height="100"></rect></clipPath>
+    <clipPath id="cp-lft"><rect x="-100" y="-100" width="100" height="200"></rect></clipPath>
+    <clipPath id="cp-rgt"><rect x="0" y="-100" width="100" height="200"></rect></clipPath>
+  </defs>
+  <g font-family="&#39;Segoe UI&#39;, &#39;Inter&#39;, &#39;Helvetica Neue&#39;, system-ui, sans-serif" font-weight="800" font-size="13.2" text-anchor="middle" dominant-baseline="central" fill="rgba(0,0,0,0.78)">
+    <circle cx="9.200000000000008" cy="128" r="9.24" fill="#ff5e5e"></circle><text x="9.200000000000008" y="129">T</text>
+    <circle cx="29.000000000000014" cy="128" r="9.24" fill="#ffa726"></circle><text x="29.000000000000014" y="129">E</text>
+    <circle cx="48.80000000000001" cy="128" r="9.24" fill="#ffd93d"></circle><text x="48.80000000000001" y="129">R</text>
+    <circle cx="68.60000000000001" cy="128" r="9.24" fill="#4ade80"></circle><text x="68.60000000000001" y="129">M</text>
+    <circle cx="88.40000000000002" cy="128" r="9.24" fill="#60a5fa"></circle><text x="88.40000000000002" y="129">I</text>
+    <circle cx="108.2" cy="128" r="9.24" fill="#c084fc"></circle><text x="108.2" y="129">N</text>
+    <circle cx="128" cy="128" r="9.24" fill="#c97b50"></circle><text x="128" y="129">A</text>
+    <circle cx="147.79999999999998" cy="128" r="9.24" fill="#e0e0e0"></circle><text x="147.79999999999998" y="129">L</text>
+    <g transform="translate(187.4 128)">
+      <circle cx="0" cy="0" r="9.24" fill="#ff5e5e" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="9.24" fill="#4ade80" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">T</text>
+    </g>
+    <g transform="translate(207.2 128)">
+      <circle cx="0" cy="0" r="9.24" fill="#ffa726" clip-path="url(#cp-top)"></circle>
+      <circle cx="0" cy="0" r="9.24" fill="#60a5fa" clip-path="url(#cp-bot)"></circle>
+      <text x="0" y="1">A</text>
+    </g>
+    <g transform="translate(227 128)">
+      <circle cx="0" cy="0" r="9.24" fill="#ffd93d" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="9.24" fill="#c084fc" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">L</text>
+    </g>
+    <g transform="translate(246.8 128)">
+      <circle cx="0" cy="0" r="9.24" fill="#4ade80" clip-path="url(#cp-lft)"></circle>
+      <circle cx="0" cy="0" r="9.24" fill="#e0e0e0" clip-path="url(#cp-rgt)"></circle>
+      <text x="0" y="1">K</text>
+    </g>
+  </g>
+</svg>
