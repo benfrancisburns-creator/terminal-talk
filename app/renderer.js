@@ -21,8 +21,8 @@ let pendingQueue = [];
 let userScrubbing = false;
 const deleteTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
-const AUTO_DELETE_MS = 90 * 1000;       // manual plays — user may want to re-listen
-const AUTO_DELETE_AUTO_MS = 30 * 1000;  // auto-played clips go faster so dots don't pile up
+const AUTO_DELETE_MS = 20 * 1000;       // manual plays — user heard it intentionally, clean up fast
+const AUTO_DELETE_AUTO_MS = 30 * 1000;  // auto-played clips slightly longer in case user was away
 
 // Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
 // Brown is a richer copper (was muddy beige #a08060) so it reads clearly in splits.
