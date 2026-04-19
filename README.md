@@ -29,10 +29,12 @@ Windows-only for now; Mac/Linux planned.
 | **Streaming auto-speak** | Claude's responses are spoken aloud as they're written. Audio starts ~2-3 seconds after Claude begins (not 6-24 seconds after the turn ends) because sentences synthesise in parallel and a `PreToolUse` hook fires mid-response whenever Claude is about to use a tool. Questions are extracted and spoken first so you hear the ask upfront. |
 | **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey jarvis"_ or press `Ctrl+Shift+S`, hear it read. |
 | **Permission-prompt alerts** | When Claude Code asks to use a tool, a voice notification fires so you don't have to watch the screen. |
-| **Floating audio toolbar** | Always-on-top letterbox bar with play/pause, scrubber, and a coloured dot per queued clip. Right-click a dot to delete. Clips autoplay; click to manually replay (auto-deletes 90s later). Settings cog opens an expandable panel. |
-| **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. |
+| **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag to any screen edge and it snaps flush. Left/right edges switch to a vertical column layout. After 15 s of no interaction it shrinks to a thin strip and becomes click-through; hover to re-expand. |
+| **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. Sessions persist until you explicitly remove them (× button on each row of the Sessions table). |
+| **Per-session mute** | `🔊/🔇` button on each Sessions table row. Muted sessions skip edge-tts entirely (no synthesis, no clips, no audio) and show a `🔇` prefix in the terminal's statusline. Perfect for backgrounding chatty terminals. |
 | **Per-session speech-includes** | Override what gets spoken on a per-terminal basis: code blocks, inline code, URLs, headings, bullet markers, image alt-text. |
-| **Tap to mute the mic** | `Ctrl+Shift+J` toggles the wake-word listener (chime confirms). Mic is truly released when off. |
+| **Auto-prune** | Played clips disappear after a configurable delay (default 20 s, range 3-600 s, toggle on/off). Walking away? Flip it off and let clips stack up for when you're back. |
+| **Tap to mute the mic** | `Ctrl+Shift+J` toggles the wake-word listener (chime confirms). Mic is truly released when off — orphan-swept + state-file-driven stream teardown. |
 
 ## Who it's for
 
@@ -261,7 +263,7 @@ What Terminal Talk does **not** do:
 
 ## Tests
 
-A 54-test harness exercises the actual installed components:
+A 75-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -276,7 +278,9 @@ Coverage:
 - Speech-includes (`stripForTTS`): 9 toggle behaviours including content preservation when "On".
 - Voice list validation: every Edge voice in the dropdown actually exists in Microsoft's catalogue, defaults are valid.
 - Per-session merge: 5-row truth table (true/false/null/missing/empty).
-- Registry handling: no UTF-8 BOM written, BOM tolerance on read, voice + speech_includes preserved through round-trip writes.
+- Registry handling: no UTF-8 BOM written, BOM tolerance on read, voice + speech_includes + muted flag preserved through round-trip writes.
+- Sentence splitter: abbreviation / URL / decimal protection, paragraph-break boundaries, short-merge, hard-split on over-long sentences.
+- synth_turn orchestrator: transcript extraction, tool_use filtering, sanitisation with code_blocks toggle, questions-first extraction, sync state round-trip, mute skip.
 - Pinned sessions: not pruned even if PID dead and `last_seen` stale.
 - Install sanity: required files present, config parses.
 

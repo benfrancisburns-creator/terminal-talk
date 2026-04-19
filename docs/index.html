@@ -285,14 +285,14 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">What you get</div>
-      <h2 class="sec-title">Four things that make Claude Code a hands-free tool</h2>
+      <h2 class="sec-title">Six things that make Claude Code a hands-free tool</h2>
       <p class="sec-intro">Every feature is opt-in at install. No telemetry anywhere.</p>
     </div>
     <div class="feature-grid">
       <div class="feature">
         <div class="icon">🔊</div>
-        <h3>Auto-speak Claude responses</h3>
-        <p>Every Claude Code turn is spoken aloud via a Stop hook. Questions in the response are extracted and spoken first so you hear the ask upfront.</p>
+        <h3>Streaming auto-speak</h3>
+        <p>Claude's responses are spoken as they're written. Audio starts ~2-3 s after Claude begins, not 6-24 s after the turn ends — sentences synthesise in parallel and a PreToolUse hook fires mid-response. Questions spoken first.</p>
       </div>
       <div class="feature">
         <div class="icon">👂</div>
@@ -301,8 +301,18 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </div>
       <div class="feature">
         <div class="icon">🎨</div>
-        <h3>Per-terminal identity</h3>
-        <p>Each Claude Code terminal gets a unique colour dot + statusline emoji + optional voice. Open five terminals; tell them apart by sight or sound.</p>
+        <h3>Per-terminal identity + mute</h3>
+        <p>Each Claude Code terminal gets a unique colour dot, statusline emoji, and optional voice. Mute any terminal with one click — its synthesis skips entirely, no audio, no queued clips.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">📌</div>
+        <h3>Dockable toolbar</h3>
+        <p>Drag to any screen edge and it snaps flush. Left/right edges switch to a vertical column. Idle 15 s → shrinks to a slim strip and becomes click-through; hover to expand. Per-session colour assignments persist until you remove them.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🧹</div>
+        <h3>Self-managing queue</h3>
+        <p>Played clips auto-prune 20 s after they finish (configurable 3-600 s). Walking away? Toggle off and clips stack up for review on return. No manual housekeeping.</p>
       </div>
       <div class="feature">
         <div class="icon">🔒</div>

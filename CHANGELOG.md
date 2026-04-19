@@ -2,31 +2,43 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [Unreleased] — 0.2.0
 
-### Added
-- **Per-session mute toggle.** Each row in the Sessions table gets a 🔊/🔇 button. Muted sessions: (a) their synth_turn.py runs skip synthesis entirely — no edge-tts calls — so background terminals cost nothing, (b) any queued clips are filtered out of the toolbar dots and playback picker, (c) if the currently-playing clip belongs to a session that just got muted, playback stops, (d) the terminal's statusline shows a 🔇 prefix so the mute state is visible at a glance in the Claude Code window too. Four terminals open? Mute two background ones and only hear the two you're actively watching.
-- **Robust auto-play fallback.** When the pendingQueue gets out of sync with the visible queue (after a pause-then-resume, manual delete, or unmute flip), the player now falls back to "oldest unplayed, unmuted clip in queue" instead of stalling. Closes a papercut where users had to click dots manually to resume flow.
+Large quality-of-life release built iteratively in one long session. Everything here is on top of v0.1.0.
+
+### Added — streaming TTS
+- **Streaming auto-speak.** Audio now starts ~2-3 seconds after Claude begins responding, instead of 6-24 seconds after the turn ends. Two mechanisms combine:
+  - *Sentence-parallel synthesis.* Response text is split into sentences and sent to edge-tts in parallel (4-wide). Completed clips roll into the queue in order as they arrive, so the first sentence starts playing while later ones are still synthesising.
+  - *Between-tool streaming via new PreToolUse hook.* Each time Claude is about to use a tool, any text written since the last synthesis gets spoken while the tool runs. Genuinely streaming audio for tool-heavy responses.
+- New files: `app/synth_turn.py` (Python orchestrator — transcript extraction, sanitisation, sentence split, parallel synthesis, sync state), `app/sentence_split.py` (splitter with abbreviation / URL / decimal / paragraph-break handling), `hooks/speak-on-tool.ps1` (PreToolUse hook).
+- Per-session sync state at `~/.terminal-talk/sessions/<id>-sync.json` prevents the same text being spoken twice; file-based session lock prevents hook-invocation races.
+- Stop hook (`speak-response.ps1`) now spawns `synth_turn.py` detached and exits in ~150 ms instead of blocking 6-24 s during synthesis. Legacy inline path preserved as fallback if the Python script is missing.
+- `install.ps1` registers the new PreToolUse hook; `uninstall.ps1` cleans it up.
+
+### Added — toolbar UX redesign
+- **Two-row layout.** 680 × 114 window: controls on top (play/pause, ±10 s, scrubber, time, clear, settings, close), dots on the bottom strip — ~30 dots fit before any clipping. Dot order flipped to oldest-left, newest-right so the row reads in playback order.
+- **Session-run grouping.** Visual gaps on the dot strip between runs from different terminals, so you see at a glance which terminal said what without reordering playback.
+- **Edge snapping.** Drag the toolbar anywhere; release within 50 px of an edge and it snaps flush. Left / right edges switch to a vertical layout (56 px wide, controls stacked, dots running downward). Position and dock orientation persist across launches.
+- **Auto-collapse / hover-expand.** 15 s of no interaction → bar shrinks to a 14 px strip and becomes click-through so clicks pass to apps below. Hover, new clip, or keystroke → expands back. Deferred while audio is playing or unplayed clips remain in the queue, so streaming sessions don't flicker.
+- **Persistent sessions.** Colour registry entries keep their slot indefinitely until removed via a new × button on each Sessions table row. No more "labelled the session, went away for an hour, came back and the label was gone".
+
+### Added — per-session controls
+- **Mute toggle.** `🔊 / 🔇` button on each Sessions row. Muted sessions skip synthesis entirely (no edge-tts calls), are filtered from the dot strip, any currently-playing clip stops if its session gets muted, and the terminal's statusline shows a `🔇` prefix.
+- **Auto-prune controls.** Playback panel has a toggle ("Auto-prune played clips") and a configurable delay (3-600 s, default 20 s). On = self-managing toolbar. Off = clips stack up for review when you return to the desk. Per-clip timers honour the manual-vs-auto-play distinction (20 s manual, 20 s auto by default).
+
+### Changed — installer / process identity
+- Electron binary copied to `terminal-talk.exe` at install time (alongside the original `electron.exe`), and Startup VBS launches the rebranded binary — Task Manager now shows "terminal-talk.exe" entries instead of anonymous "electron.exe" ones.
 
 ### Fixed
-- `speak-response.ps1` palette size corrected from 32 → 24 (matched `renderer.js` and `statusline.ps1`). Legacy value would have picked an out-of-range index on fallback assignment.
+- `Ctrl+Shift+J` mic mute actually releases the microphone now. Orphan sweep plus a Python-side state-file poll that tears down the `sd.InputStream` when state flips to "off". Two independent kill paths — either alone is sufficient.
+- Focus-stealing toolbar. `win.show()` on every clip was grabbing focus mid-type; switched to `showInactive()` for queue-driven shows and downgraded `alwaysOnTop` from `screen-saver` to `floating`.
+- Robust auto-play. `playNextPending()` now has a third-tier fallback scanning for any unplayed + unmuted clip. The old `ended` handler gate that blocked this fallback has been removed.
+- Monotonic mtime on rolling release. `os.replace()` was preserving source mtime (= synth-finish time, random due to parallelism), causing playback order to skip around; now `os.utime()` stamps a monotonic counter so order matches seq.
+- Active-dot pulse halo no longer clips against the window edge (window taller, overflow:hidden removed from the inner dots container).
+- `speak-response.ps1` palette size corrected from 32 → 24 (matched the actual palette everywhere else).
 
-### Added (streaming, original v0.2 feature)
-- **Streaming TTS.** Audio now starts ~2-3 seconds after Claude begins responding, instead of 6-24 seconds after the response finishes. Two mechanisms combine:
-  - *Sentence-parallel synthesis.* Response text is split into sentences and sent to edge-tts in parallel (4-wide). Completed clips roll into the queue in order as they arrive.
-  - *Between-tool streaming via PreToolUse hook.* Each time Claude is about to use a tool, any text written since the last synthesis gets spoken while the tool runs. Brilliant for long working sessions — you hear Claude's commentary while tools execute.
-- New files: `app/synth_turn.py` (orchestrator), `app/sentence_split.py` (sentence boundary detection with abbreviations, URLs, decimals, paragraph breaks), `hooks/speak-on-tool.ps1` (PreToolUse hook).
-- Per-session sync state at `~/.terminal-talk/sessions/<id>-sync.json` prevents the same text from being spoken twice.
-- File-based session lock prevents two hook invocations racing on the same session.
-- 17 new tests in the harness: sentence splitter edge cases, sync state round-trip, text extraction, sanitisation. Total: 71.
-
-### Changed
-- Stop hook (`speak-response.ps1`) now spawns `synth_turn.py` detached and exits in ~150 ms instead of blocking for 6-24 s during synthesis. Legacy inline path preserved as fallback if the Python script is missing.
-- `install.ps1` now registers a `PreToolUse` hook alongside Stop and Notification.
-- `uninstall.ps1` cleans up the new `PreToolUse` entry too.
-
-### Fixed
-- `speak-on-tool.ps1` uses the correct palette size of 24 (the legacy `speak-response.ps1` block still says 32 — left unchanged to avoid scope creep; has no behavioural effect since new sessions almost always find a free slot in the first 24).
+### Tests
+- 75 total, all passing. +21 new since v0.1.0 covering sentence splitter, sync state, text extraction, mute round-trip, synth-skip-on-mute.
 
 ## [0.1.0] — 2026-04-19
 
@@ -50,7 +62,7 @@ Initial release.
 - `Ctrl+Shift+A` toggles toolbar visibility.
 
 **Per-terminal identity**
-- 32 distinguishable arrangements: 8 solid colours, 8 horizontal splits, 8 vertical splits, 8 quadrant patterns.
+- 24 distinguishable arrangements: 8 solid colours, 8 horizontal splits, 8 vertical splits. (Quad patterns removed in the pre-release because they read as noise at 16 px.)
 - Each Claude Code terminal gets a unique colour automatically (lowest-free-index assignment).
 - Session colour shown three ways: dot on toolbar, emoji in terminal statusline, optional per-session voice.
 - Manual colour pinning via Sessions table dropdown — pinned colours never get reassigned.

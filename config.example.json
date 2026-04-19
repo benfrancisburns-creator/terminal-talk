@@ -16,5 +16,29 @@
     "toggle_listening": "Control+Shift+J"
   },
 
+  "playback": {
+    "_comment": "speed 0.5-2.5x. auto_prune toggles whether played clips disappear after N seconds (3-600). Toggle off if you want clips to stack up for review.",
+    "speed": 1.25,
+    "auto_prune": true,
+    "auto_prune_sec": 20
+  },
+
+  "speech_includes": {
+    "_comment": "Global defaults for what gets spoken from Claude responses. Per-session overrides live in session-colours.json and win over these.",
+    "code_blocks": false,
+    "inline_code": false,
+    "urls": false,
+    "headings": true,
+    "bullet_markers": false,
+    "image_alt": false
+  },
+
+  "window": {
+    "_comment": "Populated automatically — last-saved position + dock orientation. Delete these keys to reset to centred-top on next launch.",
+    "x": null,
+    "y": null,
+    "dock": null
+  },
+
   "openai_api_key": null
 }
