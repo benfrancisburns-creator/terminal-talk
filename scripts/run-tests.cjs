@@ -19,6 +19,16 @@ const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 
 const VERBOSE = process.argv.includes('--verbose');
+// `--logic-only` skips test groups that need the live install dir, PowerShell,
+// or the edge-tts service. Used by the Linux CI job for fast cross-platform smoke tests.
+const LOGIC_ONLY = process.argv.includes('--logic-only');
+const NEEDS_INSTALL = new Set([
+  'STATUSLINE ASSIGNMENT', 'EDGE TTS WRAPPER', 'VOICE LIST VALIDATION',
+  'REGISTRY BOM HANDLING', 'REGISTRY ROUND-TRIP PRESERVES OVERRIDES',
+  'PINNED SESSIONS NOT PRUNED', 'STATUSLINE OUTPUT',
+  'MAIN.JS REGISTRY READ TOLERANCE', 'HARDENING: secrets do not leak to logs',
+  'INSTALL SANITY'
+]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
 // Use a tmp registry file so tests can't be raced by the live Claude Code statusline.
@@ -41,6 +51,10 @@ function it(name, fn) {
 }
 
 function describe(group, fn) {
+  if (LOGIC_ONLY && NEEDS_INSTALL.has(group)) {
+    if (VERBOSE) console.log(`\n${group}\n  (skipped: --logic-only)`);
+    return;
+  }
   console.log(`\n${group}`);
   fn();
 }
