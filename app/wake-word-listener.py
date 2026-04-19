@@ -17,6 +17,16 @@ from openwakeword.model import Model
 LOG_PATH = Path.home() / '.terminal-talk' / 'queue' / '_voice.log'
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+STATE_FILE = Path.home() / '.terminal-talk' / 'queue' / '_listening.state'
+
+def is_listening_on():
+    """Returns True if the user has the mic toggle enabled.
+    Defaults to True if the state file is missing (first run)."""
+    try:
+        return STATE_FILE.read_text(encoding='utf-8').strip() != 'off'
+    except (FileNotFoundError, OSError):
+        return True
+
 logging.basicConfig(
     filename=LOG_PATH,
     level=logging.INFO,
@@ -112,23 +122,52 @@ def main():
             last_score = 0.0
             last_heartbeat = now
 
+    # Defense-in-depth mute: open/close the InputStream in response to the
+    # _listening.state flag. When 'off', the stream is torn down so the OS
+    # actually releases the microphone at the driver level — no "hot mic"
+    # even if another instance of this listener is somehow lingering.
+    stream = None
     try:
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype='float32',
-            blocksize=CHUNK_SAMPLES,
-            callback=callback,
-        ):
-            log.info('listening (say "hey jarvis")...')
-            while True:
-                time.sleep(1)
+        while True:
+            wanted = is_listening_on()
+            if wanted and stream is None:
+                try:
+                    stream = sd.InputStream(
+                        samplerate=SAMPLE_RATE,
+                        channels=1,
+                        dtype='float32',
+                        blocksize=CHUNK_SAMPLES,
+                        callback=callback,
+                    )
+                    stream.start()
+                    log.info('stream opened; listening (say "hey jarvis")...')
+                except Exception as e:
+                    log.error(f'stream open fail: {type(e).__name__}: {e}')
+                    time.sleep(2)
+                    continue
+            elif not wanted and stream is not None:
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception as e:
+                    log.error(f'stream close fail: {type(e).__name__}: {e}')
+                finally:
+                    stream = None
+                    log.info('listening toggled off; mic released')
+            time.sleep(0.25)
     except KeyboardInterrupt:
         log.info('interrupted')
         return 0
     except Exception as e:
         log.error(f'FATAL stream: {type(e).__name__}: {e}')
         return 1
+    finally:
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     sys.exit(main() or 0)

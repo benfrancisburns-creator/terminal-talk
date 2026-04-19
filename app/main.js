@@ -179,7 +179,7 @@ function createWindow() {
       allowRunningInsecureContent: false
     }
   });
-  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setAlwaysOnTop(true, 'floating');
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
 }
@@ -195,7 +195,7 @@ function notifyQueue() {
     const files = getQueueFiles();
     const assignments = ensureAssignmentsForFiles(files);
     win.webContents.send('queue-updated', { files, assignments });
-    if (files.length > 0 && !win.isVisible()) win.show();
+    if (files.length > 0 && !win.isVisible()) win.showInactive();
   }
 }
 
@@ -528,7 +528,7 @@ async function speakClipboard() {
       if (delivered) paths.push(delivered);
     }
     if (paths.length && win && !win.isDestroyed()) {
-      if (!win.isVisible()) win.show();
+      if (!win.isVisible()) win.showInactive();
       setTimeout(() => {
         diag(`speakClipboard: priority-play to renderer (${paths.length})`);
         win.webContents.send('priority-play', paths);
@@ -812,6 +812,23 @@ function isListeningEnabled() {
 function setListeningState(on) {
   try { fs.writeFileSync(LISTENING_STATE_FILE, on ? 'on' : 'off'); } catch {}
 }
+// Military-grade safety net: sweep any orphan wake-word listeners.
+// Matches only python.exe processes whose command line contains our script
+// path, so nothing unrelated gets killed. Runs on start, before every spawn,
+// and after every stop (belt-and-braces).
+function killOrphanVoiceListeners() {
+  if (process.platform !== 'win32') return;
+  try {
+    const { execFileSync } = require('child_process');
+    const psCmd = "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*wake-word-listener*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+    execFileSync('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCmd], {
+      windowsHide: true, timeout: 5000, stdio: 'ignore'
+    });
+    diag('orphan voice listeners swept');
+  } catch (e) {
+    diag(`orphan sweep failed: ${e.message}`);
+  }
+}
 function stopVoiceListener() {
   if (voiceProc) {
     try { voiceProc.removeAllListeners('exit'); } catch {}
@@ -828,9 +845,13 @@ function stopVoiceListener() {
     }
     diag(`voice listener stopped (pid ${pid})`);
   }
+  // Belt-and-braces: Python listener also polls _listening.state and closes
+  // its InputStream when off, but sweep orphans regardless.
+  killOrphanVoiceListeners();
 }
 function startVoiceListener() {
   if (voiceProc) return;
+  killOrphanVoiceListeners();
   try {
     voiceProc = spawn('python', ['-u', path.join(__dirname, 'wake-word-listener.py')], {
       windowsHide: true,
@@ -853,6 +874,7 @@ function toggleListening() {
 }
 
 app.whenReady().then(() => {
+  killOrphanVoiceListeners();
   pruneOldFiles();
   pruneSessionsDir();
   createWindow();
