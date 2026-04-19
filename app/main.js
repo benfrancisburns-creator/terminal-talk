@@ -747,6 +747,16 @@ ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
 // playback queue AND their synth_turn.py invocations skip synthesis entirely
 // (see synth_turn.run()). Truly "cut the wire" — no edge-tts calls, no
 // queued audio, no CPU on muted background terminals.
+// When the toolbar collapses to its slim idle state, the window area below
+// the visible strip is transparent but still covered by the BrowserWindow.
+// forward:true lets the renderer keep receiving mousemove events (so it can
+// re-expand on hover) while clicks pass through to whatever's below.
+ipcMain.handle('set-clickthrough', (_e, on) => {
+  if (!win || win.isDestroyed()) return false;
+  win.setIgnoreMouseEvents(!!on, { forward: true });
+  return true;
+});
+
 ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
   if (!validShort(shortId)) return false;
   if (typeof muted !== 'boolean') return false;

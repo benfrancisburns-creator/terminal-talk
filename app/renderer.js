@@ -9,6 +9,47 @@ const scrubber = document.getElementById('scrubber');
 const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
 const clearPlayedBtn = document.getElementById('clearPlayed');
+const barEl = document.getElementById('bar');
+
+// -------------------------------------------------------------------
+// Collapse-on-idle behaviour
+// -------------------------------------------------------------------
+// When the user isn't touching the toolbar and no clip is arriving, the
+// bar shrinks to a slim 8px strip and the window becomes click-through
+// (clicks pass to whatever's underneath). It expands back on hover, on a
+// new clip arrival, or on any user interaction. 4 seconds of no
+// interaction → auto-collapse.
+const COLLAPSE_DELAY_MS = 4000;
+let isCollapsed = false;
+let collapseTimer = null;
+let settingsOpen = false;  // don't collapse while the settings panel is open
+
+async function applyCollapsed(collapsed) {
+  if (collapsed === isCollapsed) return;
+  isCollapsed = collapsed;
+  if (collapsed) {
+    barEl.classList.add('collapsed');
+    // Give clicks access to apps below; forward: true preserves mousemove
+    // so the renderer can still detect hover and re-expand.
+    try { await window.api.setClickthrough(true); } catch {}
+  } else {
+    barEl.classList.remove('collapsed');
+    try { await window.api.setClickthrough(false); } catch {}
+  }
+}
+
+function scheduleCollapse(delay = COLLAPSE_DELAY_MS) {
+  cancelCollapse();
+  if (settingsOpen) return;  // user is actively configuring, stay put
+  collapseTimer = setTimeout(() => { applyCollapsed(true); }, delay);
+}
+function cancelCollapse() {
+  if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+}
+function bumpActivity() {
+  applyCollapsed(false);
+  scheduleCollapse();
+}
 
 let queue = [];
 let currentPath = null;
@@ -371,6 +412,15 @@ window.api.onQueueUpdated((payload) => {
     // Drop muted-session arrivals outright — they never enter the queue.
     if (isClipSessionMuted(f.path.split(/[\\/]/).pop())) continue;
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
+  }
+  // New unmuted clip arrived → pop the toolbar out so the user sees the
+  // dot, then start the 4s auto-collapse timer.
+  const hasVisibleArrival = newArrivals.some(f =>
+    !priorityPaths.has(f.path) && !isClipSessionMuted(f.path.split(/[\\/]/).pop())
+  );
+  if (hasVisibleArrival) {
+    applyCollapsed(false);
+    scheduleCollapse();
   }
   // If the user just muted the session of the currently-playing clip, stop.
   // Let the normal resume/ended flow pick up the next unmuted one.
@@ -923,10 +973,43 @@ for (const [key, el] of Object.entries(incBoxes)) {
 settingsBtn.addEventListener('click', async () => {
   const open = !document.body.classList.contains('settings-open');
   document.body.classList.toggle('settings-open', open);
+  settingsOpen = open;
   await window.api.setPanelOpen(open);
-  if (open) renderSessionsTable();
+  if (open) {
+    cancelCollapse();
+    applyCollapsed(false);
+    renderSessionsTable();
+  } else {
+    scheduleCollapse();
+  }
 });
 
-loadSettings();
+// -------------------------------------------------------------------
+// Hover + interaction triggers for collapse/expand
+// -------------------------------------------------------------------
+// Expand whenever the mouse moves over the bar. forward:true from main
+// means we still receive mousemove even while click-through is on, which
+// is how the slim collapsed strip "detects" the cursor arriving.
+barEl.addEventListener('mousemove', () => {
+  if (isCollapsed) applyCollapsed(false);
+  cancelCollapse();
+});
+barEl.addEventListener('mouseenter', () => {
+  if (isCollapsed) applyCollapsed(false);
+  cancelCollapse();
+});
+barEl.addEventListener('mouseleave', () => {
+  scheduleCollapse();
+});
+// Any click/keypress anywhere in the window = user actively engaging →
+// cancel pending collapse and reset the inactivity timer.
+barEl.addEventListener('click', bumpActivity);
+window.addEventListener('keydown', bumpActivity);
+
+// Start collapsed-when-idle cycle once initial load finishes.
+loadSettings().then(() => {
+  // Briefly show the bar on startup so the user sees it, then collapse.
+  scheduleCollapse();
+});
 
 initialLoad();

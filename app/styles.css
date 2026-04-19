@@ -25,6 +25,28 @@ html, body {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-app-region: drag;
+  transition: height .22s ease, padding .22s ease, opacity .22s ease;
+  overflow: hidden;
+}
+
+/* Collapsed: bar shrinks to a slim hover-target at the top of the screen.
+   Content is hidden but the strip stays subtly visible so the user can
+   see where to hover. Window stays the same size (114 px) but becomes
+   click-through via setIgnoreMouseEvents so the area below the strip
+   doesn't block interaction with other apps. */
+.bar.collapsed {
+  height: 8px;
+  padding: 0;
+  opacity: 0.35;
+  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(24, 26, 32, 0.6);
+}
+.bar.collapsed .bar-top,
+.bar.collapsed .dots-row {
+  display: none;
+}
+.bar.collapsed:hover {
+  opacity: 0.7;
 }
 
 .bar-top {
