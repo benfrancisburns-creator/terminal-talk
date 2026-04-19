@@ -57,7 +57,7 @@ Initial release.
 - Re-runnable safely; preserves `config.json` and session colour assignments.
 
 **Test harness**
-- 43 tests covering palette logic, filename parsing, statusline assignment, edge-tts wrapper, speech-includes filtering, voice list validation, registry round-trip, BOM handling, pinned-session preservation.
+- 54 tests covering palette logic, filename parsing, statusline assignment, edge-tts wrapper, speech-includes filtering, voice list validation, registry round-trip, BOM handling, pinned-session preservation.
 - Tests use a tmp registry path so they don't race the live install.
 
 ### Notes

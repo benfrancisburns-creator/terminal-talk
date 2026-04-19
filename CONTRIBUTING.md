@@ -29,7 +29,7 @@ terminal-talk/
 │   └── speak-notification.ps1    Claude Code Notification hook
 ├── scripts/
 │   ├── start-toolbar.vbs         Silent Electron launcher (used by Startup shortcut)
-│   └── run-tests.cjs             43-test harness
+│   └── run-tests.cjs             54-test harness
 └── docs/                         (planned)
 ```
 

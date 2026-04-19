@@ -2,6 +2,14 @@
   <img src="docs/assets/logo/lettered-dots-banner-1200x400.svg" alt="Terminal Talk" width="720">
 </p>
 
+<p align="center">
+  <a href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest"><img src="https://img.shields.io/github/v/release/benfrancisburns-creator/terminal-talk?color=c97b50&label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Windows">
+  <img src="https://img.shields.io/badge/node-18%2B-339933" alt="Node 18+">
+  <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
+</p>
+
 **Hands-free voice workflow for Claude Code.**
 Claude's replies are read aloud. Highlight any text anywhere, say _"hey jarvis"_, hear it.
 Pair with [Wispr Flow](https://wisprflow.ai/) (or any speech-to-text tool) and you can run entire Claude Code sessions without touching the keyboard.
@@ -253,7 +261,7 @@ What Terminal Talk does **not** do:
 
 ## Tests
 
-A 43-test harness exercises the actual installed components:
+A 54-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -261,7 +269,7 @@ node terminal-talk/scripts/run-tests.cjs --verbose
 
 Coverage:
 
-- Palette: 32 arrangements all distinct, edge cases (wrap, negatives).
+- Palette: 24 arrangements all distinct, edge cases (wrap, negatives).
 - Filename parsing: response, question, notification, clip (session-scoped + neutral).
 - Statusline assignment: lowest-free-index, two distinct sessions get different colours, returning sessions keep their slot, label appended to emoji.
 - Edge TTS wrapper: produces real mp3 from text input.
