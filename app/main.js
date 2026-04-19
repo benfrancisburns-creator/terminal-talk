@@ -25,7 +25,11 @@ const DEFAULTS = {
   hotkeys: {
     toggle_window: 'Control+Shift+A',
     speak_clipboard: 'Control+Shift+S',
-    toggle_listening: 'Control+Shift+J'
+    toggle_listening: 'Control+Shift+J',
+    // Pauses the currently playing clip, or resumes if paused. Bind your
+    // dictation tool (Wispr Flow, etc.) to send this when it starts /
+    // stops listening so TTS doesn't talk over you mid-sentence.
+    pause_resume: 'Control+Shift+P'
   },
   playback: {
     speed: 1.25,
@@ -1101,6 +1105,13 @@ app.whenReady().then(() => {
   globalShortcut.register(CFG.hotkeys.toggle_window, toggleWindow);
   globalShortcut.register(CFG.hotkeys.speak_clipboard, speakClipboard);
   globalShortcut.register(CFG.hotkeys.toggle_listening, toggleListening);
+  if (CFG.hotkeys.pause_resume) {
+    globalShortcut.register(CFG.hotkeys.pause_resume, () => {
+      if (win && !win.isDestroyed()) {
+        try { win.webContents.send('toggle-pause-playback'); } catch {}
+      }
+    });
+  }
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
 });

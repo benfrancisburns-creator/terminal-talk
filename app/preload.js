@@ -31,5 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   onSetOrientation: (cb) => {
     ipcRenderer.on('set-orientation', (_e, payload) => cb(payload));
+  },
+  onTogglePausePlayback: (cb) => {
+    ipcRenderer.on('toggle-pause-playback', () => cb());
   }
 });

@@ -1048,6 +1048,18 @@ window.addEventListener('keydown', bumpActivity);
 if (window.api.onForceExpand) {
   window.api.onForceExpand(() => { bumpActivity(); });
 }
+// Pause/resume playback via global hotkey (default Ctrl+Shift+P). Bind
+// this to your dictation tool's start/stop events and TTS won't talk
+// over you mid-sentence — it'll pick up exactly where it left off when
+// you finish speaking.
+if (window.api.onTogglePausePlayback) {
+  window.api.onTogglePausePlayback(() => {
+    if (!audio.src || audio.ended) return;  // nothing to pause
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
+    bumpActivity();
+  });
+}
 // Orientation changes: main sends { kind: 'horizontal'|'vertical', edge }.
 // We toggle CSS classes on body so styles can restyle the bar top row,
 // dot row, and collapsed strip appropriately without runtime JS layout.
