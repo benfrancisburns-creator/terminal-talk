@@ -548,7 +548,7 @@ const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings
 function sanitiseEntry(e) {
   if (!e || typeof e !== 'object') return null;
   const idx = Number(e.index);
-  if (!Number.isFinite(idx) || idx < 0 || idx > 31) return null;
+  if (!Number.isFinite(idx) || idx < 0 || idx > 23) return null;
   const out = {
     index: Math.floor(idx),
     session_id: typeof e.session_id === 'string' ? e.session_id.slice(0, 80) : '',
@@ -644,11 +644,11 @@ function ensureAssignmentsForFiles(files) {
     const short = shortFromFile(path.basename(f.path));
     if (!short || all[short]) continue;
     let idx = 0;
-    while (busy.has(idx) && idx < 32) idx++;
-    if (idx >= 32) {
+    while (busy.has(idx) && idx < 24) idx++;
+    if (idx >= 24) {
       let sum = 0;
       for (const ch of short) sum += ch.charCodeAt(0);
-      idx = sum % 32;
+      idx = sum % 24;
     }
     all[short] = {
       index: idx,

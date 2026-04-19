@@ -24,6 +24,7 @@ const STALE_MS = 5 * 60 * 1000;
 const AUTO_DELETE_MS = 90 * 1000;
 
 // Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
+// Brown is a richer copper (was muddy beige #a08060) so it reads clearly in splits.
 const BASE_COLOURS = [
   '#ff5e5e', // 0 red
   '#ffa726', // 1 orange (warmer/yellower so it reads clearly next to red)
@@ -31,11 +32,17 @@ const BASE_COLOURS = [
   '#4ade80', // 3 green
   '#60a5fa', // 4 blue
   '#c084fc', // 5 purple
-  '#a08060', // 6 brown
+  '#c97b50', // 6 brown (copper -- distinct from orange)
   '#e0e0e0'  // 7 white
 ];
-const PALETTE_SIZE = 32;
+const PALETTE_SIZE = 24;
 const NEUTRAL_COLOUR = '#8a8a8a';
+
+// Split partners chosen by max hue distance so the two halves never blur.
+// hsplit pairs (top, bottom):  red/green, orange/blue, yellow/purple, brown/white (+ reverses)
+const HSPLIT_PARTNER = [3, 4, 5, 0, 1, 2, 7, 6];
+// vsplit pairs (left, right):  red/blue, orange/purple, yellow/brown, green/white (+ reverses)
+const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
 
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
@@ -51,22 +58,10 @@ function arrangementForIndex(idx) {
   if (i < 8) return { kind: 'solid', colours: [BASE_COLOURS[i]] };
   if (i < 16) {
     const p = i - 8;
-    return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[(p + 4) % 8]] };
+    return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[HSPLIT_PARTNER[p]]] };
   }
-  if (i < 24) {
-    const p = i - 16;
-    return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[(p + 3) % 8]] };
-  }
-  const j = i - 24;
-  return {
-    kind: 'quad',
-    colours: [
-      BASE_COLOURS[j % 8],
-      BASE_COLOURS[(j + 2) % 8],
-      BASE_COLOURS[(j + 4) % 8],
-      BASE_COLOURS[(j + 6) % 8]
-    ]
-  };
+  const p = i - 16;
+  return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[VSPLIT_PARTNER[p]]] };
 }
 
 function backgroundForArrangement(arr) {
@@ -76,8 +71,6 @@ function backgroundForArrangement(arr) {
     case 'solid':  return c[0];
     case 'hsplit': return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
     case 'vsplit': return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
-    case 'quad':
-      return `conic-gradient(from 45deg, ${c[1]} 0 90deg, ${c[3]} 90deg 180deg, ${c[2]} 180deg 270deg, ${c[0]} 270deg 360deg)`;
     default: return c[0];
   }
 }
@@ -554,14 +547,10 @@ function arrangementLabel(i) {
   if (i < 8) return `${COLOUR_NAMES[i]}`;
   if (i < 16) {
     const p = i - 8;
-    return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[(p + 4) % 8]} — top/bottom`;
+    return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[HSPLIT_PARTNER[p]]} — top/bottom`;
   }
-  if (i < 24) {
-    const p = i - 16;
-    return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[(p + 3) % 8]} — left/right`;
-  }
-  const j = i - 24;
-  return `${COLOUR_NAMES[j % 8]}+${COLOUR_NAMES[(j + 2) % 8]}+${COLOUR_NAMES[(j + 4) % 8]}+${COLOUR_NAMES[(j + 6) % 8]} — quad`;
+  const p = i - 16;
+  return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[VSPLIT_PARTNER[p]]} — left/right`;
 }
 
 // Tracks which session rows the user has expanded (open across re-renders).

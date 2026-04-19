@@ -93,16 +93,16 @@ function runEdgeTts(voice, text) {
 // =============================================================================
 // Inlined logic from app/renderer.js (kept in lock-step with the source).
 // =============================================================================
-const PALETTE_SIZE = 32;
-const BASE_COLOURS = ['#ff5e5e','#ffa726','#ffd93d','#4ade80','#60a5fa','#c084fc','#a08060','#e0e0e0'];
+const PALETTE_SIZE = 24;
+const BASE_COLOURS = ['#ff5e5e','#ffa726','#ffd93d','#4ade80','#60a5fa','#c084fc','#c97b50','#e0e0e0'];
+const HSPLIT_PARTNER = [3, 4, 5, 0, 1, 2, 7, 6];
+const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
 
 function arrangementForIndex(idx) {
   const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
   if (i < 8)  return { kind: 'solid',  colours: [BASE_COLOURS[i]] };
-  if (i < 16) { const p = i - 8;  return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[(p+4)%8]] }; }
-  if (i < 24) { const p = i - 16; return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[(p+3)%8]] }; }
-  const j = i - 24;
-  return { kind: 'quad', colours: [BASE_COLOURS[j%8], BASE_COLOURS[(j+2)%8], BASE_COLOURS[(j+4)%8], BASE_COLOURS[(j+6)%8]] };
+  if (i < 16) { const p = i - 8;  return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[HSPLIT_PARTNER[p]]] }; }
+  const p = i - 16; return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[VSPLIT_PARTNER[p]]] };
 }
 
 function extractSessionShort(filename) {
@@ -119,9 +119,9 @@ function isClipFile(filename) { return /-clip-/.test(filename); }
 // =============================================================================
 
 describe('PALETTE', () => {
-  it('arrangementForIndex covers all 32 distinct slots', () => {
+  it('arrangementForIndex covers all 24 distinct slots', () => {
     const seen = new Set();
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < 24; i++) {
       const a = arrangementForIndex(i);
       const key = `${a.kind}:${a.colours.join(',')}`;
       if (seen.has(key)) throw new Error(`duplicate at index ${i}: ${key}`);
@@ -131,15 +131,28 @@ describe('PALETTE', () => {
   it('solid 0-7 are single colours', () => {
     for (let i = 0; i < 8; i++) assertEqual(arrangementForIndex(i).kind, 'solid');
   });
-  it('hsplit 8-15 have two colours', () => {
+  it('hsplit 8-15 have two distinct colours each', () => {
     for (let i = 8; i < 16; i++) {
       const a = arrangementForIndex(i);
       assertEqual(a.kind, 'hsplit');
       assertEqual(a.colours.length, 2);
+      if (a.colours[0] === a.colours[1]) throw new Error(`hsplit ${i} pairs identical colours`);
     }
   });
-  it('quad 24-31 have four colours', () => {
-    for (let i = 24; i < 32; i++) assertEqual(arrangementForIndex(i).colours.length, 4);
+  it('vsplit 16-23 have two distinct colours each', () => {
+    for (let i = 16; i < 24; i++) {
+      const a = arrangementForIndex(i);
+      assertEqual(a.kind, 'vsplit');
+      assertEqual(a.colours.length, 2);
+      if (a.colours[0] === a.colours[1]) throw new Error(`vsplit ${i} pairs identical colours`);
+    }
+  });
+  it('hsplit and vsplit pairings differ (so the pairs are visually distinct)', () => {
+    for (let p = 0; p < 8; p++) {
+      if (HSPLIT_PARTNER[p] === VSPLIT_PARTNER[p]) {
+        throw new Error(`base ${p} has identical h+v partner ${HSPLIT_PARTNER[p]}`);
+      }
+    }
   });
 });
 
@@ -417,16 +430,19 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
 });
 
 describe('PALETTE EDGE CASES', () => {
-  it('arrangementForIndex wraps at 32 (33 -> same as 1)', () => {
-    assertEqual(arrangementForIndex(33), arrangementForIndex(1));
+  it('arrangementForIndex wraps at 24 (25 -> same as 1)', () => {
+    assertEqual(arrangementForIndex(25), arrangementForIndex(1));
   });
-  it('arrangementForIndex handles negatives (-1 -> index 31)', () => {
-    assertEqual(arrangementForIndex(-1).kind, arrangementForIndex(31).kind);
+  it('arrangementForIndex handles negatives (-1 -> index 23)', () => {
+    assertEqual(arrangementForIndex(-1).kind, arrangementForIndex(23).kind);
   });
-  it('quad arrangement uses 4 distinct colours', () => {
-    for (let i = 24; i < 32; i++) {
-      const cols = arrangementForIndex(i).colours;
-      if (new Set(cols).size !== 4) throw new Error(`quad ${i} has dup colours: ${cols}`);
+  it('split partners are complementary (different from same-index reverse)', () => {
+    // hsplit at primary p has partner HSPLIT_PARTNER[p]. The reverse pair
+    // (same two colours flipped top/bottom) lives at HSPLIT_PARTNER[p].
+    // So the table must be its own inverse to guarantee 8 distinct slots.
+    for (let p = 0; p < 8; p++) {
+      assertEqual(HSPLIT_PARTNER[HSPLIT_PARTNER[p]], p, `hsplit not self-inverse at ${p}`);
+      assertEqual(VSPLIT_PARTNER[VSPLIT_PARTNER[p]], p, `vsplit not self-inverse at ${p}`);
     }
   });
 });

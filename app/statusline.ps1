@@ -38,31 +38,26 @@ foreach ($ch in $short.ToCharArray()) { $sum += [int]$ch }
 
 # Emoji code points: red, orange, yellow, green, blue, purple, brown, white.
 $codepoints = @(0x1F534, 0x1F7E0, 0x1F7E1, 0x1F7E2, 0x1F535, 0x1F7E3, 0x1F7E4, 0x26AA)
-# 32 arrangement slots:
-#   0-7 solid / 8-15 hsplit / 16-23 vsplit / 24-31 quad
+# 24 arrangement slots: 0-7 solid / 8-15 hsplit / 16-23 vsplit.
 # Must stay in lock-step with arrangementForIndex() in app/renderer.js.
-$paletteSize = 32
+$paletteSize = 24
+# Same partner tables as renderer.js -- complementary pairings for split arrangements.
+$hsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
+$vsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
 
 function Get-EmojiForIndex($idx) {
-    $i = $idx % 32
-    if ($i -lt 0) { $i += 32 }
+    $i = $idx % 24
+    if ($i -lt 0) { $i += 24 }
     if ($i -lt 8) {
         return [char]::ConvertFromUtf32($codepoints[$i])
     } elseif ($i -lt 16) {
         $p = $i - 8
-        $s = ($p + 4) % 8
-        return [char]::ConvertFromUtf32($codepoints[$p]) + [char]::ConvertFromUtf32($codepoints[$s])
-    } elseif ($i -lt 24) {
-        $p = $i - 16
-        $s = ($p + 3) % 8
+        $s = $hsplitPartner[$p]
         return [char]::ConvertFromUtf32($codepoints[$p]) + [char]::ConvertFromUtf32($codepoints[$s])
     } else {
-        $j = $i - 24
-        $out = ''
-        foreach ($o in @(0, 2, 4, 6)) {
-            $out += [char]::ConvertFromUtf32($codepoints[($j + $o) % 8])
-        }
-        return $out
+        $p = $i - 16
+        $s = $vsplitPartner[$p]
+        return [char]::ConvertFromUtf32($codepoints[$p]) + [char]::ConvertFromUtf32($codepoints[$s])
     }
 }
 
