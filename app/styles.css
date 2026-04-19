@@ -308,10 +308,19 @@ body.dock-right .bar {
 
 /* --- WALK CYCLE ---------------------------------------------------------
    Each leg bobs on its own track — legs 1+3 up while 2+4 down, then
-   swap. The offset looks like an inchworm shuffle, which at 20×18 px
-   reads as "walking" without needing actual articulation. Animation
-   runs only while .walking is on (audio is playing forward).
+   swap. The whole mascot body ALSO bobs up/down 2 px on the same 0.34 s
+   cycle, giving him that scurrying-bug look. Bob keyframes preserve
+   the base translate(-50%, -50%) centering (otherwise the mascot
+   would snap to its anchor). Skipped when he's flipped angry — the
+   backward-rotation rule wins there so he doesn't fight itself.
    -------------------------------------------------------------------- */
+.scrubber-wrap.walking:not(.scrubbing-backward) .scrubber-mascot {
+  animation: tt-body-bob 0.34s ease-in-out infinite;
+}
+@keyframes tt-body-bob {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, calc(-50% - 2px)); }
+}
 .scrubber-wrap.walking .scrubber-mascot .leg {
   transform-origin: center 100%;
   animation: tt-walk 0.34s ease-in-out infinite;
