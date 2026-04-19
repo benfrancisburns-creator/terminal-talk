@@ -33,7 +33,8 @@ const NEEDS_INSTALL = new Set([
   'SELF-CLEANUP WATCHDOG',
   'HARDENING: renderer CSP',
   'HARDENING: navigation guards',
-  'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP'
+  'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP',
+  'STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -252,45 +253,13 @@ describe('EDGE TTS WRAPPER', () => {
 });
 
 // =============================================================================
-// stripForTTS (duplicated from main.js so we can test the include-toggle logic)
+// stripForTTS — pulled from the canonical app/lib/text.js module so we're
+// testing the ACTUAL shipping implementation, not a duplicate that has to
+// be kept in lock-step. Previously this file carried its own ~40-line
+// copy that had already drifted (missing the shell-prompt / tool-use
+// rules). Audit CC-1 fix.
 // =============================================================================
-const STRIP_DEFAULTS = {
-  code_blocks: false, inline_code: false, urls: false,
-  headings: true, bullet_markers: false, image_alt: false
-};
-function stripForTTS(text, includes) {
-  const inc = { ...STRIP_DEFAULTS, ...(includes || {}) };
-  let t = text;
-  const codeBlocks = [];
-  if (inc.code_blocks) {
-    t = t.replace(/```(?:\w+)?\r?\n?([\s\S]*?)```/g, (_m, body) => { codeBlocks.push(' ' + body + ' '); return `\u0000CB${codeBlocks.length-1}\u0000`; });
-  } else {
-    t = t.replace(/```[\s\S]*?```/g, ' ');
-  }
-  if (inc.inline_code) {
-    t = t.replace(/`([^`]+)`/g, '$1');
-  } else {
-    t = t.replace(/`[^`]+`/g, ' ');
-  }
-  if (!inc.image_alt) t = t.replace(/!\[[^\]]*\]\([^)]+\)/g, ' ');
-  else                t = t.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
-  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-  if (!inc.urls) t = t.replace(/https?:\/\/\S+/g, ' ');
-  if (!inc.headings) t = t.replace(/^#+\s+.*$/gm, ' ');
-  else               t = t.replace(/^#+\s*/gm, '');
-  t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1').replace(/\*([^*\n]+)\*/g, '$1');
-  if (!inc.bullet_markers) {
-    t = t.replace(/^\s*[\u25cf\u23bf\u25b6\u25b8\u25ba\u25cb\u00b7\u25e6\u25aa\u25a0\u25a1\u25ab]\s*/gm, '');
-    t = t.replace(/^\s*[-*+]\s+/gm, '');
-    t = t.replace(/^\s*\d+\.\s+/gm, '');
-  }
-  t = t.replace(/Ctrl\+/g, 'control ');
-  t = t.replace(/Cmd\+/g, 'command ');
-  if (codeBlocks.length > 0) {
-    t = t.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlocks[+i]);
-  }
-  return t.replace(/\s+/g, ' ').trim();
-}
+const { stripForTTS } = require(path.join(APP_DIR, 'lib', 'text.js'));
 
 describe('SPEECH INCLUDES (stripForTTS)', () => {
   it('strips code blocks by default', () => {
@@ -919,6 +888,7 @@ describe('INSTALL SANITY', () => {
       'app/styles.css', 'app/package.json', 'app/wake-word-listener.py',
       'app/key_helper.py', 'app/edge_tts_speak.py', 'app/statusline.ps1',
       'app/sentence_split.py', 'app/synth_turn.py',
+      'app/lib/text.js',
       'hooks/speak-response.ps1', 'hooks/speak-notification.ps1',
       'hooks/speak-on-tool.ps1',
       'config.json'
@@ -932,6 +902,75 @@ describe('INSTALL SANITY', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(INSTALL_DIR, 'config.json'), 'utf8'));
     assertTruthy(cfg.voices, 'cfg.voices missing');
     assertTruthy(cfg.voices.edge_response, 'edge_response missing');
+  });
+});
+
+describe('STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)', () => {
+  // The canonical JS lives in app/lib/text.js. Python and PowerShell
+  // can't share that code so they carry their own mirrors. This test
+  // enforces that every rule class the canonical JS implements is also
+  // present in both mirrors — by looking for a telltale substring from
+  // each rule's regex source. Substring (not regex) matching is used
+  // deliberately: Python's `\*\*` emphasis regex and `**` exponentiation
+  // look identical to a regex search, which previously falsely passed
+  // the bold/italic check on synth_turn.py despite the regex there
+  // being fine and the alternative mirror (PS) actually missing it.
+  const canonicalPath = path.join(APP_DIR, 'lib', 'text.js');
+  const pythonPath    = path.join(APP_DIR, 'synth_turn.py');
+  const psPath        = path.join(INSTALL_DIR, 'hooks', 'speak-response.ps1');
+
+  const canonical = fs.readFileSync(canonicalPath, 'utf8');
+  const python    = fs.readFileSync(pythonPath,    'utf8');
+  const ps        = fs.readFileSync(psPath,        'utf8');
+
+  // Each rule names a specific character sequence that a correct
+  // implementation is expected to include somewhere in its source —
+  // the regex-escaped form of the markdown token being stripped.
+  // Example: a correct emphasis-stripping regex uses the literal
+  // 4-char sequence `\*\*` to match a pair of asterisks.
+  const RULES = [
+    { name: 'code fence ```',               needle: '```' },
+    { name: 'inline backtick `',            needle: '`' },
+    { name: 'markdown link bracket \\[',    needle: '\\[' },
+    { name: 'bare https URL',               needle: 'https' },
+    { name: 'heading hash #',               needle: '#' },
+    { name: 'bold/italic \\*\\*',           needle: '\\*\\*' },
+    { name: 'underscore emphasis __',       needle: '__' },
+    { name: 'Ctrl\\+ keyboard modifier',    needle: 'Ctrl\\+' },
+    { name: 'Cmd\\+ keyboard modifier',     needle: 'Cmd\\+' },
+  ];
+
+  for (const rule of RULES) {
+    it(`Python mirror handles "${rule.name}"`, () => {
+      if (!python.includes(rule.needle)) {
+        throw new Error(`synth_turn.py: expected substring "${rule.needle}" from rule "${rule.name}" is missing`);
+      }
+    });
+    it(`PowerShell mirror handles "${rule.name}"`, () => {
+      if (!ps.includes(rule.needle)) {
+        throw new Error(`speak-response.ps1: expected substring "${rule.needle}" from rule "${rule.name}" is missing`);
+      }
+    });
+  }
+
+  it('canonical module exports both stripForTTS and DEFAULTS', () => {
+    if (!/module\.exports\s*=\s*\{\s*stripForTTS\s*,\s*DEFAULTS\s*\}/.test(canonical)) {
+      throw new Error('app/lib/text.js must export { stripForTTS, DEFAULTS }');
+    }
+  });
+
+  it('main.js requires the canonical module instead of reimplementing', () => {
+    const main = fs.readFileSync(path.join(APP_DIR, 'main.js'), 'utf8');
+    if (!/require\(['"]\.\/lib\/text['"]\)/.test(main)) {
+      throw new Error("main.js must require('./lib/text') — don't reimplement stripForTTS");
+    }
+    // Guard against re-inlining the logic: main.js should have AT MOST
+    // the thin wrapper function referring to _stripForTTS, not a real
+    // body that handles every markdown rule.
+    const bodyGuard = /function stripForTTS\(text\) \{[\s\S]{0,200}_stripForTTS/;
+    if (!bodyGuard.test(main)) {
+      throw new Error('main.js stripForTTS must be a thin wrapper over ./lib/text');
+    }
   });
 });
 

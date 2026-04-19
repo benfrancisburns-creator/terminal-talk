@@ -525,59 +525,12 @@ function loadApiKey() {
   } catch { return null; }
 }
 
+// Canonical stripForTTS lives in app/lib/text.js — this file just wraps
+// it so the existing single call site at L~800 can stay `stripForTTS(text)`
+// without knowing about the library's explicit-flags signature.
+const { stripForTTS: _stripForTTS } = require('./lib/text');
 function stripForTTS(text) {
-  let t = text;
-  const inc = CFG.speech_includes || DEFAULTS.speech_includes;
-
-  // Code blocks: when included, keep content only (drop fences + language tag).
-  const codeBlocks = [];
-  if (inc.code_blocks) {
-    t = t.replace(/```(?:\w+)?\r?\n?([\s\S]*?)```/g, (_m, body) => {
-      codeBlocks.push(' ' + body + ' ');
-      return `\u0000CB${codeBlocks.length - 1}\u0000`;
-    });
-  } else {
-    t = t.replace(/```[\s\S]*?```/g, ' ');
-  }
-  if (inc.inline_code) {
-    t = t.replace(/`([^`]+)`/g, '$1');
-  } else {
-    t = t.replace(/`[^`]+`/g, ' ');
-  }
-  if (!inc.image_alt) t = t.replace(/!\[[^\]]*\]\([^)]+\)/g, ' ');
-  else                t = t.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
-  // Link TEXT always kept, URL always dropped from [text](url)
-  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-  if (!inc.urls) t = t.replace(/https?:\/\/\S+/g, ' ');
-  if (!inc.headings) t = t.replace(/^#+\s+.*$/gm, ' ');
-  else               t = t.replace(/^#+\s*/gm, '');
-
-  // Markdown emphasis marks always stripped; text survives.
-  t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
-  t = t.replace(/__([^_]+)__/g, '$1');
-  t = t.replace(/\*([^*\n]+)\*/g, '$1');
-
-  if (!inc.bullet_markers) {
-    t = t.replace(/^\s*[●⎿▶▸►○·◦▪■□▫]\s*/gm, '');
-    t = t.replace(/^\s*[-*+]\s+/gm, '');
-    t = t.replace(/^\s*\d+\.\s+/gm, '');
-  }
-
-  // Always drop shell prompts, quote prefixes, and tool-use noise.
-  t = t.replace(/^\s*\$\s.*$/gm, '');
-  t = t.replace(/^\s*>\s+.*$/gm, '');
-  t = t.replace(/Ran \d+ .{0,40}hooks?.*/gi, '');
-
-  // Say keyboard modifiers naturally.
-  t = t.replace(/Ctrl\+/g, 'control ');
-  t = t.replace(/Cmd\+/g, 'command ');
-
-  // Restore preserved code blocks if any.
-  if (codeBlocks.length > 0) {
-    t = t.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlocks[+i]);
-  }
-
-  return t.replace(/\s+/g, ' ').trim();
+  return _stripForTTS(text, CFG.speech_includes || DEFAULTS.speech_includes);
 }
 
 function chunkText(text, maxLen = 3800) {
