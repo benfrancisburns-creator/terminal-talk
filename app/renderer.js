@@ -1017,6 +1017,17 @@ if (window.api.onForceExpand) {
     cancelCollapse();
   });
 }
+// Orientation changes: main sends { kind: 'horizontal'|'vertical', edge }.
+// We toggle CSS classes on body so styles can restyle the bar top row,
+// dot row, and collapsed strip appropriately without runtime JS layout.
+if (window.api.onSetOrientation) {
+  window.api.onSetOrientation(({ kind, edge }) => {
+    document.body.classList.toggle('vertical', kind === 'vertical');
+    document.body.classList.remove('dock-left', 'dock-right', 'dock-top', 'dock-bottom');
+    if (edge) document.body.classList.add(`dock-${edge}`);
+    renderDots();  // re-render so dot order reflects the new orientation
+  });
+}
 
 // Don't auto-collapse on startup — user needs to see the toolbar first.
 // The collapse cycle starts on the first mouseleave or new-clip arrival.

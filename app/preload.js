@@ -27,5 +27,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   onForceExpand: (cb) => {
     ipcRenderer.on('force-expand', () => cb());
+  },
+  onSetOrientation: (cb) => {
+    ipcRenderer.on('set-orientation', (_e, payload) => cb(payload));
   }
 });

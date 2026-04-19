@@ -170,28 +170,63 @@ function saveWindowPosition() {
   } catch (e) { diag(`saveWindowPosition fail: ${e.message}`); }
 }
 
-function snapToEdgeIfClose() {
-  if (!win || win.isDestroyed()) return;
+// Window dimensions for each orientation. Horizontal stays the 680×114
+// letterbox we've always shipped. Vertical is a 56 px wide column that's
+// as tall as the workArea minus margins — fits all controls stacked plus
+// room for dots running downward.
+const DIM_HORIZONTAL = { width: 680, height: 114 };
+const DIM_VERTICAL_WIDTH = 56;
+function verticalHeight() {
+  const { height } = screen.getPrimaryDisplay().workArea;
+  return Math.min(600, height - 24);
+}
+
+function findNearestEdge() {
+  if (!win || win.isDestroyed()) return null;
   const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
   const [x, y] = win.getPosition();
   const [w, h] = win.getSize();
+  const distances = [
+    { name: 'left',   dist: x - dispX },
+    { name: 'right',  dist: (dispX + dispW) - (x + w) },
+    { name: 'top',    dist: y - dispY },
+    { name: 'bottom', dist: (dispY + dispH) - (y + h) },
+  ].filter(e => e.dist >= 0).sort((a, b) => a.dist - b.dist);
+  if (distances.length === 0) return null;
+  return distances[0].dist < SNAP_THRESHOLD_PX ? distances[0].name : null;
+}
 
-  const distLeft   = x - dispX;
-  const distTop    = y - dispY;
-  const distRight  = (dispX + dispW) - (x + w);
-  const distBottom = (dispY + dispH) - (y + h);
-
-  let newX = x;
-  let newY = y;
-  if (distLeft   >= 0 && distLeft   < SNAP_THRESHOLD_PX) newX = dispX;
-  if (distRight  >= 0 && distRight  < SNAP_THRESHOLD_PX) newX = dispX + dispW - w;
-  if (distTop    >= 0 && distTop    < SNAP_THRESHOLD_PX) newY = dispY;
-  if (distBottom >= 0 && distBottom < SNAP_THRESHOLD_PX) newY = dispY + dispH - h;
-
-  if (newX !== x || newY !== y) {
-    win.setPosition(newX, newY);
-    diag(`snap: (${x},${y}) -> (${newX},${newY})`);
+function applyDock(edge) {
+  if (!win || win.isDestroyed() || !edge) return;
+  const work = screen.getPrimaryDisplay().workArea;
+  const isVertical = edge === 'left' || edge === 'right';
+  let bounds;
+  if (isVertical) {
+    const h = verticalHeight();
+    bounds = {
+      x: edge === 'left' ? work.x : work.x + work.width - DIM_VERTICAL_WIDTH,
+      y: work.y + Math.floor((work.height - h) / 2),
+      width: DIM_VERTICAL_WIDTH,
+      height: h,
+    };
+  } else {
+    bounds = {
+      x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
+      y: edge === 'top' ? work.y : work.y + work.height - DIM_HORIZONTAL.height,
+      width: DIM_HORIZONTAL.width,
+      height: DIM_HORIZONTAL.height,
+    };
   }
+  win.setBounds(bounds);
+  CFG.window = { ...(CFG.window || {}), x: bounds.x, y: bounds.y, dock: edge };
+  saveConfig(CFG);
+  try { win.webContents.send('set-orientation', { kind: isVertical ? 'vertical' : 'horizontal', edge }); } catch {}
+  diag(`dock: ${edge} -> ${JSON.stringify(bounds)}`);
+}
+
+function snapToEdgeIfClose() {
+  const edge = findNearestEdge();
+  if (edge) { applyDock(edge); return; }
   saveWindowPosition();
 }
 
@@ -199,18 +234,24 @@ function createWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   const winWidth = 680;
   const winHeight = 114;  // 36 controls + 4 gap + 44 dot row + 14 padding + 12 margin + halo breathing
-  // Restore last-saved position if present and still on-screen. Falls back
-  // to centered top. Guards against configs saved for a different monitor
-  // layout that would put the toolbar off the visible workArea.
+  // Restore last-saved position + dock orientation if present and still
+  // on-screen. Falls back to centered top.
   const saved = CFG.window || {};
   const { x: waX, y: waY, width: waW, height: waH } = screen.getPrimaryDisplay().workArea;
-  let startX = typeof saved.x === 'number' ? saved.x : Math.floor((width - winWidth) / 2);
+  const savedDock = saved.dock;
+  let startW = winWidth;
+  let startH = winHeight;
+  if (savedDock === 'left' || savedDock === 'right') {
+    startW = DIM_VERTICAL_WIDTH;
+    startH = verticalHeight();
+  }
+  let startX = typeof saved.x === 'number' ? saved.x : Math.floor((width - startW) / 2);
   let startY = typeof saved.y === 'number' ? saved.y : 12;
-  if (startX < waX - 50 || startX > waX + waW - 50) startX = Math.floor((width - winWidth) / 2);
+  if (startX < waX - 50 || startX > waX + waW - 50) startX = Math.floor((width - startW) / 2);
   if (startY < waY - 50 || startY > waY + waH - 50) startY = 12;
   win = new BrowserWindow({
-    width: winWidth,
-    height: winHeight,
+    width: startW,
+    height: startH,
     x: startX,
     y: startY,
     frame: false,
@@ -234,6 +275,13 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'floating');
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
+
+  // Send initial orientation so renderer applies the right CSS on first paint.
+  win.webContents.on('did-finish-load', () => {
+    const kind = (savedDock === 'left' || savedDock === 'right') ? 'vertical' : 'horizontal';
+    const edge = savedDock || 'top';
+    try { win.webContents.send('set-orientation', { kind, edge }); } catch {}
+  });
 
   // Snap on move-end. 'moved' fires on Windows after the drag completes;
   // debounce on 'move' as a fallback for platforms that don't emit 'moved'.
