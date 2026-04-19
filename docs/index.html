@@ -115,12 +115,23 @@ section { padding: 80px 24px; }
 .talk-row { display: flex; align-items: center; gap: 44px; flex-wrap: wrap; justify-content: center; }
 .mascot-pair { display: flex; align-items: center; gap: 20px; }
 .mascot-svg {
+  /* Sized to match TALK row height (6 × 20px = 120). Hard two-step
+     shadow only — the previous ambient glow pushed the visible bottom
+     past TALK's baseline. Margin reserves the 6px shadow offset so
+     the layout box is exactly 120, aligning with TALK. */
   filter:
     drop-shadow(3px 3px 0 #b36620)
-    drop-shadow(6px 6px 0 #7a3f0f)
-    drop-shadow(0 0 14px rgba(255,140,26,0.28));
+    drop-shadow(6px 6px 0 #7a3f0f);
   margin-right: 6px;
   margin-bottom: 6px;
+}
+.cloud-svg {
+  display: block;
+  /* Pixel-chunky drop shadow behind the speech bubble, matching the
+     mascot's hard-shadow style for visual consistency. */
+  filter:
+    drop-shadow(4px 4px 0 rgba(10,15,25,0.85))
+    drop-shadow(8px 8px 0 rgba(0,0,0,0.5));
 }
 .cloud-svg text {
   font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
