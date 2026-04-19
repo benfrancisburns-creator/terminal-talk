@@ -132,7 +132,13 @@ function dotColour(filePath) {
   return sessionColourFromShort(extractSessionShort(name));
 }
 
+// Auto-prune toggle. true = 20 s after play, clips disappear on their own.
+// false = clips stack up until user clears them (useful when walking away
+// from the machine and wanting to review on return).
+let autoPruneEnabled = true;
+
 function scheduleAutoDelete(p, wasManual = false) {
+  if (!autoPruneEnabled) return;  // respect the user's toggle
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
   const delay = wasManual ? AUTO_DELETE_MS : AUTO_DELETE_AUTO_MS;
   const t = setTimeout(async () => {
@@ -145,6 +151,22 @@ function scheduleAutoDelete(p, wasManual = false) {
     try { await window.api.deleteFile(p); } catch {}
   }, delay);
   deleteTimers.set(p, t);
+}
+
+function setAutoPruneEnabled(on) {
+  autoPruneEnabled = !!on;
+  if (!autoPruneEnabled) {
+    // Cancel all pending deletes so clips already ticking down stay put.
+    for (const [p, t] of deleteTimers) { clearTimeout(t); }
+    deleteTimers.clear();
+  } else {
+    // Schedule deletes for any already-played clips (not currently playing).
+    for (const f of queue) {
+      if (f.path !== currentPath && playedPaths.has(f.path)) {
+        scheduleAutoDelete(f.path, heardPaths.has(f.path));
+      }
+    }
+  }
 }
 
 function cancelAutoDelete(p) {
@@ -826,6 +848,21 @@ async function loadSettings() {
   currentPlaybackSpeed = (cfg.playback && cfg.playback.speed) || 1.25;
   speedSlider.value = Math.round(currentPlaybackSpeed * 100);
   speedValueEl.textContent = `${currentPlaybackSpeed.toFixed(2)}x`;
+
+  const pruneToggle = document.getElementById('autoPruneToggle');
+  const pruneHint = document.getElementById('autoPruneHint');
+  const pruneInitial = cfg.playback && cfg.playback.auto_prune !== false;
+  setAutoPruneEnabled(pruneInitial);
+  if (pruneToggle) {
+    pruneToggle.checked = pruneInitial;
+    if (pruneHint) pruneHint.textContent = pruneInitial ? '20 s after play' : 'off — clips stack up';
+    pruneToggle.addEventListener('change', async () => {
+      const on = pruneToggle.checked;
+      setAutoPruneEnabled(on);
+      if (pruneHint) pruneHint.textContent = on ? '20 s after play' : 'off — clips stack up';
+      await window.api.updateConfig({ playback: { auto_prune: on } });
+    });
+  }
 
   // Global voice / include selects were removed in favour of per-session controls.
   // Guard so the renderer doesn't crash when the elements are absent.

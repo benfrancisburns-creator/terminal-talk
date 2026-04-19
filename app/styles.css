@@ -273,6 +273,45 @@ body.settings-open .panel { display: block; }
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* Compact iOS-style toggle switch for on/off panel controls. */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  min-width: 34px;
+  margin: 0;
+  cursor: pointer;
+}
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  transition: background .15s ease;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .15s ease;
+}
+.toggle input:checked + .toggle-slider {
+  background: rgba(201, 123, 80, 0.85);  /* copper accent from design system */
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
 .panel .row select {
   flex: 1;
   background: rgba(255, 255, 255, 0.06);

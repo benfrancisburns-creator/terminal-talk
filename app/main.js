@@ -28,7 +28,9 @@ const DEFAULTS = {
     toggle_listening: 'Control+Shift+J'
   },
   playback: {
-    speed: 1.25
+    speed: 1.25,
+    auto_prune: true  // 20s auto-prune after each clip plays. Toggle off when
+                      // walking away so clips stack up for later review.
   },
   speech_includes: {
     code_blocks: false,
