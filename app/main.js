@@ -347,26 +347,80 @@ function createWindow() {
     try { win.webContents.send('set-orientation', { kind, edge }); } catch {}
   });
 
-  // Track drag start on first move event of a drag, then settle + snap
-  // once the stream of move events stops. isApplyingDock suppresses the
-  // move events emitted by our own setBounds call inside applyDock.
-  const onMove = () => {
-    if (isApplyingDock) { dragStart = null; return; }
-    if (!dragStart) {
-      const [sx, sy] = win.getPosition();
-      dragStart = { x: sx, y: sy };
-    }
-    if (moveSettleTimerRef.current) clearTimeout(moveSettleTimerRef.current);
-    moveSettleTimerRef.current = setTimeout(snapAfterDrag, 200);
-  };
-  win.on('move', onMove);
-  win.on('moved', () => {
-    if (isApplyingDock) return;
+  // Drag detection — belt and braces because Electron's `moved` event is
+  // unreliable on Windows (issue #34741): it doesn't fire when the user
+  // drags to a screen edge (Aero Snap intercepts). We combine four
+  // signals so at least one fires whatever path the OS takes:
+  //   1. will-move    — earliest possible signal a drag is starting.
+  //                     Captures dragStart here BEFORE `move` fires.
+  //   2. move         — continuous during drag; resets the settle timer.
+  //   3. moved        — sometimes fires at end; best path when it does.
+  //   4. position poll — 100 ms poll while dragging: if position is
+  //                     stable for 3 consecutive reads (300 ms), treat
+  //                     as drag-end and fire snap. Covers the Aero
+  //                     intercept case where no final event arrives.
+  let isDragging = false;
+  let lastPolledPos = [0, 0];
+  let stableReadCount = 0;
+  let pollInterval = null;
+
+  function startPollingForDragEnd() {
+    if (pollInterval) return;
+    stableReadCount = 0;
+    lastPolledPos = win.getPosition();
+    pollInterval = setInterval(() => {
+      if (isApplyingDock) return;
+      const [x, y] = win.getPosition();
+      if (x === lastPolledPos[0] && y === lastPolledPos[1]) {
+        stableReadCount++;
+        if (stableReadCount >= 3) {  // 300 ms stable = drag ended
+          stopPollingForDragEnd();
+          fireSnapIfDragging();
+        }
+      } else {
+        stableReadCount = 0;
+        lastPolledPos = [x, y];
+      }
+    }, 100);
+  }
+  function stopPollingForDragEnd() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  }
+  function fireSnapIfDragging() {
+    if (!isDragging) return;
+    isDragging = false;
     if (moveSettleTimerRef.current) {
       clearTimeout(moveSettleTimerRef.current);
       moveSettleTimerRef.current = null;
     }
     snapAfterDrag();
+  }
+
+  win.on('will-move', () => {
+    if (isApplyingDock) return;
+    if (!isDragging) {
+      isDragging = true;
+      const [sx, sy] = win.getPosition();
+      dragStart = { x: sx, y: sy };
+      startPollingForDragEnd();
+    }
+  });
+  const onMove = () => {
+    if (isApplyingDock) { dragStart = null; return; }
+    if (!isDragging) {
+      isDragging = true;
+      const [sx, sy] = win.getPosition();
+      dragStart = { x: sx, y: sy };
+      startPollingForDragEnd();
+    }
+    if (moveSettleTimerRef.current) clearTimeout(moveSettleTimerRef.current);
+    moveSettleTimerRef.current = setTimeout(() => fireSnapIfDragging(), 500);
+  };
+  win.on('move', onMove);
+  win.on('moved', () => {
+    if (isApplyingDock) return;
+    stopPollingForDragEnd();
+    fireSnapIfDragging();
   });
 }
 
