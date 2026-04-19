@@ -30,7 +30,7 @@ const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const SHOTS = [
   { n: 1, slug: 'idle',             height: 720 },
   { n: 2, slug: 'three-sessions',   height: 640 },
-  { n: 3, slug: 'mixed-states',     height: 1020 },
+  { n: 3, slug: 'mixed-states',     height: 1160 },
   { n: 4, slug: 'settings-panel',   height: 1400 },
   { n: 5, slug: 'snapped-top',      height: 720 },
 ];
