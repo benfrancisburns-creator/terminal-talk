@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo/lettered-dots-banner-1200x400.svg" alt="Terminal Talk" width="720">
+  <img src="docs/assets/wallpaper/terminal-talk-wallpaper.png" alt="Terminal Talk — coloured ASCII wordmark, pixel mascot and HEY TT speech bubble" width="900">
 </p>
 
 <p align="center">
