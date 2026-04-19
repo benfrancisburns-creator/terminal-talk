@@ -437,6 +437,11 @@ def synthesize_parallel(
     next_release = [0]
     release_lock = Lock()
     written_count = [0]
+    # Monotonic mtime counter. os.replace preserves source mtime (which is
+    # synth-finish time — out of seq order because clips synthesise in
+    # parallel). The toolbar sorts playback by mtime, so we must stamp
+    # mtimes in release order to guarantee playback matches text order.
+    last_mtime = [time.time()]
 
     def _release_ready():
         """Move completed clips to queue dir in seq order. Called under lock."""
@@ -452,6 +457,12 @@ def synthesize_parallel(
             final = QUEUE_DIR / f'{turn_ts}-{prefix}{seq:04d}-{session_short}.mp3'
             try:
                 os.replace(tmp, final)
+                # Force monotonically increasing mtime so queue playback
+                # order matches seq order. 2 ms steps are well above NTFS
+                # (100 ns) and ext4 (1 ns) resolution, so no ties.
+                next_mtime = max(time.time(), last_mtime[0] + 0.002)
+                os.utime(final, (next_mtime, next_mtime))
+                last_mtime[0] = next_mtime
                 written_count[0] += 1
             except Exception as e:
                 _log(f'release move fail seq={seq}: {e}')
