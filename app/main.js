@@ -181,19 +181,37 @@ function verticalHeight() {
   return Math.min(600, height - 24);
 }
 
-function findNearestEdge() {
+// Drag-intent tracking. Without this, snapping from a diagonal drag to a
+// corner picks whichever of (horizontal-edge | vertical-edge) happens to
+// be closer, which is usually wrong — the user clearly meant the one
+// they travelled TOWARDS, not the one that happens to be nearer after
+// they let go. Ben hit this: dragged the 680 px horizontal bar to the
+// right, but since it was also near the top, it snapped back to top
+// horizontal instead of going vertical on the right.
+let dragStart = null;          // { x, y } captured on first move event of a drag
+let isApplyingDock = false;    // suppresses our own setBounds from re-triggering snap
+
+function findDockedEdge(dX, dY) {
   if (!win || win.isDestroyed()) return null;
   const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
   const [x, y] = win.getPosition();
   const [w, h] = win.getSize();
-  const distances = [
-    { name: 'left',   dist: x - dispX },
-    { name: 'right',  dist: (dispX + dispW) - (x + w) },
-    { name: 'top',    dist: y - dispY },
-    { name: 'bottom', dist: (dispY + dispH) - (y + h) },
-  ].filter(e => e.dist >= 0).sort((a, b) => a.dist - b.dist);
-  if (distances.length === 0) return null;
-  return distances[0].dist < SNAP_THRESHOLD_PX ? distances[0].name : null;
+  const candidates = [
+    { name: 'left',   dist: x - dispX,                     axis: 'x' },
+    { name: 'right',  dist: (dispX + dispW) - (x + w),     axis: 'x' },
+    { name: 'top',    dist: y - dispY,                     axis: 'y' },
+    { name: 'bottom', dist: (dispY + dispH) - (y + h),     axis: 'y' },
+  ].filter(e => e.dist >= 0 && e.dist < SNAP_THRESHOLD_PX);
+  if (candidates.length === 0) return null;
+  // If drag direction known, prefer edges on the axis the user moved along.
+  // Horizontal drag → left/right (vertical dock). Vertical drag → top/bottom.
+  if (dX !== undefined && dY !== undefined && Math.abs(dX - dY) > 10) {
+    const preferAxis = dX > dY ? 'x' : 'y';
+    const preferred = candidates.filter(e => e.axis === preferAxis);
+    if (preferred.length > 0) return preferred.sort((a, b) => a.dist - b.dist)[0].name;
+  }
+  // Otherwise (pure edge drop, no clear directional intent) take the nearest.
+  return candidates.sort((a, b) => a.dist - b.dist)[0].name;
 }
 
 function applyDock(edge) {
@@ -217,16 +235,39 @@ function applyDock(edge) {
       height: DIM_HORIZONTAL.height,
     };
   }
+  // Suppress snap-from-our-own-move during the setBounds call. Otherwise
+  // the move/moved events it emits would re-enter snapAfterDrag and
+  // bounce around the dock target.
+  isApplyingDock = true;
   win.setBounds(bounds);
+  setTimeout(() => { isApplyingDock = false; dragStart = null; }, 300);
+
   CFG.window = { ...(CFG.window || {}), x: bounds.x, y: bounds.y, dock: edge };
   saveConfig(CFG);
   try { win.webContents.send('set-orientation', { kind: isVertical ? 'vertical' : 'horizontal', edge }); } catch {}
   diag(`dock: ${edge} -> ${JSON.stringify(bounds)}`);
 }
 
-function snapToEdgeIfClose() {
-  const edge = findNearestEdge();
-  if (edge) { applyDock(edge); return; }
+function snapAfterDrag() {
+  if (!win || win.isDestroyed()) return;
+  const start = dragStart;
+  dragStart = null;
+  const [curX, curY] = win.getPosition();
+  // Micro-drags (e.g., user briefly grabbed the bar but didn't actually move
+  // it) shouldn't trigger a re-dock — would be disorienting.
+  if (start) {
+    const dX = Math.abs(curX - start.x);
+    const dY = Math.abs(curY - start.y);
+    if (dX + dY < 8) {
+      saveWindowPosition();
+      return;
+    }
+    const edge = findDockedEdge(dX, dY);
+    if (edge) { applyDock(edge); return; }
+  } else {
+    const edge = findDockedEdge();
+    if (edge) { applyDock(edge); return; }
+  }
   saveWindowPosition();
 }
 
@@ -283,15 +324,25 @@ function createWindow() {
     try { win.webContents.send('set-orientation', { kind, edge }); } catch {}
   });
 
-  // Snap on move-end. 'moved' fires on Windows after the drag completes;
-  // debounce on 'move' as a fallback for platforms that don't emit 'moved'.
+  // Track drag start on first move event of a drag, then settle + snap
+  // once the stream of move events stops. isApplyingDock suppresses the
+  // move events emitted by our own setBounds call inside applyDock.
   let moveSettleTimer = null;
-  const onSettle = () => {
+  const onMove = () => {
+    if (isApplyingDock) return;
+    if (!dragStart) {
+      const [sx, sy] = win.getPosition();
+      dragStart = { x: sx, y: sy };
+    }
     if (moveSettleTimer) clearTimeout(moveSettleTimer);
-    moveSettleTimer = setTimeout(() => { snapToEdgeIfClose(); }, 150);
+    moveSettleTimer = setTimeout(snapAfterDrag, 200);
   };
-  win.on('move', onSettle);
-  win.on('moved', () => { snapToEdgeIfClose(); });
+  win.on('move', onMove);
+  win.on('moved', () => {
+    if (isApplyingDock) return;
+    if (moveSettleTimer) clearTimeout(moveSettleTimer);
+    snapAfterDrag();
+  });
 }
 
 function toggleWindow() {
