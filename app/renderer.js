@@ -8,6 +8,32 @@ const fwd10Btn = document.getElementById('fwd10');
 const scrubber = document.getElementById('scrubber');
 const scrubberWrap = document.getElementById('scrubberWrap');
 const scrubberMascot = document.getElementById('scrubberMascot');
+
+// Claude Code's real tengu_spinner_words list (90 entries, sourced from
+// levindixon/tengu_spinner_words). Shown as a trail of vocabulary behind
+// the walking mascot — picked at random per emit so you never know
+// which one will pop out next. "Moonwalking" is in there; so is
+// "Flibbertigibbeting".
+const SPINNER_VERBS = [
+  'Accomplishing','Actioning','Actualizing','Baking','Booping','Brewing',
+  'Calculating','Cerebrating','Channelling','Churning','Clauding','Coalescing',
+  'Cogitating','Combobulating','Computing','Concocting','Conjuring','Considering',
+  'Contemplating','Cooking','Crafting','Creating','Crunching','Deciphering',
+  'Deliberating','Determining','Discombobulating','Divining','Doing','Effecting',
+  'Elucidating','Enchanting','Envisioning','Finagling','Flibbertigibbeting',
+  'Forging','Forming','Frolicking','Generating','Germinating','Hatching','Herding',
+  'Honking','Hustling','Ideating','Imagining','Incubating','Inferring','Jiving',
+  'Manifesting','Marinating','Meandering','Moonwalking','Moseying','Mulling',
+  'Mustering','Musing','Noodling','Percolating','Perusing','Philosophising',
+  'Pontificating','Pondering','Processing','Puttering','Puzzling','Reticulating',
+  'Ruminating','Scheming','Schlepping','Shimmying','Shucking','Simmering',
+  'Smooshing','Spelunking','Spinning','Stewing','Sussing','Synthesizing','Thinking',
+  'Tinkering','Transmuting','Unfurling','Unravelling','Vibing','Wandering',
+  'Whirring','Wibbling','Wizarding','Working','Wrangling'
+];
+function randomVerb() {
+  return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+}
 const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
 const clearPlayedBtn = document.getElementById('clearPlayed');
@@ -637,8 +663,44 @@ function syncScrubberFromAudio() {
   }
   positionScrubberMascot();
 }
+// Trail emission — every 850–1500 ms (jittered) while audio is playing
+// forward, drop a random spinner verb just behind the mascot. The word
+// is absolutely positioned inside scrubberWrap; once placed, it stays
+// put while the mascot continues walking forward, so the words look like
+// a trail he's leaving behind. Auto-removed on animationend.
+let nextVerbEmitAt = 0;
+function emitSpinnerVerbBehindMascot(now) {
+  if (!scrubberWrap || !scrubberMascot) return;
+  if (audio.paused || audio.ended || userScrubbing) return;
+  if (now < nextVerbEmitAt) return;
+  // Compute mascot's current x relative to the wrap (same math as
+  // positionScrubberMascot) so the word spawns just behind him.
+  const rail = scrubber.getBoundingClientRect();
+  const wrap = scrubberWrap.getBoundingClientRect();
+  if (wrap.width <= 0) return;
+  const pct = Number(scrubber.value) / Number(scrubber.max || 1000);
+  const usable = Math.max(0, rail.width - MASCOT_W);
+  const mascotX = (rail.left - wrap.left) + (MASCOT_W / 2) + pct * usable;
+
+  const word = document.createElement('span');
+  word.className = 'scrubber-trail-word';
+  word.textContent = randomVerb();
+  // Anchor to the left initially so we can measure offsetWidth, then
+  // shift so the word's RIGHT edge sits ~6 px behind the mascot's
+  // LEFT edge. translateX(-100%) works in CSS space after measurement.
+  // `left` is the x-coordinate where the word's RIGHT edge lands (the
+  // animation's translate(-100%, …) does the shift to make that true).
+  // Position it 4 px behind the mascot's left side.
+  word.style.left = (mascotX - (MASCOT_W / 2) - 4) + 'px';
+  scrubberWrap.appendChild(word);
+  word.addEventListener('animationend', () => word.remove(), { once: true });
+
+  nextVerbEmitAt = now + 850 + Math.random() * 650;
+}
+
 function scrubberTick() {
   syncScrubberFromAudio();
+  emitSpinnerVerbBehindMascot(performance.now());
   if (!audio.paused && !audio.ended) {
     scrubberRafId = requestAnimationFrame(scrubberTick);
   } else {

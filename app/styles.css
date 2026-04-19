@@ -383,6 +383,41 @@ body.dock-right .bar {
   50%      { transform: translateY(0)   rotate(22deg); }
 }
 
+/* --- SPINNER-VERB TRAIL -------------------------------------------------
+   As the mascot walks, Claude-Code-style thinking verbs (Moonwalking,
+   Cerebrating, Ruminating, Flibbertigibbeting, ~90 total) bubble out
+   behind him every ~1s and fade. Drift is subtle — the mascot moves
+   forward and the words just hang where they were emitted, so visually
+   they look like a trail he's leaving behind.
+   -------------------------------------------------------------------- */
+.scrubber-trail-word {
+  position: absolute;
+  top: -2px;                /* sit just above the rail, slightly above mascot */
+  font-family: 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 170, 80, 0.9);
+  text-shadow: 0 0 3px rgba(255, 140, 26, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: tt-verb-trail 1.35s ease-out forwards;
+  will-change: opacity, transform;
+}
+/* translate(-100%, Y) — the -100% on X keeps the word's RIGHT edge
+   anchored to its `left` coordinate (set in renderer.js to the mascot's
+   back), so the text trails LEFTWARD from the anchor no matter how long
+   the word is. Y drifts upward as it fades out. */
+@keyframes tt-verb-trail {
+  0%   { opacity: 0;    transform: translate(-100%, 2px); }
+  18%  { opacity: 0.95; transform: translate(-100%, 0); }
+  70%  { opacity: 0.75; transform: translate(-100%, -4px); }
+  100% { opacity: 0;    transform: translate(-100%, -10px); }
+}
+/* The scrubber-wrap needs to let trail words bleed upward out of its
+   18 px box so they fade above the bar controls instead of clipping. */
+.scrubber-wrap { overflow: visible; }
+
 /* --- ANGRY / UPSIDE-DOWN -----------------------------------------------
    Only triggered by backward drag — not just any time the scrubber value
    moves backward. 180° rotation flips smile into frown, eyes drop below
