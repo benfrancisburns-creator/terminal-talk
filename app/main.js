@@ -9,7 +9,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Force dark theme so native controls (select dropdowns, scrollbars) render dark.
 try { nativeTheme.themeSource = 'dark'; } catch {}
 
-const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
+// INSTALL_DIR points at the live install by default. In e2e tests we set
+// TT_INSTALL_DIR (or reuse a tmp dir) so tests don't touch real state.
+const INSTALL_DIR = process.env.TT_INSTALL_DIR || path.join(os.homedir(), '.terminal-talk');
 const QUEUE_DIR = path.join(INSTALL_DIR, 'queue');
 const CONFIG_PATH = path.join(INSTALL_DIR, 'config.json');
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
@@ -926,8 +928,16 @@ ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
 // the visible strip is transparent but still covered by the BrowserWindow.
 // forward:true lets the renderer keep receiving mousemove events (so it can
 // re-expand on hover) while clicks pass through to whatever's below.
+//
+// In TT_TEST_MODE (e2e tests) we deliberately no-op this. Playwright's
+// synthetic mouse events arrive faster than the mousemove→IPC→setIgnoreMouseEvents
+// round-trip can settle, so the test's click can race with click-through
+// being on and get passed through to nothing. Keeping the window fully
+// interactive in tests gives deterministic clicks without changing any
+// other logic under test.
 ipcMain.handle('set-clickthrough', (_e, on) => {
   if (!win || win.isDestroyed()) return false;
+  if (process.env.TT_TEST_MODE) return true;
   win.setIgnoreMouseEvents(!!on, { forward: true });
   return true;
 });
