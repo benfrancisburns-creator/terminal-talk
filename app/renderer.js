@@ -665,10 +665,17 @@ document.addEventListener('keydown', (e) => {
   // Don't hijack keys when the user is typing in an input/select (session labels, etc.)
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  // Belt-and-braces: only respond when the toolbar window is truly focused
+  // by the OS. Without this, a click on the bar can leave Windows thinking
+  // the toolbar still has focus even after you've moved on to another app,
+  // and a Space/Arrow you typed into the terminal would get caught here.
+  if (!document.hasFocus()) return;
+  // Escape hides the window — safe to keep because you'd never press Escape
+  // mid-sentence while typing. Space and Arrow keys were removed: too easy
+  // to fire accidentally while typing in another app that the toolbar had
+  // most-recent focus on. Use the on-screen Play button or configure
+  // Ctrl+Shift+P / Ctrl+Shift+O as global pause hotkeys in config.json.
   if (e.key === 'Escape') window.api.hideWindow();
-  if (e.key === ' ') { e.preventDefault(); playPauseBtn.click(); }
-  if (e.key === 'ArrowLeft') back10Btn.click();
-  if (e.key === 'ArrowRight') fwd10Btn.click();
 });
 
 // ============================================================================

@@ -29,7 +29,7 @@ Windows-only for now; Mac/Linux planned.
 | **Streaming auto-speak** | Claude's responses are spoken aloud as they're written. Audio starts ~2-3 seconds after Claude begins (not 6-24 seconds after the turn ends) because sentences synthesise in parallel and a `PreToolUse` hook fires mid-response whenever Claude is about to use a tool. Questions are extracted and spoken first so you hear the ask upfront. |
 | **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey jarvis"_ or press `Ctrl+Shift+S`, hear it read. |
 | **Permission-prompt alerts** | When Claude Code asks to use a tool, a voice notification fires so you don't have to watch the screen. |
-| **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag to any screen edge and it snaps flush. Left/right edges switch to a vertical column layout. After 15 s of no interaction it shrinks to a thin strip and becomes click-through; hover to re-expand. |
+| **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag near the top or bottom edge and it snaps flush (horizontal-only — no vertical dock). `Ctrl+Shift+A` toggles display on/off and is the recovery hotkey. After 15 s idle it shrinks to a thin strip and becomes click-through; hover to re-expand. |
 | **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. Sessions persist until you explicitly remove them (× button on each row of the Sessions table). |
 | **Per-session mute** | `🔊/🔇` button on each Sessions table row. Muted sessions skip edge-tts entirely (no synthesis, no clips, no audio) and show a `🔇` prefix in the terminal's statusline. Perfect for backgrounding chatty terminals. |
 | **Focus mode (priority)** | Star `☆ → ★` button on each Sessions row. When Terminal 2 is the one that matters and Terminal 3 is rambling 15 clips deep, starring T2 makes its clips jump the queue — they play before any other session's pending clip (no interruption of the clip currently playing). Only one session can be focused at a time; clicking another star swaps focus. Highlight-to-speak clips still win over everything. |
@@ -39,7 +39,7 @@ Windows-only for now; Mac/Linux planned.
 
 ## UI states
 
-Six annotated mocks rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/mocks-annotated.html) — open that page directly for the live interactive version with every annotation visible on the right-hand side.
+Five annotated mocks rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/mocks-annotated.html) — open that page directly for the live interactive version with every annotation visible on the right-hand side.
 
 ### 01 · Idle
 
@@ -81,15 +81,7 @@ The gear reveals three sections. **Playback** — speed 0.5–2.5× + auto-prune
   <img src="docs/screenshots/toolbar-snapped-top.png" alt="Toolbar flush against the top edge of a screen, flat-topped, with dots showing two heard reds plus three blues (one playing)" width="900">
 </p>
 
-Drag within ~20 px of the top edge and the bar snaps flush on release. Top corners flatten so it reads as docked. Same two-row letterbox — all controls still fit. The snap edge is persisted in `~/.terminal-talk/config.json` so it comes back to the same place on relaunch, on whichever monitor you left it.
-
-### 06 · Docked to the right edge (vertical)
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-docked-right.png" alt="Toolbar flipped to a narrow vertical column against the right edge of the screen, controls stacked top-to-bottom, dots flowing down" width="900">
-</p>
-
-Drag to the left or right edge and the bar flips to a narrow 48 px column running most of the screen's height — out of the way, still always-on-top. Back-10 · Play · Fwd-10 · clear · settings · close stack vertically. The scrubber and time readout are hidden (they don't fit); open the panel if you need to scrub. Dots flow top-to-bottom, oldest on top, run-gaps become vertical spacers. Best for wide monitors where a top bar steals vertical space from the editor.
+Drag within ~20 px of the top or bottom edge and the bar snaps flush on release. The bar is **horizontal-only** — left/right edges aren't snap targets. `Ctrl+Shift+A` toggles the whole toolbar on and off; if it ever ends up somewhere weird, that hotkey is the recovery path and the bar re-centres on primary if it's dragged off every display.
 
 ## Who it's for
 
@@ -135,11 +127,15 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 ### Hotkeys
 
+All hotkeys are **global** — they work from any app. Nothing is captured from the toolbar's own window, so typing `Space` or arrow keys anywhere else can never trip playback.
+
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Shift+A` | Show / hide the toolbar |
-| `Ctrl+Shift+S` | Read the highlighted text |
+| `Ctrl+Shift+A` | Show / hide the toolbar (your recovery hotkey) |
+| `Ctrl+Shift+S` | Read the currently highlighted text |
 | `Ctrl+Shift+J` | Toggle wake-word listening (chime confirms on/off) |
+| `Ctrl+Shift+P` | Pause / resume playback |
+| `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
 | Say "hey jarvis" | Same as `Ctrl+Shift+S` on highlighted text |
 
 ### Wake word
@@ -169,7 +165,7 @@ Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
 - Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
 - Up to ~30 dots visible; beyond that the oldest drop off.
-- **Drag the toolbar** to any screen edge and it snaps flush. Left/right edges switch to a vertical column. Position is saved.
+- **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 
 ### Settings panel (gear icon)
 

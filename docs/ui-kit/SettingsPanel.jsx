@@ -33,10 +33,9 @@ function SettingsPanel({ speed, onSpeedChange, sessions, expanded, onToggleSessi
               <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
               <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
               <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
+              <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Pause / resume playback</td></tr>
+              <tr><td><kbd>Ctrl+Shift+O</kbd></td><td>Pause only (don't auto-resume on next clip)</td></tr>
               <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
-              <tr><td><kbd>Space</kbd></td><td>Play / pause current clip (when toolbar is focused)</td></tr>
-              <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Skip -10s / +10s</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Hide the toolbar</td></tr>
             </tbody>
           </table>
         </section>

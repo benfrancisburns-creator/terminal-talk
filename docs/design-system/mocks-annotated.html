@@ -196,43 +196,6 @@
     border-top-left-radius: 0; border-top-right-radius: 0;
   }
 
-  /* Vertical dock — right-edge column. Mirrors body.vertical + body.dock-right
-     from the shipping styles: narrow 48px column, controls stack, scrubber
-     + time are hidden because they don't fit, dots flow top-to-bottom. */
-  .screen .bar.dock-right {
-    position: absolute; top: 32px; right: 0; bottom: 32px; left: auto;
-    flex-direction: column;
-    width: 48px; height: auto;
-    padding: 8px 6px;
-    gap: 6px;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    transform: none;
-  }
-  .screen .bar.dock-right .bar-top {
-    flex-direction: column;
-    width: 36px; height: auto;
-    gap: 4px;
-    align-items: center;
-  }
-  .screen .bar.dock-right .bar-top .scrubber,
-  .screen .bar.dock-right .bar-top .time { display: none; }
-  .screen .bar.dock-right .dots-row {
-    flex: 1;
-    width: 100%;
-    padding: 4px 0;
-    align-items: flex-start;
-  }
-  .screen .bar.dock-right .dots {
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-  }
-  .screen .bar.dock-right .dots-run-gap {
-    width: auto;
-    height: 10px;
-  }
 
   .dot {
     width: 18px; height: 18px; border-radius: 50%;
@@ -613,7 +576,7 @@
 
 <div class="page-title">
   <h1>Terminal Talk — annotated states</h1>
-  <div class="meta">6 mocks · floating toolbar · free-floating · top-snap · right-dock</div>
+  <div class="meta">5 mocks · floating toolbar · horizontal-only snap</div>
 </div>
 
 <div class="grid">
@@ -659,7 +622,7 @@
           </div>
           <div>
             <dt>Snap to edge</dt>
-            <dd>Drag near the top, left, or right edge of the screen and the bar snaps flush. Top snap = same layout. Left or right snap flips to a vertical dock (shot 06).</dd>
+            <dd>Drag near the top or bottom edge of the screen and the bar snaps flush. Horizontal layout only — dragging the bar off the edges of every display just rescues it back to the primary display's centre.</dd>
           </div>
           <div>
             <dt>Idle auto-collapse</dt>
@@ -956,12 +919,12 @@
                 <dd>read the currently highlighted text</dd>
                 <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd></dt>
                 <dd>toggle “hey jarvis” wake-word listener</dd>
+                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></dt>
+                <dd>pause / resume playback</dd>
+                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>O</kbd></dt>
+                <dd>pause only (don't auto-resume on next clip)</dd>
                 <dt>say <i>“hey jarvis”</i></dt>
                 <dd>same as <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on highlighted text</dd>
-                <dt><kbd>Space</kbd></dt>
-                <dd>play / pause current clip (toolbar focused)</dd>
-                <dt><kbd>←</kbd> / <kbd>→</kbd></dt>
-                <dd>skip −10 s / +10 s</dd>
               </dl>
             </div>
 
@@ -997,7 +960,7 @@
           </div>
           <div>
             <dt>Global shortcuts</dt>
-            <dd><kbd>Ctrl+Shift+A</kbd> show/hide toolbar · <kbd>Ctrl+Shift+S</kbd> read selection · <kbd>Ctrl+Shift+J</kbd> toggle mic (wake word). Plus local <kbd>Space</kbd> play/pause and <kbd>←</kbd>/<kbd>→</kbd> skip when the toolbar is focused.</dd>
+            <dd><kbd>Ctrl+Shift+A</kbd> show/hide toolbar · <kbd>Ctrl+Shift+S</kbd> read selection · <kbd>Ctrl+Shift+J</kbd> toggle mic · <kbd>Ctrl+Shift+P</kbd> pause/resume · <kbd>Ctrl+Shift+O</kbd> pause-only. All global, so they work from any app.</dd>
           </div>
         </dl>
       </div>
@@ -1075,80 +1038,6 @@
     </div>
   </section>
 
-
-  <!-- ═══════════════  06 — DOCKED VERTICAL (RIGHT EDGE)  ═══════════════ -->
-  <section>
-    <div class="shot-head">
-      <div class="num">06</div>
-      <div class="title">Docked to the right edge (vertical)</div>
-      <div class="caption">Drag to the left or right edge and the bar flips to a narrow column — out of the way, still always-on-top.</div>
-    </div>
-
-    <div class="stage">
-      <div class="screen">
-        <!-- Background widgets to show the bar really is hugging the edge -->
-        <div style="position:absolute; left:40px; top:40px; width:180px; height:22px; border-radius:5px; background:rgba(255,255,255,0.04);"></div>
-        <div style="position:absolute; left:40px; top:80px; width:360px; height:100px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);"></div>
-        <div style="position:absolute; left:40px; top:200px; width:300px; height:14px; border-radius:4px; background:rgba(255,255,255,0.04);"></div>
-        <div style="position:absolute; left:40px; top:222px; width:240px; height:14px; border-radius:4px; background:rgba(255,255,255,0.03);"></div>
-        <div style="position:absolute; left:40px; top:244px; width:280px; height:14px; border-radius:4px; background:rgba(255,255,255,0.03);"></div>
-        <div style="position:absolute; left:40px; bottom:40px; width:120px; height:40px; border-radius:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.05);"></div>
-
-        <div class="bar dock-right">
-          <div class="bar-top">
-            <div class="btn">⟲</div>
-            <div class="btn play">❚❚</div>
-            <div class="btn">⟳</div>
-            <!-- scrubber + time hidden via CSS — don't fit a 48px column -->
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
-          </div>
-          <div class="dots-row">
-            <div class="dots">
-              <div class="dot c-green playing"></div>
-              <div class="dot c-green"></div>
-              <span class="dots-run-gap"></span>
-              <div class="dot c-orange"></div>
-              <div class="dot c-orange"></div>
-              <div class="dot c-orange"></div>
-              <span class="dots-run-gap"></span>
-              <div class="dot c-purple"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="annotations">
-        <dl>
-          <div>
-            <dt>Trigger</dt>
-            <dd>Drag within ~20 px of the left or right edge. On release the bar flips from a 680 × 64 horizontal pill to a 48 px wide vertical column that spans most of the screen's height. Left-edge and right-edge behave symmetrically.</dd>
-          </div>
-          <div>
-            <dt>What survives the flip</dt>
-            <dd>Back-10 · Play/Pause · Fwd-10 · clear-played · settings · close. Stacked top-to-bottom.</dd>
-          </div>
-          <div>
-            <dt>What's hidden</dt>
-            <dd>The scrubber and the time readout — neither fits a 48 px column. Skip via the ⟲ / ⟳ buttons (10 s each), or open the settings panel for the full horizontal surface.</dd>
-          </div>
-          <div>
-            <dt>Dot strip becomes a column</dt>
-            <dd>Dots flow top-to-bottom instead of left-to-right. Oldest on top, newest on bottom. Run-gaps become vertical spacers — the same 3-red / 3-yellow / 2-green pattern from shot 02 still reads as three distinct speakers.</dd>
-          </div>
-          <div>
-            <dt>Collapsed vertical strip</dt>
-            <dd>After 15 s idle the column shrinks to a 14 px-wide thin bar flush against the edge. Hover to expand, same as horizontal.</dd>
-          </div>
-          <div>
-            <dt>When to use it</dt>
-            <dd>Wide displays where a horizontal bar on the top steals vertical space you actually want for editor/browser content. Docking to the right keeps Terminal Talk out of the writing area.</dd>
-          </div>
-        </dl>
-      </div>
-    </div>
-  </section>
 
 </div>
 

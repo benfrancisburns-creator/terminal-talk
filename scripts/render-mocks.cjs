@@ -33,7 +33,6 @@ const SHOTS = [
   { n: 3, slug: 'mixed-states',     height: 1020 },
   { n: 4, slug: 'settings-panel',   height: 1400 },
   { n: 5, slug: 'snapped-top',      height: 720 },
-  { n: 6, slug: 'docked-right',     height: 860 },
 ];
 
 const src = readFileSync(SRC, 'utf8');
