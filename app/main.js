@@ -210,24 +210,29 @@ function findDockedEdge(dX, dY) {
   const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
   const [x, y] = win.getPosition();
   const [w, h] = win.getSize();
-  // Use absolute distance so overshoot (window past screen edge) ALSO
-  // triggers snap. Users naturally drag past the edge expecting "throw
-  // it against the wall" behaviour. Rejecting negative distances was
-  // silently refusing those perfectly legitimate drops.
-  const candidates = [
-    { name: 'left',   dist: Math.abs(x - dispX),                axis: 'x' },
-    { name: 'right',  dist: Math.abs((dispX + dispW) - (x + w)), axis: 'x' },
-    { name: 'top',    dist: Math.abs(y - dispY),                axis: 'y' },
-    { name: 'bottom', dist: Math.abs((dispY + dispH) - (y + h)), axis: 'y' },
-  ].filter(e => e.dist < SNAP_THRESHOLD_PX);
+  // Edge distance. Negative = window is PAST the edge (overshoot), which
+  // the user clearly wanted — a 500 px throw to the right is even stronger
+  // intent than a 10 px nudge. So: accept any negative distance regardless
+  // of magnitude, and only apply the threshold to undershoot (positive).
+  // When sorting we clamp negatives to 0 so all overshoots are treated as
+  // "at the edge" (tie), then direction heuristic or undershoot distance
+  // picks between them.
+  const raw = [
+    { name: 'left',   dist: x - dispX,                     axis: 'x' },
+    { name: 'right',  dist: (dispX + dispW) - (x + w),     axis: 'x' },
+    { name: 'top',    dist: y - dispY,                     axis: 'y' },
+    { name: 'bottom', dist: (dispY + dispH) - (y + h),     axis: 'y' },
+  ];
+  const candidates = raw.filter(e => e.dist < SNAP_THRESHOLD_PX);  // allows all negatives
   if (candidates.length === 0) return null;
+  const sortKey = (d) => Math.max(0, d);
   // Drag direction → prefer the axis the user actually moved along.
   if (dX !== undefined && dY !== undefined && Math.abs(dX - dY) > 10) {
     const preferAxis = dX > dY ? 'x' : 'y';
     const preferred = candidates.filter(e => e.axis === preferAxis);
-    if (preferred.length > 0) return preferred.sort((a, b) => a.dist - b.dist)[0].name;
+    if (preferred.length > 0) return preferred.sort((a, b) => sortKey(a.dist) - sortKey(b.dist))[0].name;
   }
-  return candidates.sort((a, b) => a.dist - b.dist)[0].name;
+  return candidates.sort((a, b) => sortKey(a.dist) - sortKey(b.dist))[0].name;
 }
 
 function applyDock(edge) {
