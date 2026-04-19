@@ -71,6 +71,7 @@ if (Test-Path $registryPath) {
                     claude_pid = if ($p.Value.claude_pid) { [int]$p.Value.claude_pid } else { 0 }
                     label = if ($p.Value.label) { [string]$p.Value.label } else { '' }
                     pinned = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
+                    muted = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
                     last_seen = [long]$p.Value.last_seen
                 }
                 if ($p.Value.PSObject.Properties.Name -contains 'voice' -and $p.Value.voice) {

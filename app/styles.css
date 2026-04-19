@@ -309,7 +309,7 @@ select option:checked, .panel .row select option:checked {
 }
 .session-row {
   display: grid;
-  grid-template-columns: 18px 24px 90px 1fr 180px;
+  grid-template-columns: 18px 24px 90px 1fr 180px 28px;
   gap: 10px;
   align-items: center;
   padding: 4px 0;
@@ -322,6 +322,27 @@ select option:checked, .panel .row select option:checked {
   color: rgba(255, 255, 255, 0.5);
 }
 .chevron:hover { color: #fff; background: rgba(255,255,255,0.08) !important; }
+
+/* Mute toggle button — compact icon in the last column of the row. */
+.mute-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: transparent; border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.mute-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.mute-btn.muted {
+  background: rgba(255,94,94,0.14);
+  border-color: rgba(255,94,94,0.35);
+  color: #ff8080;
+}
+.mute-btn.muted:hover { background: rgba(255,94,94,0.22); }
+.session-block.session-muted { opacity: 0.55; }
+.session-block.session-muted .mute-btn { opacity: 1; }
 
 /* Expanded per-session settings */
 .session-expanded {

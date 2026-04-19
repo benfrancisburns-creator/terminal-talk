@@ -47,6 +47,20 @@ const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
 
+// Helpers that read muted state off the current sessionAssignments cache.
+// Kept here (not inside renderDots / playNextPending) so every call site
+// uses the exact same rule.
+function isClipSessionMuted(filename) {
+  const short = extractSessionShort(filename);
+  if (!short) return false;  // neutral (hey-jarvis) clips never muted
+  const entry = sessionAssignments[short];
+  return !!(entry && entry.muted);
+}
+function isPathSessionMuted(p) {
+  const name = p.split(/[\\/]/).pop();
+  return isClipSessionMuted(name);
+}
+
 // Index 0..31 -> one of 4 arrangement kinds:
 //   0-7   solid    one colour
 //   8-15  hsplit   top/bottom two-colour split
@@ -153,7 +167,13 @@ function isAudioIdle() {
 
 function renderDots() {
   dotsEl.innerHTML = '';
-  const visible = queue.slice(0, 8);
+  // Muted sessions' clips are hidden entirely — no dot, no trace. "Cut the
+  // wire" per Ben: the user should not be aware a background muted terminal
+  // is even producing audio.
+  const visible = queue.filter(f => {
+    const name = f.path.split(/[\\/]/).pop();
+    return !isClipSessionMuted(name);
+  }).slice(0, 8);
   visible.forEach((f) => {
     const dot = document.createElement('button');
     dot.className = 'dot';
@@ -235,6 +255,8 @@ async function clearAllPlayed() {
 }
 
 function playNextPending() {
+  // 1. Priority (hey-jarvis highlight-to-speak) — always plays regardless
+  //    of mute state; the user explicitly asked for it.
   while (priorityQueue.length > 0) {
     const next = priorityQueue.shift();
     if (queue.find(f => f.path === next)) {
@@ -242,12 +264,25 @@ function playNextPending() {
       return;
     }
   }
+  // 2. Explicit pending queue — clips queued in arrival order.
+  //    Skip muted-session clips; drop the whole file (don't re-queue).
   while (pendingQueue.length > 0) {
     const next = pendingQueue.shift();
+    if (isPathSessionMuted(next)) continue;
     if (queue.find(f => f.path === next)) {
       playPath(next);
       return;
     }
+  }
+  // 3. Fallback: any unplayed, unmuted clip still sitting in the queue.
+  //    Covers every edge case where pendingQueue got out of sync — pause
+  //    then resume, clip arriving during a race, manual deletes reshaping
+  //    state, unmute flipping a session back on. Oldest first.
+  const candidate = queue
+    .filter(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path))
+    .sort((a, b) => a.mtime - b.mtime)[0];
+  if (candidate) {
+    playPath(candidate);
   }
 }
 
@@ -284,7 +319,19 @@ window.api.onQueueUpdated((payload) => {
 
   for (const f of newArrivals) {
     if (priorityPaths.has(f.path)) continue;
+    // Drop muted-session arrivals outright — they never enter the queue.
+    if (isClipSessionMuted(f.path.split(/[\\/]/).pop())) continue;
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
+  }
+  // If the user just muted the session of the currently-playing clip, stop.
+  // Let the normal resume/ended flow pick up the next unmuted one.
+  if (currentPath && isPathSessionMuted(currentPath)) {
+    audio.pause();
+    audio.src = '';
+    const wasPlaying = currentPath;
+    currentPath = null;
+    currentIsManual = false;
+    playedPaths.delete(wasPlaying);
   }
   renderDots();
 
@@ -632,6 +679,27 @@ function renderSessionRow(shortId, entry) {
     renderSessionsTable();
   });
   row.appendChild(select);
+
+  // Mute toggle. Always visible in the top row so users can one-click mute
+  // background terminals. Uses 🔇 / 🔊 to make the state obvious at a glance;
+  // the row also gets a muted class for a subtle fade.
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'mute-btn' + (entry.muted ? ' muted' : '');
+  muteBtn.textContent = entry.muted ? '\uD83D\uDD07' : '\uD83D\uDD0A';  // 🔇 / 🔊
+  muteBtn.title = entry.muted ? 'Unmute this session' : 'Mute this session (no audio, no synthesis)';
+  muteBtn.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const next = !entry.muted;
+    const ok = await window.api.setSessionMuted(shortId, next);
+    if (ok) {
+      sessionAssignments[shortId].muted = next;
+      renderSessionsTable();
+      renderDots();
+    }
+  });
+  row.appendChild(muteBtn);
+
+  if (entry.muted) wrap.classList.add('session-muted');
 
   wrap.appendChild(row);
 

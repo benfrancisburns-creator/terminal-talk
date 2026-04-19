@@ -5,6 +5,13 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 ## [Unreleased]
 
 ### Added
+- **Per-session mute toggle.** Each row in the Sessions table gets a 🔊/🔇 button. Muted sessions: (a) their synth_turn.py runs skip synthesis entirely — no edge-tts calls — so background terminals cost nothing, (b) any queued clips are filtered out of the toolbar dots and playback picker, (c) if the currently-playing clip belongs to a session that just got muted, playback stops, (d) the terminal's statusline shows a 🔇 prefix so the mute state is visible at a glance in the Claude Code window too. Four terminals open? Mute two background ones and only hear the two you're actively watching.
+- **Robust auto-play fallback.** When the pendingQueue gets out of sync with the visible queue (after a pause-then-resume, manual delete, or unmute flip), the player now falls back to "oldest unplayed, unmuted clip in queue" instead of stalling. Closes a papercut where users had to click dots manually to resume flow.
+
+### Fixed
+- `speak-response.ps1` palette size corrected from 32 → 24 (matched `renderer.js` and `statusline.ps1`). Legacy value would have picked an out-of-range index on fallback assignment.
+
+### Added (streaming, original v0.2 feature)
 - **Streaming TTS.** Audio now starts ~2-3 seconds after Claude begins responding, instead of 6-24 seconds after the response finishes. Two mechanisms combine:
   - *Sentence-parallel synthesis.* Response text is split into sentences and sent to edge-tts in parallel (4-wide). Completed clips roll into the queue in order as they arrive.
   - *Between-tool streaming via PreToolUse hook.* Each time Claude is about to use a tool, any text written since the last synthesis gets spoken while the tool runs. Brilliant for long working sessions — you hear Claude's commentary while tools execute.

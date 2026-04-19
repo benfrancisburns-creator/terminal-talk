@@ -440,7 +440,111 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
     if (reg['beefcafe'].speech_includes.code_blocks !== true) throw new Error('code_blocks override lost');
     if (reg['beefcafe'].speech_includes.urls !== false) throw new Error('urls override lost');
   });
+  it('statusline preserves muted flag through a write cycle', () => {
+    clearRegistry();
+    const seed = {
+      assignments: {
+        'deadbee1': {
+          index: 3, session_id: 'deadbee1-x', claude_pid: 0,
+          label: 'Background', pinned: true, muted: true,
+          last_seen: Math.floor(Date.now()/1000),
+        }
+      }
+    };
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
+    runStatusline('feedface-1111-2222-3333-444444444444');
+    const reg = readRegistry();
+    if (!reg['deadbee1']) throw new Error('deadbee1 entry was wiped');
+    if (reg['deadbee1'].muted !== true) throw new Error(`muted flag lost: ${JSON.stringify(reg['deadbee1'])}`);
+  });
   clearRegistry();
+});
+
+describe('SYNTH TURN MUTE', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  const registryPath = path.join(os.homedir(), '.terminal-talk', 'session-colours.json');
+  const testShort = 'cafebeef';
+  const testSessionId = testShort + 'abcdef012345678901234567';
+  const syncPath = path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSessionId}-sync.json`);
+
+  function runPy(code) {
+    const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import synth_turn; `;
+    const r = spawnSync('python', ['-c', prelude + code], { encoding: 'utf8', timeout: 15000 });
+    if (r.status !== 0) throw new Error(`python exit ${r.status}: ${r.stderr}`);
+    return (r.stdout || '').trim();
+  }
+
+  it('resolve_voice_and_flags reads muted=true from registry', () => {
+    // Stash prior registry so we don't nuke real state
+    let priorRaw = null;
+    try { priorRaw = fs.readFileSync(registryPath, 'utf8'); } catch {}
+
+    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, muted: true, last_seen: Math.floor(Date.now()/1000) } } };
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
+
+    try {
+      const out = runPy(`v, f, k, m = synth_turn.resolve_voice_and_flags('${testShort}', {}); print('muted=' + str(m))`);
+      if (out !== 'muted=True') throw new Error(`expected muted=True, got '${out}'`);
+    } finally {
+      if (priorRaw !== null) fs.writeFileSync(registryPath, priorRaw, 'utf8');
+      else try { fs.unlinkSync(registryPath); } catch {}
+    }
+  });
+
+  it('resolve_voice_and_flags reads muted=false by default', () => {
+    let priorRaw = null;
+    try { priorRaw = fs.readFileSync(registryPath, 'utf8'); } catch {}
+    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, last_seen: Math.floor(Date.now()/1000) } } };
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
+    try {
+      const out = runPy(`v, f, k, m = synth_turn.resolve_voice_and_flags('${testShort}', {}); print('muted=' + str(m))`);
+      if (out !== 'muted=False') throw new Error(`expected muted=False, got '${out}'`);
+    } finally {
+      if (priorRaw !== null) fs.writeFileSync(registryPath, priorRaw, 'utf8');
+      else try { fs.unlinkSync(registryPath); } catch {}
+    }
+  });
+
+  it('run() on muted session advances sync state but does not synthesise', () => {
+    // Stash real registry + sync state
+    let priorReg = null;
+    try { priorReg = fs.readFileSync(registryPath, 'utf8'); } catch {}
+    try { fs.unlinkSync(syncPath); } catch {}
+
+    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, muted: true, last_seen: Math.floor(Date.now()/1000) } } };
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
+
+    // Build a fake transcript with one user line then an assistant text line
+    const fakeTranscript = path.join(os.tmpdir(), `tt-mute-test-${Date.now()}.jsonl`);
+    const transcriptLines = [
+      JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }),
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'This is some assistant response text that should not be synthesised because the session is muted.' }] } })
+    ];
+    fs.writeFileSync(fakeTranscript, transcriptLines.join('\n'), 'utf8');
+
+    try {
+      const r = spawnSync('python', [
+        path.join(appDirRepo, 'synth_turn.py'),
+        '--session', testSessionId,
+        '--transcript', fakeTranscript,
+        '--mode', 'on-stop'
+      ], { encoding: 'utf8', timeout: 15000 });
+      if (r.status !== 0) throw new Error(`synth_turn exit ${r.status}: ${r.stderr}`);
+      // Sync state should exist showing line 1 as synthesised
+      const syncRaw = fs.readFileSync(syncPath, 'utf8');
+      const sync = JSON.parse(syncRaw);
+      if (sync.turn_boundary !== 0) throw new Error(`turn_boundary expected 0, got ${sync.turn_boundary}`);
+      if (!sync.synthesized_line_indices.includes(1)) throw new Error(`line 1 not marked synthesized: ${syncRaw}`);
+    } finally {
+      if (priorReg !== null) fs.writeFileSync(registryPath, priorReg, 'utf8');
+      else try { fs.unlinkSync(registryPath); } catch {}
+      try { fs.unlinkSync(fakeTranscript); } catch {}
+      try { fs.unlinkSync(syncPath); } catch {}
+    }
+  });
 });
 
 describe('PALETTE EDGE CASES', () => {

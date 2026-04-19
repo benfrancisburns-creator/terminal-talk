@@ -312,11 +312,12 @@ def load_config() -> dict:
         return {}
 
 
-def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict, Optional[str]]:
-    """Returns (voice, speech_includes, openai_key_or_none).
+def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict, Optional[str], bool]:
+    """Returns (voice, speech_includes, openai_key_or_none, muted).
 
     Per-session override beats config default. If nothing set, uses a conservative
-    default. speech_includes flags follow the same precedence.
+    default. speech_includes flags follow the same precedence. `muted` is read
+    straight from the session registry — config has no global mute.
     """
     voice = config.get('voices', {}).get('response_voice', 'en-GB-RyanNeural')
     openai_key = config.get('voices', {}).get('openai_api_key') or None
@@ -326,15 +327,23 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
         if k in cfg_inc and isinstance(cfg_inc[k], bool):
             flags[k] = cfg_inc[k]
 
+    muted = False
+
     # Per-session override
     try:
         if REGISTRY_PATH.exists():
             with open(REGISTRY_PATH, 'r', encoding='utf-8') as f:
-                reg = json.load(f)
+                reg_raw = f.read()
+            # Tolerate BOM written by PowerShell paths
+            if reg_raw.startswith('\ufeff'):
+                reg_raw = reg_raw[1:]
+            reg = json.loads(reg_raw)
             entry = reg.get('assignments', {}).get(session_short)
             if entry:
                 if entry.get('voice'):
                     voice = str(entry['voice'])
+                if entry.get('muted') is True:
+                    muted = True
                 per_inc = entry.get('speech_includes', {})
                 for k in flags:
                     if k in per_inc and isinstance(per_inc[k], bool):
@@ -342,7 +351,7 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
     except Exception as e:
         _log(f'registry read fail (non-fatal): {e}')
 
-    return voice, flags, openai_key
+    return voice, flags, openai_key, muted
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +541,16 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             return 0
 
         config = load_config()
-        voice, flags, openai_key = resolve_voice_and_flags(session_short, config)
+        voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
+
+        # Muted sessions: cut the wire. Still advance the sync state so that
+        # when the user unmutes, we don't retroactively synthesise the silent
+        # period's text — unmute means "from now on", not "replay history".
+        if muted:
+            _log(f'{mode}: {session_short} is muted, skipping synthesis')
+            state['synthesized_line_indices'].extend(i for i, _ in pending)
+            save_sync_state(session_id, state)
+            return 0
 
         combined = '\n'.join(t for _, t in pending)
         clean = sanitize(combined, flags)

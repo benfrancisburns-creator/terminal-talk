@@ -94,6 +94,7 @@ if (Test-Path $registryPath) {
                         claude_pid = if ($p.Value.claude_pid) { [int]$p.Value.claude_pid } else { 0 }
                         label      = if ($p.Value.label) { [string]$p.Value.label } else { '' }
                         pinned     = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
+                        muted      = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
                         last_seen  = [long]$p.Value.last_seen
                     }
                     # Preserve per-session overrides through every read/write cycle.
@@ -155,6 +156,7 @@ if ($null -eq $idx) {
         claude_pid = $claudePid
         label      = ''
         pinned     = $false
+        muted      = $false
         last_seen  = $now
     }
 }
@@ -169,4 +171,7 @@ try {
 
 $emoji = Get-EmojiForIndex $idx
 $label = $assignments[$short].label
-if ($label) { Write-Host "$emoji $label" } else { Write-Host $emoji }
+# Muted sessions get a speaker-crossed prefix so users can see at a glance
+# the terminal won't be producing audio.
+$mutedPrefix = if ($assignments[$short].muted) { [char]::ConvertFromUtf32(0x1F507) + ' ' } else { '' }
+if ($label) { Write-Host "$mutedPrefix$emoji $label" } else { Write-Host "$mutedPrefix$emoji" }

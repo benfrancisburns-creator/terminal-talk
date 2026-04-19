@@ -555,6 +555,7 @@ function sanitiseEntry(e) {
     claude_pid: Number.isFinite(Number(e.claude_pid)) ? Number(e.claude_pid) : 0,
     label: typeof e.label === 'string' ? e.label.slice(0, 60) : '',
     pinned: e.pinned === true,
+    muted: e.muted === true,
     last_seen: Number.isFinite(Number(e.last_seen)) ? Number(e.last_seen) : 0
   };
   if (typeof e.voice === 'string' && e.voice.length <= 80 && VOICE_KEY_RE.test(e.voice)) {
@@ -738,6 +739,24 @@ ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
   all[shortId].index = Math.max(0, Math.min(31, Math.floor(n)));
   all[shortId].pinned = true;
   return saveAssignments(all);
+});
+
+// Per-session mute toggle. Muted sessions' clips are filtered from the
+// playback queue AND their synth_turn.py invocations skip synthesis entirely
+// (see synth_turn.run()). Truly "cut the wire" — no edge-tts calls, no
+// queued audio, no CPU on muted background terminals.
+ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
+  if (!validShort(shortId)) return false;
+  if (typeof muted !== 'boolean') return false;
+  const all = loadAssignments();
+  if (!all[shortId]) return false;
+  all[shortId].muted = muted;
+  const ok = saveAssignments(all);
+  // Broadcast so any open settings panel reflects the change instantly.
+  if (ok && win && !win.isDestroyed()) {
+    notifyQueue();
+  }
+  return ok;
 });
 
 // Per-session voice override. voiceId=null/empty clears (follow global).

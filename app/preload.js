@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   setSessionIndex: (shortId, index) => ipcRenderer.invoke('set-session-index', shortId, index),
   setSessionInclude: (shortId, key, value) => ipcRenderer.invoke('set-session-include', shortId, key, value),
   setSessionVoice: (shortId, voiceId) => ipcRenderer.invoke('set-session-voice', shortId, voiceId),
+  setSessionMuted: (shortId, muted) => ipcRenderer.invoke('set-session-muted', shortId, muted),
   setPanelOpen: (open) => ipcRenderer.invoke('set-panel-open', open),
   onQueueUpdated: (cb) => {
     ipcRenderer.on('queue-updated', (_e, payload) => cb(payload));

@@ -48,7 +48,7 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
     $now = [long][double]::Parse((Get-Date -UFormat %s))
     $graceSec = 300
-    $paletteSize = 32
+    $paletteSize = 24  # matches app/renderer.js PALETTE_SIZE
 
     $assignments = @{}
     if (Test-Path $registryPath) {
@@ -62,6 +62,7 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
                         claude_pid = if ($p.Value.claude_pid) { [int]$p.Value.claude_pid } else { 0 }
                         label = if ($p.Value.label) { [string]$p.Value.label } else { '' }
                         pinned = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
+                        muted = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
                         last_seen = [long]$p.Value.last_seen
                     }
                     # Preserve per-session voice + speech_includes overrides exactly as stored.
