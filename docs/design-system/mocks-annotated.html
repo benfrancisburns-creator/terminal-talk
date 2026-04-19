@@ -116,33 +116,45 @@
     pointer-events: none;
   }
 
-  /* ═════════════  TOOLBAR  ═════════════ */
+  /* ═════════════  TOOLBAR — two-row letterbox ═════════════
+     Controls sit on top (back10 / play / fwd10 / scrubber / time /
+     clear / settings / close); dots strip sits below. This matches
+     the shipping app/index.html structure (`.bar > .bar-top + .dots-row`). */
   .bar {
     position: relative;
-    display: flex; align-items: center; gap: 8px;
-    height: 48px; padding: 0 10px 0 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 6px 12px 8px;
     background: rgba(22, 24, 30, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 24px;
+    border-radius: 22px;
     box-shadow:
       0 18px 40px rgba(0,0,0,0.55),
       0 4px 10px rgba(0,0,0,0.35),
       inset 0 1px 0 rgba(255,255,255,0.04);
     backdrop-filter: blur(28px) saturate(140%);
-    width: 620px;
+    width: 680px;
     font-family: 'Inter', system-ui, sans-serif;
     z-index: 5;
   }
   .bar.has-panel {
-    border-radius: 24px 24px 0 0;
+    border-radius: 22px 22px 0 0;
     border-bottom: none;
     box-shadow:
       0 18px 40px rgba(0,0,0,0.55),
       inset 0 1px 0 rgba(255,255,255,0.04);
   }
+  .bar-top {
+    display: flex; align-items: center; gap: 8px;
+    height: 36px;
+  }
+  .dots-row {
+    height: 20px;
+    padding: 0 4px;
+    display: flex; align-items: center;
+  }
 
-  /* Dots area */
-  .dots { display: flex; align-items: center; gap: 7px; min-width: 20px; }
+  /* Dots area — on its own row beneath the controls */
+  .dots { display: flex; align-items: center; gap: 7px; min-width: 20px; flex-wrap: wrap; }
 
   .dot {
     width: 18px; height: 18px; border-radius: 50%;
@@ -315,8 +327,8 @@
 
   .session-row {
     display: grid;
-    grid-template-columns: 16px 24px 80px 1fr 120px;
-    gap: 14px; align-items: center;
+    grid-template-columns: 16px 24px 80px 1fr 120px 28px;
+    gap: 12px; align-items: center;
     padding: 10px 14px;
     background: rgba(255,255,255,0.025);
     border: 1px solid rgba(255,255,255,0.06);
@@ -327,6 +339,45 @@
     background: rgba(255,255,255,0.04);
     border-color: rgba(255,255,255,0.08);
   }
+  .session-row.muted { opacity: 0.55; }
+  /* Per-session mute button — 🔊 unmuted, 🔇 muted. One-click toggle
+     in the shipping UI; clicking triggers save + re-render. */
+  .mute-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+  .mute-btn.muted { background: rgba(255,94,94,0.15); border-color: rgba(255,94,94,0.35); }
+
+  /* Auto-prune row on Playback — 2026-04 addition; mirrors config's
+     playback.auto_prune + playback.auto_prune_sec. */
+  .row .toggle {
+    position: relative;
+    width: 34px; height: 18px;
+    background: rgba(74,222,128,0.35);
+    border-radius: 10px;
+  }
+  .row .toggle::after {
+    content: ''; position: absolute;
+    top: 2px; left: 18px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #4ade80;
+  }
+  .row .toggle.off { background: rgba(255,255,255,0.1); }
+  .row .toggle.off::after { left: 2px; background: rgba(255,255,255,0.5); }
+  .row .prune-value {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.85);
+  }
+  .row .prune-value .suffix { color: rgba(255,255,255,0.5); font-family: 'Inter', system-ui, sans-serif; }
   .chev { color: rgba(255,255,255,0.55); font-size: 11px; text-align: center; }
   .swatch {
     width: 24px; height: 24px; border-radius: 50%;
@@ -480,32 +531,37 @@
     <div class="stage">
       <div class="floating short">
         <div class="bar">
-          <div class="dots"></div>
-          <div class="divider"></div>
-          <div class="btn">⟲</div>
-          <div class="btn play">▶</div>
-          <div class="btn">⟳</div>
-          <div class="scrubber"><div class="thumb" style="left: 0"></div></div>
-          <div class="time">0:00 / 0:00</div>
-          <div class="btn">✕</div>
-          <div class="btn">⚙</div>
-          <div class="btn close">×</div>
+          <div class="bar-top">
+            <div class="btn">⟲</div>
+            <div class="btn play">▶</div>
+            <div class="btn">⟳</div>
+            <div class="scrubber"><div class="thumb" style="left: 0"></div></div>
+            <div class="time">0:00 / 0:00</div>
+            <div class="btn">✕</div>
+            <div class="btn">⚙</div>
+            <div class="btn close">×</div>
+          </div>
+          <div class="dots-row"><div class="dots"></div></div>
         </div>
       </div>
 
       <div class="annotations">
         <dl>
           <div>
-            <dt>Frameless pill</dt>
-            <dd>620×48 · always-on-top · drag anywhere to move</dd>
+            <dt>Frameless two-row pill</dt>
+            <dd>680×64 letterbox · always-on-top · drag to any screen edge and it snaps (left/right flip to a vertical dock)</dd>
           </div>
           <div>
-            <dt>Empty dot slot</dt>
-            <dd>Queue empty — bar reserves 20px on the left for incoming dots</dd>
+            <dt>Controls row</dt>
+            <dd>Back-10 · Play/Pause · Fwd-10 · scrubber · elapsed / total · clear played · settings · close</dd>
           </div>
           <div>
-            <dt>Play button</dt>
-            <dd>34px with a blue wash · the only coloured control</dd>
+            <dt>Dots strip</dt>
+            <dd>Empty here — each clip in the queue lands as one dot on this row (oldest left, newest right)</dd>
+          </div>
+          <div>
+            <dt>Idle auto-collapse</dt>
+            <dd>After 15s with no interaction the bar shrinks to a thin strip and becomes click-through; hover to expand</dd>
           </div>
         </dl>
       </div>
@@ -524,26 +580,26 @@
     <div class="stage">
       <div class="floating short">
         <div class="bar">
-          <div class="dots">
-            <!-- solid green, playing -->
-            <div class="dot c-green playing"></div>
-            <!-- vertical split red+blue -->
-            <div class="dot vsplit-red-blue"></div>
-            <!-- horizontal split yellow+purple -->
-            <div class="dot hsplit-yellow-purple"></div>
+          <div class="bar-top">
+            <div class="btn">⟲</div>
+            <div class="btn play">❚❚</div>
+            <div class="btn">⟳</div>
+            <div class="scrubber">
+              <div class="filled" style="width: 42%"></div>
+              <div class="thumb hover" style="left: 42%"></div>
+            </div>
+            <div class="time">0:47 / 1:52</div>
+            <div class="btn">✕</div>
+            <div class="btn">⚙</div>
+            <div class="btn close">×</div>
           </div>
-          <div class="divider"></div>
-          <div class="btn">⟲</div>
-          <div class="btn play">❚❚</div>
-          <div class="btn">⟳</div>
-          <div class="scrubber">
-            <div class="filled" style="width: 42%"></div>
-            <div class="thumb hover" style="left: 42%"></div>
+          <div class="dots-row">
+            <div class="dots">
+              <div class="dot c-green playing"></div>
+              <div class="dot vsplit-red-blue"></div>
+              <div class="dot hsplit-yellow-purple"></div>
+            </div>
           </div>
-          <div class="time">0:47 / 1:52</div>
-          <div class="btn">✕</div>
-          <div class="btn">⚙</div>
-          <div class="btn close">×</div>
         </div>
       </div>
 
@@ -555,7 +611,7 @@
           </div>
           <div>
             <dt>Vertical split · red / blue</dt>
-            <dd>One of 8 v-split arrangements · 2 colours, seam down the middle</dd>
+            <dd>One of 8 v-split arrangements · complementary pair, seam down the middle</dd>
           </div>
           <div>
             <dt>Horizontal split · yellow / purple</dt>
@@ -563,7 +619,7 @@
           </div>
           <div>
             <dt>Playing state</dt>
-            <dd>Slightly larger · pulsing white ring · <b>colour unchanged</b></dd>
+            <dd>Slightly larger · pulsing white ring · base colour unchanged so you still know which session is speaking</dd>
           </div>
         </dl>
       </div>
@@ -582,28 +638,27 @@
     <div class="stage">
       <div class="floating short">
         <div class="bar">
-          <div class="dots">
-            <!-- playing: solid green with pulsing white ring -->
-            <div class="dot c-green playing"></div>
-            <!-- queued: solid orange -->
-            <div class="dot c-orange"></div>
-            <!-- heard: white fill + green outer ring -->
-            <div class="dot c-green heard"></div>
-            <!-- J-clip: solid purple with J letter -->
-            <div class="dot c-purple j"></div>
+          <div class="bar-top">
+            <div class="btn">⟲</div>
+            <div class="btn play">❚❚</div>
+            <div class="btn">⟳</div>
+            <div class="scrubber">
+              <div class="filled" style="width: 34%"></div>
+              <div class="thumb" style="left: 34%"></div>
+            </div>
+            <div class="time">0:22 / 1:05</div>
+            <div class="btn">✕</div>
+            <div class="btn">⚙</div>
+            <div class="btn close">×</div>
           </div>
-          <div class="divider"></div>
-          <div class="btn">⟲</div>
-          <div class="btn play">❚❚</div>
-          <div class="btn">⟳</div>
-          <div class="scrubber">
-            <div class="filled" style="width: 34%"></div>
-            <div class="thumb" style="left: 34%"></div>
+          <div class="dots-row">
+            <div class="dots">
+              <div class="dot c-green playing"></div>
+              <div class="dot c-orange"></div>
+              <div class="dot c-green heard"></div>
+              <div class="dot c-purple j"></div>
+            </div>
           </div>
-          <div class="time">0:22 / 1:05</div>
-          <div class="btn">✕</div>
-          <div class="btn">⚙</div>
-          <div class="btn close">×</div>
         </div>
       </div>
 
@@ -611,19 +666,23 @@
         <dl>
           <div>
             <dt>1 · Playing</dt>
-            <dd>Green session · larger with pulsing white ring · fill stays green</dd>
+            <dd>Green session · larger with pulsing white ring · fill stays green so the session identity is never lost</dd>
           </div>
           <div>
             <dt>2 · Queued</dt>
-            <dd>Orange session · plain 18px disc · auto-plays when it reaches the front</dd>
+            <dd>Orange session · plain 18px disc · auto-plays when it reaches the front of the unmuted queue</dd>
           </div>
           <div>
             <dt>3 · Heard</dt>
-            <dd>Manually clicked to play · fill → soft white, 2px green ring · auto-deletes 90s later</dd>
+            <dd>Already played · fades after playback · removed once the configured auto-prune window (3–600 s, default 20 s) elapses</dd>
           </div>
           <div>
             <dt>4 · J-clip</dt>
-            <dd>Highlight-to-speak via “hey jarvis” · small <b>J</b> glyph · inherits source terminal's colour (grey if non-Claude)</dd>
+            <dd>Highlight-to-speak via “hey jarvis” / <code>Ctrl+Shift+S</code> · small <b>J</b> glyph · inherits source terminal's colour (grey if non-Claude)</dd>
+          </div>
+          <div>
+            <dt>Muted sessions</dt>
+            <dd>Sessions the user has <code>🔇</code>-muted in the settings panel never produce dots here at all — their clips are dropped at arrival</dd>
           </div>
         </dl>
       </div>
@@ -643,23 +702,26 @@
       <div class="floating tall">
         <div>
           <div class="bar has-panel">
-            <div class="dots">
-              <div class="dot c-green playing"></div>
-              <div class="dot c-blue"></div>
-              <div class="dot hsplit-brown-white"></div>
+            <div class="bar-top">
+              <div class="btn">⟲</div>
+              <div class="btn play">❚❚</div>
+              <div class="btn">⟳</div>
+              <div class="scrubber">
+                <div class="filled" style="width: 38%"></div>
+                <div class="thumb" style="left: 38%"></div>
+              </div>
+              <div class="time">0:28 / 1:14</div>
+              <div class="btn">✕</div>
+              <div class="btn">⚙</div>
+              <div class="btn close">×</div>
             </div>
-            <div class="divider"></div>
-            <div class="btn">⟲</div>
-            <div class="btn play">❚❚</div>
-            <div class="btn">⟳</div>
-            <div class="scrubber">
-              <div class="filled" style="width: 38%"></div>
-              <div class="thumb" style="left: 38%"></div>
+            <div class="dots-row">
+              <div class="dots">
+                <div class="dot c-green playing"></div>
+                <div class="dot c-blue"></div>
+                <div class="dot hsplit-brown-white"></div>
+              </div>
             </div>
-            <div class="time">0:28 / 1:14</div>
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
           </div>
 
           <div class="panel">
@@ -674,6 +736,11 @@
                 </div>
                 <span class="readout">1.25×</span>
               </div>
+              <div class="row">
+                <label>Auto-prune played clips</label>
+                <span class="toggle" title="on"></span>
+                <div class="prune-value"><span>20</span><span class="suffix">s after play</span></div>
+              </div>
             </div>
 
             <!-- Sessions -->
@@ -686,14 +753,16 @@
                 <span class="short-id">abcd1234</span>
                 <div class="fake-input">Frontend</div>
                 <div class="fake-select"><span>Green</span><span class="caret">▾</span></div>
+                <button class="mute-btn" title="Mute this session">🔊</button>
               </div>
 
-              <div class="session-row">
+              <div class="session-row muted">
                 <span class="chev">▸</span>
                 <div class="swatch" style="background: #60a5fa;"></div>
                 <span class="short-id">a08f2b71</span>
                 <div class="fake-input">Auth API</div>
                 <div class="fake-select"><span>Blue</span><span class="caret">▾</span></div>
+                <button class="mute-btn muted" title="Unmute">🔇</button>
               </div>
 
               <div class="session-row expanded" style="display: grid;">
@@ -702,6 +771,7 @@
                 <span class="short-id">7e5c9a04</span>
                 <div class="fake-input placeholder">Label…</div>
                 <div class="fake-select"><span>H-split · brown / white</span><span class="caret">▾</span></div>
+                <button class="mute-btn" title="Mute this session">🔊</button>
 
                 <div class="session-expanded-body">
                   <div class="sub-row">
@@ -713,12 +783,12 @@
                   <div class="sub-row" style="align-items: flex-start;">
                     <label style="margin-top: 4px;">Speech includes</label>
                     <div class="tri-row">
-                      <span class="tri-chip"><span class="tri on"></span>Text</span>
-                      <span class="tri-chip"><span class="tri on"></span>Tool results</span>
-                      <span class="tri-chip"><span class="tri mixed"></span>Code blocks</span>
-                      <span class="tri-chip"><span class="tri off"></span>Bash output</span>
-                      <span class="tri-chip"><span class="tri on"></span>Errors</span>
-                      <span class="tri-chip"><span class="tri off"></span>Thinking</span>
+                      <span class="tri-chip"><span class="tri off"></span>Code blocks</span>
+                      <span class="tri-chip"><span class="tri off"></span>Inline code</span>
+                      <span class="tri-chip"><span class="tri off"></span>URLs</span>
+                      <span class="tri-chip"><span class="tri on"></span>Headings</span>
+                      <span class="tri-chip"><span class="tri off"></span>Bullet markers</span>
+                      <span class="tri-chip"><span class="tri off"></span>Image alt-text</span>
                     </div>
                   </div>
                 </div>
@@ -728,24 +798,32 @@
             <!-- About -->
             <div class="panel-section">
               <div class="panel-header">About Terminal Talk</div>
-              <pre class="ascii">
-╔════════════════════════════════════════════════════════════╗
-║  ████████╗████████╗                                        ║
-║  ╚══██╔══╝╚══██╔══╝   TERMINAL  TALK                       ║
-║     ██║      ██║      hands-free voice for claude code     ║
-║     ██║      ██║      v0.4.2 · github.com/…/terminal-talk  ║
-║     ╚═╝      ╚═╝                                           ║
-╚════════════════════════════════════════════════════════════╝</pre>
+              <pre class="ascii">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        ████████╗ █████╗ ██╗     ██╗  ██╗
+        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
+           ██║   ███████║██║     █████╔╝
+           ██║   ██╔══██║██║     ██╔═██╗
+           ██║   ██║  ██║███████╗██║  ██╗
+           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
 
               <dl class="shortcuts">
                 <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd></dt>
                 <dd>toggle toolbar visibility</dd>
                 <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></dt>
-                <dd>speak current selection</dd>
+                <dd>read the currently highlighted text</dd>
                 <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd></dt>
                 <dd>toggle “hey jarvis” wake-word listener</dd>
                 <dt>say <i>“hey jarvis”</i></dt>
-                <dd>speak whatever is highlighted, anywhere</dd>
+                <dd>same as <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on highlighted text</dd>
+                <dt><kbd>Space</kbd></dt>
+                <dd>play / pause current clip (toolbar focused)</dd>
+                <dt><kbd>←</kbd> / <kbd>→</kbd></dt>
+                <dd>skip −10 s / +10 s</dd>
               </dl>
             </div>
 
@@ -756,20 +834,28 @@
       <div class="annotations">
         <dl>
           <div>
-            <dt>Top-down order</dt>
-            <dd>Playback · Sessions · About — chosen so the most-used controls are closest to the bar</dd>
+            <dt>Playback section</dt>
+            <dd>Speed slider 0.5–2.5× · Auto-prune toggle + seconds (3–600). Flip auto-prune off to let clips stack up when you're stepping away.</dd>
+          </div>
+          <div>
+            <dt>Session row · 6 columns</dt>
+            <dd>Chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · mute button.</dd>
+          </div>
+          <div>
+            <dt>Per-session mute</dt>
+            <dd><code>🔊</code> / <code>🔇</code> · muted rows fade to 55% · muted sessions skip synthesis entirely (no clips, no dots, no audio).</dd>
           </div>
           <div>
             <dt>Expanded row</dt>
-            <dd>Chevron ▾ reveals per-session voice dropdown and 6 tri-state <i>speech includes</i> toggles</dd>
+            <dd>Chevron ▾ reveals the session's voice dropdown (45 Edge voices) and 6 tri-state <i>speech-includes</i> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text.</dd>
           </div>
           <div>
             <dt>Tri-state toggles</dt>
-            <dd><span style="color:#4ade80;">●</span> on · <span style="color:#ffd93d;">●</span> mixed (overrides global) · <span style="color:rgba(255,255,255,0.3);">○</span> off</dd>
+            <dd><span style="color:#4ade80;">●</span> on · <span style="color:#ffd93d;">●</span> default (follow global) · <span style="color:rgba(255,255,255,0.3);">○</span> off</dd>
           </div>
           <div>
-            <dt>Window grows</dt>
-            <dd>Panel expands downward · the bar above stays pinned at the top</dd>
+            <dt>Shortcuts</dt>
+            <dd>Three global hotkeys (A / S / J) plus local ones when the toolbar has focus.</dd>
           </div>
         </dl>
       </div>

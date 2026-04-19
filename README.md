@@ -36,6 +36,42 @@ Windows-only for now; Mac/Linux planned.
 | **Auto-prune** | Played clips disappear after a configurable delay (default 20 s, range 3-600 s, toggle on/off). Walking away? Flip it off and let clips stack up for when you're back. |
 | **Tap to mute the mic** | `Ctrl+Shift+J` toggles the wake-word listener (chime confirms). Mic is truly released when off — orphan-swept + state-file-driven stream teardown. |
 
+## UI states
+
+Rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/mocks-annotated.html) — the same mocks in live interactive form with every annotation visible.
+
+### 01 · Idle
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-idle.png" alt="Idle toolbar: empty two-row letterbox with controls on top and an empty dot strip below" width="900">
+</p>
+
+Empty queue. The 680 × 64 letterbox sits always-on-top; drag to any screen edge and it snaps flush. After 15 s with no interaction it collapses to a thin strip and becomes click-through — hover to re-expand.
+
+### 02 · Three sessions speaking
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-three-sessions.png" alt="Toolbar with three coloured dots — solid green (playing, pulsing ring), red/blue vertical split, yellow/purple horizontal split" width="900">
+</p>
+
+Three Claude Code terminals, each with its own colour. The playing dot pulses with a white ring; the split arrangements (horizontal, vertical) pick complementary colour pairs so every combination is unambiguous.
+
+### 03 · Mixed states
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Four dot states: playing (green, pulsing), queued (orange), heard (faded), J-clip (purple with J glyph for highlight-to-speak)" width="900">
+</p>
+
+Playing · queued · heard (auto-prunes after 3–600 s) · and a **J**-labelled highlight-to-speak clip from "hey jarvis" / `Ctrl+Shift+S`. Muted sessions never produce dots at all — their clips are dropped at arrival.
+
+### 04 · Settings panel open
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-settings-panel.png" alt="Full settings panel: Playback (speed + auto-prune), Sessions table with mute buttons + one expanded row showing voice + speech-includes, About section with ASCII banner + shortcuts" width="900">
+</p>
+
+The gear expands the panel downward. **Playback** holds the speed slider and auto-prune toggle. **Sessions** lists every active terminal with a one-click 🔊/🔇 mute; the chevron on each row reveals per-session voice + six tri-state speech-includes toggles (code blocks, inline code, URLs, headings, bullet markers, image alt-text). **About** has the ASCII banner and full shortcuts table.
+
 ## Who it's for
 
 - **Claude Code users** working in the terminal who want responses read aloud (primary).
