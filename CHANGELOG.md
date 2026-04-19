@@ -2,6 +2,25 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Streaming TTS.** Audio now starts ~2-3 seconds after Claude begins responding, instead of 6-24 seconds after the response finishes. Two mechanisms combine:
+  - *Sentence-parallel synthesis.* Response text is split into sentences and sent to edge-tts in parallel (4-wide). Completed clips roll into the queue in order as they arrive.
+  - *Between-tool streaming via PreToolUse hook.* Each time Claude is about to use a tool, any text written since the last synthesis gets spoken while the tool runs. Brilliant for long working sessions — you hear Claude's commentary while tools execute.
+- New files: `app/synth_turn.py` (orchestrator), `app/sentence_split.py` (sentence boundary detection with abbreviations, URLs, decimals, paragraph breaks), `hooks/speak-on-tool.ps1` (PreToolUse hook).
+- Per-session sync state at `~/.terminal-talk/sessions/<id>-sync.json` prevents the same text from being spoken twice.
+- File-based session lock prevents two hook invocations racing on the same session.
+- 17 new tests in the harness: sentence splitter edge cases, sync state round-trip, text extraction, sanitisation. Total: 71.
+
+### Changed
+- Stop hook (`speak-response.ps1`) now spawns `synth_turn.py` detached and exits in ~150 ms instead of blocking for 6-24 s during synthesis. Legacy inline path preserved as fallback if the Python script is missing.
+- `install.ps1` now registers a `PreToolUse` hook alongside Stop and Notification.
+- `uninstall.ps1` cleans up the new `PreToolUse` entry too.
+
+### Fixed
+- `speak-on-tool.ps1` uses the correct palette size of 24 (the legacy `speak-response.ps1` block still says 32 — left unchanged to avoid scope creep; has no behavioural effect since new sessions almost always find a free slot in the first 24).
+
 ## [0.1.0] — 2026-04-19
 
 Initial release.

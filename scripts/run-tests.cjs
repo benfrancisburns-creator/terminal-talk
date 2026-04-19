@@ -646,13 +646,154 @@ describe('HARDENING: voice id validation', () => {
   });
 });
 
+function runPythonInline(code) {
+  const result = spawnSync('python', ['-c', code], { encoding: 'utf8', timeout: 15000 });
+  return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status };
+}
+
+describe('SENTENCE SPLIT', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  // Always test against the repo copy (independent of install state)
+  const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from sentence_split import split_sentences; `;
+
+  function split(text) {
+    const code = `${pyPrelude}import json; print(json.dumps(split_sentences(${JSON.stringify(text)})))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return JSON.parse(r.stdout.trim());
+  }
+
+  it('splits on basic terminators when sentences are long enough', () => {
+    // Both sentences >= MIN_SENTENCE_LEN (15) so no merging happens
+    const r = split('This is the first actual sentence here. And here is a second one for us.');
+    assertEqual(r.length, 2);
+  });
+  it('preserves abbreviations (Mr., Dr.)', () => {
+    const r = split('Mr. Smith went home for lunch today. Dr. Jones arrived much later.');
+    assertEqual(r.length, 2);
+    if (!r[0].startsWith('Mr. Smith')) throw new Error(`abbrev split: ${r[0]}`);
+  });
+  it('does not split decimals (3.14, 1.2.3)', () => {
+    const r = split('Pi is 3.14 and ships as v1.2.3 right now for users.');
+    assertEqual(r.length, 1);
+  });
+  it('preserves URLs with internal dots', () => {
+    const r = split('Go visit https://foo.com/path.html right now immediately. Then let me know soon.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('https://foo.com/path.html')) throw new Error(`URL mangled: ${r[0]}`);
+  });
+  it('splits on paragraph breaks without terminator', () => {
+    const r = split('First line no full stop\n\nSecond paragraph here');
+    assertEqual(r.length, 2);
+  });
+  it('merges very short sentences into their neighbours', () => {
+    const r = split('OK. Yes. Then a much longer actual sentence continues on here.');
+    assertEqual(r.length, 1);  // all three merged
+  });
+  it('hard-splits sentences longer than 400 chars', () => {
+    const long = 'x'.repeat(300) + ', and more stuff ' + 'y'.repeat(200);
+    const r = split(long);
+    if (r.length < 2) throw new Error(`expected hard split, got ${r.length}`);
+    for (const s of r) if (s.length > 420) throw new Error(`chunk too long: ${s.length}`);
+  });
+  it('returns empty for empty/whitespace input', () => {
+    assertEqual(split(''), []);
+    assertEqual(split('   \n  '), []);
+  });
+});
+
+describe('SYNTH TURN SYNC STATE', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  const testSessionId = 'testsesn1234567890abcdef';
+  const syncPath = path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSessionId}-sync.json`);
+
+  function run(code) {
+    const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import synth_turn; `;
+    const r = runPythonInline(prelude + code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  it('load returns empty state for new session', () => {
+    try { fs.unlinkSync(syncPath); } catch {}
+    const out = run(`s = synth_turn.load_sync_state('${testSessionId}'); print(s['turn_boundary'], len(s['synthesized_line_indices']))`);
+    assertEqual(out, '-1 0');
+  });
+  it('save then load round-trips', () => {
+    run(`synth_turn.save_sync_state('${testSessionId}', {'turn_boundary': 42, 'synthesized_line_indices': [44, 47]})`);
+    const out = run(`s = synth_turn.load_sync_state('${testSessionId}'); print(s['turn_boundary'], s['synthesized_line_indices'])`);
+    assertEqual(out, '42 [44, 47]');
+    try { fs.unlinkSync(syncPath); } catch {}
+  });
+  it('invalid session_id rejected (via run())', () => {
+    // session_id too short → exit code 2
+    const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from synth_turn import run; `;
+    const r = runPythonInline(prelude + `sys.exit(run('bad', '/tmp/nonexistent.jsonl', 'on-stop'))`);
+    assertEqual(r.code, 2);
+  });
+});
+
+describe('SYNTH TURN TEXT EXTRACTION', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+
+  function run(code) {
+    const prelude = `import sys, json; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import synth_turn; `;
+    const r = runPythonInline(prelude + code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  it('find_last_user_idx returns most recent user line', () => {
+    const entries = JSON.stringify([
+      { type: 'user' },                  // 0
+      { type: 'assistant' },             // 1
+      { type: 'user' },                  // 2
+      { type: 'assistant' },             // 3
+    ]);
+    const out = run(`print(synth_turn.find_last_user_idx(${entries}))`);
+    assertEqual(out, '2');
+  });
+  it('find_last_user_idx returns -1 when no user line', () => {
+    const out = run(`print(synth_turn.find_last_user_idx([{'type':'system'}]))`);
+    assertEqual(out, '-1');
+  });
+  it('assistant_text_entries_after filters tool_use correctly', () => {
+    const entries = JSON.stringify([
+      { type: 'user' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'world' }] } },
+    ]);
+    const out = run(`r = synth_turn.assistant_text_entries_after(${entries}, 0); print(json.dumps([[i,t] for i,t in r]))`);
+    assertEqual(JSON.parse(out), [[1, 'hello'], [3, 'world']]);
+  });
+  it('extract_questions pulls sentences ending in ?', () => {
+    const out = run(`print(json.dumps(synth_turn.extract_questions('Is this real? Yes. What now?')))`);
+    const qs = JSON.parse(out);
+    if (qs.length !== 2) throw new Error(`expected 2 questions, got ${qs.length}: ${out}`);
+  });
+  it('sanitize strips code fences when flag off', () => {
+    const text = 'Before ```python\nprint("hi")\n``` after.';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(text)}, {'code_blocks': False, 'inline_code': False}))`);
+    if (out.includes('print(')) throw new Error(`code fence leaked: ${out}`);
+    if (!out.includes('Before') || !out.includes('after')) throw new Error(`text mangled: ${out}`);
+  });
+  it('sanitize keeps code content when flag on', () => {
+    const text = 'Before ```\nhello world\n``` after.';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(text)}, {'code_blocks': True, 'inline_code': False}))`);
+    if (!out.includes('hello world')) throw new Error(`code content dropped: ${out}`);
+  });
+});
+
 describe('INSTALL SANITY', () => {
   it('expected files exist in install dir', () => {
     const required = [
       'app/main.js', 'app/preload.js', 'app/renderer.js', 'app/index.html',
       'app/styles.css', 'app/package.json', 'app/wake-word-listener.py',
       'app/key_helper.py', 'app/edge_tts_speak.py', 'app/statusline.ps1',
+      'app/sentence_split.py', 'app/synth_turn.py',
       'hooks/speak-response.ps1', 'hooks/speak-notification.ps1',
+      'hooks/speak-on-tool.ps1',
       'config.json'
     ];
     for (const rel of required) {

@@ -241,6 +241,32 @@ function Invoke-TTS($text, $edgeVoice, $openAiVoice, $openAiInstructions, $baseP
     return $null
 }
 
+# --- Streaming path (primary since v0.2): spawn synth_turn.py detached.
+# Gives parallel sentence synthesis, rolling in-order release, and
+# coordinates via sync state with the PreToolUse hook so nothing is
+# spoken twice. Falls through to the legacy inline path below if the
+# script is missing (so an out-of-date install never loses audio).
+$synthScript = Join-Path $ttHome 'app\synth_turn.py'
+if (Test-Path $synthScript) {
+    try {
+        $spawnArgs = @(
+            '-u',
+            $synthScript,
+            '--session', $sessionId,
+            '--transcript', $transcript,
+            '--mode', 'on-stop'
+        )
+        Start-Process -FilePath 'python' -ArgumentList $spawnArgs -WindowStyle Hidden -WorkingDirectory $ttHome
+        Log "Stop: spawned synth_turn.py (streaming)"
+        exit 0
+    } catch {
+        Log "Stop: streaming spawn failed, falling through to legacy: $($_.Exception.Message)"
+    }
+} else {
+    Log "Stop: synth_turn.py missing, using legacy path"
+}
+
+# --- Legacy inline fallback (pre-streaming behaviour) ---
 $lines = Get-Content $transcript
 if (-not $lines) { exit 0 }
 $text = $null

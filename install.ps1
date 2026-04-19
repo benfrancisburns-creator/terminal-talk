@@ -124,6 +124,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
         if (-not $settings.hooks) { $settings | Add-Member -NotePropertyName hooks -NotePropertyValue (@{}) -Force }
         $respHook = Join-Path $hooksDir 'speak-response.ps1'
         $notifHook = Join-Path $hooksDir 'speak-notification.ps1'
+        $toolHook = Join-Path $hooksDir 'speak-on-tool.ps1'
         $settings.hooks.Stop = @(@{
             matcher = ''
             hooks = @(@{
@@ -140,8 +141,19 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
                 timeout = 60
             })
         })
+        # PreToolUse hook — new in v0.2. Fires before every tool invocation to
+        # synthesise the status text Claude just wrote, so audio starts playing
+        # while the tool runs instead of waiting until the turn ends.
+        $settings.hooks.PreToolUse = @(@{
+            matcher = ''
+            hooks = @(@{
+                type = 'command'
+                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$toolHook`""
+                timeout = 10
+            })
+        })
         $settings | ConvertTo-Json -Depth 20 | Set-Content $claudeSettings -Encoding utf8
-        Write-Ok "Hooks registered (settings.json backed up)"
+        Write-Ok "Hooks registered (Stop, Notification, PreToolUse — settings.json backed up)"
     }
 } else {
     Write-Warn2 "Skipped. You can still use highlight-to-speak + wake word."

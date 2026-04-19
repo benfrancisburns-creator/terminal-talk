@@ -5,7 +5,7 @@
 .DESCRIPTION
   - Stops running Electron toolbar + Python listener processes.
   - Removes the Startup shortcut.
-  - Removes Stop and Notification hooks from ~/.claude/settings.json (backup kept).
+  - Removes Stop, Notification and PreToolUse hooks from ~/.claude/settings.json (backup kept).
   - Optionally deletes %USERPROFILE%\.terminal-talk\ (preserves config.json if requested).
 #>
 
@@ -70,6 +70,14 @@ if (Test-Path $claudeSettings) {
             })
             if ($keep.Count -eq 0) { $settings.hooks.PSObject.Properties.Remove('Notification') }
             else { $settings.hooks.Notification = $keep }
+            $changed = $true
+        }
+        if ($settings.hooks.PreToolUse) {
+            $keep = @($settings.hooks.PreToolUse | Where-Object {
+                ($_.hooks | ForEach-Object { $_.command }) -notmatch 'terminal-talk'
+            })
+            if ($keep.Count -eq 0) { $settings.hooks.PSObject.Properties.Remove('PreToolUse') }
+            else { $settings.hooks.PreToolUse = $keep }
             $changed = $true
         }
     }

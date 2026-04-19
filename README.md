@@ -26,7 +26,7 @@ Windows-only for now; Mac/Linux planned.
 
 | | |
 |---|---|
-| **Auto-speak Claude Code responses** | Every Claude turn is spoken aloud. Questions in the response are extracted and spoken first so you hear the ask upfront. |
+| **Streaming auto-speak** | Claude's responses are spoken aloud as they're written. Audio starts ~2-3 seconds after Claude begins (not 6-24 seconds after the turn ends) because sentences synthesise in parallel and a `PreToolUse` hook fires mid-response whenever Claude is about to use a tool. Questions are extracted and spoken first so you hear the ask upfront. |
 | **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey jarvis"_ or press `Ctrl+Shift+S`, hear it read. |
 | **Permission-prompt alerts** | When Claude Code asks to use a tool, a voice notification fires so you don't have to watch the screen. |
 | **Floating audio toolbar** | Always-on-top letterbox bar with play/pause, scrubber, and a coloured dot per queued clip. Right-click a dot to delete. Clips autoplay; click to manually replay (auto-deletes 90s later). Settings cog opens an expandable panel. |
