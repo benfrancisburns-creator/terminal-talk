@@ -17,7 +17,7 @@ from openwakeword.model import Model
 LOG_PATH = Path.home() / '.terminal-talk' / 'queue' / '_voice.log'
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-STATE_FILE = Path.home() / '.terminal-talk' / 'queue' / '_listening.state'
+STATE_FILE = Path.home() / '.terminal-talk' / 'listening.state'
 
 def is_listening_on():
     """Returns True if the user has the mic toggle enabled.
