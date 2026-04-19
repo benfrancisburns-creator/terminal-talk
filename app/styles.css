@@ -57,7 +57,9 @@ html, body {
   align-items: center;
   gap: 5px;
   width: 100%;
-  overflow: hidden;
+  /* No overflow:hidden — it was clipping the active dot's halo. Horizontal
+     overflow is rare (auto-prune keeps dot count low) and the bar's own
+     rounded edge + window bounds give natural visual clipping if it happens. */
 }
 
 /* Spacer inserted between dot runs from different sessions. Small enough
