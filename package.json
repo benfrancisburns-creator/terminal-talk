@@ -8,6 +8,9 @@
   "scripts": {
     "test": "node scripts/run-tests.cjs",
     "test:verbose": "node scripts/run-tests.cjs --verbose",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm test && npm run test:e2e",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
   "engines": {
@@ -24,5 +27,8 @@
     "electron",
     "windows",
     "accessibility"
-  ]
+  ],
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
 }

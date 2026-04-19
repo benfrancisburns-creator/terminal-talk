@@ -26,3 +26,8 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Playwright artefacts (tests themselves ARE tracked — these are outputs)
+/test-results/
+/playwright-report/
+/playwright/.cache/
