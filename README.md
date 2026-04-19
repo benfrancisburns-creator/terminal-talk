@@ -57,13 +57,13 @@ The baseline. 680 × 64 frameless two-row pill, always-on-top, drag anywhere to 
 
 Three terminals queued in arrival order: **3 red** from Terminal A (first one playing, 2 queued behind), **3 yellow** from Terminal B, **2 green** from Terminal C. The 12 px gap between runs marks a change of speaker so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. If Terminal C has the important message you'd wait through 5 clips first — that's the story shot 04's focus-star solves.
 
-### 03 · Mixed states
+### 03 · Mixed states in one queue
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Four dot states: heard (faded), playing (pulsing ring), queued (flat disc), J-clip (hey jarvis highlight-to-speak)" width="900">
+  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Eight dots on one bar: 3 red (first 2 faded=heard, 3rd playing with ring), gap, 2 yellow queued, gap, 2 green queued, gap, 1 blue J-clip for hey-jarvis highlight-to-speak" width="900">
 </p>
 
-**Heard** (already played, auto-prunes after 3–600 s, click to replay, right-click to delete) · **Playing** (pulsing white ring around the session colour) · **Queued** (flat disc, auto-plays when current ends) · **J-clip** — a highlight-to-speak capture from "hey jarvis" / `Ctrl+Shift+S`. Muted sessions never appear here at all.
+A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips — you've **heard** the first two (faded, click to replay, right-click to delete) and the third is **playing** now (pulsing white ring around the same red). Terminal B (yellow) has 2 **queued** flat discs behind it, then Terminal C (green) has 2 more. The blue dot on the far right is a **J-clip** — a highlight-to-speak capture from "hey jarvis" / `Ctrl+Shift+S`; J-clips have the highest priority and jump the whole queue when they arrive. Auto-prune removes heard clips after 3–600 s (default 20 s); muted sessions never produce dots at all.
 
 ### 04 · Settings panel open
 

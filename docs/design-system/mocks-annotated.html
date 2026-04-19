@@ -743,8 +743,8 @@
   <section>
     <div class="shot-head">
       <div class="num">03</div>
-      <div class="title">Mixed states</div>
-      <div class="caption">Playing, queued, heard, and a “hey jarvis” clip.</div>
+      <div class="title">Mixed states in one queue</div>
+      <div class="caption">A realistic timeline: 3 red (2 already heard + 1 playing), 2 yellow queued, 2 green queued, and one blue “hey jarvis” clip.</div>
     </div>
 
     <div class="stage">
@@ -765,11 +765,21 @@
           </div>
           <div class="dots-row">
             <div class="dots">
-              <div class="dot c-green heard"></div>
-              <div class="dot c-green playing"></div>
-              <div class="dot c-orange"></div>
+              <!-- Run 1: Terminal A (red) — 3 clips, two heard, one playing -->
+              <div class="dot c-red heard"></div>
+              <div class="dot c-red heard"></div>
+              <div class="dot c-red playing"></div>
               <span class="dots-run-gap"></span>
-              <div class="dot c-purple j"></div>
+              <!-- Run 2: Terminal B (yellow) — 2 queued -->
+              <div class="dot c-yellow"></div>
+              <div class="dot c-yellow"></div>
+              <span class="dots-run-gap"></span>
+              <!-- Run 3: Terminal C (green) — 2 queued -->
+              <div class="dot c-green"></div>
+              <div class="dot c-green"></div>
+              <span class="dots-run-gap"></span>
+              <!-- J-clip: highlight-to-speak from a Claude terminal (blue) -->
+              <div class="dot c-blue j"></div>
             </div>
           </div>
         </div>
@@ -778,28 +788,36 @@
       <div class="annotations">
         <dl>
           <div>
-            <dt>1 · Heard (faded)</dt>
-            <dd>Already played. The dot stays in place so you can click it to hear it again. It disappears on its own after the auto-prune window (3–600 s, default 20 s) — flip auto-prune off if you want clips to stack up for review.</dd>
+            <dt>How to read the strip</dt>
+            <dd>Oldest on the left, newest on the right — always arrival order, never re-sorted. Runs of same-colour dots = clips from one terminal; a 12 px gap marks a change of speaker. So this strip says: <b>A sent 3, B sent 2, C sent 2, plus one highlight-to-speak</b>.</dd>
           </div>
           <div>
-            <dt>2 · Playing</dt>
-            <dd>Slightly larger, pulsing white ring around it. Base colour stays the session colour so you always know which terminal is talking — the ring is layered on top, not a replacement.</dd>
+            <dt>1 · Heard (first two reds)</dt>
+            <dd>Already played. The dot stays in place so you can click it to replay or right-click to delete. It disappears on its own after the auto-prune window (3–600 s, default 20 s). Flip auto-prune off in Playback if you want clips to stack up for review instead.</dd>
           </div>
           <div>
-            <dt>3 · Queued</dt>
-            <dd>Plain flat disc. Auto-plays the moment the current clip ends (assuming no higher priority clip arrives — see shot 04 for the full precedence rules).</dd>
+            <dt>2 · Playing (third red)</dt>
+            <dd>Slightly larger, pulsing white ring. The base colour <i>stays</i> the session colour — the ring is layered on top, not a replacement — so you always know which terminal is currently talking.</dd>
           </div>
           <div>
-            <dt>4 · J-clip (hey jarvis)</dt>
-            <dd>Highlight-to-speak clip from saying “hey jarvis” or <code>Ctrl+Shift+S</code>. Small <b>J</b> glyph over the dot. Colour inherits from the Claude Code terminal the selection came from; grey if triggered from a non-Claude app (browser, PDF, Slack).</dd>
+            <dt>3 · Queued (yellows + greens)</dt>
+            <dd>Plain flat discs. When the current red ends, Terminal B's two yellows play next (oldest first), then Terminal C's two greens. Unless a focus ★ is set (shot 04) or a hey-jarvis clip arrives, which jumps to the front.</dd>
+          </div>
+          <div>
+            <dt>4 · J-clip (blue, on the right)</dt>
+            <dd>Highlight-to-speak clip — you selected text and said <i>"hey jarvis"</i> or pressed <code>Ctrl+Shift+S</code>. The small <b>J</b> glyph marks it. Colour inherits from the Claude Code terminal the selection came from (blue here); grey if triggered from outside a Claude session (browser, PDF, Slack). J-clips have the highest playback priority — they jump the entire queue.</dd>
           </div>
           <div>
             <dt>Muted sessions never appear</dt>
-            <dd>When a session is <code>🔇</code>-muted in the panel, its clips are dropped at the filesystem level — no synthesis, no file, no dot, no audio. Unmuting resumes on the next arrival.</dd>
+            <dd>When a session is <code>🔇</code>-muted in the panel, its clips are dropped at arrival — no synthesis, no file on disk, no dot, no audio. The statusline in that terminal shows a <code>🔇</code> prefix so you remember. Unmuting resumes on the next clip the terminal produces.</dd>
           </div>
           <div>
-            <dt>Right-click to delete</dt>
-            <dd>Right-click any dot to remove it immediately (without waiting for auto-prune). Left-click plays it again.</dd>
+            <dt>Click / right-click</dt>
+            <dd>Left-click any dot to (re)play it manually. Right-click to remove it from the queue immediately without waiting for auto-prune. Both work on heard clips and queued clips.</dd>
+          </div>
+          <div>
+            <dt>Clear all</dt>
+            <dd>The ✕ (trash) button in the controls row wipes <i>every</i> clip at once — useful when three chatty terminals fire at the same time and you just want quiet. Held clips (currently playing) finish first; the rest drop.</dd>
           </div>
         </dl>
       </div>
