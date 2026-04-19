@@ -321,9 +321,22 @@ What Terminal Talk does **not** do:
 
 ---
 
+## Self-cleanup watchdog
+
+Terminal Talk polices itself so loose ends don't accumulate while it's running:
+
+- **Single-instance lock** — at launch, if another Terminal Talk is already running (e.g. auto-start fired while you double-clicked the shortcut), the new process surfaces the existing window and exits immediately. You never end up with multiple main instances in Task Manager.
+- **Startup sweep** — on every launch: prune audio files > 1 h old, delete `.partial` files > 60 s old (crash leftovers), drop session PID files whose PIDs are dead, and kill any orphan `wake-word-listener.py` Python process from a previous session that lost its parent.
+- **Periodic sweep (every 30 min)** — the same three cleanup passes run automatically while the app is up. Each sweep appends one line to `~/.terminal-talk/queue/_watchdog.log` (`timestamp · pruned N audio, N session files · Xms`) so you can see it doing its job.
+- **Mic teardown** — when wake-word listening is toggled off, the Python listener closes its `InputStream` (actually releasing the microphone at the driver level, not just muting input). The Electron side also orphan-sweeps before every listener spawn as belt-and-braces against a hot mic from a crashed previous session.
+
+If anything ever feels "stuck", the watchdog log is the first place to look — `tail ~/.terminal-talk/queue/_watchdog.log`.
+
+---
+
 ## Tests
 
-A 75-test harness exercises the actual installed components:
+A 82-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -343,6 +356,7 @@ Coverage:
 - synth_turn orchestrator: transcript extraction, tool_use filtering, sanitisation with code_blocks toggle, questions-first extraction, sync state round-trip, mute skip.
 - Pinned sessions: not pruned even if PID dead and `last_seen` stale.
 - Install sanity: required files present, config parses.
+- Self-cleanup watchdog: single-instance lock, 30-min sweep, orphan listener kill.
 
 Tests are isolated from the live install — they use a tmp registry path so they can't race with your running statusline.
 

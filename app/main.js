@@ -1198,12 +1198,95 @@ function toggleListening() {
   if (win && !win.isDestroyed()) win.webContents.send('listening-state', !now);
 }
 
+// ===========================================================================
+// Single-instance lock — stops the "5 terminal-talk.exe in Task Manager"
+// problem cold. If another Terminal Talk is already running (from a crashed
+// launch, an auto-start + manual launch collision, etc.), hand the window
+// over to it and exit this process immediately. The existing instance's
+// `second-instance` handler surfaces its window so the user sees something
+// happen instead of silent no-op.
+// ===========================================================================
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  // Another instance owns the lock. Exit without touching the UI.
+  app.quit();
+  process.exit(0);
+}
+app.on('second-instance', () => {
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    try { win.showInactive(); } catch {}
+  }
+});
+
+// ===========================================================================
+// Periodic self-sweep watchdog — runs every 30 minutes while the app is up.
+// Re-uses the same cleanup helpers that already run on startup, so there's
+// only one source of truth for "what clean looks like":
+//   • pruneOldFiles()          — audio files > 1h and .partial orphans > 60s
+//   • pruneSessionsDir()       — removes session PID files for dead PIDs
+//   • killOrphanVoiceListeners() — kills any python wake-word-listener that
+//                                  lost its parent (belt-and-braces: the
+//                                  listener also tears down its InputStream
+//                                  when `_listening.state = off`)
+// Each sweep writes a single line to queue/_watchdog.log so you can see
+// that it's doing its job even when the UI shows nothing happened.
+// ===========================================================================
+const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;  // 30 minutes
+const WATCHDOG_LOG = path.join(QUEUE_DIR, '_watchdog.log');
+let watchdogTimer = null;
+
+function countFiles(dir, predicate) {
+  try {
+    return fs.readdirSync(dir).filter(predicate).length;
+  } catch { return 0; }
+}
+
+function runWatchdogSweep() {
+  const t0 = Date.now();
+  const stats = { audio_removed: 0, sessions_removed: 0, errors: [] };
+
+  const beforeAudio = countFiles(QUEUE_DIR, f => /\.(mp3|wav|partial)$/.test(f));
+  try { pruneOldFiles(); } catch (e) { stats.errors.push(`pruneOldFiles: ${e.message}`); }
+  const afterAudio = countFiles(QUEUE_DIR, f => /\.(mp3|wav|partial)$/.test(f));
+  stats.audio_removed = Math.max(0, beforeAudio - afterAudio);
+
+  const beforeSessions = countFiles(SESSIONS_DIR, () => true);
+  try { pruneSessionsDir(); } catch (e) { stats.errors.push(`pruneSessionsDir: ${e.message}`); }
+  const afterSessions = countFiles(SESSIONS_DIR, () => true);
+  stats.sessions_removed = Math.max(0, beforeSessions - afterSessions);
+
+  try { killOrphanVoiceListeners(); } catch (e) { stats.errors.push(`killOrphanVoiceListeners: ${e.message}`); }
+
+  const ts = new Date().toISOString();
+  const line = `${ts} sweep ok · pruned ${stats.audio_removed} audio · ${stats.sessions_removed} session files · ${Date.now() - t0}ms` +
+    (stats.errors.length ? ` · errors: ${stats.errors.join('; ')}` : '') + '\n';
+  try { fs.appendFileSync(WATCHDOG_LOG, line); } catch {}
+}
+
+function startWatchdog() {
+  if (watchdogTimer) clearInterval(watchdogTimer);
+  // Don't fire immediately — startup already ran the sweep functions. Wait
+  // a full interval so we only clean loose ends that accumulate over time.
+  watchdogTimer = setInterval(runWatchdogSweep, WATCHDOG_INTERVAL_MS);
+  // Write a start line so you know the watchdog actually armed.
+  try {
+    fs.appendFileSync(WATCHDOG_LOG,
+      `${new Date().toISOString()} watchdog armed · interval ${WATCHDOG_INTERVAL_MS / 60000}min · pid ${process.pid}\n`);
+  } catch {}
+}
+
+function stopWatchdog() {
+  if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+}
+
 app.whenReady().then(() => {
   killOrphanVoiceListeners();
   pruneOldFiles();
   pruneSessionsDir();
   createWindow();
   startWatcher();
+  startWatchdog();
 
   const menu = Menu.buildFromTemplate([{
     label: 'Audio',
@@ -1236,6 +1319,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  stopWatchdog();
   globalShortcut.unregisterAll();
   if (watcher) watcher.close();
   if (voiceProc) { try { voiceProc.kill(); } catch {} }

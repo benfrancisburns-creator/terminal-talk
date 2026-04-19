@@ -10,7 +10,9 @@ test.describe('Settings panel', () => {
     await expect(window.locator('body.settings-open')).toHaveCount(1);
     await expect(panel).toBeVisible();
 
-    await openSettings(window);
+    // Second click closes — don't reuse openSettings (its last assertion
+    // expects the panel to still be OPEN after the click).
+    await clickById(window, 'settingsBtn');
     await expect(window.locator('body.settings-open')).toHaveCount(0);
   });
 

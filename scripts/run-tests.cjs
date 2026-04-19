@@ -929,6 +929,61 @@ describe('INSTALL SANITY', () => {
   });
 });
 
+describe('SELF-CLEANUP WATCHDOG', () => {
+  const MAIN_JS = path.join(INSTALL_DIR, 'app', 'main.js');
+  const main = fs.readFileSync(MAIN_JS, 'utf8');
+
+  it('requestSingleInstanceLock is called before app.whenReady', () => {
+    const lockIdx = main.indexOf('requestSingleInstanceLock()');
+    const readyIdx = main.indexOf('app.whenReady()');
+    if (lockIdx < 0) throw new Error('requestSingleInstanceLock missing');
+    if (readyIdx < 0) throw new Error('app.whenReady missing');
+    if (!(lockIdx < readyIdx)) throw new Error('lock must be acquired before whenReady');
+  });
+
+  it('failed lock causes app.quit + process.exit', () => {
+    // The lock handling block must both quit and force-exit so we never
+    // leave a zombie process behind.
+    if (!/!gotSingleInstanceLock[\s\S]{0,200}app\.quit\(\)[\s\S]{0,200}process\.exit\(0\)/.test(main)) {
+      throw new Error('expected app.quit() + process.exit(0) inside !gotSingleInstanceLock branch');
+    }
+  });
+
+  it('second-instance handler surfaces existing window', () => {
+    if (!/app\.on\(['"]second-instance['"]/.test(main)) {
+      throw new Error("app.on('second-instance', ...) handler missing");
+    }
+    if (!/showInactive\(\)/.test(main.slice(main.indexOf('second-instance')))) {
+      throw new Error('second-instance handler should showInactive() the window');
+    }
+  });
+
+  it('watchdog sweep runs pruneOldFiles + pruneSessionsDir + killOrphanVoiceListeners', () => {
+    const sweepIdx = main.indexOf('function runWatchdogSweep');
+    if (sweepIdx < 0) throw new Error('runWatchdogSweep() missing');
+    // Slice from the function header to the next `function ` declaration.
+    const nextFnIdx = main.indexOf('\nfunction ', sweepIdx + 1);
+    const sweep = main.slice(sweepIdx, nextFnIdx > 0 ? nextFnIdx : main.length);
+    for (const fn of ['pruneOldFiles', 'pruneSessionsDir', 'killOrphanVoiceListeners']) {
+      if (!sweep.includes(fn)) throw new Error(`runWatchdogSweep must call ${fn}`);
+    }
+  });
+
+  it('watchdog interval is 30 minutes', () => {
+    if (!main.includes('WATCHDOG_INTERVAL_MS = 30 * 60 * 1000')) {
+      throw new Error('WATCHDOG_INTERVAL_MS should be 30 * 60 * 1000');
+    }
+  });
+
+  it('watchdog is armed inside whenReady and cleared on will-quit', () => {
+    const ready = main.slice(main.indexOf('app.whenReady()'));
+    if (!ready.includes('startWatchdog()')) throw new Error('whenReady must call startWatchdog()');
+
+    const quit = main.slice(main.indexOf("app.on('will-quit'"));
+    if (!quit.includes('stopWatchdog()')) throw new Error("will-quit must call stopWatchdog()");
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');

@@ -851,7 +851,13 @@ function renderSessionRow(shortId, entry) {
   const labelInput = document.createElement('input');
   labelInput.type = 'text';
   labelInput.placeholder = 'Label (e.g. "Tax module")';
-  labelInput.value = entry.label || '';
+  // Set BOTH the attribute and the property. The attribute is what HTML
+  // selectors like input[value="Primary"] match against (Playwright tests
+  // rely on it); the property is what the input actually displays. Keep
+  // them in sync at construction time.
+  const labelValue = entry.label || '';
+  labelInput.value = labelValue;
+  labelInput.setAttribute('value', labelValue);
   labelInput.addEventListener('change', () => {
     window.api.setSessionLabel(shortId, labelInput.value.trim());
   });
