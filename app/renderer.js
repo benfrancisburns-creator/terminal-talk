@@ -19,7 +19,11 @@ const barEl = document.getElementById('bar');
 // (clicks pass to whatever's underneath). It expands back on hover, on a
 // new clip arrival, or on any user interaction. 4 seconds of no
 // interaction → auto-collapse.
-const COLLAPSE_DELAY_MS = 4000;
+// 15 s idle delay — long enough that short lulls between streaming clips
+// don't cause flicker, short enough that the bar stays out of the way
+// during genuinely quiet periods.
+const COLLAPSE_DELAY_MS = 15000;
+const COLLAPSE_RECHECK_MS = 3000;  // poll interval when something's still active
 let isCollapsed = false;
 let collapseTimer = null;
 let settingsOpen = false;  // don't collapse while the settings panel is open
@@ -38,10 +42,29 @@ async function applyCollapsed(collapsed) {
   }
 }
 
+function isQueueActive() {
+  // Still something playing out loud?
+  const audioBusy = audio.src && !audio.paused && !audio.ended && audio.readyState >= 2;
+  if (audioBusy) return true;
+  // Unplayed, unmuted clips sitting in the queue?
+  return queue.some(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path));
+}
+
 function scheduleCollapse(delay = COLLAPSE_DELAY_MS) {
   cancelCollapse();
   if (settingsOpen) return;  // user is actively configuring, stay put
-  collapseTimer = setTimeout(() => { applyCollapsed(true); }, delay);
+  collapseTimer = setTimeout(() => {
+    // When the timer fires, re-check whether anything's still happening.
+    // If audio is playing or unplayed clips remain, defer — don't
+    // collapse mid-flow. Ben's flicker bug was the old 4 s timer firing
+    // between streaming clip arrivals. Now we poll every 3 s until the
+    // queue is genuinely drained, then honour the original idle delay.
+    if (isQueueActive()) {
+      scheduleCollapse(COLLAPSE_RECHECK_MS);
+      return;
+    }
+    applyCollapsed(true);
+  }, delay);
 }
 function cancelCollapse() {
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
