@@ -38,18 +38,34 @@
     text-rendering: geometricPrecision;
     margin: 0;
   }
-  pre.ascii .t { color: #ff5e5e; }
-  pre.ascii .e { color: #ffa726; }
-  pre.ascii .r { color: #ffd93d; }
-  pre.ascii .m { color: #4ade80; }
-  pre.ascii .i { color: #60a5fa; }
-  pre.ascii .n { color: #c084fc; }
-  pre.ascii .a { color: #c97b50; }
-  pre.ascii .l { color: #e0e0e0; }
-  pre.ascii .tlk-t { color: #ff5e5e; }
-  pre.ascii .tlk-a { color: #ffa726; }
-  pre.ascii .tlk-l { color: #ffd93d; }
-  pre.ascii .tlk-k { color: #4ade80; }
+  /* Outer letter span = SHADOW color (applied to ╔╗╚╝═║ bevel chars).
+     Inner <span class="face"> overrides with the bright face color
+     (applied to █ face chars). Each shadow is a darker shade of its
+     face so the bevel reads as a natural cast shadow. */
+  pre.ascii .t { color: #7a1e1e; }
+  pre.ascii .e { color: #7a4a05; }
+  pre.ascii .r { color: #0a5a68; }
+  pre.ascii .m { color: #14532d; }
+  pre.ascii .i { color: #1e3a8a; }
+  pre.ascii .n { color: #581c87; }
+  pre.ascii .a { color: #5a3621; }
+  pre.ascii .l { color: #4b5563; }
+  pre.ascii .tlk-t { color: #7a1e1e; }
+  pre.ascii .tlk-a { color: #7a4a05; }
+  pre.ascii .tlk-l { color: #7a5c08; }
+  pre.ascii .tlk-k { color: #14532d; }
+  pre.ascii .t .face { color: #ff5e5e; }
+  pre.ascii .e .face { color: #ffa726; }
+  pre.ascii .r .face { color: #22d3ee; }
+  pre.ascii .m .face { color: #4ade80; }
+  pre.ascii .i .face { color: #60a5fa; }
+  pre.ascii .n .face { color: #c084fc; }
+  pre.ascii .a .face { color: #c97b50; }
+  pre.ascii .l .face { color: #e0e0e0; }
+  pre.ascii .tlk-t .face { color: #ff5e5e; }
+  pre.ascii .tlk-a .face { color: #ffa726; }
+  pre.ascii .tlk-l .face { color: #ffd93d; }
+  pre.ascii .tlk-k .face { color: #4ade80; }
 
   .talk-row {
     display: flex;
@@ -68,11 +84,15 @@
   .mascot-svg {
     /* Two-step hard drop-shadow for the ANSI-Shadow-style 3D bevel,
        plus the ambient glow. Hard shadows (stdDeviation=0 equivalent)
-       stack to give the chunky pixel-art depth. */
+       stack to give the chunky pixel-art depth. Margin reserves layout
+       space for the 6px bottom/right shadow so flex-center aligns the
+       visible mascot (body + cast shadow) with TALK's ASCII block. */
     filter:
       drop-shadow(3px 3px 0 #b36620)
       drop-shadow(6px 6px 0 #7a3f0f)
       drop-shadow(0 0 14px rgba(255,140,26,0.28));
+    margin-right: 6px;
+    margin-bottom: 6px;
   }
   .cloud-svg { display: block; }
   .cloud-svg text {
@@ -99,20 +119,20 @@
   <div class="center-stack">
 
     <!-- TERMINAL — ANSI Shadow style with per-letter coloured spans -->
-    <pre class="ascii"><span class="t">████████╗</span><span class="e">███████╗</span><span class="r">██████╗ </span><span class="m">███╗   ███╗</span><span class="i">██╗</span><span class="n">███╗   ██╗</span><span class="a"> █████╗ </span><span class="l">██╗</span>
-<span class="t">╚══██╔══╝</span><span class="e">██╔════╝</span><span class="r">██╔══██╗</span><span class="m">████╗ ████║</span><span class="i">██║</span><span class="n">████╗  ██║</span><span class="a">██╔══██╗</span><span class="l">██║</span>
-<span class="t">   ██║   </span><span class="e">█████╗  </span><span class="r">██████╔╝</span><span class="m">██╔████╔██║</span><span class="i">██║</span><span class="n">██╔██╗ ██║</span><span class="a">███████║</span><span class="l">██║</span>
-<span class="t">   ██║   </span><span class="e">██╔══╝  </span><span class="r">██╔══██╗</span><span class="m">██║╚██╔╝██║</span><span class="i">██║</span><span class="n">██║╚██╗██║</span><span class="a">██╔══██║</span><span class="l">██║</span>
-<span class="t">   ██║   </span><span class="e">███████╗</span><span class="r">██║  ██║</span><span class="m">██║ ╚═╝ ██║</span><span class="i">██║</span><span class="n">██║ ╚████║</span><span class="a">██║  ██║</span><span class="l">███████╗</span>
+    <pre class="ascii"><span class="t"><span class="face">████████</span>╗</span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██████</span>╗ </span><span class="m"><span class="face">███</span>╗   <span class="face">███</span>╗</span><span class="i"><span class="face">██</span>╗</span><span class="n"><span class="face">███</span>╗   <span class="face">██</span>╗</span><span class="a"> <span class="face">█████</span>╗ </span><span class="l"><span class="face">██</span>╗</span>
+<span class="t">╚══<span class="face">██</span>╔══╝</span><span class="e"><span class="face">██</span>╔════╝</span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">████</span>╗ <span class="face">████</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">████</span>╗  <span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">█████</span>╗  </span><span class="r"><span class="face">██████</span>╔╝</span><span class="m"><span class="face">██</span>╔<span class="face">████</span>╔<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>╔<span class="face">██</span>╗ <span class="face">██</span>║</span><span class="a"><span class="face">███████</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">██</span>╔══╝  </span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">██</span>║╚<span class="face">██</span>╔╝<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║╚<span class="face">██</span>╗<span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="m"><span class="face">██</span>║ ╚═╝ <span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║ ╚<span class="face">████</span>║</span><span class="a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="l"><span class="face">███████</span>╗</span>
 <span class="t">   ╚═╝   </span><span class="e">╚══════╝</span><span class="r">╚═╝  ╚═╝</span><span class="m">╚═╝     ╚═╝</span><span class="i">╚═╝</span><span class="n">╚═╝  ╚═══╝</span><span class="a">╚═╝  ╚═╝</span><span class="l">╚══════╝</span></pre>
 
     <!-- TALK + mascot side by side -->
     <div class="talk-row">
-      <pre class="ascii"><span class="tlk-t">████████╗</span><span class="tlk-a"> █████╗ </span><span class="tlk-l">██╗     </span><span class="tlk-k">██╗  ██╗</span>
-<span class="tlk-t">╚══██╔══╝</span><span class="tlk-a">██╔══██╗</span><span class="tlk-l">██║     </span><span class="tlk-k">██║ ██╔╝</span>
-<span class="tlk-t">   ██║   </span><span class="tlk-a">███████║</span><span class="tlk-l">██║     </span><span class="tlk-k">█████╔╝ </span>
-<span class="tlk-t">   ██║   </span><span class="tlk-a">██╔══██║</span><span class="tlk-l">██║     </span><span class="tlk-k">██╔═██╗ </span>
-<span class="tlk-t">   ██║   </span><span class="tlk-a">██║  ██║</span><span class="tlk-l">███████╗</span><span class="tlk-k">██║  ██╗</span>
+      <pre class="ascii"><span class="tlk-t"><span class="face">████████</span>╗</span><span class="tlk-a"> <span class="face">█████</span>╗ </span><span class="tlk-l"><span class="face">██</span>╗     </span><span class="tlk-k"><span class="face">██</span>╗  <span class="face">██</span>╗</span>
+<span class="tlk-t">╚══<span class="face">██</span>╔══╝</span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>║ <span class="face">██</span>╔╝</span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">███████</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">█████</span>╔╝ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>╔═<span class="face">██</span>╗ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="tlk-l"><span class="face">███████</span>╗</span><span class="tlk-k"><span class="face">██</span>║  <span class="face">██</span>╗</span>
 <span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
 
       <div class="mascot-pair">
@@ -166,7 +186,7 @@
     <div class="palette">
       <div class="dot" style="background:#ff5e5e"></div>
       <div class="dot" style="background:#ffa726"></div>
-      <div class="dot" style="background:#ffd93d"></div>
+      <div class="dot" style="background:#22d3ee"></div>
       <div class="dot" style="background:#4ade80"></div>
       <div class="dot" style="background:#60a5fa"></div>
       <div class="dot" style="background:#c084fc"></div>
