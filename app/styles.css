@@ -478,7 +478,7 @@ select option:checked, .panel .row select option:checked {
 }
 .session-row {
   display: grid;
-  grid-template-columns: 18px 24px 90px 1fr 180px 28px;
+  grid-template-columns: 18px 24px 90px 1fr 180px 28px 22px;
   gap: 10px;
   align-items: center;
   padding: 4px 0;
@@ -512,6 +512,23 @@ select option:checked, .panel .row select option:checked {
 .mute-btn.muted:hover { background: rgba(255,94,94,0.22); }
 .session-block.session-muted { opacity: 0.55; }
 .session-block.session-muted .mute-btn { opacity: 1; }
+
+.session-remove {
+  width: 20px; height: 20px; padding: 0;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.4);
+  border-radius: 50%;
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.session-remove:hover {
+  background: rgba(255,94,94,0.2);
+  color: #ff8080;
+  border-color: rgba(255,94,94,0.4);
+}
 
 /* Expanded per-session settings */
 .session-expanded {

@@ -89,14 +89,12 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
         $assignments[$sessionShort].session_id = $sessionId
     }
 
-    # Prune: alive PID OR fresh last_seen OR pinned keeps the slot.
+    # All existing sessions keep their slot — permanent until the user
+    # removes them via the Sessions table. Ben's request: "keep it hard
+    # coded there until we want to drop it ourselves".
     $busy = @{}
     foreach ($key in @($assignments.Keys)) {
-        $entry = $assignments[$key]
-        $alive = try { [bool](Get-Process -Id $entry.claude_pid -ErrorAction SilentlyContinue) } catch { $false }
-        $fresh = ($now - $entry.last_seen) -lt $graceSec
-        if ($alive -or $fresh -or $entry.pinned) { $busy[[int]$entry.index] = $true }
-        else { $assignments.Remove($key) }
+        $busy[[int]$assignments[$key].index] = $true
     }
 
     # Assign new session if not already present.

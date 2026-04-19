@@ -871,6 +871,19 @@ ipcMain.handle('set-clickthrough', (_e, on) => {
   return true;
 });
 
+// Explicit remove: user clicked the × on a Sessions table row. We drop
+// the assignment from the registry; if the terminal is still alive the
+// session will get re-registered on its next hook fire.
+ipcMain.handle('remove-session', (_e, shortId) => {
+  if (!validShort(shortId)) return false;
+  const all = loadAssignments();
+  if (!all[shortId]) return false;
+  delete all[shortId];
+  const ok = saveAssignments(all);
+  if (ok) notifyQueue();
+  return ok;
+});
+
 ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
   if (!validShort(shortId)) return false;
   if (typeof muted !== 'boolean') return false;

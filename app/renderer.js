@@ -807,6 +807,23 @@ function renderSessionRow(shortId, entry) {
 
   if (entry.muted) wrap.classList.add('session-muted');
 
+  // Remove session button. Sessions no longer auto-prune on inactivity;
+  // this is the only way to drop one short of reinstalling.
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'session-remove';
+  removeBtn.textContent = '\u00D7';  // ×
+  removeBtn.title = 'Remove this session (colour slot freed)';
+  removeBtn.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const ok = await window.api.removeSession(shortId);
+    if (ok) {
+      delete sessionAssignments[shortId];
+      renderSessionsTable();
+      renderDots();
+    }
+  });
+  row.appendChild(removeBtn);
+
   wrap.appendChild(row);
 
   // Expanded section: per-session voice + tri-state speech includes

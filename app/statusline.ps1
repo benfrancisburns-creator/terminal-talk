@@ -130,18 +130,11 @@ if ($assignments.ContainsKey($short)) {
     $idx = $assignments[$short].index
 }
 
-# Step 2: prune stale entries. Session is LIVE if claude_pid is alive, OR
-# last_seen is within the grace window (covers the period between PID updates).
+# All existing sessions keep their slot until the user explicitly removes
+# them via the toolbar's Sessions table. This matches the hooks' policy.
 $busy = @{}
 foreach ($key in @($assignments.Keys)) {
-    $entry = $assignments[$key]
-    $alive = Test-ProcessAlive $entry.claude_pid
-    $fresh = ($now - $entry.last_seen) -lt $graceSec
-    if ($alive -or $fresh -or $entry.pinned) {
-        $busy[[int]$entry.index] = $true
-    } else {
-        $assignments.Remove($key)
-    }
+    $busy[[int]$assignments[$key].index] = $true
 }
 
 # Step 3: if this session is new, assign the lowest free index.

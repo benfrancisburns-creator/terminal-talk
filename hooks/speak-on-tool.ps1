@@ -97,14 +97,11 @@ if ($assignments.ContainsKey($sessionShort)) {
     $assignments[$sessionShort].session_id = $sessionId
 }
 
-# Prune: alive PID, fresh last_seen, or pinned keeps the slot.
+# All existing sessions keep their slot — permanent until the user removes
+# them via the Sessions table. Same policy as speak-response.ps1.
 $busy = @{}
 foreach ($key in @($assignments.Keys)) {
-    $entry = $assignments[$key]
-    $alive = try { [bool](Get-Process -Id $entry.claude_pid -ErrorAction SilentlyContinue) } catch { $false }
-    $fresh = ($now - $entry.last_seen) -lt $graceSec
-    if ($alive -or $fresh -or $entry.pinned) { $busy[[int]$entry.index] = $true }
-    else { $assignments.Remove($key) }
+    $busy[[int]$assignments[$key].index] = $true
 }
 
 # Assign new session if not already present.
