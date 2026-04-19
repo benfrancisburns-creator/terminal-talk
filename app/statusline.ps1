@@ -16,20 +16,20 @@ if (-not $sessionId) { Write-Host ""; exit 0 }
 # First 8 hex chars -- same slice the hook uses in filenames.
 $short = $sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))
 
+# Load the shared session-registry module (Read-Registry /
+# Touch-Or-Assign-Session / Write-Registry-Atomic / Write-SessionPidFile).
+# Lives alongside this script in the installed `app/` directory.
+Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -ErrorAction SilentlyContinue
+
 # Track this session's Claude Code PID so hey-jarvis can map the foreground
 # terminal back to a session. The statusline's parent = Claude Code CLI process.
+$sessionsDir = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
+if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 try {
-    $sessionsDir = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
-    if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
     $myPid = $PID
-    $claudePid = (Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
-    if ($claudePid) {
-        $sessionFile = Join-Path $sessionsDir "$claudePid.json"
-        $jsonOut = @{ session_id = $sessionId; short = $short; claude_pid = $claudePid; ts = [int][double]::Parse((Get-Date -UFormat %s)) } | ConvertTo-Json -Compress
-        $tmp = "$sessionFile.tmp"
-        [IO.File]::WriteAllText($tmp, $jsonOut, [System.Text.UTF8Encoding]::new($false))
-        Move-Item -Force $tmp $sessionFile
-    }
+    $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
+    $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
+    Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid -SessionId $sessionId -Short $short -Now $nowSec
 } catch {}
 
 # Fallback hash if all palette slots are in use.
@@ -80,89 +80,12 @@ function Test-ProcessAlive($p) {
     try { return [bool](Get-Process -Id $p -ErrorAction SilentlyContinue) } catch { return $false }
 }
 
-$assignments = @{}
-if (Test-Path $registryPath) {
-    try {
-        $raw = Get-Content $registryPath -Raw -Encoding utf8
-        if ($raw) {
-            $parsed = $raw | ConvertFrom-Json
-            if ($parsed.assignments) {
-                foreach ($p in $parsed.assignments.PSObject.Properties) {
-                    $entry = @{
-                        index      = [int]$p.Value.index
-                        session_id = [string]$p.Value.session_id
-                        claude_pid = if ($p.Value.claude_pid) { [int]$p.Value.claude_pid } else { 0 }
-                        label      = if ($p.Value.label) { [string]$p.Value.label } else { '' }
-                        pinned     = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
-                        muted      = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
-                        focus      = ($p.Value.PSObject.Properties.Name -contains 'focus') -and ($p.Value.focus -eq $true)
-                        last_seen  = [long]$p.Value.last_seen
-                    }
-                    # Preserve per-session overrides through every read/write cycle.
-                    if ($p.Value.PSObject.Properties.Name -contains 'voice' -and $p.Value.voice) {
-                        $entry['voice'] = [string]$p.Value.voice
-                    }
-                    if ($p.Value.PSObject.Properties.Name -contains 'speech_includes' -and $p.Value.speech_includes) {
-                        $inc = @{}
-                        foreach ($ip in $p.Value.speech_includes.PSObject.Properties) {
-                            if ($ip.Value -is [bool]) { $inc[$ip.Name] = [bool]$ip.Value }
-                        }
-                        $entry['speech_includes'] = $inc
-                    }
-                    $assignments[$p.Name] = $entry
-                }
-            }
-        }
-    } catch {}
-}
-
-# Long grace so idle terminals don't lose their colour. Slots recycle only
-# when the terminal actually closes (PID dies) AND the entry hasn't been
-# touched in 4 hours.
-$graceSec = 14400
-$idx = $null
-
-# Step 1: if this session's entry already exists, touch it FIRST so it survives
-# the prune pass below even when its previous claude_pid has since died.
-if ($assignments.ContainsKey($short)) {
-    $assignments[$short].last_seen = $now
-    $assignments[$short].session_id = $sessionId
-    $assignments[$short].claude_pid = $claudePid
-    $idx = $assignments[$short].index
-}
-
-# All existing sessions keep their slot until the user explicitly removes
-# them via the toolbar's Sessions table. This matches the hooks' policy.
-$busy = @{}
-foreach ($key in @($assignments.Keys)) {
-    $busy[[int]$assignments[$key].index] = $true
-}
-
-# Step 3: if this session is new, assign the lowest free index.
-if ($null -eq $idx) {
-    for ($i = 0; $i -lt $paletteSize; $i++) {
-        if (-not $busy.ContainsKey($i)) { $idx = $i; break }
-    }
-    if ($null -eq $idx) { $idx = $sum % $paletteSize }
-    $assignments[$short] = @{
-        index      = [int]$idx
-        session_id = $sessionId
-        claude_pid = $claudePid
-        label      = ''
-        pinned     = $false
-        muted      = $false
-        focus      = $false
-        last_seen  = $now
-    }
-}
-
-# Save registry atomically. Use UTF-8 NO BOM so JSON.parse in main.js works.
-try {
-    $tmp = "$registryPath.tmp"
-    $jsonOut = (@{ assignments = $assignments } | ConvertTo-Json -Depth 5)
-    [IO.File]::WriteAllText($tmp, $jsonOut, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -Force $tmp $registryPath
-} catch {}
+# Read, touch/assign, write back — all via the shared module so statusline
+# and the two Stop/PreToolUse hooks are guaranteed to use identical logic.
+$assignments = Read-Registry -RegistryPath $registryPath
+$idx = Update-SessionAssignment -Assignments $assignments -Short $short `
+                                 -SessionId $sessionId -ClaudePid $claudePid -Now $now
+Save-Registry -RegistryPath $registryPath -Assignments $assignments
 
 $emoji = Get-EmojiForIndex $idx
 $label = $assignments[$short].label

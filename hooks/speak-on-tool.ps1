@@ -56,91 +56,18 @@ $registryPath = Join-Path $ttHome 'session-colours.json'
 $sessionsDir = Join-Path $ttHome 'sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 $now = [long][double]::Parse((Get-Date -UFormat %s))
-$graceSec = 300
-$paletteSize = 24  # matches app/renderer.js PALETTE_SIZE
 
-$assignments = @{}
-if (Test-Path $registryPath) {
-    try {
-        $parsed = Get-Content $registryPath -Raw -Encoding utf8 | ConvertFrom-Json
-        if ($parsed.assignments) {
-            foreach ($p in $parsed.assignments.PSObject.Properties) {
-                $entry = @{
-                    index = [int]$p.Value.index
-                    session_id = [string]$p.Value.session_id
-                    claude_pid = if ($p.Value.claude_pid) { [int]$p.Value.claude_pid } else { 0 }
-                    label = if ($p.Value.label) { [string]$p.Value.label } else { '' }
-                    pinned = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
-                    muted = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
-                    focus = ($p.Value.PSObject.Properties.Name -contains 'focus') -and ($p.Value.focus -eq $true)
-                    last_seen = [long]$p.Value.last_seen
-                }
-                if ($p.Value.PSObject.Properties.Name -contains 'voice' -and $p.Value.voice) {
-                    $entry['voice'] = [string]$p.Value.voice
-                }
-                if ($p.Value.PSObject.Properties.Name -contains 'speech_includes' -and $p.Value.speech_includes) {
-                    $inc2 = @{}
-                    foreach ($ip in $p.Value.speech_includes.PSObject.Properties) {
-                        if ($ip.Value -is [bool]) { $inc2[$ip.Name] = [bool]$ip.Value }
-                    }
-                    $entry['speech_includes'] = $inc2
-                }
-                $assignments[$p.Name] = $entry
-            }
-        }
-    } catch {}
-}
+# Shared session-registry module — canonical Read / Touch-Or-Assign /
+# Write-Atomic + per-PID stamp. Replaces ~80 lines of logic that used
+# to be duplicated here AND in speak-response.ps1 AND in statusline.ps1.
+Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
 
-# Touch current session to survive the prune pass.
-if ($assignments.ContainsKey($sessionShort)) {
-    $assignments[$sessionShort].last_seen = $now
-    $assignments[$sessionShort].claude_pid = $claudePid
-    $assignments[$sessionShort].session_id = $sessionId
-}
-
-# All existing sessions keep their slot — permanent until the user removes
-# them via the Sessions table. Same policy as speak-response.ps1.
-$busy = @{}
-foreach ($key in @($assignments.Keys)) {
-    $busy[[int]$assignments[$key].index] = $true
-}
-
-# Assign new session if not already present.
-if (-not $assignments.ContainsKey($sessionShort)) {
-    $idx = $null
-    for ($i = 0; $i -lt $paletteSize; $i++) {
-        if (-not $busy.ContainsKey($i)) { $idx = $i; break }
-    }
-    if ($null -eq $idx) {
-        $sum = 0
-        foreach ($ch in $sessionShort.ToCharArray()) { $sum += [int]$ch }
-        $idx = $sum % $paletteSize
-    }
-    $assignments[$sessionShort] = @{
-        index = [int]$idx
-        session_id = $sessionId
-        claude_pid = $claudePid
-        label = ''
-        pinned = $false
-        last_seen = $now
-    }
-}
-
-try {
-    $tmp = "$registryPath.tmp"
-    $jsonOut = (@{ assignments = $assignments } | ConvertTo-Json -Depth 5)
-    [IO.File]::WriteAllText($tmp, $jsonOut, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -Force $tmp $registryPath
-} catch { Log "registry write fail: $($_.Exception.Message)" }
-
-# Per-PID session file so hey-jarvis can map foreground window → session.
-if ($claudePid) {
-    $sessionFile = Join-Path $sessionsDir "$claudePid.json"
-    $jsonOut = @{ session_id = $sessionId; short = $sessionShort; claude_pid = $claudePid; ts = $now } | ConvertTo-Json -Compress
-    $tmp = "$sessionFile.tmp"
-    [IO.File]::WriteAllText($tmp, $jsonOut, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -Force $tmp $sessionFile
-}
+$assignments = Read-Registry -RegistryPath $registryPath
+$null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
+                                  -SessionId $sessionId -ClaudePid $claudePid -Now $now
+Save-Registry -RegistryPath $registryPath -Assignments $assignments
+Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid `
+                      -SessionId $sessionId -Short $sessionShort -Now $now
 
 # --- Spawn detached synth process ---
 # Start-Process returns immediately; the Python process runs in the background.

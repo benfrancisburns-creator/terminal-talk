@@ -34,7 +34,8 @@ const NEEDS_INSTALL = new Set([
   'HARDENING: renderer CSP',
   'HARDENING: navigation guards',
   'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP',
-  'STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)'
+  'STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)',
+  'PS SESSION-REGISTRY MODULE IS CANONICAL'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -889,6 +890,7 @@ describe('INSTALL SANITY', () => {
       'app/key_helper.py', 'app/edge_tts_speak.py', 'app/statusline.ps1',
       'app/sentence_split.py', 'app/synth_turn.py',
       'app/lib/text.js',
+      'app/session-registry.psm1',
       'hooks/speak-response.ps1', 'hooks/speak-notification.ps1',
       'hooks/speak-on-tool.ps1',
       'config.json'
@@ -972,6 +974,65 @@ describe('STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)', () => {
       throw new Error('main.js stripForTTS must be a thin wrapper over ./lib/text');
     }
   });
+});
+
+describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
+  // CC-4 guard: the 80-line lowest-free-index + hash-fallback + atomic-
+  // write block used to live copy-pasted in three PS files. We extracted
+  // it to app/session-registry.psm1 and made each consumer Import-Module
+  // it. These tests assert:
+  //   - the module file exists + exports the four canonical functions
+  //   - none of the three consumer scripts has re-inlined the logic
+  //     (which would undo the whole refactor)
+  const modulePath   = path.join(APP_DIR, 'session-registry.psm1');
+  const statusline   = fs.readFileSync(path.join(APP_DIR, 'statusline.ps1'), 'utf8');
+  const respHook     = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-response.ps1'), 'utf8');
+  const toolHook     = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-on-tool.ps1'), 'utf8');
+  const moduleSrc    = fs.readFileSync(modulePath, 'utf8');
+
+  it('module exports the four canonical functions', () => {
+    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile']) {
+      if (!moduleSrc.includes(`function ${fn}`)) {
+        throw new Error(`session-registry.psm1 missing function ${fn}`);
+      }
+    }
+    if (!/Export-ModuleMember[\s\S]*Read-Registry[\s\S]*Update-SessionAssignment[\s\S]*Save-Registry[\s\S]*Write-SessionPidFile/.test(moduleSrc)) {
+      throw new Error('session-registry.psm1 must Export-ModuleMember all four canonical functions');
+    }
+  });
+
+  const CONSUMERS = [
+    { name: 'statusline.ps1',       src: statusline },
+    { name: 'speak-response.ps1',   src: respHook },
+    { name: 'speak-on-tool.ps1',    src: toolHook },
+  ];
+
+  for (const c of CONSUMERS) {
+    it(`${c.name} imports the shared module`, () => {
+      if (!/Import-Module[^\n]*session-registry\.psm1/.test(c.src)) {
+        throw new Error(`${c.name}: missing Import-Module .../session-registry.psm1`);
+      }
+    });
+    it(`${c.name} calls the canonical functions instead of re-inlining`, () => {
+      // At least one of the canonical function names must be invoked.
+      // Guards against someone deleting the Import-Module line + pasting
+      // the old 80-line body back in.
+      if (!/Update-SessionAssignment/.test(c.src)) {
+        throw new Error(`${c.name}: does not call Update-SessionAssignment`);
+      }
+      if (!/Save-Registry/.test(c.src)) {
+        throw new Error(`${c.name}: does not call Save-Registry`);
+      }
+    });
+    it(`${c.name} no longer carries the lowest-free-index loop`, () => {
+      // The distinctive for-loop `$i -lt $paletteSize` with break is
+      // exactly the loop that used to live in all three files. If it
+      // reappears it means the logic was copy-pasted back.
+      if (/\$i\s*-lt\s*\$paletteSize/.test(c.src)) {
+        throw new Error(`${c.name}: still contains the inline lowest-free-index loop`);
+      }
+    });
+  }
 });
 
 describe('JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP', () => {
