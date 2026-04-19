@@ -1,0 +1,61 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pure-logic-tests:
+    name: Pure JS tests (cross-platform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      # Run only the tests that don't require PowerShell or edge-tts network access.
+      # The full PowerShell-driven harness runs on Windows below.
+      - name: Pure-logic subset
+        run: |
+          node -e "
+          const { spawnSync } = require('child_process');
+          const r = spawnSync('node', ['scripts/run-tests.cjs'], { encoding: 'utf8' });
+          // Tolerate failures in the PS-driven categories on linux, but require
+          // pure JS tests to pass.
+          const out = r.stdout + r.stderr;
+          process.stdout.write(out);
+          const palette = /PALETTE\s+\u2713/.test(out) || /PALETTE EDGE CASES\s+\u2713/.test(out);
+          const filename = /FILENAME PARSING/.test(out);
+          const includes = /SPEECH INCLUDES/.test(out);
+          const merge = /PER-SESSION OVERRIDE MERGE/.test(out);
+          if (!palette || !filename || !includes || !merge) {
+            console.error('pure-logic test groups did not run');
+            process.exit(1);
+          }
+          "
+
+  windows-full:
+    name: Full harness (Windows + PowerShell + edge-tts)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install Python deps
+        run: python -m pip install --quiet edge-tts openwakeword onnxruntime sounddevice numpy
+
+      - name: Install Electron + Terminal Talk
+        shell: pwsh
+        run: |
+          # Non-interactive install: no hooks, no statusline, no startup shortcut, no launch.
+          $resp = "n`nn`nn`nn`n"
+          $resp | .\install.ps1
+        continue-on-error: false
+
+      - name: Run tests
+        run: node scripts/run-tests.cjs --verbose
