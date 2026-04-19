@@ -22,7 +22,7 @@ html, body {
   background: rgba(24, 26, 32, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: none;
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-app-region: drag;
   transition: height .22s ease, padding .22s ease, opacity .22s ease;
