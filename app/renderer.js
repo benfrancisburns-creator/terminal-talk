@@ -6,6 +6,8 @@ const pauseIcon = document.getElementById('pauseIcon');
 const back10Btn = document.getElementById('back10');
 const fwd10Btn = document.getElementById('fwd10');
 const scrubber = document.getElementById('scrubber');
+const scrubberWrap = document.getElementById('scrubberWrap');
+const scrubberMascot = document.getElementById('scrubberMascot');
 const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
 const clearPlayedBtn = document.getElementById('clearPlayed');
@@ -603,12 +605,28 @@ audio.addEventListener('error', () => {
   playNextPending();
 });
 
-// Scrubber + time-readout smooth updater. The built-in `timeupdate` event
-// only fires ~4× per second, so the mascot-thumb visibly jumps in ~250ms
-// chunks across the rail. Drive the update from requestAnimationFrame
-// instead — browsers fire rAF once per frame (~16ms, 60fps) so the
-// mascot slides smoothly. rAF auto-pauses when the window is hidden
-// (no CPU wasted while you're not looking).
+// Scrubber mascot positioning + state. The native <input type="range">
+// thumb is transparent; the visible mascot is an <svg> overlay we
+// position by setting its .style.left based on scrubber.value. Native
+// slider thumbs are positioned so their CENTRE travels from
+// (rail_left + thumb_half_width) to (rail_right - thumb_half_width), so
+// we match that math or the mascot drifts off the rail at the ends.
+const MASCOT_W = 20;
+function positionScrubberMascot() {
+  if (!scrubberMascot) return;
+  const pct = Number(scrubber.value) / Number(scrubber.max || 1000);
+  const rail = scrubber.getBoundingClientRect();
+  const wrap = scrubberWrap.getBoundingClientRect();
+  const usable = Math.max(0, rail.width - MASCOT_W);
+  const xInRail = (MASCOT_W / 2) + pct * usable;
+  const leftPx = (rail.left - wrap.left) + xInRail;
+  scrubberMascot.style.left = leftPx + 'px';
+}
+
+// Scrubber + time-readout smooth updater. Built-in `timeupdate` only
+// fires ~4×/sec → the mascot visibly jumped in 250ms chunks. Drive it
+// from requestAnimationFrame for buttery motion. rAF auto-pauses on
+// hidden windows (no CPU wasted when the bar isn't visible).
 let scrubberRafId = null;
 function syncScrubberFromAudio() {
   if (!userScrubbing && isFinite(audio.duration) && audio.duration > 0) {
@@ -617,6 +635,7 @@ function syncScrubberFromAudio() {
   } else if (!userScrubbing) {
     timeEl.textContent = `${fmt(audio.currentTime)} / 0:00`;
   }
+  positionScrubberMascot();
 }
 function scrubberTick() {
   syncScrubberFromAudio();
@@ -629,32 +648,87 @@ function scrubberTick() {
 function startScrubberRaf() {
   if (scrubberRafId === null) scrubberRafId = requestAnimationFrame(scrubberTick);
 }
-audio.addEventListener('play', startScrubberRaf);
-audio.addEventListener('playing', startScrubberRaf);
-audio.addEventListener('pause', syncScrubberFromAudio);   // land on final frame
-audio.addEventListener('ended', syncScrubberFromAudio);
-audio.addEventListener('seeking', syncScrubberFromAudio); // after keyboard / UI seek
-// Backgrounded windows have rAF throttled — keep timeupdate as a fallback
-// so the readout doesn't freeze when the bar is minimised or off-screen.
+audio.addEventListener('play', () => {
+  scrubberWrap && scrubberWrap.classList.add('walking');
+  startScrubberRaf();
+});
+audio.addEventListener('playing', () => {
+  scrubberWrap && scrubberWrap.classList.add('walking');
+  startScrubberRaf();
+});
+audio.addEventListener('pause', () => {
+  scrubberWrap && scrubberWrap.classList.remove('walking');
+  syncScrubberFromAudio();
+});
+audio.addEventListener('ended', () => {
+  scrubberWrap && scrubberWrap.classList.remove('walking');
+  syncScrubberFromAudio();
+});
+audio.addEventListener('seeking', syncScrubberFromAudio);
 audio.addEventListener('timeupdate', () => {
   if (scrubberRafId === null) syncScrubberFromAudio();
 });
 audio.addEventListener('loadedmetadata', () => {
   timeEl.textContent = `0:00 / ${fmt(audio.duration)}`;
 });
+// Re-position on window resize (bar resizes when settings panel opens).
+window.addEventListener('resize', positionScrubberMascot);
+// Initial position on load.
+positionScrubberMascot();
 
-scrubber.addEventListener('mousedown', () => { userScrubbing = true; });
+// ----- Drag-direction detection ------------------------------------------
+// While userScrubbing, track whether .value is increasing or decreasing.
+// Set .scrubbing-forward / .scrubbing-backward on the wrap so CSS can
+// sweep the legs left/right (and 180°-flip the whole mascot when going
+// backward, smile → frown = angry). Classes clear on mouseup or after a
+// 160 ms idle with no further input, so he doesn't get stuck frowning.
+let lastScrubberValue = 0;
+let scrubDirTimer = null;
+function clearScrubDir() {
+  scrubberWrap && scrubberWrap.classList.remove('scrubbing', 'scrubbing-forward', 'scrubbing-backward');
+  scrubDirTimer = null;
+}
+function setScrubDir(dir) {
+  if (!scrubberWrap) return;
+  scrubberWrap.classList.add('scrubbing');
+  if (dir > 0) {
+    scrubberWrap.classList.add('scrubbing-forward');
+    scrubberWrap.classList.remove('scrubbing-backward');
+  } else if (dir < 0) {
+    scrubberWrap.classList.add('scrubbing-backward');
+    scrubberWrap.classList.remove('scrubbing-forward');
+  }
+  if (scrubDirTimer) clearTimeout(scrubDirTimer);
+  scrubDirTimer = setTimeout(clearScrubDir, 160);
+}
+
+scrubber.addEventListener('mousedown', () => {
+  userScrubbing = true;
+  lastScrubberValue = Number(scrubber.value);
+});
 scrubber.addEventListener('mouseup', () => {
   if (isFinite(audio.duration)) {
     audio.currentTime = (scrubber.value / 1000) * audio.duration;
   }
   userScrubbing = false;
+  clearScrubDir();
+  positionScrubberMascot();
 });
 scrubber.addEventListener('input', () => {
+  const newVal = Number(scrubber.value);
+  const dir = newVal - lastScrubberValue;
+  if (dir !== 0) setScrubDir(dir);
+  lastScrubberValue = newVal;
   if (isFinite(audio.duration)) {
     const t = (scrubber.value / 1000) * audio.duration;
     timeEl.textContent = `${fmt(t)} / ${fmt(audio.duration)}`;
   }
+  positionScrubberMascot();
+});
+// Keyboard arrows fire 'change' not 'input' on some Chromium builds —
+// catch both so keyboard seeking also flips the mascot correctly.
+scrubber.addEventListener('change', () => {
+  positionScrubberMascot();
 });
 
 function playToggleTone(on) {
