@@ -157,7 +157,7 @@ function pruneSessionsDir() {
 function createWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   const winWidth = 680;
-  const winHeight = 100;  // two-row: 36px controls + gap + ~40px dot strip (room for pulse glow)
+  const winHeight = 114;  // 36 controls + 4 gap + 44 dot row + 14 padding + 12 margin + halo breathing
   win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
@@ -795,8 +795,8 @@ ipcMain.handle('set-session-include', (_e, shortId, key, value) => {
   return saveAssignments(all);
 });
 
-const WIN_COLLAPSED = { width: 680, height: 100 };
-const WIN_EXPANDED = { width: 680, height: 604 };
+const WIN_COLLAPSED = { width: 680, height: 114 };
+const WIN_EXPANDED = { width: 680, height: 618 };
 ipcMain.handle('set-panel-open', (_e, open) => {
   if (!win || win.isDestroyed()) return false;
   const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
