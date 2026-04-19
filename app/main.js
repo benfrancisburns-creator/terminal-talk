@@ -374,6 +374,35 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
 
+  // ===========================================================================
+  // Navigation + new-window guards (Electron security checklist items 12 + 13).
+  // The toolbar renderer is fully local: the only legitimate navigation is to
+  // our own app/index.html. Anything else — a malicious link, an XSS-injected
+  // form submit, a ctrl-clicked <a href> that somehow slipped through — gets
+  // denied here. External URLs that the user deliberately wants to open are
+  // funnelled through shell.openExternal (OS default browser), which has no
+  // access to the renderer's IPC surface.
+  // ===========================================================================
+  const APP_FILE_URL = 'file://' + path.join(__dirname, 'index.html').replace(/\\/g, '/');
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== APP_FILE_URL && !url.startsWith('file://' + __dirname.replace(/\\/g, '/'))) {
+      event.preventDefault();
+      diag(`blocked will-navigate to ${url}`);
+    }
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // Refuse to open a child BrowserWindow for anything. If we ever want
+    // to surface an outbound link (docs, OpenAI dashboard, etc.) we'll
+    // route it through shell.openExternal explicitly.
+    diag(`blocked setWindowOpenHandler for ${url}`);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-attach-webview', (event) => {
+    // We don't use <webview> at all — refuse attachment outright.
+    event.preventDefault();
+    diag('blocked will-attach-webview');
+  });
+
   // Send initial orientation so renderer applies the right CSS on first
   // paint. Always horizontal now — vertical mode was removed.
   win.webContents.on('did-finish-load', () => {

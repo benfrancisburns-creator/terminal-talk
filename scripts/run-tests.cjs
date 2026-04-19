@@ -28,9 +28,11 @@ const NEEDS_INSTALL = new Set([
   'PINNED SESSIONS NOT PRUNED', 'STATUSLINE OUTPUT',
   'MAIN.JS REGISTRY READ TOLERANCE', 'HARDENING: secrets do not leak to logs',
   'INSTALL SANITY',
-  // Reads ~/.terminal-talk/app/main.js to grep for watchdog wiring —
-  // only the Windows install has that path.
-  'SELF-CLEANUP WATCHDOG'
+  // Reads ~/.terminal-talk/app/* to grep for wiring — only the Windows
+  // install has that path, so the Linux CI job must skip these groups.
+  'SELF-CLEANUP WATCHDOG',
+  'HARDENING: renderer CSP',
+  'HARDENING: navigation guards'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -990,6 +992,59 @@ describe('SELF-CLEANUP WATCHDOG', () => {
 
     const quit = main.slice(main.indexOf("app.on('will-quit'"));
     if (!quit.includes('stopWatchdog()')) throw new Error("will-quit must call stopWatchdog()");
+  });
+});
+
+describe('HARDENING: renderer CSP', () => {
+  it('app/index.html has a strict Content-Security-Policy meta tag', () => {
+    const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
+    if (!/http-equiv="Content-Security-Policy"/.test(html)) {
+      throw new Error('missing Content-Security-Policy meta tag in app/index.html');
+    }
+    // default-src must be 'none' or 'self' — never * or missing.
+    const defaultSrc = html.match(/default-src\s+([^;]+);/);
+    if (!defaultSrc) throw new Error('CSP has no default-src directive');
+    if (!/^\s*'(none|self)'/.test(defaultSrc[1])) {
+      throw new Error(`default-src should be 'none' or 'self' (got: ${defaultSrc[1].trim()})`);
+    }
+  });
+
+  it('CSP pins connect-src so renderer cannot call out to the network', () => {
+    const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
+    // Renderer has no legitimate fetch surface; all network calls happen
+    // in main. If connect-src ever drifts to * or https:, that's a regression.
+    if (!/connect-src\s+'none'/.test(html)) {
+      throw new Error("CSP connect-src must be 'none' (renderer should never make network calls)");
+    }
+  });
+});
+
+describe('HARDENING: navigation guards', () => {
+  const MAIN_JS = path.join(INSTALL_DIR, 'app', 'main.js');
+  const main = fs.readFileSync(MAIN_JS, 'utf8');
+
+  it('will-navigate handler blocks non-local URLs', () => {
+    if (!/webContents\.on\(['"]will-navigate['"]/.test(main)) {
+      throw new Error("main.js missing webContents.on('will-navigate', ...) guard");
+    }
+  });
+
+  it('setWindowOpenHandler denies by default', () => {
+    if (!/setWindowOpenHandler/.test(main)) {
+      throw new Error('main.js missing webContents.setWindowOpenHandler(...)');
+    }
+    // The handler body must return action: 'deny' for unknown URLs.
+    const block = main.slice(main.indexOf('setWindowOpenHandler'),
+                             main.indexOf('setWindowOpenHandler') + 400);
+    if (!/action:\s*['"]deny['"]/.test(block)) {
+      throw new Error("setWindowOpenHandler should return { action: 'deny' } by default");
+    }
+  });
+
+  it('will-attach-webview is blocked', () => {
+    if (!/will-attach-webview/.test(main)) {
+      throw new Error('main.js should preventDefault on will-attach-webview');
+    }
   });
 });
 

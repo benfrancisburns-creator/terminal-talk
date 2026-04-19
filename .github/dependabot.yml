@@ -1,0 +1,50 @@
+# Dependabot keeps our three dependency surfaces fresh. Everything runs
+# weekly on Monday morning (London time) — enough cadence to catch CVEs
+# early without drowning the repo in noise from tiny version bumps.
+# Groups collapse non-security updates into one PR per ecosystem per week.
+version: 2
+updates:
+  # --- npm (Electron app + tests) -------------------------------------------
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # --- Python (wake word + edge-tts + sentence split) -----------------------
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - python
+
+  # --- GitHub Actions (CI) --------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci

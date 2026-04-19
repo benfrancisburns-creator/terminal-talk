@@ -3,6 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <title>Terminal Talk</title>
+  <!-- Strict CSP for the toolbar renderer. The renderer only loads local
+       scripts/styles, plays local audio clips (via the audio element
+       pointing at file: URLs), and has no network fetch surface — all
+       network calls (TTS, OpenAI fallback) happen in the main process
+       where contextIsolation + sandbox can't reach anyway.
+         - default-src 'none'  deny by default
+         - script-src 'self'   only renderer.js (and no inline <script>)
+         - style-src 'self' 'unsafe-inline'  styles.css + dynamic dot colours
+         - img-src 'self' data:  SVG icons + any inline data: URLs
+         - media-src 'self' blob: file:  the <audio> tag plays queue files
+         - font-src 'self'  we don't load web fonts in the app
+         - connect-src 'none'  renderer must not call out to the network
+       Tightened per Electron's security checklist (see SECURITY.md). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none';">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>

@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working the way the README says it should.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much as you can — it saves a back-and-forth round trip and gets your fix shipped faster.
+
+        **Not a bug report?**
+        - Security issue? Please use [private security advisories](../../security/advisories/new), not this form.
+        - Feature request? Use the *Feature request* template instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Terminal Talk version
+      description: "`node terminal-talk/scripts/run-tests.cjs --version` or the commit SHA you installed from."
+      placeholder: "e.g. v0.1.0 or 56cf19e"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Other (please describe in notes)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you see, and what did you expect to see instead?
+      placeholder: |
+        1. I opened the settings panel with the bar docked to the bottom.
+        2. I dragged the bar up towards the middle of the screen.
+        3. The panel collapsed instead of following the bar.
+        4. I expected the panel to stay open.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        Please attach the tail of `~/.terminal-talk/queue/_toolbar.log` and (if the issue is mic-related) `_voice.log`.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I've searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I can reproduce this on a clean launch (kill Terminal Talk, start it again, try again).
+          required: true
