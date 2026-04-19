@@ -300,7 +300,7 @@ async function initialLoad() {
     }
   }
   renderDots();
-  if (isAudioIdle() && (priorityQueue.length > 0 || pendingQueue.length > 0)) {
+  if (isAudioIdle()) {
     playNextPending();
   }
 }
@@ -335,7 +335,7 @@ window.api.onQueueUpdated((payload) => {
   }
   renderDots();
 
-  if (isAudioIdle() && (priorityQueue.length > 0 || pendingQueue.length > 0)) {
+  if (isAudioIdle()) {
     playNextPending();
   }
 });
@@ -397,7 +397,11 @@ audio.addEventListener('ended', () => {
   currentIsManual = false;
   renderDots();
   if (justPlayed && wasManual) scheduleAutoDelete(justPlayed);
-  if (pendingQueue.length > 0 || priorityQueue.length > 0) playNextPending();
+  // Always call playNextPending: it picks from priority → pending → fallback
+  // scan of unplayed clips still sitting in queue. The old gate skipped the
+  // fallback entirely when both explicit queues were empty, leaving unplayed
+  // arrivals stranded after a manually-started clip ended.
+  playNextPending();
 });
 
 audio.addEventListener('error', () => {
@@ -406,7 +410,7 @@ audio.addEventListener('error', () => {
   currentPath = null;
   currentIsManual = false;
   renderDots();
-  if (pendingQueue.length > 0 || priorityQueue.length > 0) playNextPending();
+  playNextPending();
 });
 
 audio.addEventListener('timeupdate', () => {
