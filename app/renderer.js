@@ -1067,10 +1067,14 @@ document.addEventListener('mousemove', (e) => {
     bumpActivity();
   }
 });
-// Any click/keypress = user actively engaging → cancel pending collapse
-// and reset the inactivity timer.
+// Click on the toolbar = user actively engaging → reset inactivity timer.
+// NB: we deliberately do NOT listen for keydown at the window level.
+// The toolbar is a floating widget; when it gets focus, any window-level
+// keydown listener swallows keystrokes that the user intended for their
+// actual app (arrow keys / scrolling / typing in Claude Code). Settings
+// panel inputs have their own focus/change handlers — they don't need
+// the window-level listener.
 barEl.addEventListener('click', bumpActivity);
-window.addEventListener('keydown', bumpActivity);
 // When main toggles visibility via the global hotkey, guarantee we're
 // expanded so the user can actually see and interact with the bar.
 if (window.api.onForceExpand) {

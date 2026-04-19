@@ -357,10 +357,11 @@ function toggleWindow() {
   if (!win) return;
   if (win.isVisible()) win.hide();
   else {
-    win.show();
-    win.focus();
-    // Force the bar to expanded state so the user sees the full toolbar,
-    // not a hard-to-find slim strip, when they invoke the hotkey.
+    // showInactive + no .focus() — the toolbar appears but doesn't steal
+    // keyboard focus from whatever app the user is using. Arrow keys /
+    // scroll / typing continue to go to the user's real work. They can
+    // click the toolbar to interact with it.
+    win.showInactive();
     try { win.webContents.send('force-expand'); } catch {}
   }
 }
