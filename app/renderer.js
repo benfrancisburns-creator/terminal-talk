@@ -669,12 +669,12 @@ function syncScrubberFromAudio() {
 // put while the mascot continues walking forward, so the words look like
 // a trail he's leaving behind. Auto-removed on animationend.
 let nextVerbEmitAt = 0;
-function emitSpinnerVerbBehindMascot(now) {
+function emitSpinnerVerbCloud(now) {
   if (!scrubberWrap || !scrubberMascot) return;
   if (audio.paused || audio.ended || userScrubbing) return;
   if (now < nextVerbEmitAt) return;
   // Compute mascot's current x relative to the wrap (same math as
-  // positionScrubberMascot) so the word spawns just behind him.
+  // positionScrubberMascot) so the cloud spawns directly above his head.
   const rail = scrubber.getBoundingClientRect();
   const wrap = scrubberWrap.getBoundingClientRect();
   if (wrap.width <= 0) return;
@@ -685,13 +685,11 @@ function emitSpinnerVerbBehindMascot(now) {
   const word = document.createElement('span');
   word.className = 'scrubber-trail-word';
   word.textContent = randomVerb();
-  // Anchor to the left initially so we can measure offsetWidth, then
-  // shift so the word's RIGHT edge sits ~6 px behind the mascot's
-  // LEFT edge. translateX(-100%) works in CSS space after measurement.
-  // `left` is the x-coordinate where the word's RIGHT edge lands (the
-  // animation's translate(-100%, …) does the shift to make that true).
-  // Position it 4 px behind the mascot's left side.
-  word.style.left = (mascotX - (MASCOT_W / 2) - 4) + 'px';
+  // Anchor the cloud's x at the mascot's centre. The CSS animation's
+  // translate(-50%, …) centres the text on that point, then drifts it
+  // upward with a gentle left-right sway so it reads as a thought-
+  // cloud floating off his head, not a speech bubble pinned behind him.
+  word.style.left = mascotX + 'px';
   scrubberWrap.appendChild(word);
   word.addEventListener('animationend', () => word.remove(), { once: true });
 
@@ -700,7 +698,7 @@ function emitSpinnerVerbBehindMascot(now) {
 
 function scrubberTick() {
   syncScrubberFromAudio();
-  emitSpinnerVerbBehindMascot(performance.now());
+  emitSpinnerVerbCloud(performance.now());
   if (!audio.paused && !audio.ended) {
     scrubberRafId = requestAnimationFrame(scrubberTick);
   } else {

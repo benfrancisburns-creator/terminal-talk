@@ -392,40 +392,57 @@ body.dock-right .bar {
   50%      { transform: translateY(0)   rotate(22deg); }
 }
 
-/* --- SPINNER-VERB TRAIL -------------------------------------------------
+/* --- SPINNER-VERB CLOUDS ------------------------------------------------
    As the mascot walks, Claude-Code-style thinking verbs (Moonwalking,
-   Cerebrating, Ruminating, Flibbertigibbeting, ~90 total) bubble out
-   behind him every ~1s and fade. Drift is subtle — the mascot moves
-   forward and the words just hang where they were emitted, so visually
-   they look like a trail he's leaving behind.
+   Cerebrating, Ruminating, Flibbertigibbeting, ~90 total) bubble up
+   from above his head as little white pixel-clouds every ~1 s, drift
+   upward while swaying gently left-right (like wisps of steam or small
+   clouds being carried on slow air), and fade. Each cloud is centred
+   horizontally on the mascot at spawn time; once airborne, it floats
+   freely and the mascot keeps walking — he's leaving thoughts in the
+   sky behind him.
    -------------------------------------------------------------------- */
 .scrubber-trail-word {
   position: absolute;
-  top: -2px;                /* sit just above the rail, slightly above mascot */
+  top: -4px;                /* spawn just above the rail, over the mascot's head */
   font-family: 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace;
   font-size: 8px;
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: 0.02em;
-  color: rgba(255, 170, 80, 0.9);
-  text-shadow: 0 0 3px rgba(255, 140, 26, 0.45);
+  color: #0e0f13;           /* dark ink, matches wallpaper bubble text */
+  background: #ffffff;
+  padding: 2px 5px;
   white-space: nowrap;
   pointer-events: none;
-  animation: tt-verb-trail 1.35s ease-out forwards;
+  animation: tt-verb-cloud 1.9s ease-out forwards;
   will-change: opacity, transform;
+  /* Pixel-puff top + bottom: 1-pixel extended rails above and below
+     the main body, giving a stepped silhouette like the wallpaper's
+     HEY JARVIS cloud scaled right down. No left/right extra pixels so
+     the word width stays predictable for horizontal centring. */
+  box-shadow:
+    0 -1px 0 #ffffff,
+    0  1px 0 #ffffff;
 }
-/* translate(-100%, Y) — the -100% on X keeps the word's RIGHT edge
-   anchored to its `left` coordinate (set in renderer.js to the mascot's
-   back), so the text trails LEFTWARD from the anchor no matter how long
-   the word is. Y drifts upward as it fades out. */
-@keyframes tt-verb-trail {
-  0%   { opacity: 0;    transform: translate(-100%, 2px); }
-  18%  { opacity: 0.95; transform: translate(-100%, 0); }
-  70%  { opacity: 0.75; transform: translate(-100%, -4px); }
-  100% { opacity: 0;    transform: translate(-100%, -10px); }
+
+/* translate(-50%, …) on X keeps each cloud centred on the mascot's
+   x-coordinate (set as `left` in renderer.js). Y drifts upward;
+   X sways left then right as it rises, like a cloud being carried by
+   slow-moving air. Fade-in fast at the start so the word reads
+   immediately, long trail-off on the way up. */
+@keyframes tt-verb-cloud {
+  0%   { opacity: 0;                                          transform: translate(-50%, 2px); }
+  12%  { opacity: 0.95;                                       transform: translate(-50%, -4px); }
+  40%  { opacity: 0.85; transform: translate(calc(-50% - 4px), -10px); }
+  70%  { opacity: 0.6;  transform: translate(calc(-50% + 4px), -16px); }
+  100% { opacity: 0;                                          transform: translate(-50%, -22px); }
 }
-/* The scrubber-wrap needs to let trail words bleed upward out of its
-   18 px box so they fade above the bar controls instead of clipping. */
+
+/* The scrubber-wrap + bar-top both need overflow:visible so the
+   clouds bleed upward out of the 18 px rail area and float over the
+   bar-top region without being clipped. */
 .scrubber-wrap { overflow: visible; }
+.bar-top       { overflow: visible; }
 
 /* --- ANGRY / UPSIDE-DOWN -----------------------------------------------
    Only triggered by backward drag — not just any time the scrubber value
