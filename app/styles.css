@@ -87,12 +87,9 @@ html, body {
   transform: scale(1.2);
 }
 
-/* Currently playing: slightly larger + pulsing white halo. Glow magnitudes
-   tuned so the peak of the pulse stays within the 44px dots-row height
-   (dot 16 + ring 2 + glow 8 = 26 max radius, centered vertically). */
+/* Currently playing: same size as the other dots, just a pulsing halo
+   around it. No scaling so the row doesn't jump when playback advances. */
 .dot.active {
-  width: 16px;
-  height: 16px;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 6px rgba(255, 255, 255, 0.25);
   animation: activePulse 1.6s ease-in-out infinite;
 }
