@@ -109,7 +109,7 @@ Click the gear to expand the toolbar into a panel with:
 - **Sessions** — one row per active Claude Code session:
   - Coloured swatch + 8-character session ID.
   - Editable label (shows next to the emoji in that terminal's statusline).
-  - **Colour dropdown** — 32 arrangements: 8 solid colours, 8 horizontal splits, 8 vertical splits, 8 quadrant patterns. Pick anything; the change is instant on the toolbar and propagates to the statusline within a couple of seconds.
+  - **Colour dropdown** — 24 arrangements: 8 solid colours + 8 horizontal splits + 8 vertical splits, with complementary colour pairings on the splits so each is unambiguous. Pick anything; the change is instant on the toolbar and propagates to the statusline within a couple of seconds.
   - **Chevron** — expands to per-session voice and speech-includes overrides (see below).
 - **About Terminal Talk** — banner + shortcuts cheat-sheet.
 
