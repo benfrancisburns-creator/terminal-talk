@@ -84,30 +84,34 @@ section { padding: 80px 24px; }
   text-rendering: geometricPrecision;
   margin: 0;
 }
-.hero-ascii .t { color: #7a1e1e; }
-.hero-ascii .e { color: #7a4a05; }
-.hero-ascii .r { color: #0a5a68; }
-.hero-ascii .m { color: #14532d; }
-.hero-ascii .i { color: #1e3a8a; }
-.hero-ascii .n { color: #581c87; }
-.hero-ascii .a { color: #5a3621; }
-.hero-ascii .l { color: #4b5563; }
-.hero-ascii .tlk-t { color: #7a1e1e; }
-.hero-ascii .tlk-a { color: #7a4a05; }
-.hero-ascii .tlk-l { color: #7a5c08; }
-.hero-ascii .tlk-k { color: #14532d; }
-.hero-ascii .t .face { color: #ff5e5e; }
-.hero-ascii .e .face { color: #ffa726; }
-.hero-ascii .r .face { color: #22d3ee; }
-.hero-ascii .m .face { color: #4ade80; }
-.hero-ascii .i .face { color: #60a5fa; }
-.hero-ascii .n .face { color: #c084fc; }
-.hero-ascii .a .face { color: #c97b50; }
-.hero-ascii .l .face { color: #e0e0e0; }
-.hero-ascii .tlk-t .face { color: #ff5e5e; }
-.hero-ascii .tlk-a .face { color: #ffa726; }
-.hero-ascii .tlk-l .face { color: #ffd93d; }
-.hero-ascii .tlk-k .face { color: #4ade80; }
+/* Bevel chars (╔╗╚╝═║) sit inside each letter outline — hide them so
+   only the solid █ face blocks render, then text-shadow casts a real
+   drop shadow behind each face in a darker shade of its face color. */
+.hero-ascii .t,
+.hero-ascii .e,
+.hero-ascii .r,
+.hero-ascii .m,
+.hero-ascii .i,
+.hero-ascii .n,
+.hero-ascii .a,
+.hero-ascii .l,
+.hero-ascii .tlk-t,
+.hero-ascii .tlk-a,
+.hero-ascii .tlk-l,
+.hero-ascii .tlk-k { color: transparent; }
+
+.hero-ascii .t .face  { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+.hero-ascii .e .face  { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+.hero-ascii .r .face  { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+.hero-ascii .m .face  { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+.hero-ascii .i .face  { color: #60a5fa; text-shadow: 3px 3px 0 #3b6fc5, 6px 6px 0 #1e3a8a; }
+.hero-ascii .n .face  { color: #c084fc; text-shadow: 3px 3px 0 #8a54b8, 6px 6px 0 #581c87; }
+.hero-ascii .a .face  { color: #c97b50; text-shadow: 3px 3px 0 #8a5338, 6px 6px 0 #5a3621; }
+.hero-ascii .l .face  { color: #e0e0e0; text-shadow: 3px 3px 0 #8a8a8a, 6px 6px 0 #4b5563; }
+.hero-ascii .tlk-t .face { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+.hero-ascii .tlk-a .face { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+.hero-ascii .tlk-l .face { color: #ffd93d; text-shadow: 3px 3px 0 #b39928, 6px 6px 0 #7a5c08; }
+.hero-ascii .tlk-k .face { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
 .talk-row { display: flex; align-items: center; gap: 44px; flex-wrap: wrap; justify-content: center; }
 .mascot-pair { display: flex; align-items: center; gap: 20px; }
 .mascot-svg {

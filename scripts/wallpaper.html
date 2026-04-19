@@ -38,34 +38,37 @@
     text-rendering: geometricPrecision;
     margin: 0;
   }
-  /* Outer letter span = SHADOW color (applied to ╔╗╚╝═║ bevel chars).
-     Inner <span class="face"> overrides with the bright face color
-     (applied to █ face chars). Each shadow is a darker shade of its
-     face so the bevel reads as a natural cast shadow. */
-  pre.ascii .t { color: #7a1e1e; }
-  pre.ascii .e { color: #7a4a05; }
-  pre.ascii .r { color: #0a5a68; }
-  pre.ascii .m { color: #14532d; }
-  pre.ascii .i { color: #1e3a8a; }
-  pre.ascii .n { color: #581c87; }
-  pre.ascii .a { color: #5a3621; }
-  pre.ascii .l { color: #4b5563; }
-  pre.ascii .tlk-t { color: #7a1e1e; }
-  pre.ascii .tlk-a { color: #7a4a05; }
-  pre.ascii .tlk-l { color: #7a5c08; }
-  pre.ascii .tlk-k { color: #14532d; }
-  pre.ascii .t .face { color: #ff5e5e; }
-  pre.ascii .e .face { color: #ffa726; }
-  pre.ascii .r .face { color: #22d3ee; }
-  pre.ascii .m .face { color: #4ade80; }
-  pre.ascii .i .face { color: #60a5fa; }
-  pre.ascii .n .face { color: #c084fc; }
-  pre.ascii .a .face { color: #c97b50; }
-  pre.ascii .l .face { color: #e0e0e0; }
-  pre.ascii .tlk-t .face { color: #ff5e5e; }
-  pre.ascii .tlk-a .face { color: #ffa726; }
-  pre.ascii .tlk-l .face { color: #ffd93d; }
-  pre.ascii .tlk-k .face { color: #4ade80; }
+  /* Outer letter span = TRANSPARENT — the ANSI Shadow bevel chars
+     (╔╗╚╝═║) sit inside each letter's outline, so coloring them drew
+     shadow lines through the letter face. Making them invisible lets
+     the solid █ face blocks (inside <span class="face">) stand alone,
+     and text-shadow casts a real two-step drop shadow behind them —
+     matching the mascot's 3px/6px stacked drop-shadow. */
+  pre.ascii .t,
+  pre.ascii .e,
+  pre.ascii .r,
+  pre.ascii .m,
+  pre.ascii .i,
+  pre.ascii .n,
+  pre.ascii .a,
+  pre.ascii .l,
+  pre.ascii .tlk-t,
+  pre.ascii .tlk-a,
+  pre.ascii .tlk-l,
+  pre.ascii .tlk-k { color: transparent; }
+
+  pre.ascii .t .face  { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+  pre.ascii .e .face  { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+  pre.ascii .r .face  { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+  pre.ascii .m .face  { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+  pre.ascii .i .face  { color: #60a5fa; text-shadow: 3px 3px 0 #3b6fc5, 6px 6px 0 #1e3a8a; }
+  pre.ascii .n .face  { color: #c084fc; text-shadow: 3px 3px 0 #8a54b8, 6px 6px 0 #581c87; }
+  pre.ascii .a .face  { color: #c97b50; text-shadow: 3px 3px 0 #8a5338, 6px 6px 0 #5a3621; }
+  pre.ascii .l .face  { color: #e0e0e0; text-shadow: 3px 3px 0 #8a8a8a, 6px 6px 0 #4b5563; }
+  pre.ascii .tlk-t .face { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+  pre.ascii .tlk-a .face { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+  pre.ascii .tlk-l .face { color: #ffd93d; text-shadow: 3px 3px 0 #b39928, 6px 6px 0 #7a5c08; }
+  pre.ascii .tlk-k .face { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
 
   .talk-row {
     display: flex;
