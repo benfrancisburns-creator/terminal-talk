@@ -205,57 +205,38 @@ let isApplyingDock = false;    // suppresses our own setBounds from re-triggerin
 // events setBounds emits don't run a stale snapAfterDrag).
 const moveSettleTimerRef = { current: null };
 
+// Horizontal-only snap. Left/right-edge vertical docking was removed after
+// it created unrecoverable states on multi-monitor rearrangement (bar stuck
+// vertical mid-screen with no drag path back). Ctrl+Shift+A remains the
+// recovery hotkey if the window ever ends up somewhere weird.
 function findDockedEdge(dX, dY) {
   if (!win || win.isDestroyed()) return null;
   const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
   const [x, y] = win.getPosition();
-  const [w, h] = win.getSize();
-  // Edge distance. Negative = window is PAST the edge (overshoot), which
-  // the user clearly wanted — a 500 px throw to the right is even stronger
-  // intent than a 10 px nudge. So: accept any negative distance regardless
-  // of magnitude, and only apply the threshold to undershoot (positive).
-  // When sorting we clamp negatives to 0 so all overshoots are treated as
-  // "at the edge" (tie), then direction heuristic or undershoot distance
-  // picks between them.
-  const raw = [
-    { name: 'left',   dist: x - dispX,                     axis: 'x' },
-    { name: 'right',  dist: (dispX + dispW) - (x + w),     axis: 'x' },
-    { name: 'top',    dist: y - dispY,                     axis: 'y' },
-    { name: 'bottom', dist: (dispY + dispH) - (y + h),     axis: 'y' },
-  ];
-  const candidates = raw.filter(e => e.dist < SNAP_THRESHOLD_PX);  // allows all negatives
+  const [, h] = win.getSize();
+  const topDist = y - dispY;
+  const bottomDist = (dispY + dispH) - (y + h);
+  // Only horizontal snap: top or bottom. Negative overshoot = past the edge
+  // and always counts; positive only counts under the threshold.
+  const candidates = [];
+  if (topDist < SNAP_THRESHOLD_PX) candidates.push({ name: 'top', dist: topDist });
+  if (bottomDist < SNAP_THRESHOLD_PX) candidates.push({ name: 'bottom', dist: bottomDist });
   if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0].name;
   const sortKey = (d) => Math.max(0, d);
-  // Drag direction → prefer the axis the user actually moved along.
-  if (dX !== undefined && dY !== undefined && Math.abs(dX - dY) > 10) {
-    const preferAxis = dX > dY ? 'x' : 'y';
-    const preferred = candidates.filter(e => e.axis === preferAxis);
-    if (preferred.length > 0) return preferred.sort((a, b) => sortKey(a.dist) - sortKey(b.dist))[0].name;
-  }
   return candidates.sort((a, b) => sortKey(a.dist) - sortKey(b.dist))[0].name;
 }
 
 function applyDock(edge) {
-  if (!win || win.isDestroyed() || !edge) return;
+  if (!win || win.isDestroyed()) return;
+  if (edge !== 'top' && edge !== 'bottom') return;  // horizontal-only
   const work = screen.getPrimaryDisplay().workArea;
-  const isVertical = edge === 'left' || edge === 'right';
-  let bounds;
-  if (isVertical) {
-    const h = verticalHeight();
-    bounds = {
-      x: edge === 'left' ? work.x : work.x + work.width - DIM_VERTICAL_WIDTH,
-      y: work.y + Math.floor((work.height - h) / 2),
-      width: DIM_VERTICAL_WIDTH,
-      height: h,
-    };
-  } else {
-    bounds = {
-      x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
-      y: edge === 'top' ? work.y : work.y + work.height - DIM_HORIZONTAL.height,
-      width: DIM_HORIZONTAL.width,
-      height: DIM_HORIZONTAL.height,
-    };
-  }
+  const bounds = {
+    x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
+    y: edge === 'top' ? work.y : work.y + work.height - DIM_HORIZONTAL.height,
+    width: DIM_HORIZONTAL.width,
+    height: DIM_HORIZONTAL.height,
+  };
   // Suppress snap-from-our-own-move during the setBounds call + tear down
   // any pending settle timer and clear drag state explicitly. The
   // move/moved events setBounds emits must not re-enter snapAfterDrag.
@@ -272,8 +253,30 @@ function applyDock(edge) {
 
   CFG.window = { ...(CFG.window || {}), x: bounds.x, y: bounds.y, dock: edge };
   saveConfig(CFG);
-  try { win.webContents.send('set-orientation', { kind: isVertical ? 'vertical' : 'horizontal', edge }); } catch {}
+  try { win.webContents.send('set-orientation', { kind: 'horizontal', edge }); } catch {}
   diag(`dock: ${edge} -> ${JSON.stringify(bounds)}`);
+}
+
+// If the bar's centre point ends up off every connected display (user
+// unplugged a monitor, swapped laptops, RDP session ended), re-centre it
+// on the primary display's work area so Ctrl+Shift+A always brings it
+// somewhere visible. Multi-monitor is fine as long as SOME display
+// contains the centre.
+function clampToVisibleDisplay(x, y, w, h) {
+  const displays = screen.getAllDisplays();
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const onAnyDisplay = displays.some(d => {
+    const wa = d.workArea;
+    return cx >= wa.x && cx <= wa.x + wa.width &&
+           cy >= wa.y && cy <= wa.y + wa.height;
+  });
+  if (onAnyDisplay) return { x, y };
+  const primary = screen.getPrimaryDisplay().workArea;
+  return {
+    x: primary.x + Math.floor((primary.width - w) / 2),
+    y: primary.y + 12,
+  };
 }
 
 function snapAfterDrag() {
@@ -281,6 +284,7 @@ function snapAfterDrag() {
   const start = dragStart;
   dragStart = null;
   const [curX, curY] = win.getPosition();
+  const [curW, curH] = win.getSize();
   // Micro-drags (e.g., user briefly grabbed the bar but didn't actually move
   // it) shouldn't trigger a re-dock — would be disorienting.
   if (start) {
@@ -296,6 +300,14 @@ function snapAfterDrag() {
     const edge = findDockedEdge();
     if (edge) { applyDock(edge); return; }
   }
+  // No snap — but if the user threw the bar off every display, rescue it.
+  const rescued = clampToVisibleDisplay(curX, curY, curW, curH);
+  if (rescued.x !== curX || rescued.y !== curY) {
+    isApplyingDock = true;
+    win.setBounds({ x: rescued.x, y: rescued.y, width: curW, height: curH });
+    setTimeout(() => { isApplyingDock = false; }, 500);
+    diag(`off-screen rescue: moved to ${rescued.x},${rescued.y}`);
+  }
   saveWindowPosition();
 }
 
@@ -306,18 +318,25 @@ function createWindow() {
   // Restore last-saved position + dock orientation if present and still
   // on-screen. Falls back to centered top.
   const saved = CFG.window || {};
-  const { x: waX, y: waY, width: waW, height: waH } = screen.getPrimaryDisplay().workArea;
-  const savedDock = saved.dock;
-  let startW = winWidth;
-  let startH = winHeight;
-  if (savedDock === 'left' || savedDock === 'right') {
-    startW = DIM_VERTICAL_WIDTH;
-    startH = verticalHeight();
+  // Only 'top' and 'bottom' are still valid docks (horizontal-only).
+  // Any legacy 'left' / 'right' / null gets normalised to null so the bar
+  // starts free-floating and the sizes are always horizontal.
+  let savedDock = (saved.dock === 'top' || saved.dock === 'bottom') ? saved.dock : null;
+  if (saved.dock && !savedDock) {
+    // User is coming back with a now-invalid dock (left/right from an old
+    // build). Wipe the stale position too so we don't land at the edge.
+    CFG.window = { ...CFG.window, x: null, y: null, dock: null };
+    saveConfig(CFG);
   }
+  const startW = winWidth;
+  const startH = winHeight;
   let startX = typeof saved.x === 'number' ? saved.x : Math.floor((width - startW) / 2);
   let startY = typeof saved.y === 'number' ? saved.y : 12;
-  if (startX < waX - 50 || startX > waX + waW - 50) startX = Math.floor((width - startW) / 2);
-  if (startY < waY - 50 || startY > waY + waH - 50) startY = 12;
+  // Clamp to a visible display — handles users who unplugged the monitor
+  // the bar was last on (bar would otherwise spawn off-screen).
+  const clamped = clampToVisibleDisplay(startX, startY, startW, startH);
+  startX = clamped.x;
+  startY = clamped.y;
   win = new BrowserWindow({
     width: startW,
     height: startH,
@@ -345,11 +364,10 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
 
-  // Send initial orientation so renderer applies the right CSS on first paint.
+  // Send initial orientation so renderer applies the right CSS on first
+  // paint. Always horizontal now — vertical mode was removed.
   win.webContents.on('did-finish-load', () => {
-    const kind = (savedDock === 'left' || savedDock === 'right') ? 'vertical' : 'horizontal';
-    const edge = savedDock || 'top';
-    try { win.webContents.send('set-orientation', { kind, edge }); } catch {}
+    try { win.webContents.send('set-orientation', { kind: 'horizontal', edge: savedDock || 'top' }); } catch {}
   });
 
   // Drag detection — belt and braces because Electron's `moved` event is
@@ -1205,19 +1223,24 @@ function toggleListening() {
 // over to it and exit this process immediately. The existing instance's
 // `second-instance` handler surfaces its window so the user sees something
 // happen instead of silent no-op.
+//
+// Skipped in TT_TEST_MODE: Playwright launches a fresh Electron per test and
+// they'd all collide with the user's running dev instance otherwise.
 // ===========================================================================
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
-if (!gotSingleInstanceLock) {
-  // Another instance owns the lock. Exit without touching the UI.
-  app.quit();
-  process.exit(0);
-}
-app.on('second-instance', () => {
-  if (win && !win.isDestroyed()) {
-    if (win.isMinimized()) win.restore();
-    try { win.showInactive(); } catch {}
+if (!process.env.TT_TEST_MODE) {
+  const gotSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!gotSingleInstanceLock) {
+    // Another instance owns the lock. Exit without touching the UI.
+    app.quit();
+    process.exit(0);
   }
-});
+  app.on('second-instance', () => {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      try { win.showInactive(); } catch {}
+    }
+  });
+}
 
 // ===========================================================================
 // Periodic self-sweep watchdog — runs every 30 minutes while the app is up.

@@ -947,8 +947,14 @@ describe('SELF-CLEANUP WATCHDOG', () => {
   it('failed lock causes app.quit + process.exit', () => {
     // The lock handling block must both quit and force-exit so we never
     // leave a zombie process behind.
-    if (!/!gotSingleInstanceLock[\s\S]{0,200}app\.quit\(\)[\s\S]{0,200}process\.exit\(0\)/.test(main)) {
+    if (!/!gotSingleInstanceLock[\s\S]{0,300}app\.quit\(\)[\s\S]{0,300}process\.exit\(0\)/.test(main)) {
       throw new Error('expected app.quit() + process.exit(0) inside !gotSingleInstanceLock branch');
+    }
+  });
+
+  it('lock is skipped in TT_TEST_MODE so Playwright tests can launch', () => {
+    if (!/TT_TEST_MODE[\s\S]{0,100}requestSingleInstanceLock/.test(main)) {
+      throw new Error('expected TT_TEST_MODE gate around requestSingleInstanceLock');
     }
   });
 
