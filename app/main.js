@@ -1046,7 +1046,11 @@ ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
   if (!all[shortId]) return false;
   const n = Number(newIndex);
   if (!Number.isFinite(n)) return false;
-  all[shortId].index = Math.max(0, Math.min(31, Math.floor(n)));
+  // Palette is 24 arrangements (0–23). Previously clamped to 31 (a leftover
+  // from when the palette was 32 wide) — that let set-session-index accept
+  // an invalid idx that sanitiseEntry would later reject, causing a
+  // silent mismatch between the UI state and persisted registry.
+  all[shortId].index = Math.max(0, Math.min(23, Math.floor(n)));
   all[shortId].pinned = true;
   return saveAssignments(all);
 });

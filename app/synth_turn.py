@@ -291,13 +291,17 @@ def sanitize(text: str, flags: dict) -> str:
 # Config / voice / speech-includes resolution
 # ---------------------------------------------------------------------------
 
+# Must stay in lock-step with DEFAULTS.speech_includes in app/main.js:45-52.
+# Previous drift: this file shipped bullet_markers=True + image_alt=True while
+# JS shipped False for both, so the streaming hook spoke bullet markers and
+# image alt-text that the clipboard-speak flow (which reads from JS) never did.
 DEFAULT_SPEECH_INCLUDES = {
     'code_blocks': False,
     'inline_code': False,
     'urls': False,
     'headings': True,
-    'bullet_markers': True,
-    'image_alt': True,
+    'bullet_markers': False,
+    'image_alt': False,
 }
 
 
@@ -319,8 +323,13 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
     default. speech_includes flags follow the same precedence. `muted` is read
     straight from the session registry — config has no global mute.
     """
-    voice = config.get('voices', {}).get('response_voice', 'en-GB-RyanNeural')
-    openai_key = config.get('voices', {}).get('openai_api_key') or None
+    # Config key is `edge_response`, not `response_voice` — the previous name
+    # didn't exist anywhere else in the system, so when a user changed the
+    # global response voice in the settings panel, the streaming hook
+    # silently ignored it and always fell back to the hardcoded Ryan default.
+    voice = config.get('voices', {}).get('edge_response', 'en-GB-RyanNeural')
+    # openai_api_key lives at the config root, not under `voices.*`.
+    openai_key = config.get('openai_api_key') or None
     flags = dict(DEFAULT_SPEECH_INCLUDES)
     cfg_inc = config.get('speech_includes', {})
     for k in flags:

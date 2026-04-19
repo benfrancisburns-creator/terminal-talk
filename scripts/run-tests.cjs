@@ -32,7 +32,8 @@ const NEEDS_INSTALL = new Set([
   // install has that path, so the Linux CI job must skip these groups.
   'SELF-CLEANUP WATCHDOG',
   'HARDENING: renderer CSP',
-  'HARDENING: navigation guards'
+  'HARDENING: navigation guards',
+  'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -702,7 +703,7 @@ describe('HARDENING: input validation', () => {
     let valid = 0;
     for (const v of Object.values(data.assignments)) {
       const idx = Number(v.index);
-      if (Number.isFinite(idx) && idx >= 0 && idx <= 31) valid++;
+      if (Number.isFinite(idx) && idx >= 0 && idx <= 23) valid++;
     }
     if (valid !== 1) throw new Error(`expected 1 valid entry, got ${valid}`);
   });
@@ -931,6 +932,57 @@ describe('INSTALL SANITY', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(INSTALL_DIR, 'config.json'), 'utf8'));
     assertTruthy(cfg.voices, 'cfg.voices missing');
     assertTruthy(cfg.voices.edge_response, 'edge_response missing');
+  });
+});
+
+describe('JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP', () => {
+  const synthPath = path.join(INSTALL_DIR, 'app', 'synth_turn.py');
+  const synthSrc = fs.readFileSync(synthPath, 'utf8');
+
+  it('synth_turn.py reads the global voice from `edge_response` (matches JS config shape)', () => {
+    // Previous bug (caught in Claude's audit): line read `response_voice`,
+    // which didn't exist anywhere else in the system. Users who changed the
+    // global response voice in settings saw their change ignored.
+    if (/['"]response_voice['"]/.test(synthSrc)) {
+      throw new Error('synth_turn.py still references stale `response_voice` key');
+    }
+    if (!/['"]edge_response['"]/.test(synthSrc)) {
+      throw new Error('synth_turn.py must read voice from `edge_response` to match app/main.js');
+    }
+  });
+
+  it('synth_turn.py reads openai_api_key from the config root, not voices.openai_api_key', () => {
+    // Another stale key from CC-3. openai_api_key is a top-level config
+    // field; reading it from under voices.* always returned undefined.
+    if (/get\(['"]voices['"][^)]*\)\.get\(['"]openai_api_key['"]/.test(synthSrc)) {
+      throw new Error('synth_turn.py reads openai_api_key from wrong nesting (voices.*)');
+    }
+  });
+
+  it('DEFAULT_SPEECH_INCLUDES matches JS DEFAULTS.speech_includes', () => {
+    // Parse the Python dict literal and the JS object literal; compare.
+    const pyMatch = synthSrc.match(/DEFAULT_SPEECH_INCLUDES\s*=\s*\{([\s\S]*?)\}/);
+    if (!pyMatch) throw new Error('DEFAULT_SPEECH_INCLUDES block not found in synth_turn.py');
+    const parseDict = (body) => {
+      const out = {};
+      for (const line of body.split(/[,\n]/)) {
+        const m = line.match(/['"](\w+)['"]\s*:\s*(True|False|true|false)/);
+        if (m) out[m[1]] = /true/i.test(m[2]);
+      }
+      return out;
+    };
+    const pyDefaults = parseDict(pyMatch[1]);
+
+    const mainSrc = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'main.js'), 'utf8');
+    const jsMatch = mainSrc.match(/speech_includes\s*:\s*\{([\s\S]*?)\}/);
+    if (!jsMatch) throw new Error('speech_includes default block not found in main.js');
+    const jsDefaults = parseDict(jsMatch[1]);
+
+    for (const k of Object.keys(jsDefaults)) {
+      if (pyDefaults[k] !== jsDefaults[k]) {
+        throw new Error(`speech_includes.${k} drift: js=${jsDefaults[k]} py=${pyDefaults[k]}`);
+      }
+    }
   });
 });
 
