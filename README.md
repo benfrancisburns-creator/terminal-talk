@@ -224,7 +224,7 @@ Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed b
 
 Restart the toolbar after editing config.json by hand:
 ```powershell
-taskkill /F /IM electron.exe
+taskkill /F /IM terminal-talk.exe
 wscript "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\terminal-talk.vbs"
 ```
 

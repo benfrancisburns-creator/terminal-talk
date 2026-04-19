@@ -99,6 +99,19 @@ if ($LASTEXITCODE -ne 0) {
 Pop-Location
 Write-Ok "Electron installed"
 
+# 5b. Rename electron.exe -> terminal-talk.exe so processes are identifiable
+# in Task Manager. Copy rather than rename so electron's own tooling still
+# works against the original binary if it ever looks it up by name.
+$electronDist = Join-Path $appDir 'node_modules\electron\dist'
+$electronExe = Join-Path $electronDist 'electron.exe'
+$rebrandedExe = Join-Path $electronDist 'terminal-talk.exe'
+if (Test-Path $electronExe) {
+    Copy-Item -Force $electronExe $rebrandedExe
+    Write-Ok "Binary rebranded -> terminal-talk.exe"
+} else {
+    Write-Warn2 "electron.exe not found at $electronExe — rebrand skipped"
+}
+
 # 6. Claude Code hook registration (opt-in)
 Write-Step "Claude Code integration"
 $hookResp = Read-Host "Register Claude Code hooks so Claude Code responses are spoken aloud? [Y/n]"

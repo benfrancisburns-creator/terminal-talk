@@ -52,7 +52,7 @@ copy app\<changed>.* "$env:USERPROFILE\.terminal-talk\app\"
 copy hooks\<changed>.ps1 "$env:USERPROFILE\.terminal-talk\hooks\"
 
 # 3. Restart the toolbar (only needed for main.js / renderer.js / index.html / styles.css)
-taskkill /F /IM electron.exe
+taskkill /F /IM terminal-talk.exe
 wscript "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\terminal-talk.vbs"
 ```
 
