@@ -1027,22 +1027,25 @@ settingsBtn.addEventListener('click', async () => {
 // -------------------------------------------------------------------
 // Hover + interaction triggers for collapse/expand
 // -------------------------------------------------------------------
-// Click-through mode (setIgnoreMouseEvents(true, {forward:true})) routes
-// mousemove events to the document regardless of whether the cursor is
-// over a visible element — but per-element mouseenter/mouseleave don't
-// reliably fire. So we listen on document and check the bar's bounding
-// rect manually. That's the only way hover-to-expand works once
-// click-through has kicked in.
+// Click-through mode routes mousemove to document regardless of visible
+// content, but per-element mouseenter/mouseleave don't fire reliably.
+// Track "over bar" as a flag and only act on transitions — critical:
+// cancelling the collapse timer on EVERY mousemove (the previous
+// behaviour) meant the bar stayed open forever when the cursor was
+// idle anywhere over it. Now only mouseenter cancels, only mouseleave
+// (re)schedules.
+let mouseOverBar = false;
 document.addEventListener('mousemove', (e) => {
   const rect = barEl.getBoundingClientRect();
   const overBar = e.clientX >= rect.left && e.clientX <= rect.right &&
-                  e.clientY >= rect.top && e.clientY <= rect.bottom + 4;  // +4 tolerance band
-  if (overBar) {
+                  e.clientY >= rect.top && e.clientY <= rect.bottom + 4;
+  if (overBar && !mouseOverBar) {
     if (isCollapsed) applyCollapsed(false);
     cancelCollapse();
-  } else if (!isCollapsed && !settingsOpen) {
-    // Mouse drifted off the bar while it's expanded — start the timer.
-    if (!collapseTimer) scheduleCollapse();
+    mouseOverBar = true;
+  } else if (!overBar && mouseOverBar) {
+    mouseOverBar = false;
+    if (!isCollapsed && !settingsOpen) scheduleCollapse();
   }
 });
 // Any click/keypress = user actively engaging → cancel pending collapse
