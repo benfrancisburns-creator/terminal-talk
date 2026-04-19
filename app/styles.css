@@ -59,6 +59,16 @@ html, body {
 }
 .dots::-webkit-scrollbar { display: none; }
 
+/* Spacer inserted between dot runs from different sessions. Small enough
+   that single-run timelines don't look fragmented, large enough to read
+   as "different speaker" at a glance. Flex shrink is off so the gap keeps
+   its width even when many dots compete for space. */
+.dots-run-gap {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+}
+
 .dot {
   width: 16px;
   height: 16px;

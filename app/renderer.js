@@ -184,7 +184,21 @@ function renderDots() {
   });
   // Keep the N newest, then reverse so oldest is leftmost in the displayed row.
   const visible = unmuted.slice(0, MAX_VISIBLE_DOTS).slice().reverse();
+  // Session run grouping: insert a small gap whenever the session shortId
+  // changes between consecutive clips. Renders as visual clusters —
+  // [T1][T1][T1] | [T2] | [T1][T1] — so the user can see at a glance which
+  // terminal said what, while playback order stays strictly chronological
+  // (oldest first) so real-time urgency isn't lost behind a chatty session.
+  let prevShort = undefined;
   visible.forEach((f) => {
+    const fname = f.path.split(/[\\/]/).pop();
+    const thisShort = extractSessionShort(fname);
+    if (prevShort !== undefined && thisShort !== prevShort) {
+      const gap = document.createElement('span');
+      gap.className = 'dots-run-gap';
+      dotsEl.appendChild(gap);
+    }
+    prevShort = thisShort;
     const dot = document.createElement('button');
     dot.className = 'dot';
     if (f.path === currentPath) dot.classList.add('active');
