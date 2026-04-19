@@ -12,29 +12,36 @@ const clearPlayedBtn = document.getElementById('clearPlayed');
 const barEl = document.getElementById('bar');
 
 // -------------------------------------------------------------------
-// Collapse-on-idle behaviour
+// Collapse-on-idle behaviour (poll-based, robust to window focus changes)
 // -------------------------------------------------------------------
-// When the user isn't touching the toolbar and no clip is arriving, the
-// bar shrinks to a slim 8px strip and the window becomes click-through
-// (clicks pass to whatever's underneath). It expands back on hover, on a
-// new clip arrival, or on any user interaction. 4 seconds of no
-// interaction → auto-collapse.
-// 15 s idle delay — long enough that short lulls between streaming clips
-// don't cause flicker, short enough that the bar stays out of the way
-// during genuinely quiet periods.
+// We deliberately avoid relying on mousemove/leave transitions because
+// mousemove stops firing once the cursor leaves the Electron window
+// (e.g., user switches to another app). The old timer-reset design got
+// stuck in "mouse is over bar" state in that case.
+//
+// Design:
+//   - lastActivityTs tracks the last time something interesting happened
+//     (mousemove over bar, click, keydown, new clip arrival).
+//   - A 1 s poll decides whether to collapse. Rules:
+//       * Settings panel open → never collapse.
+//       * Audio still playing or unplayed clips waiting → never collapse.
+//       * Cursor currently over the bar → treat as ongoing activity.
+//       * Otherwise collapse once COLLAPSE_DELAY_MS has elapsed since
+//         the last activity.
+//   - Any of { new clip, click, keydown, mousemove over bar, force-expand }
+//     calls bumpActivity() which resets the timer and re-expands.
 const COLLAPSE_DELAY_MS = 15000;
-const COLLAPSE_RECHECK_MS = 3000;  // poll interval when something's still active
+const POLL_INTERVAL_MS = 1000;
 let isCollapsed = false;
-let collapseTimer = null;
-let settingsOpen = false;  // don't collapse while the settings panel is open
+let settingsOpen = false;
+let lastActivityTs = Date.now();
+let cursorX = -1, cursorY = -1;
 
 async function applyCollapsed(collapsed) {
   if (collapsed === isCollapsed) return;
   isCollapsed = collapsed;
   if (collapsed) {
     barEl.classList.add('collapsed');
-    // Give clicks access to apps below; forward: true preserves mousemove
-    // so the renderer can still detect hover and re-expand.
     try { await window.api.setClickthrough(true); } catch {}
   } else {
     barEl.classList.remove('collapsed');
@@ -43,36 +50,35 @@ async function applyCollapsed(collapsed) {
 }
 
 function isQueueActive() {
-  // Still something playing out loud?
   const audioBusy = audio.src && !audio.paused && !audio.ended && audio.readyState >= 2;
   if (audioBusy) return true;
-  // Unplayed, unmuted clips sitting in the queue?
   return queue.some(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path));
 }
 
-function scheduleCollapse(delay = COLLAPSE_DELAY_MS) {
-  cancelCollapse();
-  if (settingsOpen) return;  // user is actively configuring, stay put
-  collapseTimer = setTimeout(() => {
-    // When the timer fires, re-check whether anything's still happening.
-    // If audio is playing or unplayed clips remain, defer — don't
-    // collapse mid-flow. Ben's flicker bug was the old 4 s timer firing
-    // between streaming clip arrivals. Now we poll every 3 s until the
-    // queue is genuinely drained, then honour the original idle delay.
-    if (isQueueActive()) {
-      scheduleCollapse(COLLAPSE_RECHECK_MS);
-      return;
-    }
-    applyCollapsed(true);
-  }, delay);
+function isMouseOverBar() {
+  if (cursorX < 0) return false;
+  const r = barEl.getBoundingClientRect();
+  return cursorX >= r.left && cursorX <= r.right &&
+         cursorY >= r.top  && cursorY <= r.bottom + 4;
 }
-function cancelCollapse() {
-  if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
-}
+
 function bumpActivity() {
-  applyCollapsed(false);
-  scheduleCollapse();
+  lastActivityTs = Date.now();
+  if (isCollapsed) applyCollapsed(false);
 }
+
+setInterval(() => {
+  if (isCollapsed) return;
+  if (settingsOpen) return;
+  if (isQueueActive()) return;
+  if (isMouseOverBar()) {
+    lastActivityTs = Date.now();
+    return;
+  }
+  if (Date.now() - lastActivityTs >= COLLAPSE_DELAY_MS) {
+    applyCollapsed(true);
+  }
+}, POLL_INTERVAL_MS);
 
 let queue = [];
 let currentPath = null;
@@ -436,15 +442,12 @@ window.api.onQueueUpdated((payload) => {
     if (isClipSessionMuted(f.path.split(/[\\/]/).pop())) continue;
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
   }
-  // New unmuted clip arrived → pop the toolbar out so the user sees the
-  // dot, then start the 4s auto-collapse timer.
+  // New unmuted clip arrived → treat as activity (expands if collapsed,
+  // resets the idle countdown).
   const hasVisibleArrival = newArrivals.some(f =>
     !priorityPaths.has(f.path) && !isClipSessionMuted(f.path.split(/[\\/]/).pop())
   );
-  if (hasVisibleArrival) {
-    applyCollapsed(false);
-    scheduleCollapse();
-  }
+  if (hasVisibleArrival) bumpActivity();
   // If the user just muted the session of the currently-playing clip, stop.
   // Let the normal resume/ended flow pick up the next unmuted one.
   if (currentPath && isPathSessionMuted(currentPath)) {
@@ -1016,36 +1019,24 @@ settingsBtn.addEventListener('click', async () => {
   settingsOpen = open;
   await window.api.setPanelOpen(open);
   if (open) {
-    cancelCollapse();
     applyCollapsed(false);
     renderSessionsTable();
-  } else {
-    scheduleCollapse();
   }
+  // settingsOpen flag (set above) keeps the poll from collapsing while
+  // the panel is up. When closed, the poll picks up normally.
 });
 
 // -------------------------------------------------------------------
 // Hover + interaction triggers for collapse/expand
 // -------------------------------------------------------------------
-// Click-through mode routes mousemove to document regardless of visible
-// content, but per-element mouseenter/mouseleave don't fire reliably.
-// Track "over bar" as a flag and only act on transitions — critical:
-// cancelling the collapse timer on EVERY mousemove (the previous
-// behaviour) meant the bar stayed open forever when the cursor was
-// idle anywhere over it. Now only mouseenter cancels, only mouseleave
-// (re)schedules.
-let mouseOverBar = false;
+// mousemove: update known cursor position. Expand if we're currently
+// collapsed and the cursor has entered the bar's rect. That's all —
+// the poll above handles the collapse decision.
 document.addEventListener('mousemove', (e) => {
-  const rect = barEl.getBoundingClientRect();
-  const overBar = e.clientX >= rect.left && e.clientX <= rect.right &&
-                  e.clientY >= rect.top && e.clientY <= rect.bottom + 4;
-  if (overBar && !mouseOverBar) {
-    if (isCollapsed) applyCollapsed(false);
-    cancelCollapse();
-    mouseOverBar = true;
-  } else if (!overBar && mouseOverBar) {
-    mouseOverBar = false;
-    if (!isCollapsed && !settingsOpen) scheduleCollapse();
+  cursorX = e.clientX;
+  cursorY = e.clientY;
+  if (isMouseOverBar()) {
+    bumpActivity();
   }
 });
 // Any click/keypress = user actively engaging → cancel pending collapse
@@ -1055,10 +1046,7 @@ window.addEventListener('keydown', bumpActivity);
 // When main toggles visibility via the global hotkey, guarantee we're
 // expanded so the user can actually see and interact with the bar.
 if (window.api.onForceExpand) {
-  window.api.onForceExpand(() => {
-    applyCollapsed(false);
-    cancelCollapse();
-  });
+  window.api.onForceExpand(() => { bumpActivity(); });
 }
 // Orientation changes: main sends { kind: 'horizontal'|'vertical', edge }.
 // We toggle CSS classes on body so styles can restyle the bar top row,

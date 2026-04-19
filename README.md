@@ -97,19 +97,24 @@ Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word
 
 ```
 ╭──────────────────────────────────────────────────────────────────╮
-│  ◀◀ 10  [▶]  10 ▶▶   ●━━━━━━━○━━━━━━  1:23 / 2:10  •••••  ⚙ ✕  │
+│  ◀◀10  [▶]  10▶▶   ●━━━━━━━○━━━━━━━━━  1:23 / 2:10  🗑  ⚙  ✕   │  ← controls
+│  ● ● ● | ● ● | ● ● ● ● ● ●                                       │  ← dot strip
 ╰──────────────────────────────────────────────────────────────────╯
-                                                     ↑       ↑
-                                          one dot per clip   gear → settings panel
+                           ↑        ↑
+                 run gap  —  different terminal
+ • Oldest (plays first) on the left; newest on the right
+ • Gaps between runs show which terminal spoke when
+ • Idle 15 s → shrinks to a thin strip; hover to expand
 ```
 
 - Each dot = one audio clip in the queue.
-- **Dot colour = session colour** (matches the emoji at the bottom of that terminal).
-- **Clips autoplay the moment they land.** They stay queued even after autoplay finishes — if you stepped away you can come back and click to replay. Once you click to manually play, that clip auto-deletes 90s later.
-- **Currently playing** dot is slightly larger with a subtle white ring (colour doesn't change).
+- **Dot colour = session colour** (matches the emoji at the bottom of that terminal). Muted sessions don't show dots at all.
+- **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
+- **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
 - Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
-- Queue capped at 20 clips; oldest prune when full.
+- Up to ~30 dots visible; beyond that the oldest drop off.
+- **Drag the toolbar** to any screen edge and it snaps flush. Left/right edges switch to a vertical column. Position is saved.
 
 ### Settings panel (gear icon)
 
