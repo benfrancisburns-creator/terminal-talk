@@ -78,8 +78,23 @@ function isQueueActive() {
 function isMouseOverBar() {
   if (cursorX < 0) return false;
   const r = barEl.getBoundingClientRect();
-  return cursorX >= r.left && cursorX <= r.right &&
-         cursorY >= r.top  && cursorY <= r.bottom + 4;
+  const overBar = cursorX >= r.left && cursorX <= r.right &&
+                  cursorY >= r.top  && cursorY <= r.bottom + 4;
+  if (overBar) return true;
+  // When the settings panel is expanded, the panel element also needs to
+  // accept clicks — otherwise the dynamic click-through passes clicks
+  // through the panel area (user can't click any setting). Treat the
+  // panel as part of the interactive surface when it's open.
+  if (settingsOpen) {
+    const panel = document.getElementById('panel');
+    if (panel) {
+      const p = panel.getBoundingClientRect();
+      if (p.width > 0 && p.height > 0 &&
+          cursorX >= p.left && cursorX <= p.right &&
+          cursorY >= p.top  && cursorY <= p.bottom) return true;
+    }
+  }
+  return false;
 }
 
 function bumpActivity() {
