@@ -358,29 +358,48 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
 # Parallel synthesis with rolling in-order release
 # ---------------------------------------------------------------------------
 
-def _run_edge_tts(sentence: str, voice: str, out_path: Path) -> bool:
-    """Invoke edge_tts_speak.py. Returns True on success."""
+def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) -> bool:
+    """Invoke edge_tts_speak.py with retries on transient Microsoft-service
+    wobbles. Returns True on success.
+
+    edge-tts (speech.platform.bing.com) occasionally returns rc=1 size=0 on
+    a single call for no clear reason — service hiccup, rate-limit blip,
+    TLS stutter. Before this wrapper retried, each wobble silently dropped
+    a sentence: the user would hear "11/12 clips" with no way to know
+    which one went missing. Now we retry 3× with exponential-ish backoff
+    (0.4 s, 1.0 s) and, on final failure, log a preview of the sentence so
+    the user can see exactly what was lost. Total worst-case overhead:
+    ~1.5 s of sleep per lost sentence — far preferable to a silent gap."""
     import subprocess
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(EDGE_TTS_SCRIPT), voice, str(out_path)],
-            input=sentence.encode('utf-8'),
-            timeout=SYNTH_TIMEOUT_SEC,
-            capture_output=True,
-        )
-        if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 500:
-            return True
-        _log(f'edge-tts rc={proc.returncode} size={out_path.stat().st_size if out_path.exists() else 0}')
-    except subprocess.TimeoutExpired:
-        _log(f'edge-tts timeout for sentence len={len(sentence)}')
-    except Exception as e:
-        _log(f'edge-tts exec fail: {e}')
-    # Clean up partial output on any failure
-    if out_path.exists():
+    last_err = None
+    for attempt in range(1, attempts + 1):
         try:
-            out_path.unlink()
-        except Exception:
-            pass
+            proc = subprocess.run(
+                [sys.executable, str(EDGE_TTS_SCRIPT), voice, str(out_path)],
+                input=sentence.encode('utf-8'),
+                timeout=SYNTH_TIMEOUT_SEC,
+                capture_output=True,
+            )
+            if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 500:
+                if attempt > 1:
+                    _log(f'edge-tts recovered on attempt {attempt}/{attempts}')
+                return True
+            last_err = f'rc={proc.returncode} size={out_path.stat().st_size if out_path.exists() else 0}'
+        except subprocess.TimeoutExpired:
+            last_err = f'timeout len={len(sentence)}'
+        except Exception as e:
+            last_err = f'exec fail: {e}'
+        # Clean partial output between attempts so the next retry starts
+        # from a known-empty path.
+        if out_path.exists():
+            try: out_path.unlink()
+            except Exception: pass
+        if attempt < attempts:
+            _log(f'edge-tts attempt {attempt}/{attempts} failed ({last_err}); retrying')
+            time.sleep(0.4 * (2 ** (attempt - 1)))  # 0.4 s, 0.8 s
+    # All retries exhausted — log what was lost so the user can find it.
+    preview = sentence[:80].replace('\n', ' ').replace('\r', ' ')
+    _log(f'edge-tts FAILED after {attempts} attempts ({last_err}); sentence lost: {preview!r}')
     return False
 
 
