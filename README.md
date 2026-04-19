@@ -47,7 +47,7 @@ Windows-only for now; Mac/Linux planned.
 **Requirements:** Python 3.10+, Node.js 18+, a working microphone.
 
 ```powershell
-git clone https://github.com/YOUR-USERNAME/terminal-talk
+git clone https://github.com/benfrancisburns-creator/terminal-talk
 cd terminal-talk
 .\install.ps1
 ```

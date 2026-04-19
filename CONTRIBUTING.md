@@ -38,7 +38,7 @@ terminal-talk/
 ### One-time setup
 
 ```powershell
-git clone https://github.com/YOUR-USERNAME/terminal-talk
+git clone https://github.com/benfrancisburns-creator/terminal-talk
 cd terminal-talk
 .\install.ps1     # installs to %USERPROFILE%\.terminal-talk\
 ```
