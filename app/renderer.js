@@ -603,14 +603,41 @@ audio.addEventListener('error', () => {
   playNextPending();
 });
 
-audio.addEventListener('timeupdate', () => {
-  if (userScrubbing) return;
-  if (isFinite(audio.duration) && audio.duration > 0) {
+// Scrubber + time-readout smooth updater. The built-in `timeupdate` event
+// only fires ~4× per second, so the mascot-thumb visibly jumps in ~250ms
+// chunks across the rail. Drive the update from requestAnimationFrame
+// instead — browsers fire rAF once per frame (~16ms, 60fps) so the
+// mascot slides smoothly. rAF auto-pauses when the window is hidden
+// (no CPU wasted while you're not looking).
+let scrubberRafId = null;
+function syncScrubberFromAudio() {
+  if (!userScrubbing && isFinite(audio.duration) && audio.duration > 0) {
     scrubber.value = Math.round((audio.currentTime / audio.duration) * 1000);
     timeEl.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
-  } else {
+  } else if (!userScrubbing) {
     timeEl.textContent = `${fmt(audio.currentTime)} / 0:00`;
   }
+}
+function scrubberTick() {
+  syncScrubberFromAudio();
+  if (!audio.paused && !audio.ended) {
+    scrubberRafId = requestAnimationFrame(scrubberTick);
+  } else {
+    scrubberRafId = null;
+  }
+}
+function startScrubberRaf() {
+  if (scrubberRafId === null) scrubberRafId = requestAnimationFrame(scrubberTick);
+}
+audio.addEventListener('play', startScrubberRaf);
+audio.addEventListener('playing', startScrubberRaf);
+audio.addEventListener('pause', syncScrubberFromAudio);   // land on final frame
+audio.addEventListener('ended', syncScrubberFromAudio);
+audio.addEventListener('seeking', syncScrubberFromAudio); // after keyboard / UI seek
+// Backgrounded windows have rAF throttled — keep timeupdate as a fallback
+// so the readout doesn't freeze when the bar is minimised or off-screen.
+audio.addEventListener('timeupdate', () => {
+  if (scrubberRafId === null) syncScrubberFromAudio();
 });
 audio.addEventListener('loadedmetadata', () => {
   timeEl.textContent = `0:00 / ${fmt(audio.duration)}`;
