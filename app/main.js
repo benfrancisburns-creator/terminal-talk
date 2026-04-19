@@ -231,11 +231,17 @@ function applyDock(edge) {
   if (!win || win.isDestroyed()) return;
   if (edge !== 'top' && edge !== 'bottom') return;  // horizontal-only
   const work = screen.getPrimaryDisplay().workArea;
+  // Preserve the current height (collapsed 114 vs expanded ~618 when the
+  // settings panel is open) so bottom-snapping with the panel visible
+  // doesn't force it shut. Bottom anchor uses the current height so the
+  // bar sits flush at the bottom with the panel tucked above it.
+  const [, currentHeight] = win.getSize();
+  const h = Math.max(currentHeight, DIM_HORIZONTAL.height);
   const bounds = {
     x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
-    y: edge === 'top' ? work.y : work.y + work.height - DIM_HORIZONTAL.height,
+    y: edge === 'top' ? work.y : work.y + work.height - h,
     width: DIM_HORIZONTAL.width,
-    height: DIM_HORIZONTAL.height,
+    height: h,
   };
   // Suppress snap-from-our-own-move during the setBounds call + tear down
   // any pending settle timer and clear drag state explicitly. The
@@ -257,15 +263,19 @@ function applyDock(edge) {
   diag(`dock: ${edge} -> ${JSON.stringify(bounds)}`);
 }
 
-// If the bar's centre point ends up off every connected display (user
-// unplugged a monitor, swapped laptops, RDP session ended), re-centre it
-// on the primary display's work area so Ctrl+Shift+A always brings it
-// somewhere visible. Multi-monitor is fine as long as SOME display
-// contains the centre.
-function clampToVisibleDisplay(x, y, w, h) {
-  const displays = screen.getAllDisplays();
+// If the BAR portion of the window (top DIM_HORIZONTAL.height px, the part
+// the user can click and drag) ends up off every connected display — user
+// unplugged a monitor, swapped laptops, RDP session ended — re-centre on
+// primary. We deliberately test only the BAR's centre, not the whole
+// window, so an open settings panel overflowing the bottom of the screen
+// doesn't trip the rescue (that was causing a flicker when you dragged
+// the bar toward the bottom with the panel open: the panel's centre went
+// off-screen and we yanked the window back mid-drag).
+function clampToVisibleDisplay(x, y, w, _h) {
+  const barH = DIM_HORIZONTAL.height;
   const cx = x + w / 2;
-  const cy = y + h / 2;
+  const cy = y + barH / 2;
+  const displays = screen.getAllDisplays();
   const onAnyDisplay = displays.some(d => {
     const wa = d.workArea;
     return cx >= wa.x && cx <= wa.x + wa.width &&
@@ -1122,7 +1132,22 @@ const WIN_EXPANDED = { width: 680, height: 618 };
 ipcMain.handle('set-panel-open', (_e, open) => {
   if (!win || win.isDestroyed()) return false;
   const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
-  win.setSize(dim.width, dim.height, true);
+  // If the bar is docked to the bottom edge, keep its bottom edge pinned
+  // while the panel opens/closes — otherwise opening the panel would push
+  // the panel off the bottom of the screen (panel grows downward from the
+  // bar's y). Use setBounds with an adjusted y so the panel visually
+  // grows upward from a bottom-docked bar.
+  const dock = CFG.window && CFG.window.dock;
+  if (dock === 'bottom') {
+    const [curX, curY] = win.getPosition();
+    const [, curH] = win.getSize();
+    const newY = curY + (curH - dim.height);
+    isApplyingDock = true;
+    win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
+    setTimeout(() => { isApplyingDock = false; }, 300);
+  } else {
+    win.setSize(dim.width, dim.height, true);
+  }
   return true;
 });
 // Verifies a path resolves to a location strictly inside `base`. Defends against
