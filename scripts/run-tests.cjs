@@ -457,6 +457,23 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
     if (!reg['deadbee1']) throw new Error('deadbee1 entry was wiped');
     if (reg['deadbee1'].muted !== true) throw new Error(`muted flag lost: ${JSON.stringify(reg['deadbee1'])}`);
   });
+  it('statusline preserves focus flag through a write cycle', () => {
+    clearRegistry();
+    const seed = {
+      assignments: {
+        'abcd1234': {
+          index: 7, session_id: 'abcd1234-y', claude_pid: 0,
+          label: 'Primary', pinned: true, focus: true,
+          last_seen: Math.floor(Date.now()/1000),
+        }
+      }
+    };
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
+    runStatusline('beefcafe-1111-2222-3333-444444444444');
+    const reg = readRegistry();
+    if (!reg['abcd1234']) throw new Error('abcd1234 entry was wiped');
+    if (reg['abcd1234'].focus !== true) throw new Error(`focus flag lost: ${JSON.stringify(reg['abcd1234'])}`);
+  });
   clearRegistry();
 });
 

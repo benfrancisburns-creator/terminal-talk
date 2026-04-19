@@ -122,18 +122,26 @@ const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
 
-// Helpers that read muted state off the current sessionAssignments cache.
-// Kept here (not inside renderDots / playNextPending) so every call site
-// uses the exact same rule.
+// Helpers that read muted / focus state off the current sessionAssignments
+// cache. Kept here (not inside renderDots / playNextPending) so every
+// call site uses the exact same rule.
 function isClipSessionMuted(filename) {
   const short = extractSessionShort(filename);
-  if (!short) return false;  // neutral (hey-jarvis) clips never muted
+  if (!short) return false;
   const entry = sessionAssignments[short];
   return !!(entry && entry.muted);
 }
 function isPathSessionMuted(p) {
   const name = p.split(/[\\/]/).pop();
   return isClipSessionMuted(name);
+}
+// Returns the shortId of the focused session if any, else null.
+// Only one session can be focused at a time (main.js enforces exclusivity).
+function findFocusedSessionShort() {
+  for (const [short, entry] of Object.entries(sessionAssignments)) {
+    if (entry && entry.focus) return short;
+  }
+  return null;
 }
 
 // Index 0..31 -> one of 4 arrangement kinds:
@@ -375,7 +383,7 @@ async function clearAllPlayed() {
 
 function playNextPending() {
   // 1. Priority (hey-jarvis highlight-to-speak) — always plays regardless
-  //    of mute state; the user explicitly asked for it.
+  //    of mute or focus; the user explicitly asked for it.
   while (priorityQueue.length > 0) {
     const next = priorityQueue.shift();
     if (queue.find(f => f.path === next)) {
@@ -383,7 +391,28 @@ function playNextPending() {
       return;
     }
   }
-  // 2. Explicit pending queue — clips queued in arrival order.
+  // 2. Focus-session preference — if a session is marked focus and has
+  //    unplayed, unmuted clips, play the OLDEST of those before any
+  //    other session's clips. Doesn't interrupt currently-playing clip,
+  //    just tips the next-to-play decision. Lets the user keep one
+  //    terminal's narrative coherent while background terminals queue.
+  const focusShort = findFocusedSessionShort();
+  if (focusShort) {
+    const focusClip = queue
+      .filter(f => {
+        if (playedPaths.has(f.path)) return false;
+        if (isPathSessionMuted(f.path)) return false;
+        const short = extractSessionShort(f.path.split(/[\\/]/).pop());
+        return short === focusShort;
+      })
+      .sort((a, b) => a.mtime - b.mtime)[0];
+    if (focusClip) {
+      pendingQueue = pendingQueue.filter(p => p !== focusClip.path);
+      playPath(focusClip.path);
+      return;
+    }
+  }
+  // 3. Explicit pending queue — clips queued in arrival order.
   //    Skip muted-session clips; drop the whole file (don't re-queue).
   while (pendingQueue.length > 0) {
     const next = pendingQueue.shift();
@@ -393,10 +422,8 @@ function playNextPending() {
       return;
     }
   }
-  // 3. Fallback: any unplayed, unmuted clip still sitting in the queue.
-  //    Covers every edge case where pendingQueue got out of sync — pause
-  //    then resume, clip arriving during a race, manual deletes reshaping
-  //    state, unmute flipping a session back on. Oldest first.
+  // 4. Fallback: any unplayed, unmuted clip still sitting in the queue.
+  //    Covers edge cases where pendingQueue drifted. Oldest first.
   const candidate = queue
     .filter(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path))
     .sort((a, b) => a.mtime - b.mtime)[0];
@@ -832,6 +859,7 @@ function renderSessionRow(shortId, entry) {
   row.appendChild(muteBtn);
 
   if (entry.muted) wrap.classList.add('session-muted');
+  if (entry.focus) wrap.classList.add('session-focused');
 
   // Remove session button. Sessions no longer auto-prune on inactivity;
   // this is the only way to drop one short of reinstalling.

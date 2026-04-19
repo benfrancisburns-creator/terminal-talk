@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   setSessionInclude: (shortId, key, value) => ipcRenderer.invoke('set-session-include', shortId, key, value),
   setSessionVoice: (shortId, voiceId) => ipcRenderer.invoke('set-session-voice', shortId, voiceId),
   setSessionMuted: (shortId, muted) => ipcRenderer.invoke('set-session-muted', shortId, muted),
+  setSessionFocus: (shortId, focus) => ipcRenderer.invoke('set-session-focus', shortId, focus),
   removeSession: (shortId) => ipcRenderer.invoke('remove-session', shortId),
   setClickthrough: (on) => ipcRenderer.invoke('set-clickthrough', on),
   setPanelOpen: (open) => ipcRenderer.invoke('set-panel-open', open),

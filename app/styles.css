@@ -478,7 +478,7 @@ select option:checked, .panel .row select option:checked {
 }
 .session-row {
   display: grid;
-  grid-template-columns: 18px 24px 90px 1fr 180px 28px 22px;
+  grid-template-columns: 18px 24px 90px 1fr 180px 26px 26px 22px;
   gap: 10px;
   align-items: center;
   padding: 4px 0;
@@ -512,6 +512,34 @@ select option:checked, .panel .row select option:checked {
 .mute-btn.muted:hover { background: rgba(255,94,94,0.22); }
 .session-block.session-muted { opacity: 0.55; }
 .session-block.session-muted .mute-btn { opacity: 1; }
+
+/* Focus toggle — star button (same compact scale as mute). Outlined when
+   inactive, filled gold when active so the state is unmistakable at a
+   glance. Row also gets a subtle gold tint when focused. */
+.focus-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  font-size: 14px; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.focus-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.focus-btn.focused {
+  background: rgba(255,215,61,0.18);
+  border-color: rgba(255,215,61,0.5);
+  color: #ffd93d;
+}
+.focus-btn.focused:hover { background: rgba(255,215,61,0.28); }
+
+.session-block.session-focused {
+  box-shadow: inset 0 0 0 1px rgba(255,215,61,0.28);
+  background: rgba(255,215,61,0.04);
+}
+.session-block.session-focused .focus-btn { opacity: 1; }
 
 .session-remove {
   width: 20px; height: 20px; padding: 0;

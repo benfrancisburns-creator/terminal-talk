@@ -731,6 +731,7 @@ function sanitiseEntry(e) {
     label: typeof e.label === 'string' ? e.label.slice(0, 60) : '',
     pinned: e.pinned === true,
     muted: e.muted === true,
+    focus: e.focus === true,
     last_seen: Number.isFinite(Number(e.last_seen)) ? Number(e.last_seen) : 0
   };
   if (typeof e.voice === 'string' && e.voice.length <= 80 && VOICE_KEY_RE.test(e.voice)) {
@@ -928,6 +929,28 @@ ipcMain.handle('set-clickthrough', (_e, on) => {
   if (!win || win.isDestroyed()) return false;
   win.setIgnoreMouseEvents(!!on, { forward: true });
   return true;
+});
+
+// Exclusive focus flag — only one session can be focus at a time.
+// Setting focus on a session clears it on all others. Focus-mode
+// playback: when this session has unplayed clips, they jump ahead of
+// other sessions' clips in the playback queue (but never interrupt
+// the currently-playing clip).
+ipcMain.handle('set-session-focus', (_e, shortId, focus) => {
+  if (!validShort(shortId)) return false;
+  if (typeof focus !== 'boolean') return false;
+  const all = loadAssignments();
+  if (!all[shortId]) return false;
+  if (focus) {
+    // Exclusive: clear focus on all other sessions first
+    for (const key of Object.keys(all)) {
+      if (key !== shortId && all[key].focus) all[key].focus = false;
+    }
+  }
+  all[shortId].focus = focus;
+  const ok = saveAssignments(all);
+  if (ok && win && !win.isDestroyed()) notifyQueue();
+  return ok;
 });
 
 // Explicit remove: user clicked the × on a Sessions table row. We drop

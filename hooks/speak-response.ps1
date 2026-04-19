@@ -63,6 +63,7 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
                         label = if ($p.Value.label) { [string]$p.Value.label } else { '' }
                         pinned = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
                         muted = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
+                        focus = ($p.Value.PSObject.Properties.Name -contains 'focus') -and ($p.Value.focus -eq $true)
                         last_seen = [long]$p.Value.last_seen
                     }
                     # Preserve per-session voice + speech_includes overrides exactly as stored.

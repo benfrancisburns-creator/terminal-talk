@@ -95,6 +95,7 @@ if (Test-Path $registryPath) {
                         label      = if ($p.Value.label) { [string]$p.Value.label } else { '' }
                         pinned     = if ($p.Value.pinned) { [bool]$p.Value.pinned } else { $false }
                         muted      = ($p.Value.PSObject.Properties.Name -contains 'muted') -and ($p.Value.muted -eq $true)
+                        focus      = ($p.Value.PSObject.Properties.Name -contains 'focus') -and ($p.Value.focus -eq $true)
                         last_seen  = [long]$p.Value.last_seen
                     }
                     # Preserve per-session overrides through every read/write cycle.
@@ -150,6 +151,7 @@ if ($null -eq $idx) {
         label      = ''
         pinned     = $false
         muted      = $false
+        focus      = $false
         last_seen  = $now
     }
 }
@@ -164,7 +166,11 @@ try {
 
 $emoji = Get-EmojiForIndex $idx
 $label = $assignments[$short].label
-# Muted sessions get a speaker-crossed prefix so users can see at a glance
-# the terminal won't be producing audio.
+# Prefixes give users an at-a-glance signal of state:
+#   🔇 muted   ⭐ focus (its clips play first)
+# Both can appear — muted + focus means "still focused but silenced",
+# which is an unusual combo but valid.
 $mutedPrefix = if ($assignments[$short].muted) { [char]::ConvertFromUtf32(0x1F507) + ' ' } else { '' }
-if ($label) { Write-Host "$mutedPrefix$emoji $label" } else { Write-Host "$mutedPrefix$emoji" }
+$focusPrefix = if ($assignments[$short].focus) { [char]::ConvertFromUtf32(0x2B50) + ' ' } else { '' }
+$prefix = "$focusPrefix$mutedPrefix"
+if ($label) { Write-Host "$prefix$emoji $label" } else { Write-Host "$prefix$emoji" }
