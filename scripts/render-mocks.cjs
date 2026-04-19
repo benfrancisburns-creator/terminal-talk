@@ -28,10 +28,12 @@ const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 // Four mocks in order: [slug, window height tuned to section]
 const SHOTS = [
-  { n: 1, slug: 'idle',             height: 500 },
-  { n: 2, slug: 'three-sessions',   height: 500 },
-  { n: 3, slug: 'mixed-states',     height: 640 },
-  { n: 4, slug: 'settings-panel',   height: 1180 },
+  { n: 1, slug: 'idle',             height: 720 },
+  { n: 2, slug: 'three-sessions',   height: 640 },
+  { n: 3, slug: 'mixed-states',     height: 820 },
+  { n: 4, slug: 'settings-panel',   height: 1400 },
+  { n: 5, slug: 'snapped-top',      height: 720 },
+  { n: 6, slug: 'docked-right',     height: 860 },
 ];
 
 const src = readFileSync(SRC, 'utf8');

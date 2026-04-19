@@ -39,7 +39,7 @@ Windows-only for now; Mac/Linux planned.
 
 ## UI states
 
-Rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/mocks-annotated.html) — the same mocks in live interactive form with every annotation visible.
+Six annotated mocks rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/mocks-annotated.html) — open that page directly for the live interactive version with every annotation visible on the right-hand side.
 
 ### 01 · Idle
 
@@ -47,33 +47,49 @@ Rendered from [`docs/design-system/mocks-annotated.html`](docs/design-system/moc
   <img src="docs/screenshots/toolbar-idle.png" alt="Idle toolbar: empty two-row letterbox with controls on top and an empty dot strip below" width="900">
 </p>
 
-Empty queue. The 680 × 64 letterbox sits always-on-top; drag to any screen edge and it snaps flush. After 15 s with no interaction it collapses to a thin strip and becomes click-through — hover to re-expand.
+The baseline. 680 × 64 frameless two-row pill, always-on-top, drag anywhere to move. Close just hides the window — the listener keeps running and `Ctrl+Shift+A` brings it back.
 
-### 02 · Three sessions speaking
+### 02 · Queue with three sessions
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-three-sessions.png" alt="Toolbar with three coloured dots — solid green (playing, pulsing ring), red/blue vertical split, yellow/purple horizontal split" width="900">
+  <img src="docs/screenshots/toolbar-three-sessions.png" alt="Dot strip clusters by session: 3 red dots (Terminal A, first one playing), gap, 3 yellow dots (Terminal B), gap, 2 green dots (Terminal C)" width="900">
 </p>
 
-Three Claude Code terminals, each with its own colour. The playing dot pulses with a white ring; the split arrangements (horizontal, vertical) pick complementary colour pairs so every combination is unambiguous.
+Three terminals queued in arrival order: **3 red** from Terminal A (first one playing, 2 queued behind), **3 yellow** from Terminal B, **2 green** from Terminal C. The 12 px gap between runs marks a change of speaker so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. If Terminal C has the important message you'd wait through 5 clips first — that's the story shot 04's focus-star solves.
 
 ### 03 · Mixed states
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Four dot states: playing (green, pulsing), queued (orange), heard (faded), J-clip (purple with J glyph for highlight-to-speak)" width="900">
+  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Four dot states: heard (faded), playing (pulsing ring), queued (flat disc), J-clip (hey jarvis highlight-to-speak)" width="900">
 </p>
 
-Playing · queued · heard (auto-prunes after 3–600 s) · and a **J**-labelled highlight-to-speak clip from "hey jarvis" / `Ctrl+Shift+S`. Muted sessions never produce dots at all — their clips are dropped at arrival.
+**Heard** (already played, auto-prunes after 3–600 s, click to replay, right-click to delete) · **Playing** (pulsing white ring around the session colour) · **Queued** (flat disc, auto-plays when current ends) · **J-clip** — a highlight-to-speak capture from "hey jarvis" / `Ctrl+Shift+S`. Muted sessions never appear here at all.
 
 ### 04 · Settings panel open
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-settings-panel.png" alt="Full settings panel: Playback (speed + auto-prune), Sessions table with mute buttons + one expanded row showing voice + speech-includes, About section with ASCII banner + shortcuts" width="900">
+  <img src="docs/screenshots/toolbar-settings-panel.png" alt="Full settings panel: Playback with speed slider + auto-prune toggle, Sessions table with focus star + mute on every row + one expanded row showing voice + speech-includes, About section with ASCII banner + shortcuts table" width="900">
 </p>
 
-The gear expands the panel downward. **Playback** holds the speed slider and auto-prune toggle. **Sessions** lists every active terminal with a one-click ★ focus-star (priority playback) and 🔊/🔇 mute; the chevron on each row reveals per-session voice + six tri-state speech-includes toggles (code blocks, inline code, URLs, headings, bullet markers, image alt-text). **About** has the ASCII banner and full shortcuts table.
+The gear reveals three sections. **Playback** — speed 0.5–2.5× + auto-prune toggle (off = clips stack up for review). **Sessions** — every active terminal in a 7-column row: chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · focus ★ · mute 🔊/🔇. The chevron reveals per-session voice (45 Edge voices — pick different voices so you can tell terminals apart by ear) and six tri-state speech-includes toggles. **About** has the ASCII banner + full shortcuts.
 
-**Playback order** — when the player picks the next clip it follows this precedence: (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session · (3) oldest unplayed clip from any unmuted session. Starring a session is how you make sure an important terminal's response is heard ahead of a chatty one with 15 queued clips.
+**Playback precedence** — (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
+
+### 05 · Snapped to the top edge
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-snapped-top.png" alt="Toolbar flush against the top edge of a screen, flat-topped, with dots showing two heard reds plus three blues (one playing)" width="900">
+</p>
+
+Drag within ~20 px of the top edge and the bar snaps flush on release. Top corners flatten so it reads as docked. Same two-row letterbox — all controls still fit. The snap edge is persisted in `~/.terminal-talk/config.json` so it comes back to the same place on relaunch, on whichever monitor you left it.
+
+### 06 · Docked to the right edge (vertical)
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-docked-right.png" alt="Toolbar flipped to a narrow vertical column against the right edge of the screen, controls stacked top-to-bottom, dots flowing down" width="900">
+</p>
+
+Drag to the left or right edge and the bar flips to a narrow 48 px column running most of the screen's height — out of the way, still always-on-top. Back-10 · Play · Fwd-10 · clear · settings · close stack vertically. The scrubber and time readout are hidden (they don't fit); open the panel if you need to scrub. Dots flow top-to-bottom, oldest on top, run-gaps become vertical spacers. Best for wide monitors where a top bar steals vertical space from the editor.
 
 ## Who it's for
 

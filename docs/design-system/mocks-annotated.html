@@ -154,7 +154,85 @@
   }
 
   /* Dots area — on its own row beneath the controls */
-  .dots { display: flex; align-items: center; gap: 7px; min-width: 20px; flex-wrap: wrap; }
+  .dots { display: flex; align-items: center; gap: 5px; min-width: 20px; flex-wrap: wrap; }
+
+  /* Spacer between "runs" of clips from different sessions. The shipping
+     renderer inserts one of these whenever the next dot's session differs
+     from the previous dot's session. So a queue of 3 × T1, 3 × T2, 2 × T3
+     renders as [●●●  ●●●  ●●] with two gaps — the eye immediately reads
+     "three speakers, in this order". */
+  .dots-run-gap {
+    display: inline-block;
+    width: 12px;
+    flex-shrink: 0;
+  }
+
+  /* ═════════════  TOP SNAP (free-floating, but flush to top edge) ═════════════
+     Visually identical to the default layout — same two-row letterbox.
+     The only difference is the position (glued to the top of the screen)
+     and the rounded corners flattening on the top so it reads as docked. */
+  .screen {
+    position: relative;
+    border-radius: 18px; overflow: hidden;
+    background:
+      radial-gradient(circle at 20% 25%, rgba(60,80,140,0.35) 0%, transparent 55%),
+      radial-gradient(circle at 80% 78%, rgba(130,90,170,0.3) 0%, transparent 55%),
+      linear-gradient(135deg, #141a28 0%, #1b1430 100%);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.05),
+      0 40px 80px -20px rgba(0,0,0,0.55);
+    aspect-ratio: 16 / 9;
+    min-height: 320px;
+  }
+  .screen::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, transparent 0 28px, rgba(255,255,255,0.015) 28px 29px);
+    pointer-events: none;
+  }
+  .screen .bar.snapped-top {
+    position: absolute; top: 0; left: 50%;
+    transform: translateX(-50%);
+    border-top-left-radius: 0; border-top-right-radius: 0;
+  }
+
+  /* Vertical dock — right-edge column. Mirrors body.vertical + body.dock-right
+     from the shipping styles: narrow 48px column, controls stack, scrubber
+     + time are hidden because they don't fit, dots flow top-to-bottom. */
+  .screen .bar.dock-right {
+    position: absolute; top: 32px; right: 0; bottom: 32px; left: auto;
+    flex-direction: column;
+    width: 48px; height: auto;
+    padding: 8px 6px;
+    gap: 6px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    transform: none;
+  }
+  .screen .bar.dock-right .bar-top {
+    flex-direction: column;
+    width: 36px; height: auto;
+    gap: 4px;
+    align-items: center;
+  }
+  .screen .bar.dock-right .bar-top .scrubber,
+  .screen .bar.dock-right .bar-top .time { display: none; }
+  .screen .bar.dock-right .dots-row {
+    flex: 1;
+    width: 100%;
+    padding: 4px 0;
+    align-items: flex-start;
+  }
+  .screen .bar.dock-right .dots {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .screen .bar.dock-right .dots-run-gap {
+    width: auto;
+    height: 10px;
+  }
 
   .dot {
     width: 18px; height: 18px; border-radius: 50%;
@@ -535,7 +613,7 @@
 
 <div class="page-title">
   <h1>Terminal Talk — annotated states</h1>
-  <div class="meta">4 mocks · floating toolbar · no window chrome</div>
+  <div class="meta">6 mocks · floating toolbar · free-floating · top-snap · right-dock</div>
 </div>
 
 <div class="grid">
@@ -569,19 +647,23 @@
         <dl>
           <div>
             <dt>Frameless two-row pill</dt>
-            <dd>680×64 letterbox · always-on-top · drag to any screen edge and it snaps (left/right flip to a vertical dock)</dd>
+            <dd>680 × 64, always-on-top, frameless. The whole pill is a drag surface — grab anywhere the buttons aren't.</dd>
           </div>
           <div>
             <dt>Controls row</dt>
-            <dd>Back-10 · Play/Pause · Fwd-10 · scrubber · elapsed / total · clear played · settings · close</dd>
+            <dd>Back-10 · Play/Pause · Fwd-10 · scrubber · elapsed / total · clear-played · settings · close. The close button only hides the window — the listener keeps running; <code>Ctrl+Shift+A</code> brings it back.</dd>
           </div>
           <div>
-            <dt>Dots strip</dt>
-            <dd>Empty here — each clip in the queue lands as one dot on this row (oldest left, newest right)</dd>
+            <dt>Dot strip (empty here)</dt>
+            <dd>Every clip lands here as one dot. Oldest on the left, newest on the right. See shot 02 for how multi-session queues cluster.</dd>
+          </div>
+          <div>
+            <dt>Snap to edge</dt>
+            <dd>Drag near the top, left, or right edge of the screen and the bar snaps flush. Top snap = same layout. Left or right snap flips to a vertical dock (shot 06).</dd>
           </div>
           <div>
             <dt>Idle auto-collapse</dt>
-            <dd>After 15s with no interaction the bar shrinks to a thin strip and becomes click-through; hover to expand</dd>
+            <dd>After 15 s with no interaction the bar shrinks to a thin strip and becomes <i>click-through</i> (mouse passes through to the window behind). Hover the strip to bring it back.</dd>
           </div>
         </dl>
       </div>
@@ -589,12 +671,12 @@
   </section>
 
 
-  <!-- ═══════════════  02 — THREE SESSIONS SPEAKING  ═══════════════ -->
+  <!-- ═══════════════  02 — QUEUE WITH RUN CLUSTERING  ═══════════════ -->
   <section>
     <div class="shot-head">
       <div class="num">02</div>
-      <div class="title">Three sessions speaking</div>
-      <div class="caption">Three Claude Code terminals, each with a unique colour.</div>
+      <div class="title">Queue with three sessions</div>
+      <div class="caption">Clips from the same terminal cluster together; a gap marks a change of speaker.</div>
     </div>
 
     <div class="stage">
@@ -605,19 +687,29 @@
             <div class="btn play">❚❚</div>
             <div class="btn">⟳</div>
             <div class="scrubber">
-              <div class="filled" style="width: 42%"></div>
-              <div class="thumb hover" style="left: 42%"></div>
+              <div class="filled" style="width: 18%"></div>
+              <div class="thumb" style="left: 18%"></div>
             </div>
-            <div class="time">0:47 / 1:52</div>
+            <div class="time">0:12 / 1:04</div>
             <div class="btn">✕</div>
             <div class="btn">⚙</div>
             <div class="btn close">×</div>
           </div>
           <div class="dots-row">
             <div class="dots">
-              <div class="dot c-green playing"></div>
-              <div class="dot vsplit-red-blue"></div>
-              <div class="dot hsplit-yellow-purple"></div>
+              <!-- Run 1: Terminal A (red) — currently playing + 2 queued -->
+              <div class="dot c-red playing"></div>
+              <div class="dot c-red"></div>
+              <div class="dot c-red"></div>
+              <span class="dots-run-gap"></span>
+              <!-- Run 2: Terminal B (yellow) — 3 queued -->
+              <div class="dot c-yellow"></div>
+              <div class="dot c-yellow"></div>
+              <div class="dot c-yellow"></div>
+              <span class="dots-run-gap"></span>
+              <!-- Run 3: Terminal C (green) — 2 queued -->
+              <div class="dot c-green"></div>
+              <div class="dot c-green"></div>
             </div>
           </div>
         </div>
@@ -626,20 +718,20 @@
       <div class="annotations">
         <dl>
           <div>
-            <dt>Solid · green</dt>
-            <dd>One of the 8 base hues · this terminal's session colour</dd>
+            <dt>Oldest left, newest right</dt>
+            <dd>Arrival order, never re-sorted. The leftmost dot is what's playing now (Terminal A's first clip of 3).</dd>
           </div>
           <div>
-            <dt>Vertical split · red / blue</dt>
-            <dd>One of 8 v-split arrangements · complementary pair, seam down the middle</dd>
+            <dt>Run clustering</dt>
+            <dd>Consecutive clips from the same terminal sit side-by-side. A 12 px gap is inserted only when the next clip's session differs — so the timeline reads as <b>A A A — B B B — C C</b> without any colour confusion.</dd>
           </div>
           <div>
-            <dt>Horizontal split · yellow / purple</dt>
-            <dd>One of 8 h-split arrangements · complementary pair, seam across the middle</dd>
+            <dt>Colour = session identity</dt>
+            <dd>Each terminal picks one of the 24 arrangements (8 solids + 8 horizontal splits + 8 vertical splits). Playing dots pulse with a white ring; the base colour never changes so you always know <i>who</i> is talking.</dd>
           </div>
           <div>
-            <dt>Playing state</dt>
-            <dd>Slightly larger · pulsing white ring · base colour unchanged so you still know which session is speaking</dd>
+            <dt>When this hurts you</dt>
+            <dd>If Terminal C has the important message but Terminal A is rambling 3 clips deep, you'd wait through all of A + B first. That's what the focus-star on the sessions panel (shot 04) is for.</dd>
           </div>
         </dl>
       </div>
@@ -673,9 +765,10 @@
           </div>
           <div class="dots-row">
             <div class="dots">
+              <div class="dot c-green heard"></div>
               <div class="dot c-green playing"></div>
               <div class="dot c-orange"></div>
-              <div class="dot c-green heard"></div>
+              <span class="dots-run-gap"></span>
               <div class="dot c-purple j"></div>
             </div>
           </div>
@@ -685,24 +778,28 @@
       <div class="annotations">
         <dl>
           <div>
-            <dt>1 · Playing</dt>
-            <dd>Green session · larger with pulsing white ring · fill stays green so the session identity is never lost</dd>
+            <dt>1 · Heard (faded)</dt>
+            <dd>Already played. The dot stays in place so you can click it to hear it again. It disappears on its own after the auto-prune window (3–600 s, default 20 s) — flip auto-prune off if you want clips to stack up for review.</dd>
           </div>
           <div>
-            <dt>2 · Queued</dt>
-            <dd>Orange session · plain 18px disc · auto-plays when it reaches the front of the unmuted queue</dd>
+            <dt>2 · Playing</dt>
+            <dd>Slightly larger, pulsing white ring around it. Base colour stays the session colour so you always know which terminal is talking — the ring is layered on top, not a replacement.</dd>
           </div>
           <div>
-            <dt>3 · Heard</dt>
-            <dd>Already played · fades after playback · removed once the configured auto-prune window (3–600 s, default 20 s) elapses</dd>
+            <dt>3 · Queued</dt>
+            <dd>Plain flat disc. Auto-plays the moment the current clip ends (assuming no higher priority clip arrives — see shot 04 for the full precedence rules).</dd>
           </div>
           <div>
-            <dt>4 · J-clip</dt>
-            <dd>Highlight-to-speak via “hey jarvis” / <code>Ctrl+Shift+S</code> · small <b>J</b> glyph · inherits source terminal's colour (grey if non-Claude)</dd>
+            <dt>4 · J-clip (hey jarvis)</dt>
+            <dd>Highlight-to-speak clip from saying “hey jarvis” or <code>Ctrl+Shift+S</code>. Small <b>J</b> glyph over the dot. Colour inherits from the Claude Code terminal the selection came from; grey if triggered from a non-Claude app (browser, PDF, Slack).</dd>
           </div>
           <div>
-            <dt>Muted sessions</dt>
-            <dd>Sessions the user has <code>🔇</code>-muted in the settings panel never produce dots here at all — their clips are dropped at arrival</dd>
+            <dt>Muted sessions never appear</dt>
+            <dd>When a session is <code>🔇</code>-muted in the panel, its clips are dropped at the filesystem level — no synthesis, no file, no dot, no audio. Unmuting resumes on the next arrival.</dd>
+          </div>
+          <div>
+            <dt>Right-click to delete</dt>
+            <dd>Right-click any dot to remove it immediately (without waiting for auto-prune). Left-click plays it again.</dd>
           </div>
         </dl>
       </div>
@@ -857,32 +954,178 @@
       <div class="annotations">
         <dl>
           <div>
-            <dt>Playback section</dt>
-            <dd>Speed slider 0.5–2.5× · Auto-prune toggle + seconds (3–600). Flip auto-prune off to let clips stack up when you're stepping away.</dd>
+            <dt>Playback — speed + auto-prune</dt>
+            <dd>Speed slider 0.5–2.5×. Auto-prune toggle + seconds (3–600, default 20) — when on, played clips disappear from the strip after that many seconds. Flip off if you're stepping away and want clips to stack up for review.</dd>
           </div>
           <div>
-            <dt>Session row · 7 columns</dt>
-            <dd>Chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · focus star · mute button.</dd>
+            <dt>Sessions row · 7 columns</dt>
+            <dd>Chevron · swatch · 8-char session ID · editable label · colour dropdown (24 arrangements) · focus star · mute. The × at the very end removes the session (frees its colour slot).</dd>
           </div>
           <div>
-            <dt>Focus star (priority)</dt>
-            <dd><code>☆</code> → <code>★</code> · marks this session as priority. Its unplayed clips jump ahead of every other session's clips in the playback queue (never interrupts what's currently playing). Only one session can be starred at a time — clicking another star swaps focus. The row picks up a subtle gold tint when active.</dd>
+            <dt>★ Focus (priority)</dt>
+            <dd>This is the answer to <i>"Terminal C has the important message but Terminal A is 3 clips deep and B is another 3".</i> Star Terminal C and its unplayed clips jump the queue — they play before any pending clip from other sessions. It never interrupts the clip that's currently speaking. Only one session can be starred at a time; clicking another star swaps focus. Active row picks up a subtle gold tint.</dd>
           </div>
           <div>
-            <dt>Per-session mute</dt>
-            <dd><code>🔊</code> / <code>🔇</code> · muted rows fade to 55% · muted sessions skip synthesis entirely (no clips, no dots, no audio).</dd>
+            <dt>🔊 / 🔇 Mute</dt>
+            <dd>Silences one session completely: no synthesis, no file, no dot, no audio. Muted rows fade to 55 % and the terminal's statusline shows a <code>🔇</code> prefix next to its emoji. Use it for backgrounding a chatty agent while you focus elsewhere.</dd>
           </div>
           <div>
-            <dt>Expanded row</dt>
-            <dd>Chevron ▾ reveals the session's voice dropdown (45 Edge voices) and 6 tri-state <i>speech-includes</i> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text.</dd>
+            <dt>Playback precedence</dt>
+            <dd>When the player picks the next clip: (1) highlight-to-speak (<i>hey jarvis</i> / <code>Ctrl+Shift+S</code>) always wins · (2) unplayed clips from the ★ session · (3) oldest unplayed clip from any unmuted session.</dd>
           </div>
           <div>
-            <dt>Tri-state toggles</dt>
-            <dd><span style="color:#4ade80;">●</span> on · <span style="color:#ffd93d;">●</span> default (follow global) · <span style="color:rgba(255,255,255,0.3);">○</span> off</dd>
+            <dt>Expanded row (chevron ▾)</dt>
+            <dd>Reveals per-session <b>Voice</b> (45 Edge Neural voices — pick one per terminal so you can tell them apart by ear) and 6 tri-state <b>Speech-includes</b> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text. Each toggle is <span style="color:#4ade80;">●</span> on / <span style="color:#ffd93d;">●</span> follow global / <span style="color:rgba(255,255,255,0.3);">○</span> off.</dd>
           </div>
           <div>
-            <dt>Shortcuts</dt>
-            <dd>Three global hotkeys (A / S / J) plus local ones when the toolbar has focus.</dd>
+            <dt>Global shortcuts</dt>
+            <dd><kbd>Ctrl+Shift+A</kbd> show/hide toolbar · <kbd>Ctrl+Shift+S</kbd> read selection · <kbd>Ctrl+Shift+J</kbd> toggle mic (wake word). Plus local <kbd>Space</kbd> play/pause and <kbd>←</kbd>/<kbd>→</kbd> skip when the toolbar is focused.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════  05 — SNAPPED TO TOP  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">05</div>
+      <div class="title">Snapped to the top edge</div>
+      <div class="caption">Drag near the top of the screen — the bar snaps flush, flat-topped, and stays there on the next launch.</div>
+    </div>
+
+    <div class="stage">
+      <div class="screen">
+        <!-- Faint "desktop" widgets behind, just to sell the snap -->
+        <div style="position:absolute; left:36px; top:84px; width:140px; height:80px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.05);"></div>
+        <div style="position:absolute; left:36px; top:178px; width:200px; height:10px; border-radius:4px; background:rgba(255,255,255,0.05);"></div>
+        <div style="position:absolute; left:36px; top:196px; width:140px; height:10px; border-radius:4px; background:rgba(255,255,255,0.04);"></div>
+        <div style="position:absolute; right:36px; bottom:60px; width:280px; height:120px; border-radius:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);"></div>
+
+        <div class="bar snapped-top">
+          <div class="bar-top">
+            <div class="btn">⟲</div>
+            <div class="btn play">▶</div>
+            <div class="btn">⟳</div>
+            <div class="scrubber">
+              <div class="filled" style="width: 62%"></div>
+              <div class="thumb" style="left: 62%"></div>
+            </div>
+            <div class="time">0:45 / 1:12</div>
+            <div class="btn">✕</div>
+            <div class="btn">⚙</div>
+            <div class="btn close">×</div>
+          </div>
+          <div class="dots-row">
+            <div class="dots">
+              <div class="dot c-red heard"></div>
+              <div class="dot c-red"></div>
+              <span class="dots-run-gap"></span>
+              <div class="dot c-blue playing"></div>
+              <div class="dot c-blue"></div>
+              <div class="dot c-blue"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Trigger</dt>
+            <dd>Drag the bar within ~20 px of the top edge of the current screen. On <i>release</i> it snaps flush; the top corners go square so it reads as docked.</dd>
+          </div>
+          <div>
+            <dt>Same layout</dt>
+            <dd>Top-snap keeps the default two-row letterbox — all controls still fit. The snap is purely positional.</dd>
+          </div>
+          <div>
+            <dt>Persistence</dt>
+            <dd>The snap edge is written to <code>~/.terminal-talk/config.json</code> (<code>window.dock: "top"</code>) so the bar comes back to the same place on relaunch, even across display changes.</dd>
+          </div>
+          <div>
+            <dt>Multi-monitor</dt>
+            <dd>Snap uses the work-area of whichever display the bar is currently on — drag to another monitor and the next snap targets <i>that</i> monitor's edges.</dd>
+          </div>
+          <div>
+            <dt>Unsnapping</dt>
+            <dd>Drag away from the edge. The round pill shape returns the moment it's more than a few pixels clear of the top.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════  06 — DOCKED VERTICAL (RIGHT EDGE)  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">06</div>
+      <div class="title">Docked to the right edge (vertical)</div>
+      <div class="caption">Drag to the left or right edge and the bar flips to a narrow column — out of the way, still always-on-top.</div>
+    </div>
+
+    <div class="stage">
+      <div class="screen">
+        <!-- Background widgets to show the bar really is hugging the edge -->
+        <div style="position:absolute; left:40px; top:40px; width:180px; height:22px; border-radius:5px; background:rgba(255,255,255,0.04);"></div>
+        <div style="position:absolute; left:40px; top:80px; width:360px; height:100px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);"></div>
+        <div style="position:absolute; left:40px; top:200px; width:300px; height:14px; border-radius:4px; background:rgba(255,255,255,0.04);"></div>
+        <div style="position:absolute; left:40px; top:222px; width:240px; height:14px; border-radius:4px; background:rgba(255,255,255,0.03);"></div>
+        <div style="position:absolute; left:40px; top:244px; width:280px; height:14px; border-radius:4px; background:rgba(255,255,255,0.03);"></div>
+        <div style="position:absolute; left:40px; bottom:40px; width:120px; height:40px; border-radius:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.05);"></div>
+
+        <div class="bar dock-right">
+          <div class="bar-top">
+            <div class="btn">⟲</div>
+            <div class="btn play">❚❚</div>
+            <div class="btn">⟳</div>
+            <!-- scrubber + time hidden via CSS — don't fit a 48px column -->
+            <div class="btn">✕</div>
+            <div class="btn">⚙</div>
+            <div class="btn close">×</div>
+          </div>
+          <div class="dots-row">
+            <div class="dots">
+              <div class="dot c-green playing"></div>
+              <div class="dot c-green"></div>
+              <span class="dots-run-gap"></span>
+              <div class="dot c-orange"></div>
+              <div class="dot c-orange"></div>
+              <div class="dot c-orange"></div>
+              <span class="dots-run-gap"></span>
+              <div class="dot c-purple"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Trigger</dt>
+            <dd>Drag within ~20 px of the left or right edge. On release the bar flips from a 680 × 64 horizontal pill to a 48 px wide vertical column that spans most of the screen's height. Left-edge and right-edge behave symmetrically.</dd>
+          </div>
+          <div>
+            <dt>What survives the flip</dt>
+            <dd>Back-10 · Play/Pause · Fwd-10 · clear-played · settings · close. Stacked top-to-bottom.</dd>
+          </div>
+          <div>
+            <dt>What's hidden</dt>
+            <dd>The scrubber and the time readout — neither fits a 48 px column. Skip via the ⟲ / ⟳ buttons (10 s each), or open the settings panel for the full horizontal surface.</dd>
+          </div>
+          <div>
+            <dt>Dot strip becomes a column</dt>
+            <dd>Dots flow top-to-bottom instead of left-to-right. Oldest on top, newest on bottom. Run-gaps become vertical spacers — the same 3-red / 3-yellow / 2-green pattern from shot 02 still reads as three distinct speakers.</dd>
+          </div>
+          <div>
+            <dt>Collapsed vertical strip</dt>
+            <dd>After 15 s idle the column shrinks to a 14 px-wide thin bar flush against the edge. Hover to expand, same as horizontal.</dd>
+          </div>
+          <div>
+            <dt>When to use it</dt>
+            <dd>Wide displays where a horizontal bar on the top steals vertical space you actually want for editor/browser content. Docking to the right keeps Terminal Talk out of the writing area.</dd>
           </div>
         </dl>
       </div>
