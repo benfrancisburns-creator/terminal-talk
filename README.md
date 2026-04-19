@@ -32,6 +32,7 @@ Windows-only for now; Mac/Linux planned.
 | **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag to any screen edge and it snaps flush. Left/right edges switch to a vertical column layout. After 15 s of no interaction it shrinks to a thin strip and becomes click-through; hover to re-expand. |
 | **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. Sessions persist until you explicitly remove them (× button on each row of the Sessions table). |
 | **Per-session mute** | `🔊/🔇` button on each Sessions table row. Muted sessions skip edge-tts entirely (no synthesis, no clips, no audio) and show a `🔇` prefix in the terminal's statusline. Perfect for backgrounding chatty terminals. |
+| **Focus mode (priority)** | Star `☆ → ★` button on each Sessions row. When Terminal 2 is the one that matters and Terminal 3 is rambling 15 clips deep, starring T2 makes its clips jump the queue — they play before any other session's pending clip (no interruption of the clip currently playing). Only one session can be focused at a time; clicking another star swaps focus. Highlight-to-speak clips still win over everything. |
 | **Per-session speech-includes** | Override what gets spoken on a per-terminal basis: code blocks, inline code, URLs, headings, bullet markers, image alt-text. |
 | **Auto-prune** | Played clips disappear after a configurable delay (default 20 s, range 3-600 s, toggle on/off). Walking away? Flip it off and let clips stack up for when you're back. |
 | **Tap to mute the mic** | `Ctrl+Shift+J` toggles the wake-word listener (chime confirms). Mic is truly released when off — orphan-swept + state-file-driven stream teardown. |
@@ -70,7 +71,9 @@ Playing · queued · heard (auto-prunes after 3–600 s) · and a **J**-labelled
   <img src="docs/screenshots/toolbar-settings-panel.png" alt="Full settings panel: Playback (speed + auto-prune), Sessions table with mute buttons + one expanded row showing voice + speech-includes, About section with ASCII banner + shortcuts" width="900">
 </p>
 
-The gear expands the panel downward. **Playback** holds the speed slider and auto-prune toggle. **Sessions** lists every active terminal with a one-click 🔊/🔇 mute; the chevron on each row reveals per-session voice + six tri-state speech-includes toggles (code blocks, inline code, URLs, headings, bullet markers, image alt-text). **About** has the ASCII banner and full shortcuts table.
+The gear expands the panel downward. **Playback** holds the speed slider and auto-prune toggle. **Sessions** lists every active terminal with a one-click ★ focus-star (priority playback) and 🔊/🔇 mute; the chevron on each row reveals per-session voice + six tri-state speech-includes toggles (code blocks, inline code, URLs, headings, bullet markers, image alt-text). **About** has the ASCII banner and full shortcuts table.
+
+**Playback order** — when the player picks the next clip it follows this precedence: (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session · (3) oldest unplayed clip from any unmuted session. Starring a session is how you make sure an important terminal's response is heard ahead of a chatty one with 15 queued clips.
 
 ## Who it's for
 

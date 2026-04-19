@@ -874,6 +874,36 @@ function renderSessionRow(shortId, entry) {
   });
   row.appendChild(select);
 
+  // Focus toggle. Star button — clicking marks this session as priority;
+  // its unplayed clips jump ahead of other sessions' clips in the playback
+  // queue (but never interrupt a currently-playing clip). Main.js enforces
+  // exclusivity: only one session can be focused at a time, so clicking
+  // here clears focus on every other row.
+  const focusBtn = document.createElement('button');
+  focusBtn.className = 'focus-btn' + (entry.focus ? ' focused' : '');
+  focusBtn.textContent = entry.focus ? '\u2605' : '\u2606';  // ★ / ☆
+  focusBtn.title = entry.focus
+    ? 'Unfocus this session (its clips lose priority)'
+    : 'Focus this session — its clips play before other sessions\' clips';
+  focusBtn.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const next = !entry.focus;
+    const ok = await window.api.setSessionFocus(shortId, next);
+    if (ok) {
+      // Exclusive focus: clear every other session's focus flag in the
+      // local cache so the re-render immediately reflects the new state.
+      if (next) {
+        for (const key of Object.keys(sessionAssignments)) {
+          if (key !== shortId) sessionAssignments[key].focus = false;
+        }
+      }
+      sessionAssignments[shortId].focus = next;
+      renderSessionsTable();
+      renderDots();
+    }
+  });
+  row.appendChild(focusBtn);
+
   // Mute toggle. Always visible in the top row so users can one-click mute
   // background terminals. Uses 🔇 / 🔊 to make the state obvious at a glance;
   // the row also gets a muted class for a subtle fade.

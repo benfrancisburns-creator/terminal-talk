@@ -327,8 +327,8 @@
 
   .session-row {
     display: grid;
-    grid-template-columns: 16px 24px 80px 1fr 120px 28px;
-    gap: 12px; align-items: center;
+    grid-template-columns: 16px 24px 80px 1fr 120px 26px 26px;
+    gap: 10px; align-items: center;
     padding: 10px 14px;
     background: rgba(255,255,255,0.025);
     border: 1px solid rgba(255,255,255,0.06);
@@ -340,6 +340,26 @@
     border-color: rgba(255,255,255,0.08);
   }
   .session-row.muted { opacity: 0.55; }
+  .session-row.focused {
+    box-shadow: inset 0 0 0 1px rgba(255,215,61,0.28);
+    background: rgba(255,215,61,0.04);
+  }
+
+  /* Per-session focus star — ☆ outlined when off, ★ filled gold when on.
+     Main.js enforces exclusivity: only one row can be focused at a time. */
+  .focus-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: transparent;
+    color: rgba(255,255,255,0.7);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+  .focus-btn.focused {
+    background: rgba(255,215,61,0.18);
+    border-color: rgba(255,215,61,0.5);
+    color: #ffd93d;
+  }
   /* Per-session mute button — 🔊 unmuted, 🔇 muted. One-click toggle
      in the shipping UI; clicking triggers save + re-render. */
   .mute-btn {
@@ -747,12 +767,13 @@
             <div class="panel-section">
               <div class="panel-header">Sessions</div>
 
-              <div class="session-row">
+              <div class="session-row focused">
                 <span class="chev">▸</span>
                 <div class="swatch" style="background: #4ade80;"></div>
                 <span class="short-id">abcd1234</span>
                 <div class="fake-input">Frontend</div>
                 <div class="fake-select"><span>Green</span><span class="caret">▾</span></div>
+                <button class="focus-btn focused" title="Unfocus this session">★</button>
                 <button class="mute-btn" title="Mute this session">🔊</button>
               </div>
 
@@ -762,6 +783,7 @@
                 <span class="short-id">a08f2b71</span>
                 <div class="fake-input">Auth API</div>
                 <div class="fake-select"><span>Blue</span><span class="caret">▾</span></div>
+                <button class="focus-btn" title="Focus this session">☆</button>
                 <button class="mute-btn muted" title="Unmute">🔇</button>
               </div>
 
@@ -771,6 +793,7 @@
                 <span class="short-id">7e5c9a04</span>
                 <div class="fake-input placeholder">Label…</div>
                 <div class="fake-select"><span>H-split · brown / white</span><span class="caret">▾</span></div>
+                <button class="focus-btn" title="Focus this session">☆</button>
                 <button class="mute-btn" title="Mute this session">🔊</button>
 
                 <div class="session-expanded-body">
@@ -838,8 +861,12 @@
             <dd>Speed slider 0.5–2.5× · Auto-prune toggle + seconds (3–600). Flip auto-prune off to let clips stack up when you're stepping away.</dd>
           </div>
           <div>
-            <dt>Session row · 6 columns</dt>
-            <dd>Chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · mute button.</dd>
+            <dt>Session row · 7 columns</dt>
+            <dd>Chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · focus star · mute button.</dd>
+          </div>
+          <div>
+            <dt>Focus star (priority)</dt>
+            <dd><code>☆</code> → <code>★</code> · marks this session as priority. Its unplayed clips jump ahead of every other session's clips in the playback queue (never interrupts what's currently playing). Only one session can be starred at a time — clicking another star swaps focus. The row picks up a subtle gold tint when active.</dd>
           </div>
           <div>
             <dt>Per-session mute</dt>
