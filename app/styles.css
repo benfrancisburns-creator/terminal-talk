@@ -29,24 +29,24 @@ html, body {
   overflow: hidden;
 }
 
-/* Collapsed: bar shrinks to a slim hover-target at the top of the screen.
-   Content is hidden but the strip stays subtly visible so the user can
-   see where to hover. Window stays the same size (114 px) but becomes
-   click-through via setIgnoreMouseEvents so the area below the strip
-   doesn't block interaction with other apps. */
+/* Collapsed: bar shrinks to a slim hover-target. Content hidden but the
+   strip stays visible enough to find — the old 35% opacity was too faint,
+   users couldn't see where to hover. Window stays the same size (114 px)
+   but becomes click-through via setIgnoreMouseEvents so the area below
+   the strip doesn't block interaction with other apps. */
 .bar.collapsed {
-  height: 8px;
+  height: 10px;
   padding: 0;
-  opacity: 0.35;
-  border-color: rgba(255, 255, 255, 0.04);
-  background: rgba(24, 26, 32, 0.6);
+  opacity: 0.75;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(24, 26, 32, 0.82);
 }
 .bar.collapsed .bar-top,
 .bar.collapsed .dots-row {
   display: none;
 }
 .bar.collapsed:hover {
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .bar-top {

@@ -52,6 +52,7 @@ function loadConfig() {
       hotkeys: { ...DEFAULTS.hotkeys, ...(parsed.hotkeys || {}) },
       playback: { ...DEFAULTS.playback, ...(parsed.playback || {}) },
       speech_includes: { ...DEFAULTS.speech_includes, ...(parsed.speech_includes || {}) },
+      window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
       openai_api_key: parsed.openai_api_key ?? null
     };
   } catch { return DEFAULTS; }
@@ -154,15 +155,64 @@ function pruneSessionsDir() {
   } catch {}
 }
 
+// Edge snapping: within this many pixels of a screen edge, on move-end we
+// snap to that edge. Pick a threshold big enough to forgive imprecise drags
+// but not so big it triggers when the user wants to park the bar near an
+// edge without snapping.
+const SNAP_THRESHOLD_PX = 50;
+
+function saveWindowPosition() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    const [x, y] = win.getPosition();
+    CFG.window = { ...(CFG.window || {}), x, y };
+    saveConfig(CFG);
+  } catch (e) { diag(`saveWindowPosition fail: ${e.message}`); }
+}
+
+function snapToEdgeIfClose() {
+  if (!win || win.isDestroyed()) return;
+  const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
+  const [x, y] = win.getPosition();
+  const [w, h] = win.getSize();
+
+  const distLeft   = x - dispX;
+  const distTop    = y - dispY;
+  const distRight  = (dispX + dispW) - (x + w);
+  const distBottom = (dispY + dispH) - (y + h);
+
+  let newX = x;
+  let newY = y;
+  if (distLeft   >= 0 && distLeft   < SNAP_THRESHOLD_PX) newX = dispX;
+  if (distRight  >= 0 && distRight  < SNAP_THRESHOLD_PX) newX = dispX + dispW - w;
+  if (distTop    >= 0 && distTop    < SNAP_THRESHOLD_PX) newY = dispY;
+  if (distBottom >= 0 && distBottom < SNAP_THRESHOLD_PX) newY = dispY + dispH - h;
+
+  if (newX !== x || newY !== y) {
+    win.setPosition(newX, newY);
+    diag(`snap: (${x},${y}) -> (${newX},${newY})`);
+  }
+  saveWindowPosition();
+}
+
 function createWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   const winWidth = 680;
   const winHeight = 114;  // 36 controls + 4 gap + 44 dot row + 14 padding + 12 margin + halo breathing
+  // Restore last-saved position if present and still on-screen. Falls back
+  // to centered top. Guards against configs saved for a different monitor
+  // layout that would put the toolbar off the visible workArea.
+  const saved = CFG.window || {};
+  const { x: waX, y: waY, width: waW, height: waH } = screen.getPrimaryDisplay().workArea;
+  let startX = typeof saved.x === 'number' ? saved.x : Math.floor((width - winWidth) / 2);
+  let startY = typeof saved.y === 'number' ? saved.y : 12;
+  if (startX < waX - 50 || startX > waX + waW - 50) startX = Math.floor((width - winWidth) / 2);
+  if (startY < waY - 50 || startY > waY + waH - 50) startY = 12;
   win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
-    x: Math.floor((width - winWidth) / 2),
-    y: 12,
+    x: startX,
+    y: startY,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -184,6 +234,16 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'floating');
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
+
+  // Snap on move-end. 'moved' fires on Windows after the drag completes;
+  // debounce on 'move' as a fallback for platforms that don't emit 'moved'.
+  let moveSettleTimer = null;
+  const onSettle = () => {
+    if (moveSettleTimer) clearTimeout(moveSettleTimer);
+    moveSettleTimer = setTimeout(() => { snapToEdgeIfClose(); }, 150);
+  };
+  win.on('move', onSettle);
+  win.on('moved', () => { snapToEdgeIfClose(); });
 }
 
 function toggleWindow() {

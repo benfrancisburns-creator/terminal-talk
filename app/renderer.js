@@ -1006,10 +1006,8 @@ barEl.addEventListener('mouseleave', () => {
 barEl.addEventListener('click', bumpActivity);
 window.addEventListener('keydown', bumpActivity);
 
-// Start collapsed-when-idle cycle once initial load finishes.
-loadSettings().then(() => {
-  // Briefly show the bar on startup so the user sees it, then collapse.
-  scheduleCollapse();
-});
+// Don't auto-collapse on startup — user needs to see the toolbar first.
+// The collapse cycle starts on the first mouseleave or new-clip arrival.
+loadSettings();
 
 initialLoad();
