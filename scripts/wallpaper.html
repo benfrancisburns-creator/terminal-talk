@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 800px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(circle at 20% 25%, #26324a 0%, transparent 55%),
+      radial-gradient(circle at 80% 78%, #30203e 0%, transparent 55%),
+      #0e0f13;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    position: relative;
+  }
+
+  .center-stack {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+  }
+
+  /* ANSI Shadow 3D-style block letters. Each letter wrapped in a
+     coloured span so no gradient cuts through glyphs. Bigger font +
+     line-height 1 so box-drawing chars tile cleanly. */
+  pre.ascii {
+    font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Lucida Console', monospace;
+    font-size: 20px;
+    line-height: 1;
+    white-space: pre;
+    letter-spacing: 0;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    margin: 0;
+  }
+  pre.ascii .t { color: #ff5e5e; }
+  pre.ascii .e { color: #ffa726; }
+  pre.ascii .r { color: #ffd93d; }
+  pre.ascii .m { color: #4ade80; }
+  pre.ascii .i { color: #60a5fa; }
+  pre.ascii .n { color: #c084fc; }
+  pre.ascii .a { color: #c97b50; }
+  pre.ascii .l { color: #e0e0e0; }
+  pre.ascii .tlk-t { color: #ff5e5e; }
+  pre.ascii .tlk-a { color: #ffa726; }
+  pre.ascii .tlk-l { color: #ffd93d; }
+  pre.ascii .tlk-k { color: #4ade80; }
+
+  .talk-row {
+    display: flex;
+    align-items: center;
+    gap: 56px;
+  }
+
+  /* Mascot — all-orange silhouette. Uses only █ blocks and spaces
+     (which read as cut-outs). No dark fill anywhere; eye gaps are just
+     transparency through to the background. */
+  .mascot-pair {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .mascot-svg {
+    filter: drop-shadow(0 0 12px rgba(255,140,26,0.4));
+  }
+  .cloud-svg { display: block; }
+  .cloud-svg text {
+    font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+    font-weight: 700;
+    fill: #0e0f13;
+  }
+
+  .palette { display: flex; gap: 16px; }
+  .palette .dot {
+    width: 12px; height: 12px; border-radius: 50%; opacity: 0.55;
+  }
+  .tagline {
+    font-size: 13px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    font-weight: 300;
+  }
+</style>
+</head>
+<body>
+
+  <div class="center-stack">
+
+    <!-- TERMINAL — ANSI Shadow style with per-letter coloured spans -->
+    <pre class="ascii"><span class="t">████████╗</span><span class="e">███████╗</span><span class="r">██████╗ </span><span class="m">███╗   ███╗</span><span class="i">██╗</span><span class="n">███╗   ██╗</span><span class="a"> █████╗ </span><span class="l">██╗</span>
+<span class="t">╚══██╔══╝</span><span class="e">██╔════╝</span><span class="r">██╔══██╗</span><span class="m">████╗ ████║</span><span class="i">██║</span><span class="n">████╗  ██║</span><span class="a">██╔══██╗</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">█████╗  </span><span class="r">██████╔╝</span><span class="m">██╔████╔██║</span><span class="i">██║</span><span class="n">██╔██╗ ██║</span><span class="a">███████║</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">██╔══╝  </span><span class="r">██╔══██╗</span><span class="m">██║╚██╔╝██║</span><span class="i">██║</span><span class="n">██║╚██╗██║</span><span class="a">██╔══██║</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">███████╗</span><span class="r">██║  ██║</span><span class="m">██║ ╚═╝ ██║</span><span class="i">██║</span><span class="n">██║ ╚████║</span><span class="a">██║  ██║</span><span class="l">███████╗</span>
+<span class="t">   ╚═╝   </span><span class="e">╚══════╝</span><span class="r">╚═╝  ╚═╝</span><span class="m">╚═╝     ╚═╝</span><span class="i">╚═╝</span><span class="n">╚═╝  ╚═══╝</span><span class="a">╚═╝  ╚═╝</span><span class="l">╚══════╝</span></pre>
+
+    <!-- TALK + mascot side by side -->
+    <div class="talk-row">
+      <pre class="ascii"><span class="tlk-t">████████╗</span><span class="tlk-a"> █████╗ </span><span class="tlk-l">██╗     </span><span class="tlk-k">██╗  ██╗</span>
+<span class="tlk-t">╚══██╔══╝</span><span class="tlk-a">██╔══██╗</span><span class="tlk-l">██║     </span><span class="tlk-k">██║ ██╔╝</span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">███████║</span><span class="tlk-l">██║     </span><span class="tlk-k">█████╔╝ </span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">██╔══██║</span><span class="tlk-l">██║     </span><span class="tlk-k">██╔═██╗ </span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">██║  ██║</span><span class="tlk-l">███████╗</span><span class="tlk-k">██║  ██╗</span>
+<span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
+
+      <div class="mascot-pair">
+        <!-- Mascot: solid orange with grey eyes AND a smile. The mouth
+             is OUR differentiator vs Anthropic's Clawd — Clawd has no
+             mouth, ours is the talkative one. Smile formed from three
+             grey rectangles arranged as a shallow U. -->
+        <svg class="mascot-svg" width="140" height="120" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+          <!-- Eyes -->
+          <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <!-- Smile (three rects form a shallow U) -->
+          <rect x="44" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="88" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="44" y="64" width="52" height="6" fill="#3a3a3a"/>
+        </svg>
+
+        <!-- Pixelated white cloud with "talking terminal" text inside.
+             Built at viewBox 30×11 (pixel grid) scaled 10×; each unit =
+             10 px. crispEdges keeps the pixel-art feel with no
+             antialiasing softness. -->
+        <svg class="cloud-svg" width="300" height="110" viewBox="0 0 30 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <!-- Top puffs (bumpy cloud top) -->
+          <rect x="4"  y="0" width="4" height="1" fill="white"/>
+          <rect x="11" y="0" width="5" height="1" fill="white"/>
+          <rect x="19" y="0" width="4" height="1" fill="white"/>
+          <!-- Rising row — wider -->
+          <rect x="2"  y="1" width="26" height="1" fill="white"/>
+          <!-- Main body -->
+          <rect x="1"  y="2" width="28" height="7" fill="white"/>
+          <!-- Bottom contour -->
+          <rect x="2"  y="9"  width="26" height="1" fill="white"/>
+          <rect x="4"  y="10" width="4"  height="1" fill="white"/>
+          <rect x="12" y="10" width="5"  height="1" fill="white"/>
+          <!-- Tail (chunky pixel tail pointing back to mascot) -->
+          <rect x="0"  y="7" width="1" height="1" fill="white"/>
+          <rect x="0"  y="8" width="1" height="1" fill="white"/>
+          <!-- Text inside the cloud -->
+          <text x="15" y="6.6" font-size="2.8" text-anchor="middle">HEY TT</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="palette">
+      <div class="dot" style="background:#ff5e5e"></div>
+      <div class="dot" style="background:#ffa726"></div>
+      <div class="dot" style="background:#ffd93d"></div>
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="dot" style="background:#60a5fa"></div>
+      <div class="dot" style="background:#c084fc"></div>
+      <div class="dot" style="background:#c97b50"></div>
+      <div class="dot" style="background:#e0e0e0"></div>
+    </div>
+
+    <div class="tagline">hands-free voice workflow for claude code</div>
+  </div>
+
+</body>
+</html>

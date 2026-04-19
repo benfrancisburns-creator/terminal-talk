@@ -63,6 +63,52 @@ section { padding: 80px 24px; }
 /* Hero */
 .hero { padding: 96px 24px 56px; text-align: center; }
 .hero img.banner { max-width: 720px; width: 100%; height: auto; }
+
+/* ASCII hero — per-letter coloured block-art TERMINAL TALK, mascot, cloud.
+   Mirrors the desktop wallpaper composition (docs/assets/wallpaper/). */
+.hero-ascii {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 10px;
+}
+.hero-ascii pre.ascii {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Lucida Console', monospace;
+  font-size: 20px;
+  line-height: 1;
+  white-space: pre;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  margin: 0;
+}
+.hero-ascii .t { color: #ff5e5e; }
+.hero-ascii .e { color: #ffa726; }
+.hero-ascii .r { color: #ffd93d; }
+.hero-ascii .m { color: #4ade80; }
+.hero-ascii .i { color: #60a5fa; }
+.hero-ascii .n { color: #c084fc; }
+.hero-ascii .a { color: #c97b50; }
+.hero-ascii .l { color: #e0e0e0; }
+.hero-ascii .tlk-t { color: #ff5e5e; }
+.hero-ascii .tlk-a { color: #ffa726; }
+.hero-ascii .tlk-l { color: #ffd93d; }
+.hero-ascii .tlk-k { color: #4ade80; }
+.talk-row { display: flex; align-items: center; gap: 44px; flex-wrap: wrap; justify-content: center; }
+.mascot-pair { display: flex; align-items: center; gap: 20px; }
+.mascot-svg { filter: drop-shadow(0 0 12px rgba(255,140,26,0.4)); }
+.cloud-svg text {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+  font-weight: 700;
+  fill: #0e0f13;
+}
+.hero-palette { display: flex; gap: 14px; }
+.hero-palette .dot { width: 11px; height: 11px; border-radius: 50%; opacity: 0.55; }
+@media (max-width: 900px) {
+  .hero-ascii pre.ascii { font-size: 13px; }
+}
 .hero h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 700; margin: 32px 0 12px; letter-spacing: -0.02em; }
 .hero p.lede { font-size: clamp(16px, 2vw, 20px); color: var(--text-dim); max-width: 640px; margin: 0 auto 14px; }
 .hero p.sub { color: var(--text-faint); max-width: 580px; margin: 0 auto 32px; font-size: 15px; }
@@ -261,9 +307,66 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 </nav>
 
 <header class="hero">
-  <img class="banner" src="assets/logo/lettered-dots-banner-1200x400.svg" alt="Terminal Talk">
-  <h1>Hands-free voice workflow for Claude Code</h1>
-  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
+  <div class="hero-ascii">
+    <pre class="ascii"><span class="t">████████╗</span><span class="e">███████╗</span><span class="r">██████╗ </span><span class="m">███╗   ███╗</span><span class="i">██╗</span><span class="n">███╗   ██╗</span><span class="a"> █████╗ </span><span class="l">██╗</span>
+<span class="t">╚══██╔══╝</span><span class="e">██╔════╝</span><span class="r">██╔══██╗</span><span class="m">████╗ ████║</span><span class="i">██║</span><span class="n">████╗  ██║</span><span class="a">██╔══██╗</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">█████╗  </span><span class="r">██████╔╝</span><span class="m">██╔████╔██║</span><span class="i">██║</span><span class="n">██╔██╗ ██║</span><span class="a">███████║</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">██╔══╝  </span><span class="r">██╔══██╗</span><span class="m">██║╚██╔╝██║</span><span class="i">██║</span><span class="n">██║╚██╗██║</span><span class="a">██╔══██║</span><span class="l">██║</span>
+<span class="t">   ██║   </span><span class="e">███████╗</span><span class="r">██║  ██║</span><span class="m">██║ ╚═╝ ██║</span><span class="i">██║</span><span class="n">██║ ╚████║</span><span class="a">██║  ██║</span><span class="l">███████╗</span>
+<span class="t">   ╚═╝   </span><span class="e">╚══════╝</span><span class="r">╚═╝  ╚═╝</span><span class="m">╚═╝     ╚═╝</span><span class="i">╚═╝</span><span class="n">╚═╝  ╚═══╝</span><span class="a">╚═╝  ╚═╝</span><span class="l">╚══════╝</span></pre>
+
+    <div class="talk-row">
+      <pre class="ascii"><span class="tlk-t">████████╗</span><span class="tlk-a"> █████╗ </span><span class="tlk-l">██╗     </span><span class="tlk-k">██╗  ██╗</span>
+<span class="tlk-t">╚══██╔══╝</span><span class="tlk-a">██╔══██╗</span><span class="tlk-l">██║     </span><span class="tlk-k">██║ ██╔╝</span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">███████║</span><span class="tlk-l">██║     </span><span class="tlk-k">█████╔╝ </span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">██╔══██║</span><span class="tlk-l">██║     </span><span class="tlk-k">██╔═██╗ </span>
+<span class="tlk-t">   ██║   </span><span class="tlk-a">██║  ██║</span><span class="tlk-l">███████╗</span><span class="tlk-k">██║  ██╗</span>
+<span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
+
+      <div class="mascot-pair">
+        <svg class="mascot-svg" width="140" height="120" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="44" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="88" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="44" y="64" width="52" height="6" fill="#3a3a3a"/>
+        </svg>
+        <svg class="cloud-svg" width="260" height="96" viewBox="0 0 30 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="4"  y="0" width="4" height="1" fill="white"/>
+          <rect x="11" y="0" width="5" height="1" fill="white"/>
+          <rect x="19" y="0" width="4" height="1" fill="white"/>
+          <rect x="2"  y="1" width="26" height="1" fill="white"/>
+          <rect x="1"  y="2" width="28" height="7" fill="white"/>
+          <rect x="2"  y="9"  width="26" height="1" fill="white"/>
+          <rect x="4"  y="10" width="4"  height="1" fill="white"/>
+          <rect x="12" y="10" width="5"  height="1" fill="white"/>
+          <rect x="0"  y="7" width="1" height="1" fill="white"/>
+          <rect x="0"  y="8" width="1" height="1" fill="white"/>
+          <text x="15" y="6.6" font-size="2.8" text-anchor="middle">HEY TT</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="hero-palette">
+      <div class="dot" style="background:#ff5e5e"></div>
+      <div class="dot" style="background:#ffa726"></div>
+      <div class="dot" style="background:#ffd93d"></div>
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="dot" style="background:#60a5fa"></div>
+      <div class="dot" style="background:#c084fc"></div>
+      <div class="dot" style="background:#c97b50"></div>
+      <div class="dot" style="background:#e0e0e0"></div>
+    </div>
+  </div>
+
+  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey TT"</em>, hear it.</p>
   <p class="sub">Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
