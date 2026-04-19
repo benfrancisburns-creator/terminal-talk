@@ -200,27 +200,33 @@ function verticalHeight() {
 // horizontal instead of going vertical on the right.
 let dragStart = null;          // { x, y } captured on first move event of a drag
 let isApplyingDock = false;    // suppresses our own setBounds from re-triggering snap
+// Share the settle-timer handle between onMove (which sets it) and
+// applyDock (which must clear it before calling setBounds so the move
+// events setBounds emits don't run a stale snapAfterDrag).
+const moveSettleTimerRef = { current: null };
 
 function findDockedEdge(dX, dY) {
   if (!win || win.isDestroyed()) return null;
   const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
   const [x, y] = win.getPosition();
   const [w, h] = win.getSize();
+  // Use absolute distance so overshoot (window past screen edge) ALSO
+  // triggers snap. Users naturally drag past the edge expecting "throw
+  // it against the wall" behaviour. Rejecting negative distances was
+  // silently refusing those perfectly legitimate drops.
   const candidates = [
-    { name: 'left',   dist: x - dispX,                     axis: 'x' },
-    { name: 'right',  dist: (dispX + dispW) - (x + w),     axis: 'x' },
-    { name: 'top',    dist: y - dispY,                     axis: 'y' },
-    { name: 'bottom', dist: (dispY + dispH) - (y + h),     axis: 'y' },
-  ].filter(e => e.dist >= 0 && e.dist < SNAP_THRESHOLD_PX);
+    { name: 'left',   dist: Math.abs(x - dispX),                axis: 'x' },
+    { name: 'right',  dist: Math.abs((dispX + dispW) - (x + w)), axis: 'x' },
+    { name: 'top',    dist: Math.abs(y - dispY),                axis: 'y' },
+    { name: 'bottom', dist: Math.abs((dispY + dispH) - (y + h)), axis: 'y' },
+  ].filter(e => e.dist < SNAP_THRESHOLD_PX);
   if (candidates.length === 0) return null;
-  // If drag direction known, prefer edges on the axis the user moved along.
-  // Horizontal drag → left/right (vertical dock). Vertical drag → top/bottom.
+  // Drag direction → prefer the axis the user actually moved along.
   if (dX !== undefined && dY !== undefined && Math.abs(dX - dY) > 10) {
     const preferAxis = dX > dY ? 'x' : 'y';
     const preferred = candidates.filter(e => e.axis === preferAxis);
     if (preferred.length > 0) return preferred.sort((a, b) => a.dist - b.dist)[0].name;
   }
-  // Otherwise (pure edge drop, no clear directional intent) take the nearest.
   return candidates.sort((a, b) => a.dist - b.dist)[0].name;
 }
 
@@ -245,12 +251,19 @@ function applyDock(edge) {
       height: DIM_HORIZONTAL.height,
     };
   }
-  // Suppress snap-from-our-own-move during the setBounds call. Otherwise
-  // the move/moved events it emits would re-enter snapAfterDrag and
-  // bounce around the dock target.
+  // Suppress snap-from-our-own-move during the setBounds call + tear down
+  // any pending settle timer and clear drag state explicitly. The
+  // move/moved events setBounds emits must not re-enter snapAfterDrag.
+  // 500 ms lockout chosen empirically — Windows occasionally emits late
+  // move events from the OS drag gesture well after the user released.
   isApplyingDock = true;
+  dragStart = null;
+  if (moveSettleTimerRef.current) {
+    clearTimeout(moveSettleTimerRef.current);
+    moveSettleTimerRef.current = null;
+  }
   win.setBounds(bounds);
-  setTimeout(() => { isApplyingDock = false; dragStart = null; }, 300);
+  setTimeout(() => { isApplyingDock = false; }, 500);
 
   CFG.window = { ...(CFG.window || {}), x: bounds.x, y: bounds.y, dock: edge };
   saveConfig(CFG);
@@ -337,20 +350,22 @@ function createWindow() {
   // Track drag start on first move event of a drag, then settle + snap
   // once the stream of move events stops. isApplyingDock suppresses the
   // move events emitted by our own setBounds call inside applyDock.
-  let moveSettleTimer = null;
   const onMove = () => {
-    if (isApplyingDock) return;
+    if (isApplyingDock) { dragStart = null; return; }
     if (!dragStart) {
       const [sx, sy] = win.getPosition();
       dragStart = { x: sx, y: sy };
     }
-    if (moveSettleTimer) clearTimeout(moveSettleTimer);
-    moveSettleTimer = setTimeout(snapAfterDrag, 200);
+    if (moveSettleTimerRef.current) clearTimeout(moveSettleTimerRef.current);
+    moveSettleTimerRef.current = setTimeout(snapAfterDrag, 200);
   };
   win.on('move', onMove);
   win.on('moved', () => {
     if (isApplyingDock) return;
-    if (moveSettleTimer) clearTimeout(moveSettleTimer);
+    if (moveSettleTimerRef.current) {
+      clearTimeout(moveSettleTimerRef.current);
+      moveSettleTimerRef.current = null;
+    }
     snapAfterDrag();
   });
 }
