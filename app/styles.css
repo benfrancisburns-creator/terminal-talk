@@ -404,25 +404,26 @@ body.dock-right .bar {
    -------------------------------------------------------------------- */
 .scrubber-trail-word {
   position: absolute;
-  top: -4px;                /* spawn just above the rail, over the mascot's head */
+  top: -10px;               /* spawn above the rail, puffs get room to breathe */
   font-family: 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace;
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: #0e0f13;           /* dark ink, matches wallpaper bubble text */
-  background: #ffffff;
-  padding: 2px 5px;
+  /* The actual pixelated cloud silhouette from the wallpaper — the same
+     9 rectangles that make up the HEY JARVIS bubble — used as a
+     stretchable background. preserveAspectRatio='none' lets it stretch
+     horizontally to fit any word length while keeping the stepped top
+     and bottom puff silhouette. Drop-shadow filter gives the subtle
+     backdrop shadow so they read as floating with depth, not flat. */
+  background: transparent url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 11' preserveAspectRatio='none' shape-rendering='crispEdges'><rect x='4' y='0' width='4' height='1' fill='white'/><rect x='13' y='0' width='5' height='1' fill='white'/><rect x='22' y='0' width='4' height='1' fill='white'/><rect x='2' y='1' width='26' height='1' fill='white'/><rect x='1' y='2' width='28' height='7' fill='white'/><rect x='2' y='9' width='26' height='1' fill='white'/><rect x='4' y='10' width='4' height='1' fill='white'/><rect x='13' y='10' width='5' height='1' fill='white'/><rect x='22' y='10' width='4' height='1' fill='white'/></svg>") center/100% 100% no-repeat;
+  padding: 6px 9px 5px;     /* puffs eat into padding — text sits in body */
+  line-height: 1;
   white-space: nowrap;
   pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45)) drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.25));
   animation: tt-verb-cloud 1.9s ease-out forwards;
   will-change: opacity, transform;
-  /* Pixel-puff top + bottom: 1-pixel extended rails above and below
-     the main body, giving a stepped silhouette like the wallpaper's
-     HEY JARVIS cloud scaled right down. No left/right extra pixels so
-     the word width stays predictable for horizontal centring. */
-  box-shadow:
-    0 -1px 0 #ffffff,
-    0  1px 0 #ffffff;
 }
 
 /* translate(-50%, …) on X keeps each cloud centred on the mascot's
