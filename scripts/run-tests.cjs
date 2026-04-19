@@ -27,7 +27,10 @@ const NEEDS_INSTALL = new Set([
   'REGISTRY BOM HANDLING', 'REGISTRY ROUND-TRIP PRESERVES OVERRIDES',
   'PINNED SESSIONS NOT PRUNED', 'STATUSLINE OUTPUT',
   'MAIN.JS REGISTRY READ TOLERANCE', 'HARDENING: secrets do not leak to logs',
-  'INSTALL SANITY'
+  'INSTALL SANITY',
+  // Reads ~/.terminal-talk/app/main.js to grep for watchdog wiring —
+  // only the Windows install has that path.
+  'SELF-CLEANUP WATCHDOG'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
