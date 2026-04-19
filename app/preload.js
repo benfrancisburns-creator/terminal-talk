@@ -24,5 +24,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   onListeningState: (cb) => {
     ipcRenderer.on('listening-state', (_e, on) => cb(on));
+  },
+  onForceExpand: (cb) => {
+    ipcRenderer.on('force-expand', () => cb());
   }
 });

@@ -987,24 +987,36 @@ settingsBtn.addEventListener('click', async () => {
 // -------------------------------------------------------------------
 // Hover + interaction triggers for collapse/expand
 // -------------------------------------------------------------------
-// Expand whenever the mouse moves over the bar. forward:true from main
-// means we still receive mousemove even while click-through is on, which
-// is how the slim collapsed strip "detects" the cursor arriving.
-barEl.addEventListener('mousemove', () => {
-  if (isCollapsed) applyCollapsed(false);
-  cancelCollapse();
+// Click-through mode (setIgnoreMouseEvents(true, {forward:true})) routes
+// mousemove events to the document regardless of whether the cursor is
+// over a visible element — but per-element mouseenter/mouseleave don't
+// reliably fire. So we listen on document and check the bar's bounding
+// rect manually. That's the only way hover-to-expand works once
+// click-through has kicked in.
+document.addEventListener('mousemove', (e) => {
+  const rect = barEl.getBoundingClientRect();
+  const overBar = e.clientX >= rect.left && e.clientX <= rect.right &&
+                  e.clientY >= rect.top && e.clientY <= rect.bottom + 4;  // +4 tolerance band
+  if (overBar) {
+    if (isCollapsed) applyCollapsed(false);
+    cancelCollapse();
+  } else if (!isCollapsed && !settingsOpen) {
+    // Mouse drifted off the bar while it's expanded — start the timer.
+    if (!collapseTimer) scheduleCollapse();
+  }
 });
-barEl.addEventListener('mouseenter', () => {
-  if (isCollapsed) applyCollapsed(false);
-  cancelCollapse();
-});
-barEl.addEventListener('mouseleave', () => {
-  scheduleCollapse();
-});
-// Any click/keypress anywhere in the window = user actively engaging →
-// cancel pending collapse and reset the inactivity timer.
+// Any click/keypress = user actively engaging → cancel pending collapse
+// and reset the inactivity timer.
 barEl.addEventListener('click', bumpActivity);
 window.addEventListener('keydown', bumpActivity);
+// When main toggles visibility via the global hotkey, guarantee we're
+// expanded so the user can actually see and interact with the bar.
+if (window.api.onForceExpand) {
+  window.api.onForceExpand(() => {
+    applyCollapsed(false);
+    cancelCollapse();
+  });
+}
 
 // Don't auto-collapse on startup — user needs to see the toolbar first.
 // The collapse cycle starts on the first mouseleave or new-clip arrival.

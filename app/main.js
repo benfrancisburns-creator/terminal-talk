@@ -249,7 +249,13 @@ function createWindow() {
 function toggleWindow() {
   if (!win) return;
   if (win.isVisible()) win.hide();
-  else { win.show(); win.focus(); }
+  else {
+    win.show();
+    win.focus();
+    // Force the bar to expanded state so the user sees the full toolbar,
+    // not a hard-to-find slim strip, when they invoke the hotkey.
+    try { win.webContents.send('force-expand'); } catch {}
+  }
 }
 
 function notifyQueue() {

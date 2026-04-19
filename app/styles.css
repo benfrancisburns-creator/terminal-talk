@@ -35,11 +35,11 @@ html, body {
    but becomes click-through via setIgnoreMouseEvents so the area below
    the strip doesn't block interaction with other apps. */
 .bar.collapsed {
-  height: 10px;
+  height: 14px;
   padding: 0;
-  opacity: 0.75;
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(24, 26, 32, 0.82);
+  opacity: 0.9;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(24, 26, 32, 0.9);
 }
 .bar.collapsed .bar-top,
 .bar.collapsed .dots-row {
