@@ -15,27 +15,49 @@ html, body {
 
 .bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
+  flex-direction: column;
+  gap: 4px;
   margin: 6px;
-  padding: 0 10px 0 14px;
+  padding: 6px 14px 8px 14px;
   background: rgba(24, 26, 32, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 22px;
+  border-radius: 16px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-app-region: drag;
 }
 
-.bar > * { -webkit-app-region: no-drag; }
+.bar-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+}
 
+.bar-top > * { -webkit-app-region: no-drag; }
+.dots-row { -webkit-app-region: no-drag; }
+
+/* Full-width dot strip on the bottom row. Up to ~25 dots comfortably;
+   overflows with horizontal scroll if more arrive. Oldest left, newest
+   right — matches playback order so the row reads naturally. */
+.dots-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 2px 2px 4px 2px;
+}
 .dots {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 20px;
+  min-height: 20px;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.dots::-webkit-scrollbar { display: none; }
 
 .dot {
   width: 16px;

@@ -21,8 +21,9 @@ let pendingQueue = [];
 let userScrubbing = false;
 const deleteTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
-const AUTO_DELETE_MS = 20 * 1000;       // manual plays — user heard it intentionally, clean up fast
-const AUTO_DELETE_AUTO_MS = 30 * 1000;  // auto-played clips slightly longer in case user was away
+const AUTO_DELETE_MS = 20 * 1000;       // manual plays — user heard it, clean up fast
+const AUTO_DELETE_AUTO_MS = 20 * 1000;  // auto-played — same 20 s, keeps the toolbar self-managing
+const MAX_VISIBLE_DOTS = 40;            // hard cap to keep DOM light; overflow scrolls horizontally
 
 // Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
 // Brown is a richer copper (was muddy beige #a08060) so it reads clearly in splits.
@@ -173,10 +174,16 @@ function renderDots() {
   // Muted sessions' clips are hidden entirely — no dot, no trace. "Cut the
   // wire" per Ben: the user should not be aware a background muted terminal
   // is even producing audio.
-  const visible = queue.filter(f => {
+  //
+  // Order: oldest-left → newest-right so the row reads left-to-right in the
+  // same direction playback flows. queue comes in from main.js sorted newest
+  // first, so reverse and then take the freshest MAX_VISIBLE_DOTS.
+  const unmuted = queue.filter(f => {
     const name = f.path.split(/[\\/]/).pop();
     return !isClipSessionMuted(name);
-  }).slice(0, 8);
+  });
+  // Keep the N newest, then reverse so oldest is leftmost in the displayed row.
+  const visible = unmuted.slice(0, MAX_VISIBLE_DOTS).slice().reverse();
   visible.forEach((f) => {
     const dot = document.createElement('button');
     dot.className = 'dot';
