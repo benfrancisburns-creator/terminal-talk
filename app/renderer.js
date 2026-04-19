@@ -21,7 +21,8 @@ let pendingQueue = [];
 let userScrubbing = false;
 const deleteTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
-const AUTO_DELETE_MS = 90 * 1000;
+const AUTO_DELETE_MS = 90 * 1000;       // manual plays — user may want to re-listen
+const AUTO_DELETE_AUTO_MS = 30 * 1000;  // auto-played clips go faster so dots don't pile up
 
 // Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
 // Brown is a richer copper (was muddy beige #a08060) so it reads clearly in splits.
@@ -130,16 +131,18 @@ function dotColour(filePath) {
   return sessionColourFromShort(extractSessionShort(name));
 }
 
-function scheduleAutoDelete(p) {
+function scheduleAutoDelete(p, wasManual = false) {
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
+  const delay = wasManual ? AUTO_DELETE_MS : AUTO_DELETE_AUTO_MS;
   const t = setTimeout(async () => {
     deleteTimers.delete(p);
     if (currentPath === p) return;
     playedPaths.delete(p);
+    heardPaths.delete(p);
     queue = queue.filter(f => f.path !== p);
     renderDots();
     try { await window.api.deleteFile(p); } catch {}
-  }, AUTO_DELETE_MS);
+  }, delay);
   deleteTimers.set(p, t);
 }
 
@@ -396,7 +399,10 @@ audio.addEventListener('ended', () => {
   currentPath = null;
   currentIsManual = false;
   renderDots();
-  if (justPlayed && wasManual) scheduleAutoDelete(justPlayed);
+  // Both auto-played and manually-played clips get auto-deleted now — only
+  // the delay differs (30 s auto vs 90 s manual). Previously auto-played
+  // clips accumulated indefinitely, flooding the toolbar.
+  if (justPlayed) scheduleAutoDelete(justPlayed, wasManual);
   // Always call playNextPending: it picks from priority → pending → fallback
   // scan of unplayed clips still sitting in queue. The old gate skipped the
   // fallback entirely when both explicit queues were empty, leaving unplayed
