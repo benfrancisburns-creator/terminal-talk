@@ -37,27 +37,28 @@ html, body {
 .bar-top > * { -webkit-app-region: no-drag; }
 .dots-row { -webkit-app-region: no-drag; }
 
-/* Full-width dot strip on the bottom row. Up to ~25 dots comfortably;
-   overflows with horizontal scroll if more arrive. Oldest left, newest
-   right — matches playback order so the row reads naturally. */
+/* Full-width dot strip on the bottom row. Up to ~30 standard dots; if
+   more arrive the row clips at the right edge (auto-prune usually keeps
+   count well under that). Oldest left, newest right — matches playback
+   order so the row reads naturally.
+   Height includes breathing room above and below so the active dot's
+   pulse glow isn't clipped. */
 .dots-row {
   width: 100%;
   display: flex;
   align-items: center;
-  padding: 2px 2px 4px 2px;
+  justify-content: flex-start;
+  height: 44px;
+  padding: 0 4px;
+  overflow: visible;
 }
 .dots {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 20px;
+  gap: 5px;
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overflow: hidden;
 }
-.dots::-webkit-scrollbar { display: none; }
 
 /* Spacer inserted between dot runs from different sessions. Small enough
    that single-run timelines don't look fragmented, large enough to read
@@ -70,13 +71,14 @@ html, body {
 }
 
 .dot {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.18);
   border: none;
   padding: 0;
   cursor: pointer;
+  flex-shrink: 0;
   transition: transform 0.12s ease, background 0.3s ease, box-shadow 0.2s ease;
 }
 
@@ -85,17 +87,19 @@ html, body {
   transform: scale(1.2);
 }
 
-/* Currently playing: no colour change, just size + subtle white ring */
+/* Currently playing: slightly larger + pulsing white halo. Glow magnitudes
+   tuned so the peak of the pulse stays within the 44px dots-row height
+   (dot 16 + ring 2 + glow 8 = 26 max radius, centered vertically). */
 .dot.active {
-  width: 18px;
-  height: 18px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.25);
+  width: 16px;
+  height: 16px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 6px rgba(255, 255, 255, 0.25);
   animation: activePulse 1.6s ease-in-out infinite;
 }
 
 @keyframes activePulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 8px rgba(255, 255, 255, 0.2); }
-  50%      { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55), 0 0 14px rgba(255, 255, 255, 0.4); }
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 5px rgba(255, 255, 255, 0.2); }
+  50%      { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55), 0 0 8px rgba(255, 255, 255, 0.4); }
 }
 
 /* Heard: user has manually played -> fades to white, then auto-deletes */
