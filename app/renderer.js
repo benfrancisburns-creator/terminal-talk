@@ -21,8 +21,11 @@ let pendingQueue = [];
 let userScrubbing = false;
 const deleteTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
-const AUTO_DELETE_MS = 20 * 1000;       // manual plays — user heard it, clean up fast
-const AUTO_DELETE_AUTO_MS = 20 * 1000;  // auto-played — same 20 s, keeps the toolbar self-managing
+// Auto-prune delay is user-configurable via the Playback settings panel.
+// The value is a single seconds count that applies to both manual and
+// auto plays — keeping one number avoids the "which timer did that use?"
+// confusion. Clamped 3-600 s on the input side.
+let autoPruneSec = 20;
 const MAX_VISIBLE_DOTS = 40;            // hard cap to keep DOM light; overflow scrolls horizontally
 
 // Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
@@ -140,7 +143,7 @@ let autoPruneEnabled = true;
 function scheduleAutoDelete(p, wasManual = false) {
   if (!autoPruneEnabled) return;  // respect the user's toggle
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
-  const delay = wasManual ? AUTO_DELETE_MS : AUTO_DELETE_AUTO_MS;
+  const delay = Math.max(3, Math.min(600, autoPruneSec)) * 1000;
   const t = setTimeout(async () => {
     deleteTimers.delete(p);
     if (currentPath === p) return;
@@ -850,17 +853,28 @@ async function loadSettings() {
   speedValueEl.textContent = `${currentPlaybackSpeed.toFixed(2)}x`;
 
   const pruneToggle = document.getElementById('autoPruneToggle');
-  const pruneHint = document.getElementById('autoPruneHint');
+  const pruneSecInput = document.getElementById('autoPruneSec');
   const pruneInitial = cfg.playback && cfg.playback.auto_prune !== false;
+  const pruneSecInitial = Math.max(3, Math.min(600, Number(cfg.playback && cfg.playback.auto_prune_sec) || 20));
+  autoPruneSec = pruneSecInitial;
   setAutoPruneEnabled(pruneInitial);
   if (pruneToggle) {
     pruneToggle.checked = pruneInitial;
-    if (pruneHint) pruneHint.textContent = pruneInitial ? '20 s after play' : 'off — clips stack up';
     pruneToggle.addEventListener('change', async () => {
       const on = pruneToggle.checked;
       setAutoPruneEnabled(on);
-      if (pruneHint) pruneHint.textContent = on ? '20 s after play' : 'off — clips stack up';
+      if (pruneSecInput) pruneSecInput.disabled = !on;
       await window.api.updateConfig({ playback: { auto_prune: on } });
+    });
+  }
+  if (pruneSecInput) {
+    pruneSecInput.value = String(pruneSecInitial);
+    pruneSecInput.disabled = !pruneInitial;
+    pruneSecInput.addEventListener('change', async () => {
+      const n = Math.max(3, Math.min(600, Math.floor(Number(pruneSecInput.value) || 20)));
+      pruneSecInput.value = String(n);  // clamp display too
+      autoPruneSec = n;
+      await window.api.updateConfig({ playback: { auto_prune_sec: n } });
     });
   }
 

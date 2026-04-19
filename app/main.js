@@ -29,8 +29,8 @@ const DEFAULTS = {
   },
   playback: {
     speed: 1.25,
-    auto_prune: true  // 20s auto-prune after each clip plays. Toggle off when
-                      // walking away so clips stack up for later review.
+    auto_prune: true,     // master toggle — off means clips stack until cleared
+    auto_prune_sec: 20    // delay after play before the clip disappears (3-600)
   },
   speech_includes: {
     code_blocks: false,
