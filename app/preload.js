@@ -34,5 +34,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   onTogglePausePlayback: (cb) => {
     ipcRenderer.on('toggle-pause-playback', () => cb());
+  },
+  onPausePlaybackOnly: (cb) => {
+    ipcRenderer.on('pause-playback-only', () => cb());
   }
 });

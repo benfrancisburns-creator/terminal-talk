@@ -26,10 +26,14 @@ const DEFAULTS = {
     toggle_window: 'Control+Shift+A',
     speak_clipboard: 'Control+Shift+S',
     toggle_listening: 'Control+Shift+J',
-    // Pauses the currently playing clip, or resumes if paused. Bind your
-    // dictation tool (Wispr Flow, etc.) to send this when it starts /
-    // stops listening so TTS doesn't talk over you mid-sentence.
-    pause_resume: 'Control+Shift+P'
+    // Toggle: pause if playing, resume if paused. Use for manual control.
+    pause_resume: 'Control+Shift+P',
+    // Pause-only: pauses the current clip if it's playing; NEVER resumes.
+    // Safer for dictation-tool chains — if your dictation hotkey triggers
+    // this and nothing was playing (or it was already paused), nothing
+    // unexpected happens. Bind via PowerToys / AutoHotkey / Wispr Flow
+    // macro so pressing your dictation trigger stops TTS gracefully.
+    pause_only: 'Control+Shift+O'
   },
   playback: {
     speed: 1.25,
@@ -1109,6 +1113,13 @@ app.whenReady().then(() => {
     globalShortcut.register(CFG.hotkeys.pause_resume, () => {
       if (win && !win.isDestroyed()) {
         try { win.webContents.send('toggle-pause-playback'); } catch {}
+      }
+    });
+  }
+  if (CFG.hotkeys.pause_only) {
+    globalShortcut.register(CFG.hotkeys.pause_only, () => {
+      if (win && !win.isDestroyed()) {
+        try { win.webContents.send('pause-playback-only'); } catch {}
       }
     });
   }

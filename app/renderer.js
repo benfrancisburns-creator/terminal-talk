@@ -1048,15 +1048,24 @@ window.addEventListener('keydown', bumpActivity);
 if (window.api.onForceExpand) {
   window.api.onForceExpand(() => { bumpActivity(); });
 }
-// Pause/resume playback via global hotkey (default Ctrl+Shift+P). Bind
-// this to your dictation tool's start/stop events and TTS won't talk
-// over you mid-sentence — it'll pick up exactly where it left off when
-// you finish speaking.
+// Ctrl+Shift+P — toggle pause/resume (manual control).
 if (window.api.onTogglePausePlayback) {
   window.api.onTogglePausePlayback(() => {
-    if (!audio.src || audio.ended) return;  // nothing to pause
+    if (!audio.src || audio.ended) return;
     if (audio.paused) audio.play().catch(() => {});
     else audio.pause();
+    bumpActivity();
+  });
+}
+// Ctrl+Shift+O — pause-only (safe for dictation chains: NEVER resumes).
+// Firing this when nothing is playing, or when already paused, is a no-op.
+// That means an AutoHotkey / PowerToys chain from Ctrl+Win can fire it
+// every time Wispr Flow activates without ever accidentally starting
+// playback that the user had paused deliberately.
+if (window.api.onPausePlaybackOnly) {
+  window.api.onPausePlaybackOnly(() => {
+    if (!audio.src || audio.ended || audio.paused) return;
+    audio.pause();
     bumpActivity();
   });
 }
