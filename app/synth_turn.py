@@ -19,6 +19,19 @@ Military-grade bits:
   - Sentinels/placeholders in sentence splitter avoid mangling abbrev/URL/decimal
   - Sessionshort is regex-validated before file paths are constructed
   - Every error path logs to _hook.log; nothing fails silently
+
+Trust boundary (D2-4):
+  This script trusts any same-user process that invokes it. Hooks call
+  `Start-Process python synth_turn.py --session <id> --transcript <path>
+  --mode <...>` without authentication; nothing here verifies the caller
+  beyond arg shape. That is intentional -- Terminal Talk is a single-
+  user desktop app, and any attacker running under the user's own
+  account already has access to every file, the microphone, and the
+  keyboard. A signature check between same-user processes would be
+  defence theatre. See `docs/architecture/ipc-integrity.md` for the
+  full decision and the scenarios that would reverse it (multi-user
+  install, browser-extension companion, packaged least-privilege
+  execution).
 """
 
 from __future__ import annotations
