@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('api', {
   // existing _toolbar.log is the single sink for diagnostics. Main rate-
   // limits to 1 per distinct stack per second; see S1.2 in main.js.
   logRendererError: (payload) => ipcRenderer.invoke('log-renderer-error', payload),
+  // EX3 — renderer-reload trigger from the Settings panel button.
+  // Main-side handler calls win.webContents.reload(); the keyboard
+  // shortcut (Ctrl+R) bypasses IPC via before-input-event at window
+  // creation. Both paths end in the same reload().
+  reloadRenderer: () => ipcRenderer.invoke('reload-renderer'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),

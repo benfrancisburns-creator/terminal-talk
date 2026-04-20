@@ -1498,6 +1498,16 @@ async function loadSettings() {
     });
   }
 
+  // EX3 — reload-toolbar button. Hits main.js's reload-renderer IPC
+  // which calls win.webContents.reload(). Same action as the
+  // Ctrl+R keyboard shortcut main registers via before-input-event.
+  const reloadBtn = document.getElementById('reloadToolbar');
+  if (reloadBtn) {
+    reloadBtn.addEventListener('click', () => {
+      window.api.reloadRenderer();
+    });
+  }
+
   // EX5 / H3 Option 2 — palette variant toggle. Writes the chosen
   // variant onto body[data-palette-variant]; the CSS in
   // app/lib/palette-classes.css has a higher-specificity rule block

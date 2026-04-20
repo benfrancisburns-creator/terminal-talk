@@ -492,6 +492,21 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
 
+  // EX3 — Ctrl+R reloads the renderer (window-scoped, not global).
+  // Browser convention + cheap recovery path if the toolbar gets into
+  // a weird visual state (stuck overlay, stale dots post-devicechange,
+  // orphan session rows). Uses before-input-event so we can intercept
+  // without adding a global shortcut that would conflict with user
+  // bindings. Shift+Ctrl+R reserved for hard-reload (ignore cache).
+  win.webContents.on('before-input-event', (ev, input) => {
+    if (input.type !== 'keyDown') return;
+    if (!input.control || input.alt || input.meta) return;
+    if (input.key !== 'r' && input.key !== 'R') return;
+    ev.preventDefault();
+    if (input.shift) win.webContents.reloadIgnoringCache();
+    else win.webContents.reload();
+  });
+
   // ===========================================================================
   // Navigation + new-window guards (Electron security checklist items 12 + 13).
   // The toolbar renderer is fully local: the only legitimate navigation is to
@@ -1275,6 +1290,14 @@ ipcMain.handle('get-stale-sessions', () => {
 });
 
 ipcMain.handle('get-config', () => CFG);
+
+// EX3 — Settings-panel "Reload toolbar" button fires this; hits the
+// same reload() as the Ctrl+R keyboard shortcut in before-input-event
+// at window creation. No-op if the window has been destroyed in the
+// meantime (e.g. mid-quit).
+ipcMain.handle('reload-renderer', () => {
+  if (win && !win.isDestroyed()) win.webContents.reload();
+});
 
 // Redact secrets from any value before it reaches a log file.
 // S3.2 — redaction is now keyed off a deny-set + a regex, not a single

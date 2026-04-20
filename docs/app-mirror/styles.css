@@ -897,6 +897,24 @@ select option:checked, .panel .row select option:checked {
   white-space: nowrap;
   border: 0;
 }
+/* EX3 — inline button in settings panel (Reload toolbar etc). Visually
+   distinct from the icon-btn toolbar buttons; reads as a link-shaped
+   action rather than a primary control. */
+.text-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.text-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
 kbd {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
