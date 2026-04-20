@@ -1,0 +1,23 @@
+# Pinned Python deps for Terminal Talk.
+#
+# Why pinned: a bad release of any of these has, historically, broken
+# install or runtime on Windows. edge-tts has had async-loop regressions,
+# onnxruntime has had native-wheel packaging issues on Python 3.14,
+# sounddevice has had device-enumeration bugs — pinning the exact
+# versions we test against eliminates "works on my machine, broken on
+# theirs" + gives Dependabot a clear upgrade surface.
+#
+# Versions mirror the author's install at v0.1.x. Dependabot (pip group,
+# weekly Monday schedule in .github/dependabot.yml) raises PRs when
+# upstream ships a new minor or patch — each PR runs the harness
+# before merge so any regression shows up before it can reach users.
+#
+# To regenerate after an upgrade:
+#   py -m pip install --upgrade edge-tts openwakeword onnxruntime sounddevice numpy
+#   py -m pip freeze | grep -iE '^(edge-tts|openwakeword|onnxruntime|sounddevice|numpy)=='
+#
+edge-tts==7.2.8
+openwakeword==0.6.0
+onnxruntime==1.24.4
+sounddevice==0.5.5
+numpy==2.4.4

@@ -74,8 +74,20 @@ if (-not (Test-Path $configPath)) {
 Write-Ok "Files copied"
 
 # 4. Python packages
-Write-Step "Installing Python packages (edge-tts, openwakeword, onnxruntime, sounddevice, numpy)"
-& python -m pip install --quiet --disable-pip-version-check edge-tts openwakeword onnxruntime sounddevice numpy
+#    Pinned via requirements.txt so a surprise upstream release can't break
+#    install or runtime on your box. Dependabot raises weekly PRs for upgrades;
+#    the harness gates them before merge.
+$requirementsPath = Join-Path $repoRoot 'requirements.txt'
+if (Test-Path $requirementsPath) {
+    Write-Step "Installing Python packages (pinned versions from requirements.txt)"
+    & python -m pip install --quiet --disable-pip-version-check -r $requirementsPath
+} else {
+    # Safety net for anyone running install.ps1 from an older checkout
+    # without requirements.txt. Keeps the unpinned fallback working but
+    # warns the user they're getting latest-wins resolution.
+    Write-Warn2 "requirements.txt not found - installing unpinned (upgrade your checkout to pin)"
+    & python -m pip install --quiet --disable-pip-version-check edge-tts openwakeword onnxruntime sounddevice numpy
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "pip install failed. See output above."
     exit 1
@@ -109,7 +121,7 @@ if (Test-Path $electronExe) {
     Copy-Item -Force $electronExe $rebrandedExe
     Write-Ok "Binary rebranded -> terminal-talk.exe"
 } else {
-    Write-Warn2 "electron.exe not found at $electronExe — rebrand skipped"
+    Write-Warn2 "electron.exe not found at $electronExe - rebrand skipped"
 }
 
 # 6. Claude Code hook registration (opt-in)
@@ -141,7 +153,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
                 timeout = 60
             })
         })
-        # PreToolUse hook — new in v0.2. Fires before every tool invocation to
+        # PreToolUse hook - new in v0.2. Fires before every tool invocation to
         # synthesise the status text Claude just wrote, so audio starts playing
         # while the tool runs instead of waiting until the turn ends.
         $settings.hooks.PreToolUse = @(@{
@@ -153,7 +165,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
             })
         })
         $settings | ConvertTo-Json -Depth 20 | Set-Content $claudeSettings -Encoding utf8
-        Write-Ok "Hooks registered (Stop, Notification, PreToolUse — settings.json backed up)"
+        Write-Ok "Hooks registered (Stop, Notification, PreToolUse - settings.json backed up)"
     }
 } else {
     Write-Warn2 "Skipped. You can still use highlight-to-speak + wake word."
