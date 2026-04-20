@@ -15,7 +15,14 @@ import * as os from 'os';
  */
 
 const APP_DIR = path.resolve(__dirname, '..', '..', 'app');
-const ELECTRON_BIN = path.join(APP_DIR, 'node_modules', 'electron', 'dist', 'electron.exe');
+// Cross-platform electron binary path — Windows today, Mac/Linux future.
+// Audit H4: hardcoded electron.exe blocks any future port.
+const ELECTRON_BIN = path.join(
+  APP_DIR, 'node_modules', 'electron', 'dist',
+  process.platform === 'win32' ? 'electron.exe' :
+  process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' :
+  'electron'
+);
 
 export type Seed = {
   assignments?: Record<string, any>;

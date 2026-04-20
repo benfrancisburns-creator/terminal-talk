@@ -1,6 +1,6 @@
 {
   "name": "terminal-talk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Voice wake word + TTS playback for Claude Code and any highlight-to-speak workflow",
   "main": "main.js",

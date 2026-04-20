@@ -258,12 +258,17 @@ function sessionColourFromShort(shortId) {
 }
 
 function extractSessionShort(filename) {
-  // Response / question / notif: ends with -<8hex>.ext
-  let m = filename.match(/-([a-f0-9]{8})\.(wav|mp3)$/i);
-  if (m) return m[1].toLowerCase();
-  // Highlight clip: -clip-<8hex|neutral>-<idx>.ext
-  m = filename.match(/-clip-([a-f0-9]{8}|neutral)-\d+\.(wav|mp3)$/i);
+  // Try the MORE SPECIFIC clip pattern first. A pathological filename
+  // like `deadbeef-clip-12345678.mp3` matches both patterns; the clip
+  // pattern's intended parse is `deadbeef`, but the response pattern
+  // would return `12345678`. Specificity-first ordering avoids this
+  // ambiguity even though the canonical filenames today never collide.
+  // Audit G11.
+  let m = filename.match(/-clip-([a-f0-9]{8}|neutral)-\d+\.(wav|mp3)$/i);
   if (m) return m[1].toLowerCase() === 'neutral' ? null : m[1].toLowerCase();
+  // Response / question / notif: ends with -<8hex>.ext
+  m = filename.match(/-([a-f0-9]{8})\.(wav|mp3)$/i);
+  if (m) return m[1].toLowerCase();
   return null;
 }
 
@@ -1045,6 +1050,11 @@ function renderSessionRow(shortId, entry) {
     sessionAssignments[shortId].index = newIdx;
     sessionAssignments[shortId].pinned = true;
     renderSessionsTable();
+    // Also repaint the dot strip — any currently-queued clips from this
+    // session should recolour to the new arrangement. Previously only
+    // the session row rerendered; the dots stayed the old colour until
+    // the next unrelated queue event. Matches the focus/mute handlers.
+    renderDots();
   });
   row.appendChild(select);
 
