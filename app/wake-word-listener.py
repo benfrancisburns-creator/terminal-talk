@@ -2,12 +2,20 @@
 
 Listens for 'hey jarvis' and sends Ctrl+Shift+S to trigger speakClipboard()
 in the Electron toolbar. Uses ctypes (no subprocess) for instant keystroke delivery.
+
+S2.3: firing is now gated by an adaptive noise floor (exponential moving
+average of recent scores) rather than the raw THRESHOLD alone. In a noisy
+room the effective gate rises; in a quiet room it stays near the static
+floor. Also exposes `--selftest` so CI / an install-sanity check can load
+the model, open the stream for 3 s and exit without having to say the wake
+word out loud on a headless box.
 """
+import argparse
+import ctypes
+import logging
 import os
 import sys
 import time
-import ctypes
-import logging
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +47,17 @@ log = logging.getLogger('wake')
 WAKE_WORDS = ['hey_jarvis']
 THRESHOLD = 0.5
 COOLDOWN_SEC = 2.0
+
+# S2.3 adaptive noise floor. `NOISE_ALPHA` is the EMA smoothing factor --
+# 0.05 means each frame contributes 5% of the running mean, so the EMA
+# follows roughly the last ~20 frames of audio (≈1.6 s at 80 ms/frame).
+# `NOISE_MARGIN` is how far ABOVE the noise floor a score must sit before
+# we fire. 0.3 is wide enough that speech-shaped noise (TV chatter, music)
+# doesn't repeatedly trip the detector even if individual frames briefly
+# hit THRESHOLD, and narrow enough that a real wake-word (score ~0.85-0.95)
+# still fires instantly in a quiet room where noise_ema ~= 0.
+NOISE_ALPHA = 0.05
+NOISE_MARGIN = 0.3
 
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 1280
@@ -92,6 +111,9 @@ def main():
     ring = np.zeros(RING_CAPACITY, dtype=np.int16)
     ring_fill = [0]   # one-element list so nested callback can mutate
     last_score = 0.0
+    # S2.3: per-wake-word EMA of recent scores. Keyed by name so the model
+    # can add wake words later without rework. One-element dict start.
+    noise_ema = {name: 0.0 for name in WAKE_WORDS}
     heartbeat_interval = 30
     last_heartbeat = time.time()
 
@@ -132,12 +154,33 @@ def main():
             fill -= CHUNK_SAMPLES
 
             for name, score in prediction.items():
+                # Update the noise floor BEFORE the fire gate so the EMA
+                # tracks steady-state background -- including the instant
+                # itself. Using the frame score before the gate means a
+                # genuine hit nudges the EMA upward too, which is fine:
+                # the next frame won't re-fire because of cooldown, and
+                # the EMA decays back inside a second or two.
+                prev = noise_ema.get(name, 0.0)
+                noise_ema[name] = NOISE_ALPHA * score + (1 - NOISE_ALPHA) * prev
                 if score > 0.3:
-                    log.info(f'hypothesis: {name} score={score:.2f}')
-                if score >= THRESHOLD:
+                    log.info(
+                        f'hypothesis: {name} score={score:.2f} '
+                        f'noise_ema={noise_ema[name]:.2f}'
+                    )
+                # S2.3 gate: absolute floor AND relative to noise_ema.
+                # Firing requires both conditions so speech-shaped noise
+                # that briefly crosses THRESHOLD on one frame doesn't
+                # repeatedly trigger the hotkey.
+                if (
+                    score >= THRESHOLD
+                    and score > noise_ema[name] + NOISE_MARGIN
+                ):
                     now = time.time()
                     if now - last_fire >= COOLDOWN_SEC:
-                        log.info(f'FIRE: {name} score={score:.2f}')
+                        log.info(
+                            f'FIRE: {name} score={score:.2f} '
+                            f'(noise_ema={noise_ema[name]:.2f})'
+                        )
                         send_hotkey()
                         last_fire = now
                 last_score = max(last_score, score)
@@ -197,5 +240,42 @@ def main():
             except Exception:
                 pass
 
+def selftest() -> int:
+    """S2.3: load the model, open the input stream for 3 s, exit 0.
+    Used by install-sanity / CI smoke to confirm the listener can get
+    past model load + audio device open WITHOUT having to actually say
+    the wake word. Exits non-zero on any failure so the caller knows to
+    surface an install problem."""
+    log.info('===== wake-word listener --selftest =====')
+    try:
+        Model(wakeword_models=WAKE_WORDS, inference_framework='onnx')
+    except Exception as e:
+        log.error(f'selftest: model load failed: {e}')
+        return 1
+    try:
+        stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=1, dtype='float32',
+            blocksize=CHUNK_SAMPLES,
+            callback=lambda *_args, **_kw: None,  # discard frames
+        )
+        stream.start()
+        time.sleep(3.0)
+        stream.stop()
+        stream.close()
+    except Exception as e:
+        log.error(f'selftest: stream fail: {type(e).__name__}: {e}')
+        return 2
+    log.info('selftest: OK')
+    return 0
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Terminal Talk wake-word listener')
+    parser.add_argument(
+        '--selftest', action='store_true',
+        help='Load model + open stream for 3 s, exit 0 on success',
+    )
+    args = parser.parse_args()
+    if args.selftest:
+        sys.exit(selftest())
     sys.exit(main() or 0)
