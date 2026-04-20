@@ -97,20 +97,114 @@ function demoInitialSessions() {
   };
 }
 
+// S5 — seeded demo states, one per section of mocks-annotated.html.
+// URL-param `?seed=NAME` picks which state we boot into. `?chrome=0`
+// hides the dev controls at the bottom (add-fake-clip, clear queue,
+// collapse panel) so mocks-annotated iframes render cleanly.
+const SEEDS = {
+  idle: {
+    settingsOpen: false,
+    sessions: {},
+    queue: [],
+    currentId: null,
+    playing: false,
+    currentTime: 0,
+  },
+  'three-sessions': {
+    settingsOpen: false,
+    sessions: {
+      'abcd1234': { index: 0,  label: 'Terminal A', session_id: 'abcd1234', pinned: true,  last_seen: Date.now()/1000 },
+      'a08f2b71': { index: 2,  label: 'Terminal B', session_id: 'a08f2b71', pinned: true,  last_seen: Date.now()/1000 },
+      '7e5c9a04': { index: 3,  label: 'Terminal C', session_id: '7e5c9a04', pinned: true,  last_seen: Date.now()/1000 },
+    },
+    // A A A  —  B B B  —  C C
+    queue: [
+      { id: 'c1', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-30000, duration: 64 },
+      { id: 'c2', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-28000, duration: 22 },
+      { id: 'c3', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-26000, duration: 15 },
+      { id: 'c4', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-22000, duration: 30 },
+      { id: 'c5', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-20000, duration: 44 },
+      { id: 'c6', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-18000, duration: 12 },
+      { id: 'c7', short: '7e5c9a04', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-14000, duration: 48 },
+      { id: 'c8', short: '7e5c9a04', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-12000, duration: 26 },
+    ],
+    currentId: 'c1',
+    playing: true,
+    currentTime: 12,
+  },
+  'mixed-states': {
+    settingsOpen: false,
+    sessions: {
+      'abcd1234': { index: 0, label: 'Terminal A', session_id: 'abcd1234', pinned: true, last_seen: Date.now()/1000 },
+      'a08f2b71': { index: 2, label: 'Terminal B', session_id: 'a08f2b71', pinned: true, last_seen: Date.now()/1000 },
+      '7e5c9a04': { index: 3, label: 'Terminal C', session_id: '7e5c9a04', pinned: true, last_seen: Date.now()/1000 },
+      'deadbeef': { index: 4, label: 'Claude',     session_id: 'deadbeef', pinned: true, last_seen: Date.now()/1000 },
+    },
+    // 2 heard + 1 playing red  —  2 queued yellow  —  2 queued green  —  1 J-clip blue
+    queue: [
+      { id: 'c1', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-30000, duration: 64 },
+      { id: 'c2', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-28000, duration: 22 },
+      { id: 'c3', short: 'abcd1234', paletteIndex: 0, clip: false, heard: false, mtime: Date.now()-26000, duration: 65 },
+      { id: 'c4', short: 'a08f2b71', paletteIndex: 2, clip: false, heard: false, mtime: Date.now()-22000, duration: 30 },
+      { id: 'c5', short: 'a08f2b71', paletteIndex: 2, clip: false, heard: false, mtime: Date.now()-20000, duration: 44 },
+      { id: 'c6', short: '7e5c9a04', paletteIndex: 3, clip: false, heard: false, mtime: Date.now()-14000, duration: 48 },
+      { id: 'c7', short: '7e5c9a04', paletteIndex: 3, clip: false, heard: false, mtime: Date.now()-12000, duration: 26 },
+      { id: 'c8', short: 'deadbeef', paletteIndex: 4, clip: true,  heard: false, mtime: Date.now()-6000,  duration: 18 },
+    ],
+    currentId: 'c3',
+    playing: true,
+    currentTime: 22,
+  },
+  'settings-panel': {
+    settingsOpen: true,
+    sessions: demoInitialSessions(),
+    expanded: new Set(['7e5c9a04']),
+    queue: [
+      { id: 'c1', short: 'abcd1234', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-20000, duration: 130 },
+      { id: 'c2', short: 'a08f2b71', paletteIndex: 12, clip: false, heard: false, mtime: Date.now()-15000, duration: 90 },
+      { id: 'c3', short: '7e5c9a04', paletteIndex: 18, clip: false, heard: true,  mtime: Date.now()-10000, duration: 74 },
+    ],
+    currentId: 'c1',
+    playing: true,
+    currentTime: 28,
+  },
+  'snapped-top': {
+    settingsOpen: false,
+    sessions: {
+      'abcd1234': { index: 0, label: '', session_id: 'abcd1234', pinned: true, last_seen: Date.now()/1000 },
+      'a08f2b71': { index: 4, label: '', session_id: 'a08f2b71', pinned: true, last_seen: Date.now()/1000 },
+    },
+    queue: [
+      { id: 'c1', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-30000, duration: 32 },
+      { id: 'c2', short: 'abcd1234', paletteIndex: 0, clip: false, heard: false, mtime: Date.now()-28000, duration: 18 },
+      { id: 'c3', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-22000, duration: 72 },
+      { id: 'c4', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-20000, duration: 27 },
+      { id: 'c5', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-18000, duration: 14 },
+    ],
+    currentId: 'c3',
+    playing: true,
+    currentTime: 45,
+  },
+};
+const URL_PARAMS = new URLSearchParams(location.search);
+const SEED_NAME  = URL_PARAMS.get('seed');
+const SEED       = (SEED_NAME && SEEDS[SEED_NAME]) ? SEEDS[SEED_NAME] : null;
+const SHOW_CHROME = URL_PARAMS.get('chrome') !== '0';
+
 function App() {
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(SEED ? SEED.settingsOpen : true);
   const [speed, setSpeed] = useState(1.25);
-  const [sessions, setSessions] = useState(demoInitialSessions());
-  const [expanded, setExpanded] = useState(new Set(['7e5c9a04']));
-  const [queue, setQueue] = useState(() => [
+  const [sessions, setSessions] = useState(SEED ? SEED.sessions : demoInitialSessions());
+  const [expanded, setExpanded] = useState(() => SEED && SEED.expanded ? new Set(SEED.expanded) : new Set(['7e5c9a04']));
+  const [queue, setQueue] = useState(() => SEED ? SEED.queue : [
     { id: 'c1', short: 'abcd1234', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-20000, duration: 130 },
     { id: 'c2', short: 'a08f2b71', paletteIndex: 12, clip: false, heard: false, mtime: Date.now()-15000, duration: 90 },
     { id: 'c3', short: 'abcd1234', paletteIndex: 3,  clip: true,  heard: false, mtime: Date.now()-10000, duration: 18 },
     { id: 'c4', short: '7e5c9a04', paletteIndex: 18, clip: false, heard: true,  mtime: Date.now()-5000,  duration: 74 },
   ]);
-  const [currentId, setCurrentId] = useState('c2');
-  const [playing, setPlaying] = useState(true);
-  const [currentTime, setCurrentTime] = useState(41);
+  const [currentId, setCurrentId] = useState(SEED ? SEED.currentId : 'c2');
+  const [playing, setPlaying] = useState(SEED ? SEED.playing : true);
+  const [currentTime, setCurrentTime] = useState(SEED ? SEED.currentTime : 41);
 
   // Tick playback when playing
   useEffect(() => {
@@ -173,12 +267,16 @@ function App() {
                        onToggleSession={toggleExpand} onUpdateSession={updateSession}
                        onRemoveSession={removeSession} />
       )}
-      <div className="tt-demo-controls">
-        <button onClick={addFakeClip}>＋ Add fake clip</button>
-        <button onClick={() => { setQueue([]); setCurrentId(null); setPlaying(false); }}>Clear queue</button>
-        <button onClick={() => setSettingsOpen(o => !o)}>{settingsOpen ? 'Collapse panel' : 'Expand panel'}</button>
-      </div>
-      <div className="tt-demo-caption">UI-kit recreation · not wired to real audio · click a dot to replay</div>
+      {SHOW_CHROME && (
+        <>
+          <div className="tt-demo-controls">
+            <button onClick={addFakeClip}>＋ Add fake clip</button>
+            <button onClick={() => { setQueue([]); setCurrentId(null); setPlaying(false); }}>Clear queue</button>
+            <button onClick={() => setSettingsOpen(o => !o)}>{settingsOpen ? 'Collapse panel' : 'Expand panel'}</button>
+          </div>
+          <div className="tt-demo-caption">UI-kit recreation · not wired to real audio · click a dot to replay</div>
+        </>
+      )}
     </div>
   );
 }
