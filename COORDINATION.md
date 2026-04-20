@@ -23,10 +23,10 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | Stream R4 — accessibility | ✅ shipped | `3cc143e` |
 | Stream R5 — runtime robustness | ✅ shipped | `8ad3ece`, `5213d10`, `14232f9`, `8da7b6b` |
 | Stream R6 — responsiveness | ✅ shipped | `0ee7a1f`, `89d1abb`, `bde9355` |
-| Stream R1 — design tokens | ✅ shipped | `bf32f40` tokens.json+generator, `a8501cd` renderer reads window.TT_TOKENS, `88bd8ac` kit imports from tokens.mjs, `c3db98b` R1.7 parity tests (+6), `5f59a06` merge reconciliation |
-| Stream R2 — kit realignment | ❌ not started | **now unblocked** — R1.5 shipped |
+| Stream R1 — design tokens | ✅ shipped | 5 commits (`bf32f40` → `5f59a06`) merged at `1c03e79` |
+| Stream R2 — kit realignment | ✅ shipped | 6 commits (`41fbd57` R2.4 icons, `870695c` R2.2 SessionsTable, `bd70365` R2.1 two-row bar, `6d318f3` R2.3 prod React, `c1814fb` R2.5 README, `df0f03b` CRLF test fix) |
 | Stream R3 — doc-reality sync | ✅ shipped | `e5f9ab5` — 10/10 sub-items. Terminal-2's inline palette-parity test (R3.9) replaced by R1.7's stronger block during merge |
-| Tier C — polish (Z1–Z11) | 🚧 in progress | Terminal-2 claiming |
+| Tier C — polish (Z1–Z11) | 🚧 in progress | Terminal-2 — `stream-c-polish` branch visible on origin |
 | D1/D2/D3 — deferred | out of scope | separate sessions per ULTRAPLAN |
 
 ---
@@ -36,7 +36,7 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | Stream | Branch | Worktree path | Owner | Status |
 |---|---|---|---|---|
 | R1 — finish tokens single-source | `stream-r1-tokens` | main repo | **Terminal-1** | ✅ shipped (5 commits, 107 tests green) |
-| R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | **Terminal-1** | starting now — R1.5 landed, tokens.mjs + correct partner-array encoding now available |
+| R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | **Terminal-1** | ✅ shipped (6 commits, 107 tests green, merged at `df0f03b`) |
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
 | Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | 🚧 in progress |
 
@@ -185,6 +185,19 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - Tests: **107 passed, 0 failed**. Logic harness only — E2E still needs a Windows-host run before v0.2 ship.
 - **Starting R2 next** in `../terminal-talk-r2/` worktree. Will not touch any file outside R2's scope.
 - Terminal-2: when you next pull, your `stream-c-polish` worktree should see R1's files. The kit-realignment I'm doing in R2 will touch `docs/ui-kit/Toolbar.jsx`, `SessionsTable.jsx`, `kit.css`, `icons.jsx`, `docs/assets/icons.svg`, and `docs/ui-kit/README.md` — no overlap with your Tier C scope.
+
+### 2026-04-20 Terminal-1 (R2 landed)
+- R2 done in 6 commits on `stream-r2-kit`:
+  - `41fbd57` R2.4 — 4 new kit icons (mute, unmute, star-empty, star-filled) in both icons.jsx and icons.svg
+  - `870695c` R2.2 — ported mute / focus / × into SessionsTable.jsx with exclusive-focus invariant; kit.css 7-col grid
+  - `bd70365` R2.1 — two-row Toolbar (680×~114): .tt-bar-top 36px + .tt-dots-row 44px; fixed border-radius 22→16 (F10), box-shadow→none (F11), dot size 16→14 (F3)
+  - `6d318f3` R2.3 — React production builds (1.3 MB → ~140 KB) with TODO comment for re-computing SRI hashes
+  - `c1814fb` R2.5 — kit README matches reality: 680×~114 geometry, 13 icons, tokens.mjs consumer, SessionsTable row shape
+  - `df0f03b` fix(tests) — R1.7 byte-for-byte check tolerates Windows CRLF on checkout (latent bug surfaced on my own test)
+- Tests: **107 passed, 0 failed**. All fixable-in-kit drift items from Pass-1/2/3 now actually fixed. No E2E run yet — R2 is kit-only, doesn't touch product code.
+- **Smoke test still owed before v0.2 ship**: open `docs/ui-kit/index.html` in a browser and verify two-row toolbar renders, dots appear below controls, mute 🔊 toggles to 🔇, focus star swaps ☆/★ with exclusive behaviour across rows, × drops the session. No automated equivalent — the kit has no Playwright wiring yet.
+- With R1 + R2 + R3 shipped and Tier C in progress, **all non-deferred ULTRAPLAN work is in-flight**. Terminal-2 to finish Tier C; Ben to run the kit smoke test + E2E on Windows host when ready.
+- Worktree at `../terminal-talk-r2/` is done. Leaving it in place for a few sessions in case amendments are needed; will remove before next session.
 
 ### 2026-04-20 Terminal-2
 - Pulled to `6d1f526`. Read COORDINATION.md in full.
