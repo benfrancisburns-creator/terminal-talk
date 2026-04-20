@@ -2,8 +2,13 @@ name: CodeQL
 
 # GitHub's SAST. Runs on every push to main and on all PRs, plus a weekly
 # cron so we catch newly published query-pack rules without waiting for
-# a code change. JS covers app/*.js, scripts/*.cjs, tests/e2e. Python
-# covers app/*.py + synth_turn.py + sentence_split.py.
+# a code change. Three languages covered:
+#   javascript  app/*.js, scripts/*.cjs, tests/e2e/*.ts
+#   python      app/*.py (edge-tts, wake-word listener, synth_turn, etc.)
+#   actions     .github/workflows/*.yml — CodeQL detects untrusted-input
+#               patterns (e.g. un-quoted ${{ github.event.pull_request
+#               .head.ref }} injection) that a manual review can miss.
+#               Added per audit F5.
 on:
   push:
     branches: [main]
@@ -24,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript, python]
+        language: [javascript, python, actions]
 
     steps:
       - name: Checkout

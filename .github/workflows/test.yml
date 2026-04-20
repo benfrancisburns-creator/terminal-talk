@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Default-deny everything — each job grants only what it needs.
+# Repo-read is enough for the test jobs (they don't push artefacts
+# or comments). Hardens against action-malware that tries to exfiltrate
+# secrets via GITHUB_TOKEN. Audit F2.
+permissions:
+  contents: read
+
 jobs:
   pure-logic-tests:
     name: Pure JS tests (cross-platform)
