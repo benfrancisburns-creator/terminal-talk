@@ -11,6 +11,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm test && npm run test:e2e",
+    "test:coverage": "c8 --reporter=text --reporter=lcov node scripts/run-tests.cjs --logic-only",
+    "verify-voices": "node scripts/verify-voices.cjs",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
   "engines": {
@@ -29,6 +31,7 @@
     "accessibility"
   ],
   "devDependencies": {
-    "@playwright/test": "^1.59.1"
+    "@playwright/test": "^1.59.1",
+    "c8": "^10.1.2"
   }
 }

@@ -1050,80 +1050,13 @@ document.addEventListener('keydown', (e) => {
 
 let currentPlaybackSpeed = 1.25; // updated from config on load
 
-// Edge TTS English voices, verified live against `edge_tts.list_voices()`.
-// To regenerate this list: see scripts/refresh-voice-list.cjs (TBD) or run
-// `python -m edge_tts --list-voices` and filter Locale=en-*.
-const EDGE_VOICES = [
-  // United Kingdom (5)
-  { id: 'en-GB-RyanNeural',     label: 'Ryan (UK, male)' },
-  { id: 'en-GB-SoniaNeural',    label: 'Sonia (UK, female)' },
-  { id: 'en-GB-LibbyNeural',    label: 'Libby (UK, female)' },
-  { id: 'en-GB-ThomasNeural',   label: 'Thomas (UK, male)' },
-  { id: 'en-GB-MaisieNeural',   label: 'Maisie (UK, child)' },
-  // United States (17)
-  { id: 'en-US-AriaNeural',          label: 'Aria (US, female)' },
-  { id: 'en-US-JennyNeural',         label: 'Jenny (US, female)' },
-  { id: 'en-US-GuyNeural',           label: 'Guy (US, male)' },
-  { id: 'en-US-AndrewNeural',        label: 'Andrew (US, male)' },
-  { id: 'en-US-AndrewMultilingualNeural', label: 'Andrew (US, male, multilingual)' },
-  { id: 'en-US-EmmaNeural',          label: 'Emma (US, female)' },
-  { id: 'en-US-EmmaMultilingualNeural',   label: 'Emma (US, female, multilingual)' },
-  { id: 'en-US-AvaNeural',           label: 'Ava (US, female)' },
-  { id: 'en-US-AvaMultilingualNeural',    label: 'Ava (US, female, multilingual)' },
-  { id: 'en-US-BrianNeural',         label: 'Brian (US, male)' },
-  { id: 'en-US-BrianMultilingualNeural',  label: 'Brian (US, male, multilingual)' },
-  { id: 'en-US-ChristopherNeural',   label: 'Christopher (US, male)' },
-  { id: 'en-US-EricNeural',          label: 'Eric (US, male)' },
-  { id: 'en-US-MichelleNeural',      label: 'Michelle (US, female)' },
-  { id: 'en-US-RogerNeural',         label: 'Roger (US, male)' },
-  { id: 'en-US-SteffanNeural',       label: 'Steffan (US, male)' },
-  { id: 'en-US-AnaNeural',           label: 'Ana (US, child)' },
-  // Australia (2)
-  { id: 'en-AU-NatashaNeural',  label: 'Natasha (AU, female)' },
-  { id: 'en-AU-WilliamMultilingualNeural', label: 'William (AU, male, multilingual)' },
-  // Canada (2)
-  { id: 'en-CA-ClaraNeural',    label: 'Clara (CA, female)' },
-  { id: 'en-CA-LiamNeural',     label: 'Liam (CA, male)' },
-  // Ireland (2)
-  { id: 'en-IE-EmilyNeural',    label: 'Emily (IE, female)' },
-  { id: 'en-IE-ConnorNeural',   label: 'Connor (IE, male)' },
-  // India (3)
-  { id: 'en-IN-NeerjaNeural',           label: 'Neerja (IN, female)' },
-  { id: 'en-IN-NeerjaExpressiveNeural', label: 'Neerja (IN, female, expressive)' },
-  { id: 'en-IN-PrabhatNeural',          label: 'Prabhat (IN, male)' },
-  // New Zealand (2)
-  { id: 'en-NZ-MollyNeural',    label: 'Molly (NZ, female)' },
-  { id: 'en-NZ-MitchellNeural', label: 'Mitchell (NZ, male)' },
-  // South Africa (2)
-  { id: 'en-ZA-LeahNeural',     label: 'Leah (ZA, female)' },
-  { id: 'en-ZA-LukeNeural',     label: 'Luke (ZA, male)' },
-  // Hong Kong (2)
-  { id: 'en-HK-YanNeural',      label: 'Yan (HK, female)' },
-  { id: 'en-HK-SamNeural',      label: 'Sam (HK, male)' },
-  // Singapore (2)
-  { id: 'en-SG-LunaNeural',     label: 'Luna (SG, female)' },
-  { id: 'en-SG-WayneNeural',    label: 'Wayne (SG, male)' },
-  // Philippines (2)
-  { id: 'en-PH-RosaNeural',     label: 'Rosa (PH, female)' },
-  { id: 'en-PH-JamesNeural',    label: 'James (PH, male)' },
-  // Nigeria (2)
-  { id: 'en-NG-EzinneNeural',   label: 'Ezinne (NG, female)' },
-  { id: 'en-NG-AbeoNeural',     label: 'Abeo (NG, male)' },
-  // Kenya (2)
-  { id: 'en-KE-AsiliaNeural',   label: 'Asilia (KE, female)' },
-  { id: 'en-KE-ChilembaNeural', label: 'Chilemba (KE, male)' },
-  // Tanzania (2)
-  { id: 'en-TZ-ImaniNeural',    label: 'Imani (TZ, female)' },
-  { id: 'en-TZ-ElimuNeural',    label: 'Elimu (TZ, male)' }
-];
-const OPENAI_VOICES = [
-  { id: 'alloy',   label: 'Alloy' },
-  { id: 'echo',    label: 'Echo' },
-  { id: 'fable',   label: 'Fable' },
-  { id: 'onyx',    label: 'Onyx' },
-  { id: 'nova',    label: 'Nova' },
-  { id: 'shimmer', label: 'Shimmer' }
-];
+// Edge + OpenAI voice catalogues come from app/lib/voices.json via the
+// generated voices-window.js (loaded in index.html before this file).
+// The R1.7-style parity test in run-tests.cjs asserts the generated JS
+// matches the JSON byte-for-byte. scripts/verify-voices.cjs is the
+// escape hatch for "did Microsoft add/remove a voice" — runs weekly in
+// CI against `python -m edge_tts --list-voices`.
+const { edge: EDGE_VOICES, openai: OPENAI_VOICES } = window.TT_VOICES;
 
 const settingsBtn = document.getElementById('settingsBtn');
 const speedSlider = document.getElementById('speedSlider');

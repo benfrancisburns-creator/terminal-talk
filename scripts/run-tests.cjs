@@ -1884,6 +1884,50 @@ describe('R4 ACCESSIBILITY BASELINE', () => {
   });
 });
 
+describe('S4.2 — voices.json parity with generated voices-window.js', () => {
+  const voices = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'voices.json'), 'utf8'));
+  const win    = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'voices-window.js'), 'utf8').replace(/\r\n/g, '\n');
+
+  it('generated voices-window.js matches voices.json byte-for-byte', () => {
+    const expected = `window.TT_VOICES = Object.freeze(${JSON.stringify(voices, null, 2)});`;
+    if (!win.includes(expected)) {
+      throw new Error('app/lib/voices-window.js is out of date — run `node scripts/generate-voices-window.cjs`');
+    }
+  });
+
+  it('voices.json has both edge and openai arrays', () => {
+    if (!Array.isArray(voices.edge))   throw new Error('voices.json.edge must be an array');
+    if (!Array.isArray(voices.openai)) throw new Error('voices.json.openai must be an array');
+    if (voices.edge.length === 0)   throw new Error('voices.json.edge empty');
+    if (voices.openai.length === 0) throw new Error('voices.json.openai empty');
+  });
+
+  it('every voice entry has id + label string fields', () => {
+    for (const v of [...voices.edge, ...voices.openai]) {
+      if (typeof v.id !== 'string' || v.id.length === 0)       throw new Error(`bad id: ${JSON.stringify(v)}`);
+      if (typeof v.label !== 'string' || v.label.length === 0) throw new Error(`bad label: ${JSON.stringify(v)}`);
+    }
+  });
+
+  it('voice ids are unique across edge + openai combined', () => {
+    const seen = new Set();
+    for (const v of [...voices.edge, ...voices.openai]) {
+      if (seen.has(v.id)) throw new Error(`duplicate voice id: ${v.id}`);
+      seen.add(v.id);
+    }
+  });
+
+  it('renderer.js destructures from window.TT_VOICES (no inline arrays)', () => {
+    const rend = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (/const\s+EDGE_VOICES\s*=\s*\[\s*\{\s*id:/.test(rend)) {
+      throw new Error('renderer.js still contains an inline EDGE_VOICES literal — regression');
+    }
+    if (!/window\.TT_VOICES/.test(rend)) {
+      throw new Error('renderer.js must destructure voices from window.TT_VOICES');
+    }
+  });
+});
+
 describe('S3.1 — IPC rate limit', () => {
   const { createRateLimit } = require('../app/lib/rate-limit');
 
