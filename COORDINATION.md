@@ -2,8 +2,76 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (ULTRAPLAN-2 kickoff)
-**Pinned baseline commit:** `73e637f` (v0.2.0 tagged). **ULTRAPLAN v1 CLOSED. ULTRAPLAN-ADDENDUM (v2) OPEN** — see `Claude Assesments/ULTRAPLAN-ADDENDUM.md`.
+**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (ULTRAPLAN-2 kickoff + T-2 brief)
+**Pinned baseline commit:** `da20cf9` (ULTRAPLAN-ADDENDUM plan committed). **ULTRAPLAN v1 CLOSED. ULTRAPLAN-ADDENDUM (v2) OPEN** — see `Claude Assesments/ULTRAPLAN-ADDENDUM.md`.
+
+---
+
+## ⚡ READ ME FIRST — Terminal-2 briefing (2026-04-20)
+
+Terminal-1 just opened ULTRAPLAN-ADDENDUM. Do these steps in order:
+
+1. **Pull** — you already did if you're reading this, but confirm `git log --oneline -3` shows `da20cf9` at or before HEAD.
+2. **Read `Claude Assesments/ULTRAPLAN-ADDENDUM.md` end to end.** It lays out the 23 items, tier by tier.
+3. **Your lane is `stream-ua2-py`.** Everything in it is Python, PowerShell, or design-docs — zero JS/TS.
+4. **Create your worktree:**
+   ```bash
+   cd C:/Users/Ben/Desktop/terminal-talk
+   git worktree add ../terminal-talk-ua2-py -b stream-ua2-py
+   cd ../terminal-talk-ua2-py
+   ```
+5. **Claim your stream** — edit this file's stream-ownership table below to set your `stream-ua2-py` row status from `available` to `🚧 claimed`, commit, push. Do this FIRST so Terminal-1 sees the claim.
+6. **Work the items in this exact order** (easy wins first; S5 last because it's the biggest):
+   1. **A2-3** `app/edge_tts_speak.py` — extract `MIN_MP3_BYTES = 500`, `EDGE_TTS_RETRIES = int(os.environ.get('TT_EDGE_TTS_RETRIES', '6'))`, wrap `c.save(tmp)` in `asyncio.wait_for(..., timeout=30)`. Log when `errors='replace'` strips non-UTF-8.
+   2. **A2-4** `app/sentence_split.py` — bump `_WORD_DOT_RE` char range `{1,5}` → `{1,8}`; add `'\u2014'` (em-dash) and `'\u2013'` (en-dash) to the marker list without requiring surrounding spaces; normalise `U+0085` (NEL) and `U+2028` (LS) to `\n` alongside the existing `\r\n` / `\r` calls; extend the abbreviation set with `approx vs. aka ref misc incl excl assoc dept ed gen gov pres rep sen`; add a CJK terminator regex `。！？` merged into the main terminator. Plus one new `it(...)` test per new abbreviation inside the **existing** `describe('SENTENCE SPLIT', ...)` block in `scripts/run-tests.cjs` (around line 860).
+   3. **S2.1** `app/synth_turn.py` — lock file stores `f"{os.getpid()}:{socket.gethostname()}:{int(time.time() * 1000)}"` instead of bare PID. On `__exit__`, only `unlink` if `pid == os.getpid()`. Wrap the ThreadPoolExecutor block in `concurrent.futures.wait(futures, timeout=SYNTH_TIMEOUT_SEC * 2)` + cancel remainder. Emit one summary line `synth_turn: n=<total> ok=<ok> total_ms=<ms> parallelism=<n>` per invocation.
+   4. **S2.2** `app/key_helper.py` — replace `keybd_event` with `SendInput` (single `INPUT` struct with `KEYBDINPUT`). Cache `get_process_tree()` result for 500 ms (invalidate on next-request-after-500ms or on explicit bump marker). New file `~/.terminal-talk/queue/_helper.log` with one line per command received (command name + timestamp, NOT output).
+   5. **S2.3** `app/wake-word-listener.py` — add EMA noise tracking: `noise_ema = alpha * score + (1-alpha) * noise_ema` with `alpha = 0.05`; fire only when `score > noise_ema + 0.3`. Add `--selftest` argparse flag that loads model, opens stream for 3 s, exits 0.
+   6. **Z2-6** `app/statusline.ps1` — 100 ms file-level cache of registry read. Cache key `{mtime, length}`; refresh only if those change. Debounce protects against rapid prompt fires.
+   7. **Z2-7** `install.ps1` — after file copy loop, compute SHA-256 of every `app/*.py`, `app/*.js`, `app/*.ps1`, `hooks/*.ps1` and write `~/.terminal-talk/manifest.json` with `{ file → sha256 }`. Add `scripts/verify-install.ps1` (not `.cjs` — keep it PowerShell per T-2 lane) that diffs current install against manifest.
+   8. **Z2-8** `uninstall.ps1` — before `Remove-Item -Recurse -Force "$installDir"`, run `Get-Process | Where-Object { $_.Path -like "$installDir\*" } | Stop-Process -Force; Start-Sleep -Milliseconds 500; Get-Process -Name terminal-talk,electron -ErrorAction SilentlyContinue | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue`. If install dir still has children after removal, `Write-Host "Leftovers: $(Get-ChildItem $installDir -Recurse)"`.
+   9. **S5** `docs/design-system/mocks-annotated.html` + `docs/ui-kit/index.html` — this is the biggest item, save for last. Add a URL-param seed loader in the kit (`?seed=idle|three-sessions|mixed-states|settings-panel|snapped-top`) that picks initial state in `App()`. Rewrite `mocks-annotated.html` to 5 iframes (one per seed) with overlay `<div class="annotation">` positioned via JS measuring iframe DOM. Target: file size under 400 lines (was 1,051).
+
+7. **Testing protocol between commits:**
+   ```bash
+   node scripts/run-tests.cjs --logic-only
+   ```
+   Must stay green (currently 107). **Terminal-1 will also be adding new tests in NEW describe blocks at end of run-tests.cjs** — you add tests INSIDE the existing `describe('SENTENCE SPLIT', ...)` block only, to avoid conflicts.
+
+8. **Commit message style** — match the existing repo convention:
+   ```
+   <type>(<ID>): <one-liner>
+
+   <body explaining why + what changed>
+
+   Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+   ```
+   Where `<type>` is `feat` for new capability, `fix` for bug, `perf` for speed, `test` for tests only, `docs` for docs only. `<ID>` is the sub-item code (`A2-3`, `S2.1`, `Z2-7` etc.).
+
+9. **Push protocol** — push your branch as you go so I can see progress:
+   ```bash
+   git push -u origin stream-ua2-py
+   ```
+
+10. **Merge protocol** — when a sub-item is done and tests are green:
+    ```bash
+    cd C:/Users/Ben/Desktop/terminal-talk          # back to main worktree
+    git checkout main
+    git pull --ff-only
+    git merge --ff-only stream-ua2-py              # or --no-ff if you prefer merge commit
+    git push
+    ```
+    If fast-forward fails because I landed something, `git rebase main` on your branch and try again.
+
+11. **Stop-on-conflict** — if `git pull --rebase` shows a conflict in a file outside your lane (per file-scope table below), STOP. Don't auto-resolve. Update this doc with a `### Blocked` entry naming the conflict, commit + push, wait for me or Ben.
+
+12. **Out of scope for you** — do not touch: `app/preload.js`, `app/main.js`, `app/renderer.js`, `scripts/run-tests.cjs` (except inside SENTENCE SPLIT describe), `scripts/verify-voices.cjs`, `app/lib/voices.json`, `config.schema.js`, `package.json`, `.github/workflows/*.yml`. Those are my lane.
+
+13. **When everything is done** — update this file to mark every sub-item ✅ in the ownership table, add a Communication log entry, push. Then optionally `git worktree remove ../terminal-talk-ua2-py`.
+
+14. **If in doubt, ask in a Communication log entry at the bottom of this file** — I'll see it on my next pull.
+
+**Expected effort: ~4.5 h focused.** My lane is ~7.5 h so I'll finish last. That's fine — independent streams.
 
 ---
 
