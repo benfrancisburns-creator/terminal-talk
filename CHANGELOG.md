@@ -2,6 +2,21 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.8] — 2026-04-20
+
+Independent v0.3.0 assessment follow-up — two concrete items closed, one carry-over tracked in AUDIT-FINAL.
+
+### Fixed
+
+- **N4 — `app/session-registry.psm1` docstring misstated main.js prune policy.** The PS module's `Update-SessionAssignment` block claimed "main.js's no auto-prune policy", but `main.js:ensureAssignmentsForFiles` *does* auto-prune non-pinned sessions past `SESSION_GRACE_SEC = 14400` (4 h). A future contributor could have removed correct logic based on the false premise. Comment now describes the real rules: pinned-never, PID-alive-keep, last-seen-within-4h-keep, otherwise-remove.
+- **N5 — `.github/workflows/release.yml` now SHA-pins `actions/checkout`.** Previously `@v4`; every other workflow uses the D2-8 SHA-pinned form. `release.yml` is the only workflow with `permissions: contents: write`, so the most privileged workflow was the only unpinned one. Now `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1` matches `test.yml`.
+
+### Documented
+
+- **H3-palette (carry-over from v0.2 pass 4) tracked in `Claude Assesments/AUDIT-FINAL.md`.** Purple `#c084fc` ↔ Blue `#60a5fa` collapse to Δ=0.004 under deuteranopia (~6 % of men; threshold for distinguishability ~0.15, so 30× below). Two fix options: swap purple → magenta `#ee2bbd` (Δ=0.124, one hex change + regen) or add a "colour-blind friendly" palette toggle in Settings. Deferred pending product decision. Previously untracked anywhere.
+
+---
+
 ## [0.3.7] — 2026-04-20
 
 Kit demo — settings panel bottom was unreachable on short viewports.
