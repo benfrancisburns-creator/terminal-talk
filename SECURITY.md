@@ -106,7 +106,7 @@ that's already covered:
   npm, pip, and GitHub Actions updates weekly.
 - **Static analysis**: GitHub CodeQL scans JavaScript + Python on
   every push to `main`.
-- **Tests**: 128 unit tests + 13 Playwright E2E, including hardening
+- **Tests**: 177 unit tests + 13 Playwright E2E, including hardening
   cases (secret-redaction, path-traversal, registry BOM tolerance,
   watchdog composition).
 

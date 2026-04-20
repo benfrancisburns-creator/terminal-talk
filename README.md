@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: early beta · solo-maintained.** Actively developed, 128 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: early beta · solo-maintained.** Actively developed, 177 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Hands-free voice workflow for Claude Code.**
 Claude's replies are read aloud. Highlight any text anywhere, say _"hey jarvis"_, hear it.
@@ -335,7 +335,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 128-test harness exercises the actual installed components:
+A 177-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -429,12 +429,39 @@ Stops running processes (only those in `~/.terminal-talk/`), removes the Startup
 
 ---
 
+## About the mascot
+
+The orange four-legged character on the scrubber is a small homage to
+[Claude Code](https://www.claude.com/product/claude-code). When Claude is
+thinking, Claude Code shows a spinner line with a tongue-in-cheek verb —
+"Moonwalking", "Finagling", "Pontificating", "Flibbertigibbeting" and
+[~90 others](https://github.com/levindixon/tengu_spinner_words). Terminal
+Talk pinches that vocabulary (with credit) and attaches it to a little
+character who walks along the scrubber while audio plays, leaving random
+verbs from that list floating above his head. The mouth is added because,
+unlike the Claude Code spinner, he actually speaks.
+
+**He only appears when Claude Code is the source.** If you're playing a
+highlight-to-speak clip (you said "hey jarvis" or pressed
+<kbd>Ctrl+Shift+S</kbd>), the scrubber thumb is a plain **J** badge
+instead — the mascot is reserved for audio that originated inside a
+Claude Code session, so the visual identity stays tied to Claude-sourced
+content.
+
+No affiliation with Anthropic; this is a solo open-source project by an
+enthusiastic Claude Code user. It's here because Claude Code's own sense
+of humour is half the reason the tool is a joy to work with, and a bit
+of that should live on the toolbar too.
+
+---
+
 ## Credits
 
 - [openWakeWord](https://github.com/dscripka/openWakeWord) — offline wake-word detection (MIT)
 - [edge-tts](https://github.com/rany2/edge-tts) — Microsoft Edge TTS wrapper (LGPL-3.0)
 - [Electron](https://www.electronjs.org/) — the floating toolbar runtime (MIT)
 - Wake-word model `hey_jarvis_v0.1` © openWakeWord contributors
+- Spinner vocabulary lifted from [levindixon/tengu_spinner_words](https://github.com/levindixon/tengu_spinner_words) — same list Claude Code uses while thinking. No affiliation with Anthropic; see the [About the mascot](#about-the-mascot) section for the why.
 
 ## License
 

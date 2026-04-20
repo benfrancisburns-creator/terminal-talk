@@ -19,7 +19,7 @@
   In unattended mode, install the per-terminal statusline. Default: $true.
 .PARAMETER StartupYes
   In unattended mode, add a Startup shortcut. Default: $false
-  (deliberate — auto-launch is a per-user choice, not something
+  (deliberate -- auto-launch is a per-user choice, not something
   unattended installs should make for you).
 .NOTES
   Run from the terminal-talk/ folder (the one containing install.ps1).
@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 # Prompt helper honoured by every Read-Host in this script. In attended
 # mode it calls Read-Host and returns the raw input. In -Unattended
 # mode it skips the prompt and returns 'Y' or 'n' based on the
-# pre-set switch — so the same consent logic downstream ($resp -match
+# pre-set switch -- so the same consent logic downstream ($resp -match
 # '^[Yy]') gives the right answer without any stdin piping.
 function Get-Consent {
     param(

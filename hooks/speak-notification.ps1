@@ -44,7 +44,7 @@ if (Test-Path $configPath) {
     } catch {}
 }
 
-# Shared TTS helper — Resolve-OpenAiApiKey + Invoke-TtsWithFallback.
+# Shared TTS helper -- Resolve-OpenAiApiKey + Invoke-TtsWithFallback.
 # Same canonical chain used by speak-response.ps1 (audit CC-8).
 Import-Module (Join-Path $env:USERPROFILE '.terminal-talk\app\tts-helper.psm1') -Force -ErrorAction SilentlyContinue
 $openaiApiKey = Resolve-OpenAiApiKey -ConfigPath $configPath

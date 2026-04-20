@@ -31,7 +31,7 @@ function Read-Registry {
     .SYNOPSIS
     Read the session registry from disk and return a normalised hashtable
     of { short8 -> entry-hashtable }. Returns an empty hashtable if the
-    file doesn't exist or is malformed — never throws.
+    file doesn't exist or is malformed -- never throws.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -60,7 +60,7 @@ function Read-Registry {
                 last_seen  = [long]$v.last_seen
             }
             # Preserve per-session voice + speech_includes overrides through
-            # every read/write cycle — the Electron UI writes these too.
+            # every read/write cycle -- the Electron UI writes these too.
             if ($v.PSObject.Properties.Name -contains 'voice' -and $v.voice) {
                 $entry['voice'] = [string]$v.voice
             }
@@ -88,7 +88,7 @@ function Update-SessionAssignment {
     pick the lowest free index (0..23) and create the entry with
     default fields. Returns the resolved index.
 
-    Existing sessions KEEP their slot forever — the Electron UI's ×
+    Existing sessions KEEP their slot forever -- the Electron UI's ×
     button is the only way to free a slot. This matches main.js's
     "no auto-prune" policy.
     #>
@@ -117,7 +117,7 @@ function Update-SessionAssignment {
         if (-not $busy.ContainsKey($i)) { $idx = $i; break }
     }
 
-    # Palette full — LRU eviction among non-pinned entries. Matches the
+    # Palette full -- LRU eviction among non-pinned entries. Matches the
     # allocatePaletteIndex() helper in app/lib/palette-alloc.js so the
     # statusline and the Electron UI always agree on the slot table.
     if ($null -eq $idx) {
@@ -137,7 +137,7 @@ function Update-SessionAssignment {
             $idx = $lru.Index
             [void]$Assignments.Remove($lru.Short)
         } else {
-            # Every slot is pinned — hash-mod collision is unavoidable.
+            # Every slot is pinned -- hash-mod collision is unavoidable.
             $sum = 0
             foreach ($ch in $Short.ToCharArray()) { $sum += [int]$ch }
             $idx = $sum % $script:PaletteSize

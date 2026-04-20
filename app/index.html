@@ -58,6 +58,11 @@
         <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
         <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
       </svg>
+      <!-- Shown instead of the mascot when the currently-playing clip is a
+           highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clip. The mascot
+           is reserved for Claude Code responses — see renderer.js
+           updateScrubberMode() + README "About the mascot" for the why. -->
+      <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
     </div>
     <span id="time" aria-live="off">0:00 / 0:00</span>
     <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
@@ -127,6 +132,14 @@
         <p class="panel-hint">
           Tip: labels you set on a session show up next to its emoji in that terminal's statusline
           (e.g. <code>&#x1f7e2; Frontend</code>).
+        </p>
+        <p class="panel-hint">
+          About the mascot: the walking character on the scrubber is a homage to
+          Claude Code's thinking-spinner humour. The verbs that float above his head
+          (Moonwalking, Finagling, Pontificating...) are the same list Claude Code
+          itself uses while thinking. He only appears while a Claude Code response is
+          playing; highlight-to-speak clips show a plain <b>J</b> badge instead.
+          No affiliation with Anthropic — this is a fan project.
         </p>
       </section>
     </div>

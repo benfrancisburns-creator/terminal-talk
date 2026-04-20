@@ -80,7 +80,7 @@ function Test-ProcessAlive($p) {
     try { return [bool](Get-Process -Id $p -ErrorAction SilentlyContinue) } catch { return $false }
 }
 
-# Read, touch/assign, write back — all via the shared module so statusline
+# Read, touch/assign, write back -- all via the shared module so statusline
 # and the two Stop/PreToolUse hooks are guaranteed to use identical logic.
 $assignments = Read-Registry -RegistryPath $registryPath
 $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
@@ -91,7 +91,7 @@ $emoji = Get-EmojiForIndex $idx
 $label = $assignments[$short].label
 # Prefixes give users an at-a-glance signal of state:
 #   🔇 muted   ⭐ focus (its clips play first)
-# Both can appear — muted + focus means "still focused but silenced",
+# Both can appear -- muted + focus means "still focused but silenced",
 # which is an unusual combo but valid.
 $mutedPrefix = if ($assignments[$short].muted) { [char]::ConvertFromUtf32(0x1F507) + ' ' } else { '' }
 $focusPrefix = if ($assignments[$short].focus) { [char]::ConvertFromUtf32(0x2B50) + ' ' } else { '' }

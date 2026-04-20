@@ -48,7 +48,7 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
     $now = [long][double]::Parse((Get-Date -UFormat %s))
 
-    # Shared session-registry module — canonical Read / Touch-Or-Assign /
+    # Shared session-registry module -- canonical Read / Touch-Or-Assign /
     # Write-Atomic + per-PID stamp. Replaces ~80 lines of duplication that
     # used to live here AND in speak-on-tool.ps1 AND in statusline.ps1.
     Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
@@ -113,7 +113,7 @@ if ((Test-Path $registryPath2) -and $sessionShort) {
 }
 Log "voices: edge_response=$edgeResponseVoice; includes: code=$($inc.code_blocks) urls=$($inc.urls) bullets=$($inc.bullet_markers)"
 
-# Canonical edge-tts + OpenAI fallback chain — see app/tts-helper.psm1.
+# Canonical edge-tts + OpenAI fallback chain -- see app/tts-helper.psm1.
 # Previously the Invoke-TTS function + the openai-key resolution block
 # were both duplicated across speak-response.ps1 and speak-notification.ps1
 # with subtly different retry counts + timeouts (audit CC-8). Both hooks

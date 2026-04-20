@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
-# PreToolUse hook — streaming mid-response TTS.
+# PreToolUse hook -- streaming mid-response TTS.
 #
 # Fires before every tool invocation. Spawns synth_turn.py detached, which
 # reads the transcript, extracts any NEW assistant text since last run,
 # and synthesises it in parallel. This is what lets audio start playing
-# while Claude is still working — the user hears the "what I'm about to do"
+# while Claude is still working -- the user hears the "what I'm about to do"
 # commentary while the tool runs.
 #
 # Exits immediately (~150 ms) so Claude Code is NOT blocked waiting for
@@ -57,7 +57,7 @@ $sessionsDir = Join-Path $ttHome 'sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 $now = [long][double]::Parse((Get-Date -UFormat %s))
 
-# Shared session-registry module — canonical Read / Touch-Or-Assign /
+# Shared session-registry module -- canonical Read / Touch-Or-Assign /
 # Write-Atomic + per-PID stamp. Replaces ~80 lines of logic that used
 # to be duplicated here AND in speak-response.ps1 AND in statusline.ps1.
 Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue

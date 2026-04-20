@@ -38,7 +38,7 @@ terminal-talk/
 ├── scripts/
 │   ├── start-toolbar.vbs         Silent Electron launcher (used by Startup shortcut)
 │   ├── render-mocks.cjs          Chrome-headless mock renderer
-│   └── run-tests.cjs             128-test harness
+│   └── run-tests.cjs             177-test harness
 ├── tests/e2e/                    Playwright end-to-end tests (13 specs)
 └── docs/                         Design system, ui-kit, screenshots, landing site
 ```

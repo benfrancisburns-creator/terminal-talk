@@ -8,6 +8,7 @@ const fwd10Btn = document.getElementById('fwd10');
 const scrubber = document.getElementById('scrubber');
 const scrubberWrap = document.getElementById('scrubberWrap');
 const scrubberMascot = document.getElementById('scrubberMascot');
+const scrubberJarvis = document.getElementById('scrubberJarvis');
 
 // Claude Code's real tengu_spinner_words list (90 entries, sourced from
 // levindixon/tengu_spinner_words). Shown as a trail of vocabulary behind
@@ -491,6 +492,7 @@ function playPath(p, manual = false) {
   if (manual) heardPaths.add(p);
   pendingQueue = pendingQueue.filter(x => x !== p);
   renderDots();
+  updateScrubberMode();
   return true;
 }
 
@@ -706,6 +708,7 @@ audio.addEventListener('ended', () => {
   currentPath = null;
   currentIsManual = false;
   renderDots();
+  updateScrubberMode();
   // Both auto-played and manually-played clips get auto-deleted now — only
   // the delay differs (30 s auto vs 90 s manual). Previously auto-played
   // clips accumulated indefinitely, flooding the toolbar.
@@ -723,6 +726,7 @@ audio.addEventListener('error', () => {
   currentPath = null;
   currentIsManual = false;
   renderDots();
+  updateScrubberMode();
   playNextPending();
 });
 
@@ -801,6 +805,22 @@ function positionScrubberMascot() {
   const xInRail = (MASCOT_W / 2) + pct * usable;
   const leftPx = (rail.left - wrap.left) + xInRail;
   scrubberMascot.style.left = leftPx + 'px';
+  // Keep the Jarvis badge on the same rail position -- one of the two is
+  // always hidden by the .jarvis-mode class, so positioning both is cheap.
+  if (scrubberJarvis) scrubberJarvis.style.left = leftPx + 'px';
+}
+
+// The mascot is intentionally reserved for Claude Code responses. When the
+// currently-playing audio originated from a highlight-to-speak trigger
+// ("hey jarvis" or Ctrl+Shift+S) -- identified by the `-clip-` filename
+// segment -- swap the mascot for a plain "J" badge so the mascot's visual
+// identity stays tied to Claude-sourced content. Called whenever currentPath
+// changes (playPath, onPriorityPlay, clip-end, error).
+function updateScrubberMode() {
+  if (!scrubberWrap) return;
+  const name = currentPath ? currentPath.split(/[\\/]/).pop() : '';
+  const jarvis = !!name && isClipFile(name);
+  scrubberWrap.classList.toggle('jarvis-mode', jarvis);
 }
 
 // Scrubber + time-readout smooth updater. Built-in `timeupdate` only

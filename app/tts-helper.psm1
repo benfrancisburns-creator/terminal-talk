@@ -1,4 +1,4 @@
-# TTS helper module — canonical `edge-tts + OpenAI-fallback` chain.
+# TTS helper module -- canonical `edge-tts + OpenAI-fallback` chain.
 #
 # Extracts ~90 lines of duplicated logic that used to live copy-pasted
 # in hooks/speak-response.ps1 AND hooks/speak-notification.ps1, with
@@ -112,7 +112,7 @@ function Invoke-TtsWithFallback {
     Run the canonical edge-tts → OpenAI fallback chain. Returns the path
     to the produced audio file on success, or $null on total failure.
 
-    `$BasePath` is the output path WITHOUT extension — this helper adds
+    `$BasePath` is the output path WITHOUT extension -- this helper adds
     `.mp3` (edge) or `.wav` (OpenAI).
     #>
     param(
