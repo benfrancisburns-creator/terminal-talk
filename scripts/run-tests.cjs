@@ -1300,9 +1300,13 @@ describe('STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)', () => {
     });
   }
 
-  it('canonical module exports both stripForTTS and DEFAULTS', () => {
-    if (!/module\.exports\s*=\s*\{\s*stripForTTS\s*,\s*DEFAULTS\s*\}/.test(canonical)) {
-      throw new Error('app/lib/text.js must export { stripForTTS, DEFAULTS }');
+  it('canonical module exports stripForTTS', () => {
+    // Post-S1 (Knip cleanup): DEFAULTS used to be re-exported but
+    // nobody imported it — the const stays internal to text.js as
+    // default-arg for stripForTTS. This test asserts the single
+    // remaining public export shape.
+    if (!/module\.exports\s*=\s*\{\s*stripForTTS\s*\}/.test(canonical)) {
+      throw new Error('app/lib/text.js must export { stripForTTS } (single export since S1 Knip cleanup)');
     }
   });
 

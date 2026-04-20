@@ -1,7 +1,7 @@
 {
   "ceiling": 3000,
   "files": {
-    "scripts/run-tests.cjs": 2932,
+    "scripts/run-tests.cjs": 2936,
     "app/main.js": 1827,
     "app/renderer.js": 1637,
     "app/synth_turn.py": 754,
@@ -10,7 +10,7 @@
     "app/sentence_split.py": 282,
     "hooks/speak-response.ps1": 267,
     "app/key_helper.py": 260,
-    "scripts/check-doc-drift.cjs": 231,
+    "scripts/check-doc-drift.cjs": 235,
     "app/session-registry.psm1": 221,
     "scripts/generate-tokens-css.cjs": 169,
     "app/statusline.ps1": 164,
