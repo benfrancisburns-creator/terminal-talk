@@ -28,6 +28,63 @@
   const SHOW_CHROME = URL_PARAMS.get('chrome') !== '0';
 
   // ═══════════════════════════════════════════════════════════════════════
+  // D2-3a — silent-WAV shim
+  // ═══════════════════════════════════════════════════════════════════════
+  // The renderer does `audio.src = fileUrl(path)` for every clip, where
+  // `fileUrl` returns `file:///<path>`. In the real Electron app this
+  // reaches a real MP3 on disk. In the kit demo the paths are fake, so
+  // the <audio> element fires `error` and the renderer skips to next.
+  //
+  // This shim intercepts the `src` setter on HTMLMediaElement and swaps
+  // any `file://` URL for a 200 ms silent PCM WAV data URL. The <audio>
+  // element now PLAYS (silently), `audio.ended` fires normally, the
+  // renderer's `ended` handler advances `playNextPending()`, which
+  // triggers `scheduleAutoDelete(path, isManual)` — so the full clip
+  // lifecycle (dot pulses → dot fades to heard → auto-prune removes it
+  // after 20 s) is visible in the demo.
+  //
+  // The real Electron app never loads mock-ipc.js, so this shim only
+  // exists in the kit. Product audio playback is unaffected.
+  (function installSilentWavShim() {
+    const SAMPLE_RATE = 8000, DUR_MS = 200;
+    const SAMPLES = SAMPLE_RATE * DUR_MS / 1000;   // 1600 samples
+    const DATA_BYTES = SAMPLES * 2;                 // 16-bit PCM mono
+    const buf = new ArrayBuffer(44 + DATA_BYTES);
+    const v = new DataView(buf);
+    v.setUint32(0, 0x52494646, false);   // 'RIFF'
+    v.setUint32(4, 36 + DATA_BYTES, true);
+    v.setUint32(8, 0x57415645, false);   // 'WAVE'
+    v.setUint32(12, 0x666d7420, false);  // 'fmt '
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);            // PCM
+    v.setUint16(22, 1, true);            // mono
+    v.setUint32(24, SAMPLE_RATE, true);
+    v.setUint32(28, SAMPLE_RATE * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    v.setUint32(36, 0x64617461, false);  // 'data'
+    v.setUint32(40, DATA_BYTES, true);
+    // Samples are already zero (ArrayBuffer zero-initialised).
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const SILENT_WAV = 'data:audio/wav;base64,' + btoa(bin);
+
+    const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+      configurable: true,
+      get: desc.get,
+      set(value) {
+        if (typeof value === 'string' && /^file:\/\//i.test(value)) {
+          desc.set.call(this, SILENT_WAV);
+        } else {
+          desc.set.call(this, value);
+        }
+      },
+    });
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
   // State — what a real Electron main process would persist
   // ═══════════════════════════════════════════════════════════════════════
   let config = {

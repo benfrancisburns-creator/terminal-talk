@@ -561,6 +561,10 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
   // tokens.json. Everything else is structurally impossible.
   const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
   const kitHtmlSrc  = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'index.html'), 'utf8');
+  // D2-3b — script chain moved out of index.html into kit-bootstrap.js, which
+  // fetch+splices app/index.html body at runtime. The drift-detection asserts
+  // below now target the bootstrap file.
+  const kitBootstrapSrc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'kit-bootstrap.js'), 'utf8');
   const tokensMjs   = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'tokens.mjs'), 'utf8');
   const tokensWin   = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tokens-window.js'), 'utf8');
 
@@ -599,15 +603,28 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
     }
   });
 
-  it('kit index.html loads app/renderer.js + mock-ipc + canonical tokens (D2-3)', () => {
-    if (!/\.\.\/\.\.\/app\/renderer\.js/.test(kitHtmlSrc)) {
-      throw new Error('docs/ui-kit/index.html must load ../../app/renderer.js');
+  it('kit index.html delegates to kit-bootstrap.js (D2-3b)', () => {
+    if (!/kit-bootstrap\.js/.test(kitHtmlSrc)) {
+      throw new Error('docs/ui-kit/index.html must load kit-bootstrap.js');
     }
-    if (!/mock-ipc\.js/.test(kitHtmlSrc)) {
-      throw new Error('docs/ui-kit/index.html must load mock-ipc.js before renderer.js');
+  });
+
+  it('kit-bootstrap loads app/renderer.js + mock-ipc + canonical tokens (D2-3)', () => {
+    if (!/\.\.\/\.\.\/app\/renderer\.js/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must load ../../app/renderer.js');
     }
-    if (!/\.\.\/\.\.\/app\/lib\/tokens-window\.js/.test(kitHtmlSrc)) {
-      throw new Error('docs/ui-kit/index.html must load ../../app/lib/tokens-window.js');
+    if (!/mock-ipc\.js/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must load mock-ipc.js before renderer.js');
+    }
+    if (!/\.\.\/\.\.\/app\/lib\/tokens-window\.js/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must load ../../app/lib/tokens-window.js');
+    }
+  });
+
+  it('kit fetch-splices app/index.html at runtime (D2-3b)', () => {
+    if (!/fetch\s*\(\s*APP_INDEX\s*\)/.test(kitBootstrapSrc) ||
+        !/['"]\.\.\/\.\.\/app\/index\.html['"]/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must fetch ../../app/index.html — drift surface');
     }
   });
 
