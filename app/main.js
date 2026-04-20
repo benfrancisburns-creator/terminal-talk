@@ -53,19 +53,36 @@ const DEFAULTS = {
   openai_api_key: null
 };
 
+// S3.3 — on-load config validator. Before S3.3 a malformed config.json
+// would either throw in parse (caught, fall back to DEFAULTS) or succeed
+// parse with garbage values (silent misbehaviour). Now we JSON-parse
+// first, then validate against a rules table, then either merge with
+// DEFAULTS or archive-and-fall-back. The archive lets the user recover
+// if we reject legitimately-tweaked config by mistake.
+const { validateConfig } = require('./lib/config-validate');
 function loadConfig() {
+  let parsed;
   try {
     const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    return {
-      voices: { ...DEFAULTS.voices, ...(parsed.voices || {}) },
-      hotkeys: { ...DEFAULTS.hotkeys, ...(parsed.hotkeys || {}) },
-      playback: { ...DEFAULTS.playback, ...(parsed.playback || {}) },
-      speech_includes: { ...DEFAULTS.speech_includes, ...(parsed.speech_includes || {}) },
-      window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
-      openai_api_key: parsed.openai_api_key ?? null
-    };
+    parsed = JSON.parse(raw);
   } catch { return DEFAULTS; }
+  const v = validateConfig(parsed);
+  if (!v.ok) {
+    try {
+      const archivePath = CONFIG_PATH + '.invalid-' + Date.now();
+      fs.renameSync(CONFIG_PATH, archivePath);
+      diag(`config.json invalid (${v.violations.join('; ')}) — archived to ${archivePath}; using DEFAULTS`);
+    } catch (e) { diag(`config.json invalid (${v.violations.join('; ')}); archive failed: ${e.message}`); }
+    return DEFAULTS;
+  }
+  return {
+    voices: { ...DEFAULTS.voices, ...(parsed.voices || {}) },
+    hotkeys: { ...DEFAULTS.hotkeys, ...(parsed.hotkeys || {}) },
+    playback: { ...DEFAULTS.playback, ...(parsed.playback || {}) },
+    speech_includes: { ...DEFAULTS.speech_includes, ...(parsed.speech_includes || {}) },
+    window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
+    openai_api_key: parsed.openai_api_key ?? null
+  };
 }
 
 function saveConfig(cfg) {
@@ -1182,14 +1199,52 @@ ipcMain.handle('get-stale-sessions', () => {
 ipcMain.handle('get-config', () => CFG);
 
 // Redact secrets from any value before it reaches a log file.
+// S3.2 — redaction is now keyed off a deny-set + a regex, not a single
+// property check. Any future key whose name says "secret / key / token /
+// password" is stripped from log output, plus the explicit deny list.
+// If you add a new sensitive top-level config key, adding it here is a
+// one-line patch; forgetting it means the regex still catches it by name.
+const REDACT_KEYS = new Set([
+  'openai_api_key',
+  'claude_api_key',
+  'anthropic_api_key',
+  'supabase_service_key',
+]);
+const REDACT_KEY_RE = /(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|client[_-]?secret)$/i;
 function redactForLog(obj) {
   if (!obj || typeof obj !== 'object') return obj;
-  const clone = { ...obj };
-  if (clone.openai_api_key) clone.openai_api_key = '<redacted>';
+  const clone = Array.isArray(obj) ? obj.map(redactForLog) : { ...obj };
+  if (Array.isArray(clone)) return clone;
+  for (const k of Object.keys(clone)) {
+    if (clone[k] && typeof clone[k] === 'object' && !Array.isArray(clone[k])) {
+      clone[k] = redactForLog(clone[k]);
+    } else if (REDACT_KEYS.has(k) || REDACT_KEY_RE.test(k)) {
+      if (clone[k]) clone[k] = '<redacted>';
+    }
+  }
   return clone;
 }
 
+// S3.1 — mutating IPC handlers share a token-bucket rate limiter so a
+// compromised renderer can't thrash config.json at thousands of writes
+// per second. Single bucket per handler name; 20/sec with burst 30.
+// Over-limit calls return null + log once per second per handler.
+const { createRateLimit } = require('./lib/rate-limit');
+const ipcRateLimit = createRateLimit();
+const ipcRateLimitLogDedupe = new Map();  // handlerName → lastLoggedMs
+function allowMutation(name) {
+  if (ipcRateLimit.allow(name)) return true;
+  const t = Date.now();
+  const prev = ipcRateLimitLogDedupe.get(name) || 0;
+  if ((t - prev) >= 1000) {
+    ipcRateLimitLogDedupe.set(name, t);
+    diag(`ipc rate-limit: rejected ${name}`);
+  }
+  return false;
+}
+
 ipcMain.handle('update-config', (_e, partial) => {
+  if (!allowMutation('update-config')) return null;
   try {
     diag(`update-config IN: ${JSON.stringify(redactForLog(partial))}`);
     const merged = {
@@ -1229,6 +1284,7 @@ function sanitiseLabel(s) {
 }
 
 ipcMain.handle('set-session-label', (_e, shortId, label) => {
+  if (!allowMutation('set-session-label')) return null;
   if (!validShort(shortId)) return false;
   const all = loadAssignments();
   if (!all[shortId]) return false;
@@ -1237,6 +1293,7 @@ ipcMain.handle('set-session-label', (_e, shortId, label) => {
 });
 
 ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
+  if (!allowMutation('set-session-index')) return null;
   if (!validShort(shortId)) return false;
   const all = loadAssignments();
   if (!all[shortId]) return false;
@@ -1279,6 +1336,7 @@ ipcMain.handle('set-clickthrough', (_e, on) => {
 // other sessions' clips in the playback queue (but never interrupt
 // the currently-playing clip).
 ipcMain.handle('set-session-focus', (_e, shortId, focus) => {
+  if (!allowMutation('set-session-focus')) return null;
   if (!validShort(shortId)) return false;
   if (typeof focus !== 'boolean') return false;
   const all = loadAssignments();
@@ -1299,6 +1357,7 @@ ipcMain.handle('set-session-focus', (_e, shortId, focus) => {
 // the assignment from the registry; if the terminal is still alive the
 // session will get re-registered on its next hook fire.
 ipcMain.handle('remove-session', (_e, shortId) => {
+  if (!allowMutation('remove-session')) return null;
   if (!validShort(shortId)) return false;
   const all = loadAssignments();
   if (!all[shortId]) return false;
@@ -1309,6 +1368,7 @@ ipcMain.handle('remove-session', (_e, shortId) => {
 });
 
 ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
+  if (!allowMutation('set-session-muted')) return null;
   if (!validShort(shortId)) return false;
   if (typeof muted !== 'boolean') return false;
   const all = loadAssignments();
@@ -1324,6 +1384,7 @@ ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
 
 // Per-session voice override. voiceId=null/empty clears (follow global).
 ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
+  if (!allowMutation('set-session-voice')) return null;
   if (!validShort(shortId)) return false;
   const all = loadAssignments();
   if (!all[shortId]) return false;
@@ -1339,6 +1400,7 @@ ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
 // Per-session speech-includes overrides. value true=force on, false=force off,
 // null=clear (follow global default).
 ipcMain.handle('set-session-include', (_e, shortId, key, value) => {
+  if (!allowMutation('set-session-include')) return null;
   if (!validShort(shortId)) return false;
   if (!ALLOWED_INCLUDE_KEYS.has(key)) return false;
   if (value !== true && value !== false && value !== null && value !== undefined) return false;
@@ -1391,6 +1453,7 @@ function isPathInside(target, base) {
 }
 
 ipcMain.handle('delete-file', (_e, filePath) => {
+  if (!allowMutation('delete-file')) return null;
   try {
     if (typeof filePath !== 'string' || filePath.length > 4096) return false;
     if (!isPathInside(filePath, QUEUE_DIR)) return false;

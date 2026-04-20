@@ -1884,6 +1884,113 @@ describe('R4 ACCESSIBILITY BASELINE', () => {
   });
 });
 
+describe('S3.1 — IPC rate limit', () => {
+  const { createRateLimit } = require('../app/lib/rate-limit');
+
+  it('burst allows initial spike up to capacity', () => {
+    let t = 0;
+    const r = createRateLimit({ rate: 20, burst: 30, now: () => t });
+    let allowed = 0;
+    for (let i = 0; i < 40; i++) if (r.allow('x')) allowed++;
+    assertEqual(allowed, 30);
+  });
+
+  it('refills at rate over time', () => {
+    let t = 0;
+    const r = createRateLimit({ rate: 20, burst: 30, now: () => t });
+    for (let i = 0; i < 30; i++) r.allow('x');
+    t = 500;   // 500 ms → 10 tokens refilled at rate=20/s
+    let after = 0;
+    for (let i = 0; i < 15; i++) if (r.allow('x')) after++;
+    if (after < 9 || after > 11) throw new Error(`expected ~10 allowed after 500ms refill, got ${after}`);
+  });
+
+  it('per-name buckets are independent', () => {
+    let t = 0;
+    const r = createRateLimit({ rate: 20, burst: 5, now: () => t });
+    for (let i = 0; i < 5; i++) r.allow('a');
+    assertEqual(r.allow('a'), false);   // a exhausted
+    assertEqual(r.allow('b'), true);    // b still full
+  });
+});
+
+describe('S3.2 — redactForLog regex + key set', () => {
+  // Re-implementation of the main.js redactor for test isolation. If this
+  // drifts, append an E2E that spawns Electron and exercises the real one.
+  const REDACT_KEYS = new Set(['openai_api_key', 'claude_api_key', 'anthropic_api_key', 'supabase_service_key']);
+  const REDACT_KEY_RE = /(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|client[_-]?secret)$/i;
+  function redact(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const clone = Array.isArray(obj) ? obj.map(redact) : { ...obj };
+    if (Array.isArray(clone)) return clone;
+    for (const k of Object.keys(clone)) {
+      if (clone[k] && typeof clone[k] === 'object' && !Array.isArray(clone[k])) {
+        clone[k] = redact(clone[k]);
+      } else if (REDACT_KEYS.has(k) || REDACT_KEY_RE.test(k)) {
+        if (clone[k]) clone[k] = '<redacted>';
+      }
+    }
+    return clone;
+  }
+
+  it('strips explicit openai_api_key', () => {
+    const out = redact({ openai_api_key: 'sk-abc', other: 'visible' });
+    assertEqual(out.openai_api_key, '<redacted>');
+    assertEqual(out.other, 'visible');
+  });
+
+  it('strips regex-matched future keys (secret_key, access_token, password)', () => {
+    const out = redact({ stripe_secret_key: 'sk_live_x', my_access_token: 'at_y', db_password: 'hunter2' });
+    assertEqual(out.stripe_secret_key, '<redacted>');
+    assertEqual(out.my_access_token, '<redacted>');
+    assertEqual(out.db_password, '<redacted>');
+  });
+
+  it('recurses into nested objects', () => {
+    const out = redact({ voices: { edge_response: 'Ryan' }, auth: { openai_api_key: 'sk-x' } });
+    assertEqual(out.voices.edge_response, 'Ryan');
+    assertEqual(out.auth.openai_api_key, '<redacted>');
+  });
+
+  it('leaves falsy values alone (empty string, null)', () => {
+    const out = redact({ openai_api_key: '', claude_api_key: null });
+    assertEqual(out.openai_api_key, '');
+    assertEqual(out.claude_api_key, null);
+  });
+});
+
+describe('S3.3 — config validator', () => {
+  const { validateConfig } = require('../app/lib/config-validate');
+
+  it('accepts a minimal valid config', () => {
+    const v = validateConfig({ voices: {}, hotkeys: {}, playback: {}, speech_includes: {} });
+    if (!v.ok) throw new Error(`expected ok=true, got violations: ${v.violations.join('; ')}`);
+  });
+
+  it('rejects when playback.speed is out of range', () => {
+    const v = validateConfig({ voices: {}, hotkeys: {}, playback: { speed: 10 }, speech_includes: {} });
+    if (v.ok) throw new Error('expected rejection for speed=10');
+    if (!v.violations.some(s => s.includes('playback.speed'))) {
+      throw new Error(`violation message didn't cite playback.speed: ${v.violations.join('; ')}`);
+    }
+  });
+
+  it('rejects when voices is not an object', () => {
+    const v = validateConfig({ voices: 'not-an-object', hotkeys: {}, playback: {}, speech_includes: {} });
+    if (v.ok) throw new Error('expected rejection for voices=string');
+  });
+
+  it('accepts null openai_api_key (user hasn\'t set one)', () => {
+    const v = validateConfig({ voices: {}, hotkeys: {}, playback: {}, speech_includes: {}, openai_api_key: null });
+    if (!v.ok) throw new Error(`should accept null key: ${v.violations.join('; ')}`);
+  });
+
+  it('rejects a malformed root (non-object)', () => {
+    const v = validateConfig('not an object');
+    if (v.ok) throw new Error('expected rejection for string root');
+  });
+});
+
 describe('S1 — renderer-error dedupe', () => {
   const { createDedupe } = require('../app/lib/renderer-error-dedupe');
 
