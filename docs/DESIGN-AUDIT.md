@@ -89,8 +89,8 @@ implementations.
 
 **What we ship.** Custom Python splitter (`app/sentence_split.py`) —
 rule-based, protects abbreviations / URLs / decimals, respects
-paragraph breaks, merges shorts, hard-splits longs. ~180 lines of
-defensive regex.
+paragraph breaks, merges shorts, hard-splits longs. ~250 lines of
+defensive regex (see `git log` for recent changes).
 
 **Industry baseline.** The two well-known options:
 - **pySBD** (Pragmatic Sentence Boundary Disambiguation) — rule-based,
@@ -288,10 +288,11 @@ synthesis step, which matters for cloud-calling services like edge-tts.
 
 ## 9. Queue auto-play robustness
 
-**What we ship.** Three-tier pickup in `playNextPending`:
-priority → pending → fallback scan of unplayed+unmuted in `queue`.
-Monotonic mtimes on rolling release so playback order matches seq
-order even when parallel syntheses finish out of order.
+**What we ship.** Four-tier pickup in `playNextPending`:
+priority → focused-session oldest → pending → fallback scan of
+unplayed+unmuted in `queue`. Monotonic mtimes on rolling release
+so playback order matches seq order even when parallel syntheses
+finish out of order.
 
 **What we learned the hard way.**
 - Dropping the `if (pendingQueue.length > 0)` gate on `ended` fixed the

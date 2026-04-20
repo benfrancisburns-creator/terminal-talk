@@ -25,6 +25,17 @@ jobs:
       - name: Run logic-only test subset
         run: node scripts/run-tests.cjs --logic-only --verbose
 
+  doc-drift:
+    name: Doc-drift guard (stale phrases in docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Scan docs for stale phrases
+        run: node scripts/check-doc-drift.cjs
+
   windows-full:
     name: Full harness (Windows + PowerShell + edge-tts)
     runs-on: windows-latest

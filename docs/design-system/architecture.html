@@ -65,7 +65,7 @@
 <!-- ────────────  FLOW 1  ──────────── -->
 <div class="flow">
   <div class="flow-title">Flow 1 · "hey jarvis" → highlighted text → dot</div>
-  <p class="flow-sub">Wake-word Python daemon listens in the background. On match, Electron main reads the OS selection, strips markup, sends text to Edge TTS, and writes the resulting clip into the queue directory — the renderer tails it and appends a dot.</p>
+  <p class="flow-sub">Wake-word Python daemon listens in the background. On match, the listener itself synthesises a <code style="font-family:JetBrains Mono,monospace;color:#ffd93d;">Ctrl+Shift+S</code> keystroke via <code style="font-family:JetBrains Mono,monospace;color:#ffd93d;">ctypes.keybd_event</code>. Electron has that shortcut globally registered, so <code style="font-family:JetBrains Mono,monospace;color:#ffd93d;">speakClipboard()</code> fires: it uses a sibling Python key helper to send <code style="font-family:JetBrains Mono,monospace;color:#ffd93d;">Ctrl+C</code>, reads the clipboard, strips markup, sends text to Edge TTS, and writes the resulting clip into the queue directory — the renderer tails it and appends a dot.</p>
 
   <svg viewBox="0 0 1100 230" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
     <defs>
@@ -99,7 +99,7 @@
       <circle cx="245" cy="116" r="8" fill="#ffa726"/>
       <text x="262" y="121" fill="#ffa726" font-size="12" font-weight="600">key helper</text>
       <text x="235" y="142" fill="rgba(255,255,255,0.7)" font-size="11">Ctrl+C → clipboard</text>
-      <text x="235" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">AutoHotkey / ps</text>
+      <text x="235" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">app/key_helper.py</text>
     </g>
 
     <line x1="374" y1="129" x2="408" y2="129" stroke="#8a9bb4" stroke-width="1.2" marker-end="url(#ah1)"/>
@@ -135,7 +135,7 @@
       <circle cx="815" cy="116" r="8" fill="#60a5fa"/>
       <text x="832" y="121" fill="#60a5fa" font-size="12" font-weight="600">queue dir</text>
       <text x="805" y="142" fill="rgba(255,255,255,0.7)" font-size="11">fs watcher source</text>
-      <text x="805" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">%APPDATA%/queue/</text>
+      <text x="805" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">~/.terminal-talk/queue/</text>
     </g>
 
     <line x1="944" y1="129" x2="978" y2="129" stroke="#8a9bb4" stroke-width="1.2" marker-end="url(#ah1)"/>
@@ -222,7 +222,7 @@
       <circle cx="715" cy="116" r="8" fill="#60a5fa"/>
       <text x="732" y="121" fill="#60a5fa" font-size="12" font-weight="600">queue dir</text>
       <text x="705" y="142" fill="rgba(255,255,255,0.7)" font-size="11">clip + sidecar json</text>
-      <text x="705" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">%APPDATA%/queue/</text>
+      <text x="705" y="158" fill="rgba(255,255,255,0.4)" font-size="10" font-family="JetBrains Mono, monospace">~/.terminal-talk/queue/</text>
     </g>
 
     <line x1="874" y1="129" x2="908" y2="129" stroke="#8a9bb4" stroke-width="1.2" marker-end="url(#ah2)"/>
