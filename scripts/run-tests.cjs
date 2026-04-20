@@ -1487,6 +1487,50 @@ describe('STALE SESSIONS IPC WIRING', () => {
 });
 
 // =============================================================================
+// R5.4 — EXPONENTIAL BACKOFF helper. Pure module so we can pin down the
+// curve without spawning Python processes.
+// =============================================================================
+describe('VOICE LISTENER BACKOFF (R5.4 / R19)', () => {
+  const { exponentialBackoff } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'backoff.js')
+  );
+  const noJitter = () => 0;
+  const BASE = 5000;
+  const CAP = 300_000;
+
+  it('attempt 1 -> base delay', () => {
+    assertEqual(exponentialBackoff(1, BASE, CAP, 0, noJitter), 5000);
+  });
+  it('attempt 2 -> base * 2', () => {
+    assertEqual(exponentialBackoff(2, BASE, CAP, 0, noJitter), 10000);
+  });
+  it('attempt 3 -> base * 4', () => {
+    assertEqual(exponentialBackoff(3, BASE, CAP, 0, noJitter), 20000);
+  });
+  it('attempt 10 is capped at maxMs', () => {
+    assertEqual(exponentialBackoff(10, BASE, CAP, 0, noJitter), CAP);
+  });
+  it('attempt 0 degrades to base (defensive default)', () => {
+    assertEqual(exponentialBackoff(0, BASE, CAP, 0, noJitter), 5000);
+  });
+  it('jitter adds 0..jitterMs ms on top of the capped delay', () => {
+    const d = exponentialBackoff(1, BASE, CAP, 500, () => 0.5);
+    assertEqual(d, 5000 + 250);
+  });
+  it('main.js wires exponentialBackoff through computeVoiceBackoffMs', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+    );
+    if (!/require\(['"]\.\/lib\/backoff['"]\)/.test(src)) {
+      throw new Error('main.js must require ./lib/backoff');
+    }
+    if (!/exponentialBackoff\s*\(\s*count/.test(src)) {
+      throw new Error('computeVoiceBackoffMs should delegate to exponentialBackoff');
+    }
+  });
+});
+
+// =============================================================================
 // R5 — RUNTIME ROBUSTNESS GUARDS. Small-surface regression tests that fail
 // loudly if the fixes for R5.1 / R5.2 / R5.5 get reverted.
 // =============================================================================

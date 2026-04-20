@@ -583,6 +583,7 @@ function stripForTTS(text) {
 
 const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
+const { exponentialBackoff } = require('./lib/backoff');
 
 function chunkText(text, maxLen = 3800) {
   if (text.length <= maxLen) return [text];
@@ -1336,6 +1337,23 @@ function stopVoiceListener() {
   // its InputStream when off, but sweep orphans regardless.
   killOrphanVoiceListeners();
 }
+// Exponential backoff for the wake-word listener respawn. A broken
+// install (missing edge-tts, corrupt model file, microphone permission
+// denied) used to respawn every 5 s forever -- loud in the diag log
+// and wasteful. Now: 5s, 10s, 20s, 40s, ... capped at 5 min, with a
+// bit of jitter so N installs don't march in lock-step. The counter
+// resets once a spawn has survived 30 s, so a transient driver blip
+// doesn't permanently slow the respawn cadence.
+let voiceRetryCount = 0;
+const VOICE_BACKOFF_BASE_MS = 5000;
+const VOICE_BACKOFF_MAX_MS = 5 * 60 * 1000;
+const VOICE_STABLE_RESET_MS = 30_000;
+let voiceStableResetTimer = null;
+
+function computeVoiceBackoffMs(count) {
+  return exponentialBackoff(count, VOICE_BACKOFF_BASE_MS, VOICE_BACKOFF_MAX_MS, 500);
+}
+
 function startVoiceListener() {
   if (voiceProc) return;
   killOrphanVoiceListeners();
@@ -1345,9 +1363,25 @@ function startVoiceListener() {
       detached: false,
       stdio: ['ignore', 'ignore', 'ignore']
     });
+    // Reset backoff once the child has been alive for STABLE_RESET_MS;
+    // cancelled below if the process dies early.
+    if (voiceStableResetTimer) { clearTimeout(voiceStableResetTimer); voiceStableResetTimer = null; }
+    voiceStableResetTimer = setTimeout(() => {
+      if (voiceRetryCount !== 0) {
+        diag(`voice listener stable -- backoff reset (was attempt ${voiceRetryCount})`);
+        voiceRetryCount = 0;
+      }
+      voiceStableResetTimer = null;
+    }, VOICE_STABLE_RESET_MS);
     voiceProc.on('exit', (code) => {
       voiceProc = null;
-      if (code !== 0 && isListeningEnabled()) setTimeout(startVoiceListener, 5000);
+      if (voiceStableResetTimer) { clearTimeout(voiceStableResetTimer); voiceStableResetTimer = null; }
+      if (code !== 0 && isListeningEnabled()) {
+        voiceRetryCount += 1;
+        const delay = computeVoiceBackoffMs(voiceRetryCount);
+        diag(`voice listener exited code=${code} -- retry #${voiceRetryCount} in ${delay}ms`);
+        setTimeout(startVoiceListener, delay);
+      }
     });
     diag('voice listener started');
   } catch {}
