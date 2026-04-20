@@ -2,7 +2,7 @@
   "ceiling": 3000,
   "files": {
     "scripts/run-tests.cjs": 2899,
-    "app/main.js": 1802,
+    "app/main.js": 1821,
     "app/renderer.js": 1620,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 400,

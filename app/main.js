@@ -18,6 +18,19 @@ const CONFIG_PATH = path.join(INSTALL_DIR, 'config.json');
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
 const DIAG_LOG = path.join(QUEUE_DIR, '_toolbar.log');
 
+// EX1 — resolve absolute paths for Windows system binaries to defuse
+// the Sonar S4036 ("PATH may contain writeable dirs") hotspot. taskkill
+// lives in System32; powershell 5.x in a versioned subfolder. Using
+// SystemRoot env instead of hardcoding C:\Windows covers corporate
+// installs that relocate the Windows directory. On non-Windows
+// platforms these constants are unused — stopVoiceListener's POSIX
+// branch calls process.kill() directly.
+const SYSTEM32 = process.env.SystemRoot
+  ? path.join(process.env.SystemRoot, 'System32')
+  : 'C:\\Windows\\System32';
+const TASKKILL_EXE = path.join(SYSTEM32, 'taskkill.exe');
+const POWERSHELL_EXE = path.join(SYSTEM32, 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+
 const DEFAULTS = {
   voices: {
     edge_clip: 'en-GB-SoniaNeural',
@@ -211,9 +224,12 @@ function getQueueFiles() {
     // a file touched out-of-band still has a chance of ranking in.
     const STAT_BUDGET = MAX_FILES * 2;
     const names = fs.readdirSync(QUEUE_DIR)
-      .filter(isAudioFile)
-      .sort()           // ascending
-      .reverse()        // descending -> newest filenames first
+      .filter((f) => isAudioFile(f))
+      // Explicit localeCompare so Sonar's S2871 gate passes. Our
+      // filenames lead with a zero-padded ISO-ish timestamp, so
+      // locale-aware compare gives the same ordering as the default
+      // lexical sort would — just safer for future non-ASCII names.
+      .sort((a, b) => b.localeCompare(a))  // descending -> newest first
       .slice(0, STAT_BUDGET);
     return names
       .map(f => {
@@ -1559,7 +1575,7 @@ function killOrphanVoiceListeners() {
   try {
     const { execFileSync } = require('child_process');
     const psCmd = "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*wake-word-listener*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
-    execFileSync('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCmd], {
+    execFileSync(POWERSHELL_EXE, ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCmd], {
       windowsHide: true, timeout: 5000, stdio: 'ignore'
     });
     diag('orphan voice listeners swept');
@@ -1575,7 +1591,7 @@ function stopVoiceListener() {
     if (pid) {
       try {
         if (process.platform === 'win32') {
-          spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
+          spawn(TASKKILL_EXE, ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
         } else {
           process.kill(pid, 'SIGKILL');
         }
@@ -1690,7 +1706,10 @@ let watchdogLastSweepMs = 0;
 
 function countFiles(dir, predicate) {
   try {
-    return fs.readdirSync(dir).filter(predicate).length;
+    // Wrap predicate so filter doesn't pass it (element, index, array).
+    // Sonar S7727: direct-pass predicates may intercept the unused args
+    // and change behaviour. Explicit single-arg wrap is the safe shape.
+    return fs.readdirSync(dir).filter((f) => predicate(f)).length;
   } catch { return 0; }
 }
 
