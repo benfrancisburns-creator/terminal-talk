@@ -1439,6 +1439,46 @@ describe('HARDENING: renderer CSP', () => {
       throw new Error("CSP connect-src must be 'none' (renderer should never make network calls)");
     }
   });
+
+  // D2-9 — style-src no longer permits 'unsafe-inline'. Dynamic values
+  // now go through data-palette + generated palette-classes.css (dots
+  // and swatches), .hidden class (play/pause toggles), or Constructable
+  // Stylesheets (continuous mascot / spinner positions). If anyone adds
+  // `element.style.X = Y` or a `style="..."` attribute without also
+  // re-enabling 'unsafe-inline', the renderer will throw silently in
+  // production — catch it in tests instead.
+  it("CSP style-src is 'self' (no 'unsafe-inline' — D2-9)", () => {
+    const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
+    const m = html.match(/style-src\s+([^;]+);/);
+    if (!m) throw new Error('CSP missing style-src directive');
+    if (/'unsafe-inline'/.test(m[1])) {
+      throw new Error(`style-src must not include 'unsafe-inline' (D2-9): ${m[1].trim()}`);
+    }
+    if (!/'self'/.test(m[1])) {
+      throw new Error(`style-src should include 'self': ${m[1].trim()}`);
+    }
+  });
+
+  it('app/index.html has no inline style="..." attributes (D2-9)', () => {
+    const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
+    // Match style="..." but allow style-src= in the CSP meta tag.
+    const matches = html.match(/\sstyle="[^"]+"/g) || [];
+    if (matches.length > 0) {
+      throw new Error(`index.html has ${matches.length} inline style="…" attribute(s) — would be blocked by CSP: ${matches.join(', ')}`);
+    }
+  });
+
+  it('renderer.js has no element.style assignments for display/left/background/boxShadow (D2-9)', () => {
+    const rend = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'renderer.js'), 'utf8');
+    // Match actual JS assignments like `foo.style.left = ...`, but not
+    // substrings inside comments or template literals. Strip line
+    // comments first so rationale comments don't trip the check.
+    const code = rend.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    const blocked = /\w+\.style\.(display|left|background|boxShadow)\s*=/.exec(code);
+    if (blocked) {
+      throw new Error(`renderer.js contains blocked inline-style assignment: "${blocked[0]}" — use data-palette, .hidden class, or setDynamicStyle() instead (D2-9)`);
+    }
+  });
 });
 
 describe('HARDENING: navigation guards', () => {

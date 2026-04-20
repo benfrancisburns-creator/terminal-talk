@@ -94,6 +94,11 @@ html, body {
   flex-shrink: 0;
 }
 
+/* D2-9 — utility class replacing the previous `element.style.display = 'none'`
+   and inline `style="display:none"` sites. Using a class keeps the CSP
+   style-src directive 'self' only (no unsafe-inline needed). */
+.hidden { display: none !important; }
+
 .dot {
   width: 14px;
   height: 14px;

@@ -29,6 +29,25 @@ window.addEventListener('unhandledrejection', (e) => {
   } catch {}
 });
 
+// D2-9 — Constructable Stylesheet for values too continuous to pre-render
+// into CSS classes (mascot px position, spinner cloud px position). Rules
+// are inserted into an adopted sheet rather than inline style attributes,
+// so the CSP style-src directive can drop 'unsafe-inline' entirely.
+// Palette-based backgrounds (dots / swatches) use data-palette attribute
+// + app/lib/palette-classes.css; only the strictly continuous cases live
+// here.
+const dynSheet = new CSSStyleSheet();
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, dynSheet];
+const dynRules = new Map();
+let spinnerWordCounter = 0;
+function setDynamicStyle(selector, cssText) {
+  if (cssText) dynRules.set(selector, cssText);
+  else dynRules.delete(selector);
+  let text = '';
+  for (const [sel, txt] of dynRules) text += `${sel} { ${txt} }\n`;
+  try { dynSheet.replaceSync(text); } catch {}
+}
+
 const audio = document.getElementById('audio');
 const dotsEl = document.getElementById('dots');
 const playPauseBtn = document.getElementById('playPause');
@@ -298,6 +317,25 @@ function primaryColourForArrangement(arr) {
   return arr && arr.colours ? arr.colours[0] : NEUTRAL_COLOUR;
 }
 
+// D2-9 — palette key (`'00'` .. `'23'` or `'neutral'`) for CSS attribute
+// selector. Generated rules in app/lib/palette-classes.css match on
+// [data-palette="<key>"] so the renderer can style dots + swatches
+// without setting `element.style.background` (which would require
+// `'unsafe-inline'` in the CSP style-src directive).
+function paletteKeyForIndex(idx) {
+  if (!Number.isInteger(idx)) return 'neutral';
+  const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
+  return String(i).padStart(2, '0');
+}
+function paletteKeyForShort(shortId) {
+  if (!shortId || shortId.length < 4) return 'neutral';
+  const entry = sessionAssignments[shortId];
+  if (entry && Number.isInteger(entry.index)) return paletteKeyForIndex(entry.index);
+  let sum = 0;
+  for (let i = 0; i < shortId.length; i++) sum += shortId.charCodeAt(i);
+  return paletteKeyForIndex(sum);
+}
+
 function arrangementForShort(shortId) {
   if (!shortId || shortId.length < 4) return null;
   const entry = sessionAssignments[shortId];
@@ -462,20 +500,17 @@ function _renderDotsNow() {
     if (f.path === currentPath) dot.classList.add('active');
     const name = f.path.split(/[\\/]/).pop();
     const short = extractSessionShort(name);
-    const arr = arrangementForShort(short);
-    const bg = arr ? backgroundForArrangement(arr) : NEUTRAL_COLOUR;
-    const ringColour = arr ? primaryColourForArrangement(arr) : NEUTRAL_COLOUR;
     if (isClipFile(name)) {
       dot.classList.add('clip');
       dot.textContent = 'J';
     }
-    if (heardPaths.has(f.path)) {
-      dot.classList.add('heard');
-      // White fill + session-colour ring so origin is still visible during the 90s countdown.
-      dot.style.boxShadow = `0 0 0 2px ${ringColour}`;
-    } else {
-      dot.style.background = bg;
-    }
+    if (heardPaths.has(f.path)) dot.classList.add('heard');
+    // D2-9 — data-palette attribute drives both the non-heard background
+    // and the heard ring colour via rules in app/lib/palette-classes.css.
+    // Replaces the previous `dot.style.background = ...` /
+    // `dot.style.boxShadow = ...` writes so the CSP style-src directive
+    // no longer needs 'unsafe-inline'.
+    dot.dataset.palette = paletteKeyForShort(short);
     // Dead-terminal signal: desaturate the dot so the user can tell at a
     // glance which clips originated from a closed session. The clip is
     // still playable and the colour is preserved — just dimmer.
@@ -723,17 +758,16 @@ fwd10Btn.addEventListener('click', () => {
   }
 });
 
-audio.addEventListener('play', () => {
-  playIcon.style.display = 'none';
-  pauseIcon.style.display = '';
-});
-audio.addEventListener('pause', () => {
-  playIcon.style.display = '';
-  pauseIcon.style.display = 'none';
-});
+// D2-9 — `.hidden` class toggle replaces the inline `style.display = 'none'`
+// writes so the CSP style-src directive doesn't need 'unsafe-inline'.
+function setPlayPauseIcons(isPlaying) {
+  playIcon.classList.toggle('hidden', isPlaying);
+  pauseIcon.classList.toggle('hidden', !isPlaying);
+}
+audio.addEventListener('play',  () => setPlayPauseIcons(true));
+audio.addEventListener('pause', () => setPlayPauseIcons(false));
 audio.addEventListener('ended', () => {
-  playIcon.style.display = '';
-  pauseIcon.style.display = 'none';
+  setPlayPauseIcons(false);
   const justPlayed = currentPath;
   const wasManual = currentIsManual;
   currentPath = null;
@@ -752,8 +786,7 @@ audio.addEventListener('ended', () => {
 });
 
 audio.addEventListener('error', () => {
-  playIcon.style.display = '';
-  pauseIcon.style.display = 'none';
+  setPlayPauseIcons(false);
   currentPath = null;
   currentIsManual = false;
   renderDots();
@@ -835,10 +868,10 @@ function positionScrubberMascot() {
   const usable = Math.max(0, rail.width - MASCOT_W);
   const xInRail = (MASCOT_W / 2) + pct * usable;
   const leftPx = (rail.left - wrap.left) + xInRail;
-  scrubberMascot.style.left = leftPx + 'px';
+  setDynamicStyle('#scrubberMascot', `left: ${leftPx}px;`);
   // Keep the Jarvis badge on the same rail position -- one of the two is
   // always hidden by the .jarvis-mode class, so positioning both is cheap.
-  if (scrubberJarvis) scrubberJarvis.style.left = leftPx + 'px';
+  if (scrubberJarvis) setDynamicStyle('#scrubberJarvis', `left: ${leftPx}px;`);
 }
 
 // The mascot is intentionally reserved for Claude Code responses. When the
@@ -894,9 +927,17 @@ function emitSpinnerVerbCloud(now) {
   // translate(-50%, …) centres the text on that point, then drifts it
   // upward with a gentle left-right sway so it reads as a thought-
   // cloud floating off his head, not a speech bubble pinned behind him.
-  word.style.left = mascotX + 'px';
+  // D2-9 — each word gets a unique id + a rule in the Constructable
+  // Stylesheet; the animationend handler removes both the element and
+  // the rule so the adopted sheet stays bounded.
+  const wordId = 'sp-w-' + (++spinnerWordCounter);
+  word.id = wordId;
+  setDynamicStyle(`#${wordId}`, `left: ${mascotX}px;`);
   scrubberWrap.appendChild(word);
-  word.addEventListener('animationend', () => word.remove(), { once: true });
+  word.addEventListener('animationend', () => {
+    word.remove();
+    setDynamicStyle(`#${wordId}`, null);
+  }, { once: true });
 
   nextVerbEmitAt = now + 850 + Math.random() * 650;
 }
@@ -1191,7 +1232,7 @@ function renderSessionRow(shortId, entry) {
   swatch.className = 'swatch';
   swatch.setAttribute('role', 'img');
   swatch.setAttribute('aria-label', `Colour swatch for session ${shortId}`);
-  swatch.style.background = backgroundForArrangement(arrangementForIndex(entry.index || 0));
+  swatch.dataset.palette = paletteKeyForIndex(entry.index || 0);
   row.appendChild(swatch);
 
   const shortEl = document.createElement('div');
