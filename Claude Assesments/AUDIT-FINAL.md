@@ -255,7 +255,7 @@ Separate Claude session reviewed tag `v0.3.0` (`e542256`) and produced `v0.3.0-a
 |----|---------|-------------|
 | N4 | `session-registry.psm1:91-93` docstring misstates main.js "no auto-prune" policy | ✅ shipped v0.3.8 |
 | N5 | `release.yml:29` uses `actions/checkout@v4` (not SHA-pinned); inconsistent with D2-8 and high-stakes since release.yml has `contents: write` | ✅ shipped v0.3.8 |
-| **H3-palette** | Purple `#c084fc` ↔ Blue `#60a5fa` collapse under deuteranopia (Δ=0.004, ~30× below distinguishability threshold). Affects ~6% of men. Carry-over from v0.2 pass 4 that was never added to this catalog. | ⏸ **open — awaiting decision between Option 1 (hex swap to magenta `#ee2bbd`, Δ=0.124) or Option 2 (CB-friendly palette toggle in Settings)** |
+| **H3-palette** | Purple `#c084fc` ↔ Blue `#60a5fa` collapse under deuteranopia (Δ=0.004, ~30× below distinguishability threshold). Affects ~6% of men. Carry-over from v0.2 pass 4 that was never added to this catalog. | ✅ shipped v0.3.9 (Option 1 — hex swap to magenta `#ee2bbd`, Δ=0.124 deutan, ~30× improvement; also renamed `COLOUR_NAMES[5]` "Purple" → "Magenta") |
 
 Cosmetic observations from the assessment (not tracked, roll along with nearby commits): N1 (renderer-error-dedupe O(n)→O(1) eviction), N2 (config-validate openai key maxLen=200 loose), N3 (stale-session recycled-PID race, negligible window), `statusline.ps1:22` stale function name, README-FOR-ASSESSOR drift.
 
@@ -265,9 +265,7 @@ v0.4 suggestion from the assessment: extend `scripts/check-doc-drift.cjs` to sca
 
 ## Remaining TRULY outstanding
 
-**Exactly one item:** **H3-palette** (see table above).
-
-All ULTRAPLAN + ULTRAPLAN-ADDENDUM + D-tier + N4/N5 work is shipped. Only the colour-blindness palette collapse remains, and it's pending a two-option UX decision (hex swap vs. toggle).
+**Zero items.** All ULTRAPLAN + ULTRAPLAN-ADDENDUM + D-tier + post-v0.3.0 assessment (N4/N5/H3-palette) work is shipped. The catalogue is closed.
 
 ---
 
@@ -275,7 +273,7 @@ All ULTRAPLAN + ULTRAPLAN-ADDENDUM + D-tier + N4/N5 work is shipped. Only the co
 
 **All 114 prior-audit items closed** (across v0.2.0 Tier A–C, Streams R1–R6, and v0.3 Tier D-2). **N4, N5 shipped in v0.3.8. H3-palette deferred with explicit two-option tracking row.**
 
-**Shipping state at tag `v0.3.8`:**
+**Shipping state at tag `v0.3.9`:**
 - 177 `--logic-only` tests green (was 107 at plan kickoff, 162 at v0.3.0)
 - 13 Playwright E2E green on Electron 41.2.1
 - Windows full harness green on CI

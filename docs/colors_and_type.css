@@ -126,7 +126,7 @@
   --tt-palette-base-02: #ffd93d;   /* Yellow */
   --tt-palette-base-03: #4ade80;   /* Green */
   --tt-palette-base-04: #60a5fa;   /* Blue */
-  --tt-palette-base-05: #c084fc;   /* Purple */
+  --tt-palette-base-05: #ee2bbd;   /* Magenta */
   --tt-palette-base-06: #c97b50;   /* Brown */
   --tt-palette-base-07: #e0e0e0;   /* White */
 
@@ -137,23 +137,23 @@
   --tt-palette-02-bg: #ffd93d;
   --tt-palette-03-bg: #4ade80;
   --tt-palette-04-bg: #60a5fa;
-  --tt-palette-05-bg: #c084fc;
+  --tt-palette-05-bg: #ee2bbd;
   --tt-palette-06-bg: #c97b50;
   --tt-palette-07-bg: #e0e0e0;
   --tt-palette-08-bg: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%);
   --tt-palette-09-bg: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%);
-  --tt-palette-10-bg: linear-gradient(to bottom, #ffd93d 50%, #c084fc 50%);
+  --tt-palette-10-bg: linear-gradient(to bottom, #ffd93d 50%, #ee2bbd 50%);
   --tt-palette-11-bg: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%);
   --tt-palette-12-bg: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%);
-  --tt-palette-13-bg: linear-gradient(to bottom, #c084fc 50%, #ffd93d 50%);
+  --tt-palette-13-bg: linear-gradient(to bottom, #ee2bbd 50%, #ffd93d 50%);
   --tt-palette-14-bg: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%);
   --tt-palette-15-bg: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%);
   --tt-palette-16-bg: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%);
-  --tt-palette-17-bg: linear-gradient(to right, #ffa726 50%, #c084fc 50%);
+  --tt-palette-17-bg: linear-gradient(to right, #ffa726 50%, #ee2bbd 50%);
   --tt-palette-18-bg: linear-gradient(to right, #ffd93d 50%, #c97b50 50%);
   --tt-palette-19-bg: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%);
   --tt-palette-20-bg: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%);
-  --tt-palette-21-bg: linear-gradient(to right, #c084fc 50%, #ffa726 50%);
+  --tt-palette-21-bg: linear-gradient(to right, #ee2bbd 50%, #ffa726 50%);
   --tt-palette-22-bg: linear-gradient(to right, #c97b50 50%, #ffd93d 50%);
   --tt-palette-23-bg: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%);
 }

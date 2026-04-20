@@ -11,7 +11,7 @@ window.TT_TOKENS = Object.freeze({
       "#ffd93d",
       "#4ade80",
       "#60a5fa",
-      "#c084fc",
+      "#ee2bbd",
       "#c97b50",
       "#e0e0e0"
     ],
@@ -21,7 +21,7 @@ window.TT_TOKENS = Object.freeze({
       "Yellow",
       "Green",
       "Blue",
-      "Purple",
+      "Magenta",
       "Brown",
       "White"
     ],
