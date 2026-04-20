@@ -82,16 +82,34 @@ const SHOTS = [
 
 const src = readFileSync(SRC, 'utf8');
 
+// S5 mocks-annotated uses relative iframe srcs (../ui-kit/index.html?seed=...).
+// When we write the patched HTML to a tmp dir OUTSIDE docs/design-system/,
+// the relative path resolves to a non-existent location and the iframes
+// render as broken-image placeholders. Fix: rewrite each relative iframe
+// src to an absolute file:// URL pointing at the real kit. Also strip
+// loading="lazy" — the lazy-loader keeps the iframe empty until it's in
+// the viewport, which never happens for off-screen shots in a headless
+// capture that hides non-target sections.
+const UI_KIT_URL = 'file:///' + path.join(REPO, 'docs', 'ui-kit', 'index.html').replace(/\\/g, '/');
+function absolutiseIframes(html) {
+  return html
+    .replace(/src="\.\.\/ui-kit\/index\.html/g, `src="${UI_KIT_URL}`)
+    .replace(/\s+loading="lazy"/g, '');
+}
+
 for (const shot of SHOTS) {
   // Inject CSS to show only the Nth <section> and strip page padding,
   // so a short screenshot captures just that shot + its annotations.
+  // Also: give the iframe a moment to load before capture — Chrome
+  // headless's --virtual-time-budget lets any JS (including the kit's
+  // React + Babel standalone pipeline) settle first.
   const css = `
     body { padding: 24px 40px !important; }
     .page-title { display: none; }
     .grid { gap: 0 !important; }
     .grid > section:not(:nth-of-type(${shot.n})) { display: none !important; }
   `;
-  const patched = src.replace('</style>', `${css}</style>`);
+  const patched = absolutiseIframes(src).replace('</style>', `${css}</style>`);
   const tmpHtml = path.join(TMP_DIR, `shot-${shot.n}.html`);
   writeFileSync(tmpHtml, patched);
 
@@ -100,6 +118,8 @@ for (const shot of SHOTS) {
     '--headless=new',
     '--disable-gpu',
     '--hide-scrollbars',
+    '--allow-file-access-from-files',  // file:// iframe loading file:// kit
+    '--virtual-time-budget=8000',      // React + Babel-standalone JSX pipeline settle time
     `--window-size=1400,${shot.height}`,
     `--screenshot=${outPng}`,
     `file:///${tmpHtml.replace(/\\/g, '/')}`,
