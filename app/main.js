@@ -140,6 +140,14 @@ let win = null;
 let watcher = null;
 let watchDebounce = null;
 
+// Canonical audio-file matcher. `isAudioFile` is the "file is ready to play"
+// test (excludes .partial); `AUDIO_OR_PARTIAL_RE` is the "file counts toward
+// our on-disk footprint" test (used by the watchdog for before/after counts
+// so an in-flight .partial still contributes). Full-review §7 caught the old
+// implementation drifting between the two — one site used
+// /\.(mp3|wav|partial)$/i, the other walked the lowercase suffix manually.
+// Both now route through these constants.
+const AUDIO_OR_PARTIAL_RE = /\.(mp3|wav|partial)$/i;
 function isAudioFile(name) {
   const lower = name.toLowerCase();
   return (lower.endsWith('.wav') || lower.endsWith('.mp3')) && !lower.endsWith('.partial');
@@ -1528,9 +1536,9 @@ function runWatchdogSweep() {
   const t0 = Date.now();
   const stats = { audio_removed: 0, sessions_removed: 0, errors: [] };
 
-  const beforeAudio = countFiles(QUEUE_DIR, f => /\.(mp3|wav|partial)$/.test(f));
+  const beforeAudio = countFiles(QUEUE_DIR, f => AUDIO_OR_PARTIAL_RE.test(f));
   try { pruneOldFiles(); } catch (e) { stats.errors.push(`pruneOldFiles: ${e.message}`); }
-  const afterAudio = countFiles(QUEUE_DIR, f => /\.(mp3|wav|partial)$/.test(f));
+  const afterAudio = countFiles(QUEUE_DIR, f => AUDIO_OR_PARTIAL_RE.test(f));
   stats.audio_removed = Math.max(0, beforeAudio - afterAudio);
 
   const beforeSessions = countFiles(SESSIONS_DIR, () => true);
