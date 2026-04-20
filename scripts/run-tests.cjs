@@ -1253,6 +1253,132 @@ describe('HARDENING: navigation guards', () => {
   });
 });
 
+// =============================================================================
+// SESSION STALE DETECTION — dead-terminal visual signal.
+// =============================================================================
+// computeStaleSessions is a pure function so we can drive it with fixtures
+// instead of spawning terminals. Regression tests lock the rules the
+// renderer's 10-s poll relies on.
+describe('SESSION STALE DETECTION', () => {
+  const { computeStaleSessions } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'session-stale.js')
+  );
+  const NOW = 10_000;
+
+  it('empty registry -> no stale sessions', () => {
+    assertEqual(computeStaleSessions({}, new Set(), new Set(), NOW), []);
+  });
+
+  it('session with a live sessions/ file is NOT stale', () => {
+    const stale = computeStaleSessions(
+      { aabbccdd: { index: 0, last_seen: NOW - 1 } },
+      new Set(['aabbccdd']),
+      new Set(),
+      NOW
+    );
+    assertEqual(stale, []);
+  });
+
+  it('session whose claude_pid is alive is NOT stale', () => {
+    const stale = computeStaleSessions(
+      { aabbccdd: { index: 0, claude_pid: 4321, last_seen: 0 } },
+      new Set(),
+      new Set([4321]),
+      NOW
+    );
+    assertEqual(stale, []);
+  });
+
+  it('session with no live source AND expired grace IS stale', () => {
+    const stale = computeStaleSessions(
+      { aabbccdd: { index: 0, last_seen: NOW - 30 } },
+      new Set(),
+      new Set(),
+      NOW,
+      10
+    );
+    assertEqual(stale, ['aabbccdd']);
+  });
+
+  it('session still within grace window is NOT stale', () => {
+    const stale = computeStaleSessions(
+      { aabbccdd: { index: 0, last_seen: NOW - 5 } },
+      new Set(),
+      new Set(),
+      NOW,
+      10
+    );
+    assertEqual(stale, []);
+  });
+
+  it('pinned sessions are NEVER stale, even if PID gone', () => {
+    const stale = computeStaleSessions(
+      { aabbccdd: { index: 0, pinned: true, last_seen: 0 } },
+      new Set(),
+      new Set(),
+      NOW
+    );
+    assertEqual(stale, []);
+  });
+
+  it('mixed live + dead -> only dead ones returned, sorted', () => {
+    const assignments = {
+      '11111111': { index: 1, last_seen: NOW - 1 },               // live (in shorts)
+      '22222222': { index: 2, pinned: true, last_seen: 0 },        // pinned
+      '33333333': { index: 3, last_seen: NOW - 1000 },             // STALE
+      'aaaaaaaa': { index: 4, last_seen: NOW - 1000 },             // STALE
+      '44444444': { index: 5, claude_pid: 99, last_seen: 0 }       // live (pid)
+    };
+    const stale = computeStaleSessions(
+      assignments,
+      new Set(['11111111']),
+      new Set([99]),
+      NOW, 10
+    );
+    assertEqual(stale, ['33333333', 'aaaaaaaa']);
+  });
+});
+
+// =============================================================================
+// IPC WIRING — the renderer's 10 s poll needs main.js to expose the handler
+// and preload.js to bridge it. Lock-step test so future refactors don't
+// silently break the stale-UI signal.
+// =============================================================================
+describe('STALE SESSIONS IPC WIRING', () => {
+  it("main.js registers 'get-stale-sessions' IPC handler", () => {
+    const mainPath = path.join(__dirname, '..', 'app', 'main.js');
+    const src = fs.readFileSync(mainPath, 'utf8');
+    if (!/ipcMain\.handle\(['"]get-stale-sessions['"]/.test(src)) {
+      throw new Error("main.js missing ipcMain.handle('get-stale-sessions', ...)");
+    }
+    if (!/computeStaleSessions/.test(src)) {
+      throw new Error('main.js should delegate to computeStaleSessions');
+    }
+  });
+
+  it("preload.js exposes getStaleSessions on window.api", () => {
+    const preloadPath = path.join(__dirname, '..', 'app', 'preload.js');
+    const src = fs.readFileSync(preloadPath, 'utf8');
+    if (!/getStaleSessions\s*:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(['"]get-stale-sessions['"]\)/.test(src)) {
+      throw new Error('preload.js missing getStaleSessions bridge');
+    }
+  });
+
+  it('renderer.js polls stale sessions and applies .stale class', () => {
+    const rendererPath = path.join(__dirname, '..', 'app', 'renderer.js');
+    const src = fs.readFileSync(rendererPath, 'utf8');
+    if (!/staleSessionShorts/.test(src)) {
+      throw new Error('renderer.js should track staleSessionShorts');
+    }
+    if (!/window\.api\.getStaleSessions/.test(src)) {
+      throw new Error('renderer.js should call window.api.getStaleSessions');
+    }
+    if (!/classList\.add\(['"]stale['"]\)/.test(src)) {
+      throw new Error("renderer.js should classList.add('stale') on dot/row");
+    }
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');

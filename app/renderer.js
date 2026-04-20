@@ -143,6 +143,29 @@ setInterval(() => {
   }
 }, POLL_INTERVAL_MS);
 
+// Poll dead-session state every 10 s. The user's complaint was that
+// closing a terminal didn't visibly update the UI — this ensures the
+// row greys out within 10 s of the PID going away. Cheap IPC; no
+// renders if nothing changed.
+async function pollStaleSessions() {
+  try {
+    const stale = await window.api.getStaleSessions();
+    const next = new Set(Array.isArray(stale) ? stale : []);
+    let changed = next.size !== staleSessionShorts.size;
+    if (!changed) {
+      for (const s of next) if (!staleSessionShorts.has(s)) { changed = true; break; }
+    }
+    if (changed) {
+      staleSessionShorts = next;
+      if (document.body.classList.contains('settings-open')) renderSessionsTable();
+      renderDots();
+    }
+  } catch {}
+}
+setInterval(pollStaleSessions, 10_000);
+// Run once on boot so first paint isn't stuck at "all alive".
+setTimeout(pollStaleSessions, 500);
+
 let queue = [];
 let currentPath = null;
 let currentIsManual = false;
@@ -184,6 +207,12 @@ const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
 
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
+
+// Shortlist of sessions whose backing terminal has closed. Populated by a
+// 10 s poll of main's get-stale-sessions IPC. Used ONLY to grey out the
+// session row and its dots — the registry itself isn't touched, so the
+// user's colour pick is preserved if the terminal reopens.
+let staleSessionShorts = new Set();
 
 // Helpers that read muted / focus state off the current sessionAssignments
 // cache. Kept here (not inside renderDots / playNextPending) so every
@@ -389,10 +418,17 @@ function renderDots() {
     } else {
       dot.style.background = bg;
     }
+    // Dead-terminal signal: desaturate the dot so the user can tell at a
+    // glance which clips originated from a closed session. The clip is
+    // still playable and the colour is preserved — just dimmer.
+    if (short && staleSessionShorts.has(short)) {
+      dot.classList.add('stale');
+    }
     const entry = short ? sessionAssignments[short] : null;
     const label = entry && entry.label ? ` [${entry.label}]` : '';
     const d = new Date(f.mtime);
-    dot.title = `Created ${d.toLocaleTimeString()}${label} — click to play, right-click to delete`;
+    const staleMark = (short && staleSessionShorts.has(short)) ? ' (closed)' : '';
+    dot.title = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
     dot.addEventListener('click', () => userPlay(f.path));
     dot.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -998,6 +1034,10 @@ function renderSessionsTable() {
 function renderSessionRow(shortId, entry) {
   const wrap = document.createElement('div');
   wrap.className = 'session-block';
+  if (staleSessionShorts.has(shortId)) {
+    wrap.classList.add('stale');
+    wrap.title = 'Terminal closed — colour preserved in case you reopen it';
+  }
 
   // Top row: chevron, swatch, short, label, colour
   const row = document.createElement('div');

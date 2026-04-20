@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   deleteFile: (p) => ipcRenderer.invoke('delete-file', p),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   getConfig: () => ipcRenderer.invoke('get-config'),
+  getStaleSessions: () => ipcRenderer.invoke('get-stale-sessions'),
   updateConfig: (partial) => ipcRenderer.invoke('update-config', partial),
   setSessionLabel: (shortId, label) => ipcRenderer.invoke('set-session-label', shortId, label),
   setSessionIndex: (shortId, index) => ipcRenderer.invoke('set-session-index', shortId, index),

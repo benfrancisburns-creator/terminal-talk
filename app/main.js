@@ -567,6 +567,8 @@ function stripForTTS(text) {
   return _stripForTTS(text, CFG.speech_includes || DEFAULTS.speech_includes);
 }
 
+const { computeStaleSessions } = require('./lib/session-stale');
+
 function chunkText(text, maxLen = 3800) {
   if (text.length <= maxLen) return [text];
   const chunks = [];
@@ -987,6 +989,44 @@ ipcMain.handle('get-queue', () => {
   return { files, assignments: ensureAssignmentsForFiles(files) };
 });
 ipcMain.handle('get-assignments', () => loadAssignments());
+
+// Stale-session detection: returns shortIds whose backing terminal is
+// gone. The renderer polls this every 10 s and greys out the row + its
+// dots. We do NOT prune the registry here — pruning is still gated by
+// the 4-hour grace in ensureAssignmentsForFiles so the user can reopen
+// a terminal and get the same swatch back. This is a visual signal only.
+ipcMain.handle('get-stale-sessions', () => {
+  try {
+    const assignments = loadAssignments();
+    const liveShorts = new Set();
+    const livePids = new Set();
+    if (fs.existsSync(SESSIONS_DIR)) {
+      for (const f of fs.readdirSync(SESSIONS_DIR)) {
+        if (!f.endsWith('.json')) continue;
+        const pid = parseInt(f.replace('.json', ''), 10);
+        if (!pid || !isPidAlive(pid)) continue;
+        livePids.add(pid);
+        try {
+          let raw = fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8');
+          if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+          const data = JSON.parse(raw);
+          if (data && typeof data.short === 'string') {
+            liveShorts.add(data.short.toLowerCase());
+          }
+        } catch {}
+      }
+    }
+    return computeStaleSessions(
+      assignments, liveShorts, livePids,
+      Math.floor(Date.now() / 1000),
+      10
+    );
+  } catch (e) {
+    diag(`get-stale-sessions fail: ${e.message}`);
+    return [];
+  }
+});
+
 ipcMain.handle('get-config', () => CFG);
 
 // Redact secrets from any value before it reaches a log file.

@@ -664,6 +664,20 @@ select option:checked, .panel .row select option:checked {
 }
 .session-block.session-focused .focus-btn { opacity: 1; }
 
+/* Dead-terminal state. Registry row is kept (user's colour pick stays
+   around if they reopen the same session) but visually desaturated so
+   stale swatches don't look as "alive" as real ones. */
+.session-block.stale .swatch { filter: saturate(0.25) brightness(0.75); }
+.session-block.stale .short { color: rgba(255,255,255,0.35); }
+.session-block.stale input[type="text"],
+.session-block.stale select { opacity: 0.55; }
+.session-block.stale .short::after {
+  content: ' • closed';
+  color: rgba(255,255,255,0.35);
+  font-style: italic;
+}
+.dot.stale { opacity: 0.4; filter: saturate(0.3); }
+
 .session-remove {
   width: 20px; height: 20px; padding: 0;
   background: transparent;
