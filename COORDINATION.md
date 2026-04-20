@@ -99,6 +99,7 @@ If `git merge --ff-only` is rejected:
 ### §Comm-log (append-only — this cycle)
 
 - 2026-04-21 T-1: claimed EX1, starting. Baseline: 195 logic / 25 E2E / 268 full / 44 files under ceiling 3000 / 0 lint/knip/ruff/pip/npm findings.
+- 2026-04-21 T-1: shipped EX1 at `355c1aa`. SYSTEM32 + TASKKILL_EXE + POWERSHELL_EXE constants, both Sonar S4036 sites swapped to absolute paths. Plus-fixed 2 pre-existing Sonar bugs that surfaced on re-scan (S2871 sort compare + S7727 filter predicate wrap). file-length-baseline bumped 1802→1821 for main.js. 268/268 + 0 lint/knip/ruff + Sonar A·A·A. **T-1 picking up EX9 (extend doc-drift checker) next** — scripts-only, won't collide with any other item.
 
 ---
 
