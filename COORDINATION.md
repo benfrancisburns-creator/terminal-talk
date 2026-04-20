@@ -130,7 +130,7 @@ Do these steps in order:
 | Stream | Owner | Items | Branch | Status |
 |---|---|---|---|---|
 | **v3-js-ts-ci** | **Terminal-1** | **D2-8 ✅ · D2-11 ✅ · D2-5 ✅** · D2-10 (Z11 handled 90%) · D2-9 (needs Constructable Stylesheets) · D3 · D2-3 · D1 · D2 | `stream-v3-js-ts-ci` | 3/9 shipped; T-1 standing down this session — remaining 6 re-parked as separate-session work |
-| **v3-py-docs** | **Terminal-2** | **D2-2 ✅** · **D2-1 ✅** · **D2-4 ✅** · D2 (BLOCKED on T-1 safeStorage landing) | `stream-v3-py-docs` | ⏸ 3/4 shipped, standing by for T-1 safeStorage ping |
+| **v3-py-docs** | **Terminal-2** | **D2-2 ✅** · **D2-1 ✅** · **D2-4 ✅** · **D2 PS side ✅** | `stream-v3-py-docs` | ✅ 4/4 shipped — lane COMPLETE |
 
 ### T-1 post-execution note (2026-04-20, `cd86460`)
 
@@ -633,3 +633,14 @@ if os.path.exists(secret_path):
 Tests: **158/158 logic-only green.** When you ship your side, append 2-3 tests verifying the hooks + Python read the sidecar correctly (mock the file content, spawn the relevant script, assert it picks up the key). Put them in your usual describe-block location.
 
 Standing by if you hit anything odd.
+
+### 2026-04-20 Terminal-2 (v0.3 lane COMPLETE — D2 PS side shipped)
+- D2 PS-hook side landed on main as `fb1993d`. Your sidecar contract honoured verbatim: env -> `config.secrets.json` -> legacy `config.json` -> `~/.claude/.env`.
+- Changes:
+  - `app/tts-helper.psm1` `Resolve-OpenAiApiKey` now checks the sidecar between env and legacy config. Both hooks that used the helper (`speak-notification.ps1` + the fallback branch in `speak-response.ps1`) pick up the new walk order for free.
+  - `hooks/speak-response.ps1` — dropped the inline `$cfg.openai_api_key` read. The existing `Resolve-OpenAiApiKey` fallback at ~L139 covers it via the updated helper.
+  - `app/synth_turn.py` — new `SECRETS_PATH` + `_load_openai_key_from_secrets()`; `resolve_voice_and_flags()` prefers sidecar, falls back to legacy config, then None.
+  - `install.ps1` — `icacls /inheritance:r /grant $USERNAME:(R,W)` on the sidecar post-manifest. Lazy create by main.js, so install-time mostly just verifies the parent-dir ACL inherits correctly.
+  - `uninstall.ps1` — NEW "Removing credential artefacts" step BEFORE the "delete install dir" prompt. Always removes both `config.secrets.json` AND `openai_key.enc` even if the user keeps the install dir (a plaintext API key surviving uninstall would be a security regression vs v0.2).
+- Tests: **161/161 `--logic-only` green** (was 158; +3 consumer-wiring asserts in your existing D2 describe): sidecar-before-legacy precedence in tts-helper, sidecar-or-config chain shape in synth_turn, uninstall cleanup runs before the install-dir prompt.
+- No conflicts on ff-merge. All 4 v0.3 items in my lane are now shipped. `stream-v3-py-docs` is done; happy to retire the worktree or pick up another lane when you're ready.
