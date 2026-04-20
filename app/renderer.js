@@ -228,7 +228,7 @@ let currentIsUserClick = false;
 const playedPaths = new Set();
 const heardPaths = new Set();
 const priorityPaths = new Set();
-let priorityQueue = [];
+const priorityQueue = [];
 let pendingQueue = [];
 let userScrubbing = false;
 const deleteTimers = new Map();
@@ -247,9 +247,7 @@ const MAX_VISIBLE_DOTS = 40;            // hard cap to keep DOM light; overflow 
 // script (loaded in index.html before this file). Same order statusline.ps1
 // uses for its 8 emojis. Brown is a richer copper so splits read clearly.
 const {
-  BASE_COLOURS,
   PALETTE_SIZE,
-  NEUTRAL_COLOUR,
   HSPLIT_PARTNER,
   VSPLIT_PARTNER,
   COLOUR_NAMES,
@@ -303,38 +301,6 @@ function findFocusedSessionShort() {
 }
 
 // Index 0..31 -> one of 4 arrangement kinds:
-//   0-7   solid    one colour
-//   8-15  hsplit   top/bottom two-colour split
-//   16-23 vsplit   left/right two-colour split
-//   24-31 quad     four-quadrant pattern
-// Offsets (4/3/2) chosen so no two indices render identically.
-function arrangementForIndex(idx) {
-  const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
-  if (i < 8) return { kind: 'solid', colours: [BASE_COLOURS[i]] };
-  if (i < 16) {
-    const p = i - 8;
-    return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[HSPLIT_PARTNER[p]]] };
-  }
-  const p = i - 16;
-  return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[VSPLIT_PARTNER[p]]] };
-}
-
-function backgroundForArrangement(arr) {
-  if (!arr) return NEUTRAL_COLOUR;
-  const c = arr.colours;
-  switch (arr.kind) {
-    case 'solid':  return c[0];
-    case 'hsplit': return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
-    case 'vsplit': return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
-    default: return c[0];
-  }
-}
-
-// Primary colour = first colour in the arrangement; used for active/heard rings.
-function primaryColourForArrangement(arr) {
-  return arr && arr.colours ? arr.colours[0] : NEUTRAL_COLOUR;
-}
-
 // D2-9 — palette key (`'00'` .. `'23'` or `'neutral'`) for CSS attribute
 // selector. Generated rules in app/lib/palette-classes.css match on
 // [data-palette="<key>"] so the renderer can style dots + swatches
@@ -352,23 +318,6 @@ function paletteKeyForShort(shortId) {
   let sum = 0;
   for (let i = 0; i < shortId.length; i++) sum += shortId.charCodeAt(i);
   return paletteKeyForIndex(sum);
-}
-
-function arrangementForShort(shortId) {
-  if (!shortId || shortId.length < 4) return null;
-  const entry = sessionAssignments[shortId];
-  if (entry && Number.isInteger(entry.index)) {
-    return arrangementForIndex(entry.index);
-  }
-  let sum = 0;
-  for (let i = 0; i < shortId.length; i++) sum += shortId.charCodeAt(i);
-  return arrangementForIndex(sum);
-}
-
-// Back-compat: callers that still want a single colour string get the primary.
-function sessionColourFromShort(shortId) {
-  if (!shortId || shortId.length < 4) return NEUTRAL_COLOUR;
-  return primaryColourForArrangement(arrangementForShort(shortId));
 }
 
 function extractSessionShort(filename) {
@@ -390,17 +339,12 @@ function isClipFile(filename) {
   return /-clip-/.test(filename);
 }
 
-function dotColour(filePath) {
-  const name = filePath.split(/[\\/]/).pop();
-  return sessionColourFromShort(extractSessionShort(name));
-}
-
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away
 // from the machine and wanting to review on return).
 let autoPruneEnabled = true;
 
-function scheduleAutoDelete(p, wasManual = false) {
+function scheduleAutoDelete(p, _wasManual = false) {
   if (!autoPruneEnabled) return;  // respect the user's toggle
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
   const delay = Math.max(3, Math.min(600, autoPruneSec)) * 1000;
@@ -425,7 +369,7 @@ function setAutoPruneEnabled(on) {
   autoPruneEnabled = !!on;
   if (!autoPruneEnabled) {
     // Cancel all pending deletes so clips already ticking down stay put.
-    for (const [p, t] of deleteTimers) { clearTimeout(t); }
+    for (const [, t] of deleteTimers) { clearTimeout(t); }
     deleteTimers.clear();
   } else {
     // Schedule deletes for any already-played clips (not currently playing).
@@ -476,11 +420,6 @@ function renderDots() {
     _renderDotsNow();
   });
 }
-// Synchronous paint is exposed for the single call site that needs
-// immediate result (the Playwright harness and the next-clip scheduling
-// loop, which reads fresh DOM layout right after renderDots()). Prefer
-// renderDots() everywhere else.
-function renderDotsNow() { _renderDotsQueued = false; _renderDotsNow(); }
 function _renderDotsNow() {
   dotsEl.innerHTML = '';
   // Muted sessions' clips are hidden entirely — no dot, no trace. "Cut the
@@ -882,7 +821,7 @@ audio.addEventListener('error', () => {
 // mid-flush); if we're still stuck, skip to the next clip so the user
 // isn't stranded.
 let _stallRecoveryTimer = null;
-function armStallRecovery(reason) {
+function armStallRecovery(_reason) {
   if (_stallRecoveryTimer) return;  // already armed; one recovery per hang
   _stallRecoveryTimer = setTimeout(() => {
     _stallRecoveryTimer = null;

@@ -98,6 +98,7 @@ function stripForTTS(text, includes) {
   // the placeholder can't collide with input content. See the paired
   // write at line 45 for the full rationale.
   if (codeBlocks.length > 0) {
+    // eslint-disable-next-line no-control-regex -- paired with sentinel write at line 45
     t = t.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlocks[+i]);  // NOSONAR
   }
 

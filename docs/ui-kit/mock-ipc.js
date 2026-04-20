@@ -127,7 +127,6 @@
   // Helpers
   // ═══════════════════════════════════════════════════════════════════════
   const now = () => Date.now();
-  const hexShort = (i) => i.toString(16).padStart(8, '0');
 
   // renderer extracts a shortId from filenames matching:
   //   -<8hex>.(mp3|wav)            normal response

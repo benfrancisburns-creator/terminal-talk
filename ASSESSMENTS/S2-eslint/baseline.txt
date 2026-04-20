@@ -1,0 +1,47 @@
+
+> terminal-talk@0.3.9 lint
+> eslint app scripts docs/ui-kit eslint.config.js
+
+
+C:\Users\Ben\Desktop\terminal-talk\app\lib\text.js
+  101:19  error  Unexpected control character(s) in regular expression: \x00, \x00  no-control-regex
+
+C:\Users\Ben\Desktop\terminal-talk\app\main.js
+  308:25  error    'dX' is defined but never used. Allowed unused args must match /^_/u              no-unused-vars
+  308:29  error    'dY' is defined but never used. Allowed unused args must match /^_/u              no-unused-vars
+  310:14  error    'dispX' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  310:38  error    'dispW' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  311:10  error    'x' is assigned a value but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  430:7   warning  'savedDock' is never reassigned. Use 'const' instead                              prefer-const
+  846:9   warning  'liveSessions' is never reassigned. Use 'const' instead                           prefer-const
+
+C:\Users\Ben\Desktop\terminal-talk\app\renderer.js
+  231:5   warning  'priorityQueue' is never reassigned. Use 'const' instead                                    prefer-const
+  322:10  error    'backgroundForArrangement' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  393:10  error    'dotColour' is defined but never used. Allowed unused vars must match /^_/u                 no-unused-vars
+  403:32  error    'wasManual' is assigned a value but never used. Allowed unused args must match /^_/u        no-unused-vars
+  428:17  error    'p' is assigned a value but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  483:10  error    'renderDotsNow' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  885:27  error    'reason' is defined but never used. Allowed unused args must match /^_/u                    no-unused-vars
+
+C:\Users\Ben\Desktop\terminal-talk\docs\ui-kit\mock-ipc.js
+  130:9  error  'hexShort' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+C:\Users\Ben\Desktop\terminal-talk\scripts\generate-tokens-css.cjs
+  103:25  error  'HSPLIT_PARTNER' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  103:41  error  'VSPLIT_PARTNER' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+C:\Users\Ben\Desktop\terminal-talk\scripts\run-tests.cjs
+    19:20  error    'spawn' is assigned a value but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   123:69  error    'COLOUR_NAMES' is assigned a value but never used. Allowed unused vars must match /^_/u    no-unused-vars
+   123:83  error    'NEUTRAL_COLOUR' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+   833:14  error    'e' is defined but never used                                                              no-unused-vars
+  2253:9   warning  't' is never reassigned. Use 'const' instead                                               prefer-const
+  2271:9   warning  't' is never reassigned. Use 'const' instead                                               prefer-const
+
+C:\Users\Ben\Desktop\terminal-talk\scripts\sync-app-mirror.cjs
+  41:5  warning  'drift' is never reassigned. Use 'const' instead  prefer-const
+
+✖ 25 problems (19 errors, 6 warnings)
+  0 errors and 6 warnings potentially fixable with the `--fix` option.
+

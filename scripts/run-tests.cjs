@@ -16,7 +16,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync, spawn } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const VERBOSE = process.argv.includes('--verbose');
 // `--logic-only` skips test groups that need the live install dir, PowerShell,
@@ -120,7 +120,7 @@ function runEdgeTts(voice, text) {
 // test starts failing against the canonical values.
 // =============================================================================
 const TOKENS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tokens.json'), 'utf8'));
-const { PALETTE_SIZE, BASE_COLOURS, HSPLIT_PARTNER, VSPLIT_PARTNER, COLOUR_NAMES, NEUTRAL_COLOUR } = TOKENS.palette;
+const { PALETTE_SIZE, BASE_COLOURS, HSPLIT_PARTNER, VSPLIT_PARTNER } = TOKENS.palette;
 
 function arrangementForIndex(idx) {
   const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
@@ -830,7 +830,7 @@ describe('REGISTRY LOCK (v0.3.3)', () => {
     let caught = false;
     try {
       withRegistryLock(tmpReg, () => { throw new Error('boom'); });
-    } catch (e) { caught = true; }
+    } catch { caught = true; }
     assertEqual(caught, true);
     assertEqual(fs.existsSync(tmpLock), false);
   });
@@ -2250,7 +2250,7 @@ describe('S3.1 — IPC rate limit', () => {
   const { createRateLimit } = require('../app/lib/rate-limit');
 
   it('burst allows initial spike up to capacity', () => {
-    let t = 0;
+    const t = 0;
     const r = createRateLimit({ rate: 20, burst: 30, now: () => t });
     let allowed = 0;
     for (let i = 0; i < 40; i++) if (r.allow('x')) allowed++;
@@ -2268,7 +2268,7 @@ describe('S3.1 — IPC rate limit', () => {
   });
 
   it('per-name buckets are independent', () => {
-    let t = 0;
+    const t = 0;
     const r = createRateLimit({ rate: 20, burst: 5, now: () => t });
     for (let i = 0; i < 5; i++) r.allow('a');
     assertEqual(r.allow('a'), false);   // a exhausted

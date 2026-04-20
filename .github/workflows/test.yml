@@ -49,6 +49,27 @@ jobs:
       - name: Scan docs for stale phrases
         run: node scripts/check-doc-drift.cjs
 
+  # v0.4 S2 — ESLint blocking gate.
+  # Scans JS sources under app/, scripts/, docs/ui-kit/ against the
+  # flat config at eslint.config.js. Zero-tolerance mode (--max-warnings=0)
+  # — any warning OR error fails the job. Ignore list in the config
+  # excludes generated files + the app-mirror copy + test baselines.
+  lint:
+    name: ESLint (zero warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '22' }
+
+      - name: Install dev dependencies
+        # package-lock.json is gitignored here (single-dev repo) so npm ci
+        # isn't available; matches coverage-job convention.
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npx eslint app scripts docs/ui-kit eslint.config.js --max-warnings=0
+
   # S4.3 — coverage via c8, uploaded as a CI artefact. No floor enforced
   # yet; floor will be ratcheted up after the first run tells us the
   # baseline. Log-only for now.

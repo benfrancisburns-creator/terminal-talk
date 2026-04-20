@@ -38,7 +38,7 @@ function ensureDir(p) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
 }
 
-let drift = [];
+const drift = [];
 for (const rel of FILES) {
   const srcPath = path.join(SRC, rel);
   const dstPath = path.join(DST, rel);

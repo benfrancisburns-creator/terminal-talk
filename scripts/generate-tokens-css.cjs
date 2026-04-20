@@ -100,7 +100,7 @@ fs.writeFileSync(OUT_CSS, css);
 // The primary colour for solids is the solid itself. For splits it's
 // the first colour (same as app/renderer.js:primaryColourForArrangement).
 function primaryForArrangement(i) {
-  const { BASE_COLOURS, HSPLIT_PARTNER, VSPLIT_PARTNER } = palette;
+  const { BASE_COLOURS } = palette;
   if (i < 8)  return BASE_COLOURS[i];
   if (i < 16) return BASE_COLOURS[i - 8];
   return BASE_COLOURS[i - 16];

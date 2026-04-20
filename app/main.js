@@ -305,10 +305,10 @@ const moveSettleTimerRef = { current: null };
 // it created unrecoverable states on multi-monitor rearrangement (bar stuck
 // vertical mid-screen with no drag path back). Ctrl+Shift+A remains the
 // recovery hotkey if the window ever ends up somewhere weird.
-function findDockedEdge(dX, dY) {
+function findDockedEdge() {
   if (!win || win.isDestroyed()) return null;
-  const { x: dispX, y: dispY, width: dispW, height: dispH } = screen.getPrimaryDisplay().workArea;
-  const [x, y] = win.getPosition();
+  const { y: dispY, height: dispH } = screen.getPrimaryDisplay().workArea;
+  const [, y] = win.getPosition();
   const [, h] = win.getSize();
   const topDist = y - dispY;
   const bottomDist = (dispY + dispH) - (y + h);
@@ -400,7 +400,7 @@ function snapAfterDrag() {
       saveWindowPosition();
       return;
     }
-    const edge = findDockedEdge(dX, dY);
+    const edge = findDockedEdge();
     if (edge) { applyDock(edge); return; }
   } else {
     const edge = findDockedEdge();
@@ -427,7 +427,7 @@ function createWindow() {
   // Only 'top' and 'bottom' are still valid docks (horizontal-only).
   // Any legacy 'left' / 'right' / null gets normalised to null so the bar
   // starts free-floating and the sizes are always horizontal.
-  let savedDock = (saved.dock === 'top' || saved.dock === 'bottom') ? saved.dock : null;
+  const savedDock = (saved.dock === 'top' || saved.dock === 'bottom') ? saved.dock : null;
   if (saved.dock && !savedDock) {
     // User is coming back with a now-invalid dock (left/right from an old
     // build). Wipe the stale position too so we don't land at the edge.
@@ -843,7 +843,7 @@ async function detectActiveSession() {
     diag(`detectActiveSession: fg_pid=${fg && fg.fg_pid} descendants=${fgCandidates.size}`);
 
     // Gather live sessions from the sessions/ dir (pruning dead PIDs).
-    let liveSessions = [];
+    const liveSessions = [];
     if (fs.existsSync(SESSIONS_DIR)) {
       for (const f of fs.readdirSync(SESSIONS_DIR)) {
         if (!f.endsWith('.json')) continue;
