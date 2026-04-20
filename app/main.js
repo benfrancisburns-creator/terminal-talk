@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -717,6 +718,14 @@ function callOpenAITTS(apiKey, input, voice, outPath) {
 }
 
 let keyHelper = null;
+// Z2-5 — parent-side health signal without touching key_helper.py (that's
+// Terminal-2's lane). `helperConsecutiveFailures` tracks timeouts; every
+// helperRequest increments on null-reply and resets on success. If the
+// counter crosses HELPER_RESPAWN_THRESHOLD, we kill the current helper and
+// let getKeyHelper spawn a fresh one on the next request. Catches hangs
+// that the existing per-call timeout silently absorbs.
+let helperConsecutiveFailures = 0;
+const HELPER_RESPAWN_THRESHOLD = 3;
 function getKeyHelper() {
   if (keyHelper && !keyHelper.killed && keyHelper.exitCode === null) return keyHelper;
   keyHelper = spawn('python', ['-u', path.join(__dirname, 'key_helper.py')], {
@@ -724,6 +733,7 @@ function getKeyHelper() {
     stdio: ['pipe', 'pipe', 'ignore']
   });
   keyHelper.on('exit', () => { keyHelper = null; });
+  helperConsecutiveFailures = 0;
   diag('keyHelper started');
   return keyHelper;
 }
@@ -745,6 +755,16 @@ function helperRequest(cmd, timeoutMs = 500) {
         settled = true;
         if (timer) { clearTimeout(timer); timer = null; }
         helper.stdout.off('data', onData);
+        if (value === null) {
+          helperConsecutiveFailures++;
+          if (helperConsecutiveFailures >= HELPER_RESPAWN_THRESHOLD && keyHelper) {
+            diag(`keyHelper respawning: ${helperConsecutiveFailures} consecutive failures`);
+            try { keyHelper.kill(); } catch {}
+            // getKeyHelper will spawn a fresh one on next invocation
+          }
+        } else {
+          helperConsecutiveFailures = 0;
+        }
         resolve(value);
       };
       const onData = (chunk) => {
@@ -757,6 +777,7 @@ function helperRequest(cmd, timeoutMs = 500) {
       timer = setTimeout(() => finish(null), timeoutMs);
     } catch (e) {
       diag(`helperRequest ${cmd} fail: ${e.message}`);
+      helperConsecutiveFailures++;
       resolve(null);
     }
   });
@@ -1653,7 +1674,27 @@ function stopWatchdog() {
   if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
 }
 
+// Z2-4 — boot-time SHA-256 of spawned Python helpers. Forensic only —
+// we don't block on mismatch because the install itself is trusted and
+// a corrupt script would fail at runtime with its own exception. But
+// if someone ever reports a weird behaviour, grepping _toolbar.log for
+// "[integrity]" tells us exactly which bytes were on disk at boot.
+function logIntegrity() {
+  const files = ['key_helper.py', 'synth_turn.py', 'wake-word-listener.py', 'edge_tts_speak.py', 'sentence_split.py'];
+  for (const name of files) {
+    try {
+      const full = path.join(__dirname, name);
+      const bytes = fs.readFileSync(full);
+      const hash = crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+      diag(`[integrity] ${name} sha256:${hash} size=${bytes.length}`);
+    } catch (e) {
+      diag(`[integrity] ${name} read-failed: ${e.message}`);
+    }
+  }
+}
+
 app.whenReady().then(() => {
+  logIntegrity();
   killOrphanVoiceListeners();
   pruneOldFiles();
   pruneSessionsDir();
