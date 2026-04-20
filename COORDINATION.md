@@ -130,7 +130,7 @@ Do these steps in order:
 | Stream | Owner | Items | Branch | Status |
 |---|---|---|---|---|
 | **v3-js-ts-ci** | **Terminal-1** | **D2-8 ✅ · D2-11 ✅ · D2-5 ✅** · D2-10 (Z11 handled 90%) · D2-9 (needs Constructable Stylesheets) · D3 · D2-3 · D1 · D2 | `stream-v3-js-ts-ci` | 3/9 shipped; T-1 standing down this session — remaining 6 re-parked as separate-session work |
-| **v3-py-docs** | **Terminal-2** | **D2-2 ✅** · D2-1 · D2-4 · D2 (waits on T-1 design) | `stream-v3-py-docs` | 🚧 D2-1 next |
+| **v3-py-docs** | **Terminal-2** | **D2-2 ✅** · **D2-1 ✅** · **D2-4 ✅** · D2 (BLOCKED on T-1 safeStorage landing) | `stream-v3-py-docs` | ⏸ 3/4 shipped, standing by for T-1 safeStorage ping |
 
 ### T-1 post-execution note (2026-04-20, `cd86460`)
 
@@ -558,3 +558,13 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
   4. **D2 safeStorage PS side** — WAITING on your main.js encryption landing; ping in this log when ready.
 - Out-of-bounds confirmed: `app/main.js`, `app/preload.js`, `app/renderer.js`, `scripts/run-tests.cjs` (except additions inside existing describes), `.github/workflows/*.yml` except the NEW `release.yml` I'm creating (that one's in my scope per brief).
 - Tests baseline on fresh worktree: will run once I'm on a working commit. Commits push to `stream-v3-py-docs`; merging via `--ff-only` per protocol.
+
+### 2026-04-20 Terminal-2 (v0.3 progress — 3/4 shipped, 1 blocked)
+- Three items landed on main via ff-merge:
+  - `90fa094` **D2-2** — `scripts/archive-docs.sh` (portable find+cp, no rsync dep so it runs on Windows Git Bash as well as CI Ubuntu) + `.github/workflows/release.yml` that runs on any `v*` tag push with `contents:write` + seeded `docs/v0.2/` + README "Docs archives" section.
+  - `713d1a0` **D2-1** — `docs/design-system/components.html?name=X` router; three of four dupe pages redirected via meta-refresh (dots, sessions-row, forms). `colors-session.html` kept in place and iframed from `?name=palette-swatches` — kit doesn't natively render a 24-arrangement swatch grid and rebuilding it there was over-engineering. The ONE kit SEEDS edit you mentioned in the file-scope was not needed; the existing `mixed-states` + `settings-panel` seeds cover dots / sessions-row / forms already.
+  - `9669f74` **D2-4** — `docs/architecture/ipc-integrity.md` (new) + top-of-file trust-boundary comment in `app/synth_turn.py`. Decision: **accept same-user trust boundary** (Option 3 in the doc). Reasoning: a same-user attacker already has access to the microphone, keyboard, config files, and every hook script. HMAC-guarded argv while the mic and keyboard are wide open is defence theatre. Three future scenarios that would reverse the decision are documented (multi-user install / browser-extension companion / packaged least-privilege exe). None on the roadmap.
+- **D2 safeStorage PS-side follow-up remains BLOCKED on your main.js encryption work.** I'll stand by and pick it up the moment you drop a "ready" ping in this log. The sidecar `config.secrets.json` + icacls approach (Option B from your brief) is my plan; I won't touch `hooks/speak-*.ps1` / `synth_turn.py`'s API-key read path until your side is live.
+- Tests: 150/150 `--logic-only` green at every commit. doc-drift: OK (9 rules, 27 files; +1 from components.html).
+- No merge conflicts; each sub-item was a clean rebase + force-push-with-lease on the stream branch before ff-merge.
+- Standing by for safeStorage ping.
