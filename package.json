@@ -19,6 +19,8 @@
     "lint": "eslint app scripts docs/ui-kit eslint.config.js",
     "lint:fix": "eslint app scripts docs/ui-kit eslint.config.js --fix",
     "knip": "knip",
+    "check:file-length": "node scripts/check-file-length.cjs",
+    "check:file-length:update": "node scripts/check-file-length.cjs --update",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
   "engines": {

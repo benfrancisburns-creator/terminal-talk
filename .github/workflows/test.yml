@@ -105,6 +105,55 @@ jobs:
       - name: Ruff check
         run: ruff check app/*.py
 
+  # v0.4 S7.1a — npm audit (JS deps).
+  # Fails on ANY known vulnerability (including low/moderate). The
+  # repo ships zero at baseline; any Dependabot-introduced alert is
+  # a real signal worth blocking on.
+  npm-audit:
+    name: npm audit (JS deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '22' }
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Audit
+        # Root deps (devDependencies only — electron itself lives in
+        # app/node_modules and gets audited separately if needed).
+        run: npm audit --audit-level=low
+
+  # v0.4 S7.1b — pip-audit (Python deps).
+  # Audits requirements.txt's five pinned packages against the
+  # OSV + PyPI advisory databases.
+  pip-audit:
+    name: pip-audit (Python deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.1
+        with: { python-version: '3.10' }
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit
+        run: pip-audit -r requirements.txt
+
+  # v0.4 S7.2 — file-length gate.
+  # Two thresholds: absolute ceiling (currently 3000 lines, will
+  # ratchet down as the big-file refactor progresses) + per-file
+  # baseline in file-length-baseline.json (each file can shrink or
+  # stay flat; growing past its baseline requires an explicit bump
+  # in the same PR via `npm run check:file-length:update`).
+  file-length:
+    name: File-length gate (ratchet-only-up)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '22' }
+      - name: Check
+        run: node scripts/check-file-length.cjs
+
   # v0.4 S3b — PSScriptAnalyzer blocking gate for PowerShell sources.
   # Config in PSScriptAnalyzerSettings.psd1. Exclusions documented there.
   # Runs on windows-latest because PSScriptAnalyzer's Windows-specific
