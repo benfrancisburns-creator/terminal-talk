@@ -108,7 +108,9 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | A2-3 edge_tts_speak.py constants + timeout | Tier A-2 | ✅ shipped (`e35a854`) | Terminal-2 |
 | A2-4 sentence_split.py abbreviations + dashes + NEL/LS + CJK | Tier A-2 | ✅ shipped (`252f905`) | Terminal-2 |
 | S1 renderer observability (window.onerror → IPC log + dedupe) | Stream S1 | ✅ shipped (`f371f33`, `66d6571`) | Terminal-1 |
-| S2 Python helper robustness (synth_turn / key_helper / wake-word) | Stream S2 | ❌ queued | Terminal-2 |
+| S2.1 synth_turn.py lock + bounded executor + summary | Stream S2 | ✅ shipped (`e7ee58f`) | Terminal-2 |
+| S2.2 key_helper.py SendInput + 500ms cache + _helper.log | Stream S2 | ✅ shipped (`e397b75`) | Terminal-2 |
+| S2.3 wake-word EMA noise floor + --selftest | Stream S2 | ✅ shipped (`4db1059`) | Terminal-2 |
 | S3 IPC rate limits + redact-keys set + config validator | Stream S3 | ✅ shipped (`91829aa`) | Terminal-1 |
 | S4.1 test-only inspection IPC (pattern demo: watchdog) | Stream S4 | ✅ shipped (`35d5c1b`) | Terminal-1 |
 | S4.2 voices.json extraction + verify-voices script | Stream S4 | ✅ shipped (`a3f1b06`) | Terminal-1 |
@@ -119,9 +121,9 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | Z2-3 Playwright-on-Windows CI job | Tier Z-2 | ✅ shipped (`2ade94a`) | Terminal-1 |
 | Z2-4 main.js boot-time SHA-256 integrity log | Tier Z-2 | ✅ shipped (`0f0d655`) | Terminal-1 |
 | Z2-5 keyHelper parent-side respawn on stall | Tier Z-2 | ✅ shipped (`0f0d655`) | Terminal-1 |
-| Z2-6 statusline.ps1 debounce | Tier Z-2 | ❌ queued | Terminal-2 |
-| Z2-7 install.ps1 manifest + verify-install.ps1 | Tier Z-2 | ❌ queued | Terminal-2 |
-| Z2-8 uninstall.ps1 Wait-Process | Tier Z-2 | ❌ queued | Terminal-2 |
+| Z2-6 statusline.ps1 100ms debounce cache | Tier Z-2 | ✅ shipped (`f957411`) | Terminal-2 |
+| Z2-7 install.ps1 manifest + verify-install.ps1 | Tier Z-2 | ✅ shipped (`31ea43a`) | Terminal-2 |
+| Z2-8 uninstall.ps1 Wait-Process + leftovers | Tier Z-2 | ✅ shipped (`bc6e302`) | Terminal-2 |
 | §8e, §8f, ajv config, IPC signing, D1/D2/D3, Z2-1 | Tier D-2 | out of scope | v0.3+ |
 
 **Terminal-1 lane status: COMPLETE (12 commits, 130 tests green, +23 from session start).** Full merge to main at `35d5c1b`. Remaining 10 items are all Terminal-2's lane (A2-3, A2-4, S2.1/2/3, Z2-6/7/8, S5). I'm standing by for any conflict-resolution help or review.
@@ -137,7 +139,7 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
 | Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | ✅ shipped (merged via no-ff) |
 | **UA2 — JS/TS/CI** (A2-1/2, S1, S3, S4, Z2-1..5) | `stream-ua2-js` | `../terminal-talk-ua2/` | **Terminal-1** | 🚧 claiming now |
-| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | 🚧 in progress — A2-3 + A2-4 shipped, on S2.1 now |
+| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | ✅ COMPLETE — 8 items shipped (A2-3, A2-4, S2.1/2/3, Z2-6/7/8); S5 moved to Terminal-1 |
 
 Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
@@ -384,3 +386,17 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
   - 130 tests still green, doc-drift check still OK
 - **You still own:** S2.1, S2.2, S2.3, Z2-6, Z2-7, Z2-8 (6 items). All Python / PowerShell — zero JS/TS/HTML remaining in your lane.
 - If you want S5 back for any reason (e.g. you had a different approach in mind) the revert is `git revert bd1d923`; say the word and I'll do it.
+
+### 2026-04-20 Terminal-2 (stream-ua2-py COMPLETE)
+- All 8 items in my lane shipped and ff-merged to main:
+  - `e35a854` A2-3 edge_tts_speak constants + 30s save timeout + U+FFFD log
+  - `252f905` A2-4 sentence_split +14 abbrevs + {1,8} regex + em/en-dash markers + NEL/LS norm + CJK terminator + 16 tests
+  - `e7ee58f` S2.1 synth_turn lock payload pid:host:ms + own-pid unlink check + concurrent.futures.wait(2×timeout) + cancel leftovers + summary line
+  - `e397b75` S2.2 key_helper SendInput (replaces keybd_event) + 500ms process-tree cache + `fgtree-bump` invalidator + `_helper.log`
+  - `4db1059` S2.3 wake-word EMA adaptive gate (alpha=0.05, margin=0.3) + `--selftest` (3s stream + exit 0)
+  - `f957411` Z2-6 statusline.ps1 100ms debounce via `<short>.statusline-cache` sidecar (mtime+length cache key)
+  - `31ea43a` Z2-7 install.ps1 writes `manifest.json` with SHA-256 per file; new `scripts/verify-install.ps1`
+  - `bc6e302` Z2-8 uninstall.ps1 Stop-Process by install-path + 500ms sleep + Wait-Process -Timeout 5 + leftover report
+- Tests: 146/146 `--logic-only` green at every commit. No regressions, no conflicts.
+- S5 acknowledged as Terminal-1's. No need to revert `bd1d923` — their iframe approach looked clean on the pull.
+- **stream-ua2-py is done.** No active work on my side. Happy to pick up another lane or S-level follow-up work if the addendum turns up anything. Otherwise I'll stand down.
