@@ -890,20 +890,49 @@ function sanitiseEntry(e) {
   return out;
 }
 
-function loadAssignments() {
+// Archive a registry file we couldn't read. Keeps forensic data for the
+// user ("why did my colours reset?") and prevents silent loss when the
+// fresh {} overwrites whatever the old content was.
+function archiveCorruptRegistry(reason) {
   try {
-    let raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.assignments || typeof parsed.assignments !== 'object') return {};
-    const clean = {};
-    for (const [k, v] of Object.entries(parsed.assignments)) {
-      if (!SHORT_KEY_RE.test(k)) continue;
-      const e = sanitiseEntry(v);
-      if (e) clean[k] = e;
-    }
-    return clean;
-  } catch { return {}; }
+    if (!fs.existsSync(COLOURS_REGISTRY)) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest = `${COLOURS_REGISTRY}.corrupt-${ts}.json`;
+    fs.copyFileSync(COLOURS_REGISTRY, dest);
+    diag(`registry corrupt (${reason}) -- archived to ${path.basename(dest)}`);
+  } catch (e) {
+    diag(`archiveCorruptRegistry failed: ${e && e.message}`);
+  }
+}
+
+function loadAssignments() {
+  let raw;
+  try {
+    if (!fs.existsSync(COLOURS_REGISTRY)) return {};
+    raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
+  } catch (e) {
+    diag(`loadAssignments read failed: ${e && e.message}`);
+    return {};
+  }
+  if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    archiveCorruptRegistry(`JSON.parse: ${e && e.message}`);
+    return {};
+  }
+  if (!parsed || !parsed.assignments || typeof parsed.assignments !== 'object') {
+    archiveCorruptRegistry('missing or non-object assignments field');
+    return {};
+  }
+  const clean = {};
+  for (const [k, v] of Object.entries(parsed.assignments)) {
+    if (!SHORT_KEY_RE.test(k)) continue;
+    const e = sanitiseEntry(v);
+    if (e) clean[k] = e;
+  }
+  return clean;
 }
 
 function writeAssignments(all) {

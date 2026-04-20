@@ -1486,6 +1486,62 @@ describe('STALE SESSIONS IPC WIRING', () => {
   });
 });
 
+// =============================================================================
+// R5 — RUNTIME ROBUSTNESS GUARDS. Small-surface regression tests that fail
+// loudly if the fixes for R5.1 / R5.2 / R5.5 get reverted.
+// =============================================================================
+describe('R5 RUNTIME ROBUSTNESS', () => {
+  const rendererPath = path.join(__dirname, '..', 'app', 'renderer.js');
+  const mainPath = path.join(__dirname, '..', 'app', 'main.js');
+
+  it('R5.1 G12: priorityPaths.delete happens at priorityQueue.shift site', () => {
+    const src = fs.readFileSync(rendererPath, 'utf8');
+    const shiftIdx = src.indexOf('priorityQueue.shift()');
+    if (shiftIdx < 0) throw new Error('priorityQueue.shift() call not found');
+    // Within the next ~250 chars of the shift site we must see a delete
+    // of the same path from priorityPaths. Small window so re-inlining
+    // the shift elsewhere without the cleanup still fails the test.
+    const window = src.slice(shiftIdx, shiftIdx + 500);
+    if (!/priorityPaths\.delete\(next\)/.test(window)) {
+      throw new Error('priorityPaths.delete(next) missing within 500 chars of priorityQueue.shift()');
+    }
+  });
+
+  it('R5.2 G13: scheduleAutoDelete re-checks currentPath before deleteFile', () => {
+    const src = fs.readFileSync(rendererPath, 'utf8');
+    const block = src.match(/function scheduleAutoDelete[\s\S]{0,900}\n\}/);
+    if (!block) throw new Error('scheduleAutoDelete block not found');
+    // Need TWO currentPath guards: one before renderDots, one before IPC.
+    const count = (block[0].match(/if\s*\(\s*currentPath\s*===\s*p\s*\)\s*return/g) || []).length;
+    if (count < 2) {
+      throw new Error(`scheduleAutoDelete should re-check currentPath after renderDots; found ${count} guard(s)`);
+    }
+  });
+
+  it('R5.5 R32: corrupt registry is archived, not silently overwritten', () => {
+    const src = fs.readFileSync(mainPath, 'utf8');
+    if (!/archiveCorruptRegistry/.test(src)) {
+      throw new Error('main.js missing archiveCorruptRegistry helper');
+    }
+    // Must be called on JSON.parse failure AND on shape mismatch.
+    const load = src.match(/function loadAssignments[\s\S]{0,1500}\n\}/);
+    if (!load) throw new Error('loadAssignments block not found');
+    if (!/archiveCorruptRegistry\(.{0,80}JSON\.parse/i.test(load[0])) {
+      throw new Error('loadAssignments must archive on JSON.parse failure');
+    }
+    if (!/archiveCorruptRegistry\(.{0,80}(missing|assignments|shape)/i.test(load[0])) {
+      throw new Error('loadAssignments must archive on shape mismatch');
+    }
+  });
+
+  it('R5.5: archive destination uses .corrupt-<timestamp>.json suffix', () => {
+    const src = fs.readFileSync(mainPath, 'utf8');
+    if (!/\.corrupt-.{0,40}\$\{ts\}/.test(src) && !/\.corrupt-\$\{ts\}/.test(src)) {
+      throw new Error('archive filename should embed ISO timestamp (.corrupt-<ts>.json)');
+    }
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');

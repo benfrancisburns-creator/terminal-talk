@@ -326,6 +326,11 @@ function scheduleAutoDelete(p, wasManual = false) {
     heardPaths.delete(p);
     queue = queue.filter(f => f.path !== p);
     renderDots();
+    // Race defence: between the sync checks above and the IPC returning,
+    // the user could have re-played the clip (priority re-queue, manual
+    // click landing on a queue-updated event). Re-verify the path really
+    // isn't the current one before the file is unlinked on disk.
+    if (currentPath === p) return;
     try { await window.api.deleteFile(p); } catch {}
   }, delay);
   deleteTimers.set(p, t);
@@ -490,6 +495,11 @@ function playNextPending() {
   //    of mute or focus; the user explicitly asked for it.
   while (priorityQueue.length > 0) {
     const next = priorityQueue.shift();
+    // Keep priorityPaths in lock-step with priorityQueue: once a path
+    // leaves the queue (plays or is dropped because its file is gone),
+    // it is no longer "priority" and must not block its own re-queue
+    // or leak into the filter at renderDots time.
+    priorityPaths.delete(next);
     if (queue.find(f => f.path === next)) {
       playPath(next, true);
       return;
