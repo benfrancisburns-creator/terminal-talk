@@ -2,6 +2,16 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.4] — 2026-04-20
+
+Kit demo hotfix — playback appeared to walk the dot strip right-to-left.
+
+### Fixed
+
+- **Kit demo mock-ipc returns seed queue in authoring order.** `app/main.js:220`'s `getQueueFiles` sorts its result `b.mtime - a.mtime` (newest first), and `renderer.js:_renderDotsNow` relies on that ordering (it takes `.slice(0, MAX_VISIBLE_DOTS).reverse()` to paint oldest-left / newest-right). The kit's mock returned `queueFiles.slice()` unsorted, so ascending-order seeds (the documented authoring convention) produced newest-left / oldest-right dots and playback appeared to walk right-to-left. Fix: the mock's `getQueue` + every `queue-updated` emit now sort with the same `byNewestFirst` comparator, so kit playback direction is seed-order-agnostic and matches the product.
+
+---
+
 ## [0.3.3] — 2026-04-20
 
 Three-part hardening against a phantom-audio class of bug. Field report: an "orange" session (`cafebeef`, marked "(closed)") played a synthesised clip despite never matching an active terminal. Root cause was a race between the test harness seeding the real registry and a live Electron's `saveAssignments` overwriting that seed between seed-write and `synth_turn.py` reading it — the synth fell back to default (`muted=false`) and emitted an MP3 under the test fixture short. Three independent defences now cover this class of bug.
