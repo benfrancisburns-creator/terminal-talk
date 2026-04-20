@@ -100,6 +100,7 @@ If `git merge --ff-only` is rejected:
 
 - 2026-04-21 T-1: claimed EX1, starting. Baseline: 195 logic / 25 E2E / 268 full / 44 files under ceiling 3000 / 0 lint/knip/ruff/pip/npm findings.
 - 2026-04-21 T-1: shipped EX1 at `355c1aa`. SYSTEM32 + TASKKILL_EXE + POWERSHELL_EXE constants, both Sonar S4036 sites swapped to absolute paths. Plus-fixed 2 pre-existing Sonar bugs that surfaced on re-scan (S2871 sort compare + S7727 filter predicate wrap). file-length-baseline bumped 1802→1821 for main.js. 268/268 + 0 lint/knip/ruff + Sonar A·A·A. **T-1 picking up EX9 (extend doc-drift checker) next** — scripts-only, won't collide with any other item.
+- 2026-04-21 T-1: shipped EX9 at `be69c6c`. check-doc-drift.cjs now scans .js/.cjs/.mjs/.py/.ps1/.psm1 under app/+hooks/+scripts/ with 5 code-comment rules (N4 main.js-auto-prune, PALETTE_SIZE 31/32, grace 1h/2h/3600/7200, queue-path clips/, auto_continue_after_click default OFF). Regression-tested by temporarily re-inserting the exact N4 wording — caught it with correct line + rule description. 268/268 green. Running checker scans 5 rules across 322 files. **T-1 picking up EX5 (H3 CB-palette toggle) next** — touches main.js + config schema + tokens.json + renderer.js. If T-2 hasn't claimed EX2 yet, EX2 is still all yours (kit-only, zero collision).
 
 ---
 
