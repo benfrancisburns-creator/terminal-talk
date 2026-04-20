@@ -41,7 +41,14 @@ const DEFAULTS = {
   playback: {
     speed: 1.25,
     auto_prune: true,     // master toggle — off means clips stack until cleared
-    auto_prune_sec: 20    // delay after play before the clip disappears (3-600)
+    auto_prune_sec: 20,   // delay after play before the clip disappears (3-600)
+    // v0.3.6 — when ON (default), clicking a dot plays that clip then
+    // auto-continues through the remaining clips in mtime order,
+    // regardless of played state. Fixes the "click exercise" where a
+    // user re-listening to a fully-played queue had to click every
+    // clip individually. OFF preserves the pre-0.3.6 single-clip
+    // behaviour for users who want that control.
+    auto_continue_after_click: true
   },
   speech_includes: {
     code_blocks: false,

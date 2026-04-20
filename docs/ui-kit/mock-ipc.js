@@ -101,7 +101,7 @@
       pause_resume:     'Control+Shift+P',
       pause_only:       'Control+Shift+O',
     },
-    playback: { speed: 1.25, auto_prune: true, auto_prune_sec: 20 },
+    playback: { speed: 1.25, auto_prune: true, auto_prune_sec: 20, auto_continue_after_click: true },
     speech_includes: {
       code_blocks: false, inline_code: false, urls: false,
       headings: true, bullet_markers: false, image_alt: false,

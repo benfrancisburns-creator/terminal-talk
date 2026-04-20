@@ -2528,6 +2528,57 @@ describe('D2-5 — config.schema.json parity with validator rules', () => {
     assertEqual(prune.minimum, 1);
     assertEqual(prune.maximum, 600);
   });
+
+  it('v0.3.6 auto_continue_after_click present in schema + validator', () => {
+    const cont = schema.properties.playback.properties.auto_continue_after_click;
+    if (!cont) throw new Error('schema missing playback.auto_continue_after_click');
+    assertEqual(cont.type, 'boolean');
+    assertEqual(cont.default, true);
+    const { RULES } = require('../app/lib/config-validate');
+    const rule = RULES.find(r => r.path === 'playback.auto_continue_after_click');
+    if (!rule) throw new Error('validator missing playback.auto_continue_after_click rule');
+    assertEqual(rule.type, 'boolean');
+  });
+});
+
+describe('AUTO-CONTINUE AFTER CLICK (v0.3.6 renderer guard)', () => {
+  // Source-grep regression tests for the "click exercise" fix. Can't
+  // unit-test the audio.ended flow without a DOM harness; locking the
+  // structural invariants is enough to catch accidental regressions.
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+
+  it('renderer defines autoContinueAfterClick flag', () => {
+    if (!/let\s+autoContinueAfterClick\s*=/.test(rendererSrc)) {
+      throw new Error('renderer.js must declare `let autoContinueAfterClick = ...`');
+    }
+  });
+
+  it('userPlay sets userClick=true on playPath', () => {
+    // Accept either `playPath(p, true, true)` positional or a future
+    // options-object form, but require the userClick signal.
+    const m = rendererSrc.match(/function\s+userPlay\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('userPlay function body not found');
+    const body = m[1];
+    if (!/playPath\s*\([^,)]+,\s*true\s*,\s*true\s*\)/.test(body)) {
+      throw new Error('userPlay must call playPath(p, true, true) to signal user-click vs priority');
+    }
+  });
+
+  it('playPath signature carries a userClick parameter', () => {
+    if (!/function\s+playPath\s*\([^)]*userClick[^)]*\)/.test(rendererSrc)) {
+      throw new Error('playPath must accept a userClick parameter');
+    }
+  });
+
+  it('audio.ended branches on wasUserClick && autoContinueAfterClick', () => {
+    if (!/wasUserClick\s*&&\s*autoContinueAfterClick/.test(rendererSrc)) {
+      throw new Error('audio.ended handler must gate the continuation branch on both wasUserClick and autoContinueAfterClick');
+    }
+    // Continuation must select next clip by mtime strictly greater than justPlayed's
+    if (!/f\.mtime\s*>\s*justPlayedClip\.mtime/.test(rendererSrc)) {
+      throw new Error('continuation branch must pick the next clip with mtime > justPlayed (strictly forward in time)');
+    }
+  });
 });
 
 describe('S3.3 — config validator', () => {

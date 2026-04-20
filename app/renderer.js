@@ -220,6 +220,11 @@ setTimeout(pollStaleSessions, 500);
 let queue = [];
 let currentPath = null;
 let currentIsManual = false;
+// v0.3.6 — currentIsManual was overloaded to mean both "priority
+// (hey-jarvis) clip" and "user clicked a dot". Only the latter should
+// trigger auto-continue-after-click, so track it separately. Set only
+// by userPlay(); reset on ended/error/next play.
+let currentIsUserClick = false;
 const playedPaths = new Set();
 const heardPaths = new Set();
 const priorityPaths = new Set();
@@ -233,6 +238,9 @@ const STALE_MS = 5 * 60 * 1000;
 // auto plays — keeping one number avoids the "which timer did that use?"
 // confusion. Clamped 3-600 s on the input side.
 let autoPruneSec = 20;
+// v0.3.6 — mirrors CFG.playback.auto_continue_after_click. Default ON.
+// See audio.addEventListener('ended') for the behaviour this gates.
+let autoContinueAfterClick = true;
 const MAX_VISIBLE_DOTS = 40;            // hard cap to keep DOM light; overflow scrolls horizontally
 
 // Palette comes from app/lib/tokens.json via the generated tokens-window.js
@@ -554,12 +562,13 @@ function _renderDotsNow() {
   }
 }
 
-function playPath(p, manual = false) {
+function playPath(p, manual = false, userClick = false) {
   const idx = queue.findIndex(f => f.path === p);
   if (idx < 0) return false;
   cancelAutoDelete(p);
   currentPath = p;
   currentIsManual = manual;
+  currentIsUserClick = userClick;
   audio.src = fileUrl(p);
   audio.currentTime = 0;
   audio.playbackRate = currentPlaybackSpeed;
@@ -573,7 +582,7 @@ function playPath(p, manual = false) {
 }
 
 function userPlay(p) {
-  playPath(p, true);
+  playPath(p, true, true);
 }
 
 async function deleteDot(p) {
@@ -793,14 +802,58 @@ audio.addEventListener('ended', () => {
   setPlayPauseIcons(false);
   const justPlayed = currentPath;
   const wasManual = currentIsManual;
+  const wasUserClick = currentIsUserClick;
   currentPath = null;
   currentIsManual = false;
+  currentIsUserClick = false;
   renderDots();
   updateScrubberMode();
   // Both auto-played and manually-played clips get auto-deleted now — only
   // the delay differs (30 s auto vs 90 s manual). Previously auto-played
   // clips accumulated indefinitely, flooding the toolbar.
   if (justPlayed) scheduleAutoDelete(justPlayed, wasManual);
+
+  // v0.3.6 — user-click continuation. When a clip started by a user
+  // click ends, and the `auto_continue_after_click` setting is on
+  // (default), play the next clip strictly forward in time (mtime >
+  // justPlayed's) regardless of played state. Chains with userClick=true
+  // so the continuation keeps honouring the setting for the whole run.
+  //
+  // Why not go through playNextPending's fallback branch? Fallback
+  // filters out played clips — so after a full queue has been heard
+  // once, fallback finds nothing and the continuation dies on the
+  // first clip. Users then face a "click exercise" to re-listen.
+  // This branch reads "forward in time" instead of "any unplayed",
+  // so State C (everything already heard, click one to replay) works.
+  //
+  // State B (interrupt during auto-play by clicking mid-queue) also
+  // routes here: click #3 mid-#1 → #3 plays → ended fires with
+  // wasUserClick=true → next forward is #4 → plays → ...→ #N. Clips
+  // #1/#2 stay unplayed; the user explicitly chose to start from #3.
+  // Cleaner than the pre-v0.3.6 1→3→2→4 reshuffle.
+  //
+  // Priority (hey-jarvis) clips set currentIsManual=true but
+  // userClick=false, so they always fall through to playNextPending
+  // to preserve the existing priority-drain-then-resume behaviour.
+  if (wasUserClick && autoContinueAfterClick) {
+    const justPlayedClip = queue.find(f => f.path === justPlayed);
+    if (justPlayedClip) {
+      const next = queue
+        .filter(f =>
+          f.mtime > justPlayedClip.mtime &&
+          !isPathSessionMuted(f.path) &&
+          !isPathSessionStale(f.path)
+        )
+        .sort((a, b) => a.mtime - b.mtime)[0];
+      if (next) {
+        playPath(next.path, true, true);
+        return;
+      }
+      // No more forward clips — chain complete, stop cleanly.
+      return;
+    }
+  }
+
   // Always call playNextPending: it picks from priority → pending → fallback
   // scan of unplayed clips still sitting in queue. The old gate skipped the
   // fallback entirely when both explicit queues were empty, leaving unplayed
@@ -1491,6 +1544,18 @@ async function loadSettings() {
       pruneSecInput.value = String(n);  // clamp display too
       autoPruneSec = n;
       await window.api.updateConfig({ playback: { auto_prune_sec: n } });
+    });
+  }
+
+  // v0.3.6 — auto_continue_after_click toggle.
+  const continueToggle = document.getElementById('autoContinueToggle');
+  const continueInitial = cfg.playback && cfg.playback.auto_continue_after_click !== false;
+  autoContinueAfterClick = continueInitial;
+  if (continueToggle) {
+    continueToggle.checked = continueInitial;
+    continueToggle.addEventListener('change', async () => {
+      autoContinueAfterClick = continueToggle.checked;
+      await window.api.updateConfig({ playback: { auto_continue_after_click: autoContinueAfterClick } });
     });
   }
 

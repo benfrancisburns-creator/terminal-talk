@@ -34,7 +34,8 @@
       "properties": {
         "speed":          { "type": "number", "minimum": 0.25, "maximum": 4.0, "default": 1.25 },
         "auto_prune":     { "type": "boolean", "default": true },
-        "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 }
+        "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 },
+        "auto_continue_after_click": { "type": "boolean", "default": true, "description": "When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. When off, a click plays only the clicked clip." }
       }
     },
     "speech_includes": {

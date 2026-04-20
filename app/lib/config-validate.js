@@ -15,6 +15,7 @@ const RULES = [
   { path: 'playback.speed',  type: 'number', min: 0.25, max: 4.0 },
   { path: 'playback.auto_prune', type: 'boolean' },
   { path: 'playback.auto_prune_sec', type: 'number', min: 1, max: 600 },
+  { path: 'playback.auto_continue_after_click', type: 'boolean' },
   { path: 'speech_includes', type: 'object' },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
 ];
