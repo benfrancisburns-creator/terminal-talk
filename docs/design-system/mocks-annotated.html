@@ -6,6 +6,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /*
+    ═══════════════════════════════════════════════════════════════════════════
+    S5 — mocks-annotated as iframe wrapper around the kit
+    ═══════════════════════════════════════════════════════════════════════════
+
+    Before: 1,051 lines of hand-written HTML + CSS reproducing the shipping
+    toolbar's pixel geometry. Every product change risked drift and the
+    bundle review (pass-1 §8d, pass-2 F23/F24) called it out.
+
+    Now:     Each shot iframes docs/ui-kit/index.html?seed=<name>&chrome=0.
+             The kit's React App() reads ?seed and boots into a preset state
+             matching this page's annotations. When the shipping toolbar
+             changes, R1 (tokens.json) + R2 (kit components) propagate
+             automatically to the iframe — mocks stay in sync.
+             SEEDS live in docs/ui-kit/index.html; one per shot below.
+  */
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 56px 40px 96px;
@@ -17,7 +33,6 @@
     color: #fff; min-height: 100vh;
   }
 
-  /* Page title */
   .page-title {
     max-width: 1280px; margin: 0 auto 40px;
     display: flex; align-items: baseline; justify-content: space-between;
@@ -33,13 +48,11 @@
     font-family: 'JetBrains Mono', monospace;
   }
 
-  /* Grid of shots — each shot is its own full-width block */
   .grid {
     max-width: 1280px; margin: 0 auto;
     display: flex; flex-direction: column; gap: 80px;
   }
 
-  /* ---- Shot header (above the stage) ---- */
   .shot-head {
     display: flex; align-items: baseline; gap: 18px;
     margin-bottom: 22px;
@@ -77,512 +90,95 @@
     color: #fff;
   }
 
-  /* ---- Stage: mock on the left, annotation column on the right ---- */
+  /* Stage: iframed kit on the left, annotation column on the right */
   .stage {
     display: grid;
-    grid-template-columns: 1fr 280px;
+    grid-template-columns: 1fr 320px;
     gap: 40px;
     align-items: center;
   }
   .stage.full {
-    grid-template-columns: 1fr 320px;
     align-items: stretch;
   }
 
-  /* ---- The floating "desktop" area where the toolbar lives ---- */
-  .floating {
-    position: relative;
+  /* Iframe container — borderless letterbox matching the original
+     .floating shell look (radial gradient + soft shadow). The kit's
+     own body provides the gradient, so we just provide the rounded
+     clipping + shadow. */
+  .shot-frame {
     border-radius: 20px;
     overflow: hidden;
-    background:
-      radial-gradient(circle at 22% 32%, rgba(96,120,180,0.35) 0%, transparent 55%),
-      radial-gradient(circle at 78% 68%, rgba(160,110,190,0.3) 0%, transparent 52%),
-      linear-gradient(135deg, #141a28 0%, #1b1430 100%);
     box-shadow:
       0 0 0 1px rgba(255,255,255,0.04),
       0 40px 80px -20px rgba(0,0,0,0.55);
-    min-height: 280px;
-    display: flex; align-items: center; justify-content: center;
+    background: #0e0f13;
   }
-  .floating.tall   { min-height: 560px; align-items: flex-start; padding-top: 56px; }
-  .floating.short  { min-height: 240px; }
+  .shot-frame iframe {
+    display: block;
+    width: 100%;
+    border: 0;
+    /* Height varies per shot; set via inline style on the <iframe>. */
+  }
+  .shot-frame.short iframe { height: 260px; }
+  .shot-frame.tall  iframe { height: 620px; }
+  .shot-frame.snap  iframe { height: 320px; }
 
-  /* Subtle "wallpaper" texture — faint diagonal lines so it doesn't feel like a flat black box */
-  .floating::before {
-    content: '';
-    position: absolute; inset: 0;
-    background-image:
-      repeating-linear-gradient(45deg, transparent 0 28px, rgba(255,255,255,0.015) 28px 29px);
-    pointer-events: none;
-  }
-
-  /* ═════════════  TOOLBAR — two-row letterbox ═════════════
-     Controls sit on top (back10 / play / fwd10 / scrubber / time /
-     clear / settings / close); dots strip sits below. This matches
-     the shipping app/index.html structure (`.bar > .bar-top + .dots-row`). */
-  .bar {
-    position: relative;
-    display: flex; flex-direction: column; gap: 4px;
-    padding: 6px 12px 8px;
-    background: rgba(22, 24, 30, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 22px;
-    box-shadow:
-      0 18px 40px rgba(0,0,0,0.55),
-      0 4px 10px rgba(0,0,0,0.35),
-      inset 0 1px 0 rgba(255,255,255,0.04);
-    backdrop-filter: blur(28px) saturate(140%);
-    width: 680px;
-    font-family: 'Inter', system-ui, sans-serif;
-    z-index: 5;
-  }
-  .bar.has-panel {
-    border-radius: 22px 22px 0 0;
-    border-bottom: none;
-    box-shadow:
-      0 18px 40px rgba(0,0,0,0.55),
-      inset 0 1px 0 rgba(255,255,255,0.04);
-  }
-  .bar-top {
-    display: flex; align-items: center; gap: 8px;
-    height: 36px;
-  }
-  .dots-row {
-    height: 20px;
-    padding: 0 4px;
-    display: flex; align-items: center;
-  }
-
-  /* Dots area — on its own row beneath the controls */
-  .dots { display: flex; align-items: center; gap: 5px; min-width: 20px; flex-wrap: wrap; }
-
-  /* Spacer between "runs" of clips from different sessions. The shipping
-     renderer inserts one of these whenever the next dot's session differs
-     from the previous dot's session. So a queue of 3 × T1, 3 × T2, 2 × T3
-     renders as [●●●  ●●●  ●●] with two gaps — the eye immediately reads
-     "three speakers, in this order". */
-  .dots-run-gap {
-    display: inline-block;
-    width: 12px;
-    flex-shrink: 0;
-  }
-
-  /* ═════════════  TOP SNAP (free-floating, but flush to top edge) ═════════════
-     Visually identical to the default layout — same two-row letterbox.
-     The only difference is the position (glued to the top of the screen)
-     and the rounded corners flattening on the top so it reads as docked. */
-  .screen {
-    position: relative;
-    border-radius: 18px; overflow: hidden;
-    background:
-      radial-gradient(circle at 20% 25%, rgba(60,80,140,0.35) 0%, transparent 55%),
-      radial-gradient(circle at 80% 78%, rgba(130,90,170,0.3) 0%, transparent 55%),
-      linear-gradient(135deg, #141a28 0%, #1b1430 100%);
-    box-shadow:
-      0 0 0 1px rgba(255,255,255,0.05),
-      0 40px 80px -20px rgba(0,0,0,0.55);
-    aspect-ratio: 16 / 9;
-    min-height: 320px;
-  }
-  .screen::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(45deg, transparent 0 28px, rgba(255,255,255,0.015) 28px 29px);
-    pointer-events: none;
-  }
-  .screen .bar.snapped-top {
-    position: absolute; top: 0; left: 50%;
-    transform: translateX(-50%);
-    border-top-left-radius: 0; border-top-right-radius: 0;
-  }
-
-
-  .dot {
-    width: 18px; height: 18px; border-radius: 50%;
-    display: inline-block; position: relative;
-    border: 1px solid rgba(0,0,0,0.3);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
-  }
-
-  /* Base palette — the 8 hues */
-  .dot.c-red    { background: #ff5e5e; }
-  .dot.c-orange { background: #ffa726; }
-  .dot.c-yellow { background: #ffd93d; }
-  .dot.c-green  { background: #4ade80; }
-  .dot.c-blue   { background: #60a5fa; }
-  .dot.c-purple { background: #c084fc; }
-  .dot.c-brown  { background: #c97b50; }
-  .dot.c-white  { background: #e0e0e0; }
-  .dot.c-grey   { background: #6b7280; }
-
-  /* Horizontal split (top/bottom) — complementary pairs */
-  .dot.hsplit-red-green    { background: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%); }
-  .dot.hsplit-yellow-purple{ background: linear-gradient(to bottom, #ffd93d 50%, #c084fc 50%); }
-  .dot.hsplit-brown-white  { background: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%); }
-
-  /* Vertical split (left/right) — complementary pairs */
-  .dot.vsplit-red-blue     { background: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%); }
-  .dot.vsplit-orange-purple{ background: linear-gradient(to right, #ffa726 50%, #c084fc 50%); }
-  .dot.vsplit-yellow-brown { background: linear-gradient(to right, #ffd93d 50%, #c97b50 50%); }
-
-  /* States */
-  /* PLAYING — slightly larger, pulsing white ring, base colour unchanged */
-  .dot.playing {
-    width: 22px; height: 22px;
-    animation: pulseRing 1.6s ease-in-out infinite;
-  }
-  @keyframes pulseRing {
-    0%, 100% {
-      box-shadow:
-        inset 0 0 0 1px rgba(255,255,255,0.05),
-        0 0 0 2px rgba(255,255,255,0.45),
-        0 0 10px rgba(255,255,255,0.25);
-    }
-    50% {
-      box-shadow:
-        inset 0 0 0 1px rgba(255,255,255,0.05),
-        0 0 0 3px rgba(255,255,255,0.7),
-        0 0 14px rgba(255,255,255,0.4);
-    }
-  }
-
-  /* HEARD — fill goes white, 2px coloured outer ring preserves session colour */
-  .dot.heard {
-    background: #f0f2f5 !important;
-    border: 2px solid currentColor;
-    box-shadow: none;
-  }
-  .dot.heard.c-red    { color: #ff5e5e; }
-  .dot.heard.c-orange { color: #ffa726; }
-  .dot.heard.c-green  { color: #4ade80; }
-  .dot.heard.c-blue   { color: #60a5fa; }
-  .dot.heard.c-purple { color: #c084fc; }
-
-  /* J-CLIP — small "J" letter centred, inherits source colour; grey if non-Claude source */
-  .dot.j::after {
-    content: 'J';
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px; font-weight: 700;
-    color: rgba(0,0,0,0.78);
-    padding-bottom: 1px;
-    line-height: 1;
-  }
-
-  .divider {
-    width: 1px; height: 24px;
-    background: rgba(255,255,255,0.1);
-    margin: 0 4px;
-  }
-
-  /* Control buttons */
-  .btn {
-    width: 30px; height: 30px; border-radius: 50%;
-    background: rgba(255,255,255,0.06);
-    color: rgba(255,255,255,0.85);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    font-size: 12px;
-  }
-  .btn.play {
-    width: 34px; height: 34px;
-    background: rgba(79,163,255,0.2);
-    color: #9ccaff;
-    font-size: 13px;
-  }
-  .btn.close {
-    background: transparent;
-    width: 24px; height: 24px;
-    color: rgba(255,255,255,0.5);
-    font-size: 14px;
-  }
-
-  /* Scrubber — the thumb is the TT mascot (same pixel-art orange face
-     as the wallpaper, grey eyes + smile, scaled down to 20×18 so it
-     reads clearly on the 4 px rail). crispEdges preserves the pixel
-     silhouette at this size; the drop-shadow matches the wallpaper's
-     copper-shadow 3D look. */
-  .scrubber {
-    flex: 1; height: 4px;
-    background: rgba(255,255,255,0.14);
-    border-radius: 2px;
-    position: relative; margin: 0 6px;
-  }
-  .scrubber .filled {
-    position: absolute; left: 0; top: 0; bottom: 0;
-    background: rgba(255,255,255,0.55);
-    border-radius: 2px;
-  }
-  .scrubber .thumb {
-    position: absolute; top: 50%;
-    width: 20px; height: 18px;
-    transform: translate(-50%, -50%);
-    filter: drop-shadow(1px 1px 0 rgba(179,102,32,0.9));
-    pointer-events: none;
-    background: transparent url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 140 120' shape-rendering='crispEdges'><rect x='13' y='0' width='114' height='88' fill='%23ff8c1a'/><rect x='0' y='36' width='13' height='26' fill='%23ff8c1a'/><rect x='127' y='36' width='13' height='26' fill='%23ff8c1a'/><rect x='19' y='88' width='16' height='32' fill='%23ff8c1a'/><rect x='46' y='88' width='16' height='32' fill='%23ff8c1a'/><rect x='79' y='88' width='16' height='32' fill='%23ff8c1a'/><rect x='106' y='88' width='16' height='32' fill='%23ff8c1a'/><rect x='36' y='26' width='16' height='16' fill='%233a3a3a'/><rect x='88' y='26' width='16' height='16' fill='%233a3a3a'/><rect x='44' y='58' width='8' height='6' fill='%233a3a3a'/><rect x='88' y='58' width='8' height='6' fill='%233a3a3a'/><rect x='44' y='64' width='52' height='6' fill='%233a3a3a'/></svg>") center/contain no-repeat;
-  }
-  .scrubber .thumb.hover {
-    filter: drop-shadow(1px 1px 0 rgba(179,102,32,0.9)) drop-shadow(0 0 6px rgba(255,140,26,0.5));
-  }
-
-  .time {
-    font-size: 11.5px; color: rgba(255,255,255,0.62);
-    font-variant-numeric: tabular-nums;
-    font-family: 'JetBrains Mono', monospace;
-    min-width: 76px; text-align: right;
-  }
-
-  /* ═════════════  SETTINGS PANEL  ═════════════ */
-  .panel {
-    width: 620px;
-    background: rgba(22, 24, 30, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-top: none;
-    border-radius: 0 0 20px 20px;
-    padding: 18px 20px 20px;
-    backdrop-filter: blur(28px) saturate(140%);
-    font-family: 'Inter', system-ui, sans-serif;
-    font-size: 12px;
-    z-index: 4;
-    box-shadow: 0 18px 40px rgba(0,0,0,0.55);
-  }
-  .panel-section + .panel-section {
-    margin-top: 16px; padding-top: 16px;
-    border-top: 1px solid rgba(255,255,255,0.06);
-  }
-  .panel-header {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: rgba(255,255,255,0.5);
-    margin-bottom: 10px;
-  }
-
-  .row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 4px 0; color: rgba(255,255,255,0.9);
-  }
-  .row label { min-width: 90px; color: rgba(255,255,255,0.72); font-size: 12px; }
-  .mini-rail { flex: 1; height: 4px; background: rgba(255,255,255,0.14); border-radius: 2px; position: relative; }
-  .mini-rail .filled { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,0.55); border-radius: 2px; }
-  .mini-rail .thumb { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); }
-  .readout {
-    min-width: 46px; text-align: right;
-    color: rgba(255,255,255,0.72);
-    font-variant-numeric: tabular-nums; font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .session-row {
-    display: grid;
-    grid-template-columns: 16px 24px 80px 1fr 120px 26px 26px;
-    gap: 10px; align-items: center;
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px;
-    margin-bottom: 6px;
-  }
-  .session-row.expanded {
-    background: rgba(255,255,255,0.04);
-    border-color: rgba(255,255,255,0.08);
-  }
-  .session-row.muted { opacity: 0.55; }
-  .session-row.focused {
-    box-shadow: inset 0 0 0 1px rgba(255,215,61,0.28);
-    background: rgba(255,215,61,0.04);
-  }
-
-  /* Per-session focus star — ☆ outlined when off, ★ filled gold when on.
-     Main.js enforces exclusivity: only one row can be focused at a time. */
-  .focus-btn {
-    width: 26px; height: 26px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: transparent;
-    color: rgba(255,255,255,0.7);
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 13px;
-  }
-  .focus-btn.focused {
-    background: rgba(255,215,61,0.18);
-    border-color: rgba(255,215,61,0.5);
-    color: #ffd93d;
-  }
-  /* Per-session mute button — 🔊 unmuted, 🔇 muted. One-click toggle
-     in the shipping UI; clicking triggers save + re-render. */
-  .mute-btn {
-    width: 26px; height: 26px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.04);
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 13px;
-  }
-  .mute-btn.muted { background: rgba(255,94,94,0.15); border-color: rgba(255,94,94,0.35); }
-
-  /* Auto-prune row on Playback — 2026-04 addition; mirrors config's
-     playback.auto_prune + playback.auto_prune_sec. */
-  .row .toggle {
-    position: relative;
-    width: 34px; height: 18px;
-    background: rgba(74,222,128,0.35);
-    border-radius: 10px;
-  }
-  .row .toggle::after {
-    content: ''; position: absolute;
-    top: 2px; left: 18px;
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #4ade80;
-  }
-  .row .toggle.off { background: rgba(255,255,255,0.1); }
-  .row .toggle.off::after { left: 2px; background: rgba(255,255,255,0.5); }
-  .row .prune-value {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: rgba(255,255,255,0.85);
-  }
-  .row .prune-value .suffix { color: rgba(255,255,255,0.5); font-family: 'Inter', system-ui, sans-serif; }
-  .chev { color: rgba(255,255,255,0.55); font-size: 11px; text-align: center; }
-  .swatch {
-    width: 24px; height: 24px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.12);
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
-  }
-  .short-id { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(255,255,255,0.62); }
-  .fake-input {
-    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 6px; padding: 6px 10px;
-    color: rgba(255,255,255,0.95); font-size: 12px;
-  }
-  .fake-input.placeholder { color: rgba(255,255,255,0.32); font-style: italic; }
-  .fake-select {
-    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 6px; padding: 6px 10px;
-    color: rgba(255,255,255,0.85); font-size: 11.5px;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; white-space: nowrap; overflow: hidden;
-  }
-  .fake-select .caret { opacity: 0.5; font-size: 9px; flex-shrink: 0; }
-
-  /* Expanded sub-rows */
-  .session-expanded-body {
-    grid-column: 1 / -1;
-    padding: 10px 8px 4px 36px;
-    display: flex; flex-direction: column; gap: 10px;
-    border-top: 1px dashed rgba(255,255,255,0.06);
-    margin-top: 8px;
-  }
-  .sub-row {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 11.5px; color: rgba(255,255,255,0.75);
-  }
-  .sub-row label {
-    min-width: 110px; font-size: 11px;
-    color: rgba(255,255,255,0.6);
-  }
-
-  /* Tri-state toggle group */
-  .tri-row {
-    display: flex; flex-wrap: wrap; gap: 6px;
-  }
-  .tri-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    font-size: 11px;
-    color: rgba(255,255,255,0.75);
-  }
-  .tri-chip .tri {
-    width: 10px; height: 10px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.3);
-  }
-  .tri-chip .tri.on    { background: #4ade80; border-color: #4ade80; }
-  .tri-chip .tri.off   { background: transparent; }
-  .tri-chip .tri.mixed { background: rgba(255,217,61,0.7); border-color: #ffd93d; }
-
-  /* ASCII banner */
-  .ascii {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9px; line-height: 1.25;
-    color: rgba(255,255,255,0.58);
-    white-space: pre;
-    padding: 12px 14px;
-    background: rgba(0,0,0,0.3);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .shortcuts {
-    margin-top: 10px;
-    display: grid;
-    grid-template-columns: 180px 1fr;
-    row-gap: 4px;
-    font-size: 11.5px;
-  }
-  .shortcuts dt {
-    color: rgba(255,255,255,0.92);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-  }
-  .shortcuts dt kbd {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.14);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
-    color: #fff;
-  }
-  .shortcuts dd {
-    margin: 0;
-    color: rgba(255,255,255,0.62);
-  }
-
-  /* ═════════════  ANNOTATION COLUMN (single side, grouped, clean) ═════════════ */
+  /* Annotation column */
   .annotations {
-    padding: 4px 0;
+    display: flex; flex-direction: column; gap: 22px;
+    padding: 6px 0;
   }
   .annotations dl {
     margin: 0;
-    display: flex; flex-direction: column;
-    gap: 18px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .annotations dl > div {
+    display: block;
   }
   .annotations dt {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 700;
-    color: #ffd93d;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    margin-bottom: 5px;
+    font-size: 13px; font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    margin-bottom: 4px;
+    letter-spacing: -0.005em;
   }
   .annotations dd {
     margin: 0;
-    font-size: 13px;
-    color: rgba(255,255,255,0.75);
-    line-height: 1.55;
+    font-size: 13px; line-height: 1.55;
+    color: rgba(255,255,255,0.62);
   }
-  .annotations dd code {
+  .annotations dd code, .annotations dt code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #fff;
+  }
+  .annotations dd b { color: rgba(255,255,255,0.88); font-weight: 600; }
+  .annotations dd i { color: rgba(255,255,255,0.85); font-style: italic; }
+
+  /* Footnote below the grid */
+  .footnote {
+    max-width: 1280px; margin: 56px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    color: rgba(255,255,255,0.42);
+    line-height: 1.6;
+  }
+  .footnote code {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: rgba(255,217,61,0.9);
-    background: rgba(255,217,61,0.08);
-    padding: 1px 5px;
-    border-radius: 3px;
+    color: rgba(255,255,255,0.6);
   }
 </style>
 </head>
 <body>
 
 <div class="page-title">
-  <h1>Terminal Talk — annotated states</h1>
-  <div class="meta">5 mocks · floating toolbar · horizontal-only snap</div>
+  <h1>Terminal Talk — annotated mocks</h1>
+  <div class="meta">v0.2 · 5 shots · live-iframed from ../ui-kit/</div>
 </div>
 
 <div class="grid">
@@ -594,29 +190,15 @@
       <div class="title">Idle</div>
       <div class="caption">Default state. Toggle with <code>Ctrl+Shift+A</code>.</div>
     </div>
-
     <div class="stage">
-      <div class="floating short">
-        <div class="bar">
-          <div class="bar-top">
-            <div class="btn">⟲</div>
-            <div class="btn play">▶</div>
-            <div class="btn">⟳</div>
-            <div class="scrubber"><div class="thumb" style="left: 0"></div></div>
-            <div class="time">0:00 / 0:00</div>
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
-          </div>
-          <div class="dots-row"><div class="dots"></div></div>
-        </div>
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=idle&chrome=0" title="Idle toolbar" loading="lazy"></iframe>
       </div>
-
       <div class="annotations">
         <dl>
           <div>
             <dt>Frameless two-row pill</dt>
-            <dd>680 × 114, always-on-top, frameless. The whole pill is a drag surface — grab anywhere the buttons aren't.</dd>
+            <dd>680 × ~114, always-on-top, frameless. The whole pill is a drag surface — grab anywhere the buttons aren't.</dd>
           </div>
           <div>
             <dt>Controls row</dt>
@@ -639,7 +221,6 @@
     </div>
   </section>
 
-
   <!-- ═══════════════  02 — QUEUE WITH RUN CLUSTERING  ═══════════════ -->
   <section>
     <div class="shot-head">
@@ -647,43 +228,10 @@
       <div class="title">Queue with three sessions</div>
       <div class="caption">Clips from the same terminal cluster together; a gap marks a change of speaker.</div>
     </div>
-
     <div class="stage">
-      <div class="floating short">
-        <div class="bar">
-          <div class="bar-top">
-            <div class="btn">⟲</div>
-            <div class="btn play">❚❚</div>
-            <div class="btn">⟳</div>
-            <div class="scrubber">
-              <div class="filled" style="width: 18%"></div>
-              <div class="thumb" style="left: 18%"></div>
-            </div>
-            <div class="time">0:12 / 1:04</div>
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
-          </div>
-          <div class="dots-row">
-            <div class="dots">
-              <!-- Run 1: Terminal A (red) — currently playing + 2 queued -->
-              <div class="dot c-red playing"></div>
-              <div class="dot c-red"></div>
-              <div class="dot c-red"></div>
-              <span class="dots-run-gap"></span>
-              <!-- Run 2: Terminal B (yellow) — 3 queued -->
-              <div class="dot c-yellow"></div>
-              <div class="dot c-yellow"></div>
-              <div class="dot c-yellow"></div>
-              <span class="dots-run-gap"></span>
-              <!-- Run 3: Terminal C (green) — 2 queued -->
-              <div class="dot c-green"></div>
-              <div class="dot c-green"></div>
-            </div>
-          </div>
-        </div>
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=three-sessions&chrome=0" title="Three-session queue" loading="lazy"></iframe>
       </div>
-
       <div class="annotations">
         <dl>
           <div>
@@ -692,7 +240,7 @@
           </div>
           <div>
             <dt>Run clustering</dt>
-            <dd>Consecutive clips from the same terminal sit side-by-side. A 12 px gap is inserted only when the next clip's session differs — so the timeline reads as <b>A A A — B B B — C C</b> without any colour confusion.</dd>
+            <dd>Consecutive clips from the same terminal sit side-by-side. A small gap is inserted only when the next clip's session differs — so the timeline reads as <b>A A A — B B B — C C</b> without any colour confusion.</dd>
           </div>
           <div>
             <dt>Colour = session identity</dt>
@@ -707,7 +255,6 @@
     </div>
   </section>
 
-
   <!-- ═══════════════  03 — MIXED STATES  ═══════════════ -->
   <section>
     <div class="shot-head">
@@ -715,50 +262,15 @@
       <div class="title">Mixed states in one queue</div>
       <div class="caption">A realistic timeline: 3 red (2 already heard + 1 playing), 2 yellow queued, 2 green queued, and one blue “hey jarvis” clip.</div>
     </div>
-
     <div class="stage">
-      <div class="floating short">
-        <div class="bar">
-          <div class="bar-top">
-            <div class="btn">⟲</div>
-            <div class="btn play">❚❚</div>
-            <div class="btn">⟳</div>
-            <div class="scrubber">
-              <div class="filled" style="width: 34%"></div>
-              <div class="thumb" style="left: 34%"></div>
-            </div>
-            <div class="time">0:22 / 1:05</div>
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
-          </div>
-          <div class="dots-row">
-            <div class="dots">
-              <!-- Run 1: Terminal A (red) — 3 clips, two heard, one playing -->
-              <div class="dot c-red heard"></div>
-              <div class="dot c-red heard"></div>
-              <div class="dot c-red playing"></div>
-              <span class="dots-run-gap"></span>
-              <!-- Run 2: Terminal B (yellow) — 2 queued -->
-              <div class="dot c-yellow"></div>
-              <div class="dot c-yellow"></div>
-              <span class="dots-run-gap"></span>
-              <!-- Run 3: Terminal C (green) — 2 queued -->
-              <div class="dot c-green"></div>
-              <div class="dot c-green"></div>
-              <span class="dots-run-gap"></span>
-              <!-- J-clip: highlight-to-speak from a Claude terminal (blue) -->
-              <div class="dot c-blue j"></div>
-            </div>
-          </div>
-        </div>
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=mixed-states&chrome=0" title="Mixed queue states" loading="lazy"></iframe>
       </div>
-
       <div class="annotations">
         <dl>
           <div>
             <dt>How to read the strip</dt>
-            <dd>Oldest on the left, newest on the right — always arrival order, never re-sorted. Runs of same-colour dots = clips from one terminal; a 12 px gap marks a change of speaker. So this strip says: <b>A sent 3, B sent 2, C sent 2, plus one highlight-to-speak</b>.</dd>
+            <dd>Oldest on the left, newest on the right — always arrival order, never re-sorted. Runs of same-colour dots = clips from one terminal; a small gap marks a change of speaker. So this strip says: <b>A sent 3, B sent 2, C sent 2, plus one highlight-to-speak</b>.</dd>
           </div>
           <div>
             <dt>1 · Heard (first two reds)</dt>
@@ -766,7 +278,7 @@
           </div>
           <div>
             <dt>2 · Playing (third red)</dt>
-            <dd>Slightly larger, pulsing white ring. The base colour <i>stays</i> the session colour — the ring is layered on top, not a replacement — so you always know which terminal is currently talking.</dd>
+            <dd>Slightly larger pulsing ring. The base colour <i>stays</i> the session colour — the ring is layered on top, not a replacement — so you always know which terminal is currently talking.</dd>
           </div>
           <div>
             <dt>3 · Queued (yellows + greens)</dt>
@@ -793,7 +305,6 @@
     </div>
   </section>
 
-
   <!-- ═══════════════  04 — SETTINGS PANEL OPEN  ═══════════════ -->
   <section>
     <div class="shot-head">
@@ -801,143 +312,10 @@
       <div class="title">Settings panel open</div>
       <div class="caption">Click the gear icon to expand. Per-session voice + speech-includes overrides live behind each row's chevron.</div>
     </div>
-
     <div class="stage full">
-      <div class="floating tall">
-        <div>
-          <div class="bar has-panel">
-            <div class="bar-top">
-              <div class="btn">⟲</div>
-              <div class="btn play">❚❚</div>
-              <div class="btn">⟳</div>
-              <div class="scrubber">
-                <div class="filled" style="width: 38%"></div>
-                <div class="thumb" style="left: 38%"></div>
-              </div>
-              <div class="time">0:28 / 1:14</div>
-              <div class="btn">✕</div>
-              <div class="btn">⚙</div>
-              <div class="btn close">×</div>
-            </div>
-            <div class="dots-row">
-              <div class="dots">
-                <div class="dot c-green playing"></div>
-                <div class="dot c-blue"></div>
-                <div class="dot hsplit-brown-white"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel">
-            <!-- Playback -->
-            <div class="panel-section">
-              <div class="panel-header">Playback</div>
-              <div class="row">
-                <label>Speed</label>
-                <div class="mini-rail">
-                  <div class="filled" style="width: 52%;"></div>
-                  <div class="thumb" style="left: 52%;"></div>
-                </div>
-                <span class="readout">1.25×</span>
-              </div>
-              <div class="row">
-                <label>Auto-prune played clips</label>
-                <span class="toggle" title="on"></span>
-                <div class="prune-value"><span>20</span><span class="suffix">s after play</span></div>
-              </div>
-            </div>
-
-            <!-- Sessions -->
-            <div class="panel-section">
-              <div class="panel-header">Sessions</div>
-
-              <div class="session-row focused">
-                <span class="chev">▸</span>
-                <div class="swatch" style="background: #4ade80;"></div>
-                <span class="short-id">abcd1234</span>
-                <div class="fake-input">Frontend</div>
-                <div class="fake-select"><span>Green</span><span class="caret">▾</span></div>
-                <button class="focus-btn focused" title="Unfocus this session">★</button>
-                <button class="mute-btn" title="Mute this session">🔊</button>
-              </div>
-
-              <div class="session-row muted">
-                <span class="chev">▸</span>
-                <div class="swatch" style="background: #60a5fa;"></div>
-                <span class="short-id">a08f2b71</span>
-                <div class="fake-input">Auth API</div>
-                <div class="fake-select"><span>Blue</span><span class="caret">▾</span></div>
-                <button class="focus-btn" title="Focus this session">☆</button>
-                <button class="mute-btn muted" title="Unmute">🔇</button>
-              </div>
-
-              <div class="session-row expanded" style="display: grid;">
-                <span class="chev">▾</span>
-                <div class="swatch" style="background: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%);"></div>
-                <span class="short-id">7e5c9a04</span>
-                <div class="fake-input placeholder">Label…</div>
-                <div class="fake-select"><span>H-split · brown / white</span><span class="caret">▾</span></div>
-                <button class="focus-btn" title="Focus this session">☆</button>
-                <button class="mute-btn" title="Mute this session">🔊</button>
-
-                <div class="session-expanded-body">
-                  <div class="sub-row">
-                    <label>Voice</label>
-                    <div class="fake-select" style="flex: 1; max-width: 320px;">
-                      <span>en-GB-RyanNeural · Male · UK</span><span class="caret">▾</span>
-                    </div>
-                  </div>
-                  <div class="sub-row" style="align-items: flex-start;">
-                    <label style="margin-top: 4px;">Speech includes</label>
-                    <div class="tri-row">
-                      <span class="tri-chip"><span class="tri off"></span>Code blocks</span>
-                      <span class="tri-chip"><span class="tri off"></span>Inline code</span>
-                      <span class="tri-chip"><span class="tri off"></span>URLs</span>
-                      <span class="tri-chip"><span class="tri on"></span>Headings</span>
-                      <span class="tri-chip"><span class="tri off"></span>Bullet markers</span>
-                      <span class="tri-chip"><span class="tri off"></span>Image alt-text</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- About -->
-            <div class="panel-section">
-              <div class="panel-header">About Terminal Talk</div>
-              <pre class="ascii">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
-╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
-   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
-   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
-   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
-   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
-        ████████╗ █████╗ ██╗     ██╗  ██╗
-        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
-           ██║   ███████║██║     █████╔╝
-           ██║   ██╔══██║██║     ██╔═██╗
-           ██║   ██║  ██║███████╗██║  ██╗
-           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
-
-              <dl class="shortcuts">
-                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd></dt>
-                <dd>toggle toolbar visibility</dd>
-                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></dt>
-                <dd>read the currently highlighted text</dd>
-                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd></dt>
-                <dd>toggle “hey jarvis” wake-word listener</dd>
-                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></dt>
-                <dd>pause / resume playback</dd>
-                <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>O</kbd></dt>
-                <dd>pause only (don't auto-resume on next clip)</dd>
-                <dt>say <i>“hey jarvis”</i></dt>
-                <dd>same as <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> on highlighted text</dd>
-              </dl>
-            </div>
-
-          </div>
-        </div>
+      <div class="shot-frame tall">
+        <iframe src="../ui-kit/index.html?seed=settings-panel&chrome=0" title="Settings panel open" loading="lazy"></iframe>
       </div>
-
       <div class="annotations">
         <dl>
           <div>
@@ -962,61 +340,28 @@
           </div>
           <div>
             <dt>Expanded row (chevron ▾)</dt>
-            <dd>Reveals per-session <b>Voice</b> (45 Edge Neural voices — pick one per terminal so you can tell them apart by ear) and 6 tri-state <b>Speech-includes</b> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text. Each toggle is <span style="color:#4ade80;">●</span> on / <span style="color:#ffd93d;">●</span> follow global / <span style="color:rgba(255,255,255,0.3);">○</span> off.</dd>
+            <dd>Reveals per-session <b>Voice</b> (45 Edge Neural voices — pick one per terminal so you can tell them apart by ear) and 6 tri-state <b>Speech-includes</b> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text.</dd>
           </div>
           <div>
             <dt>Global shortcuts</dt>
-            <dd><kbd>Ctrl+Shift+A</kbd> show/hide toolbar · <kbd>Ctrl+Shift+S</kbd> read selection · <kbd>Ctrl+Shift+J</kbd> toggle mic · <kbd>Ctrl+Shift+P</kbd> pause/resume · <kbd>Ctrl+Shift+O</kbd> pause-only. All global, so they work from any app.</dd>
+            <dd><code>Ctrl+Shift+A</code> show/hide toolbar · <code>Ctrl+Shift+S</code> read selection · <code>Ctrl+Shift+J</code> toggle mic · <code>Ctrl+Shift+P</code> pause/resume · <code>Ctrl+Shift+O</code> pause-only. All global, so they work from any app.</dd>
           </div>
         </dl>
       </div>
     </div>
   </section>
 
-
   <!-- ═══════════════  05 — SNAPPED TO TOP  ═══════════════ -->
   <section>
     <div class="shot-head">
       <div class="num">05</div>
       <div class="title">Snapped to the top edge</div>
-      <div class="caption">Drag near the top of the screen — the bar snaps flush, flat-topped, and stays there on the next launch.</div>
+      <div class="caption">Drag near the top of the screen — the bar snaps flush and stays there on the next launch.</div>
     </div>
-
     <div class="stage">
-      <div class="screen">
-        <!-- Faint "desktop" widgets behind, just to sell the snap -->
-        <div style="position:absolute; left:36px; top:84px; width:140px; height:80px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.05);"></div>
-        <div style="position:absolute; left:36px; top:178px; width:200px; height:10px; border-radius:4px; background:rgba(255,255,255,0.05);"></div>
-        <div style="position:absolute; left:36px; top:196px; width:140px; height:10px; border-radius:4px; background:rgba(255,255,255,0.04);"></div>
-        <div style="position:absolute; right:36px; bottom:60px; width:280px; height:120px; border-radius:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);"></div>
-
-        <div class="bar snapped-top">
-          <div class="bar-top">
-            <div class="btn">⟲</div>
-            <div class="btn play">▶</div>
-            <div class="btn">⟳</div>
-            <div class="scrubber">
-              <div class="filled" style="width: 62%"></div>
-              <div class="thumb" style="left: 62%"></div>
-            </div>
-            <div class="time">0:45 / 1:12</div>
-            <div class="btn">✕</div>
-            <div class="btn">⚙</div>
-            <div class="btn close">×</div>
-          </div>
-          <div class="dots-row">
-            <div class="dots">
-              <div class="dot c-red heard"></div>
-              <div class="dot c-red"></div>
-              <span class="dots-run-gap"></span>
-              <div class="dot c-blue playing"></div>
-              <div class="dot c-blue"></div>
-              <div class="dot c-blue"></div>
-            </div>
-          </div>
-        </div>
+      <div class="shot-frame snap">
+        <iframe src="../ui-kit/index.html?seed=snapped-top&chrome=0" title="Snapped to top edge" loading="lazy"></iframe>
       </div>
-
       <div class="annotations">
         <dl>
           <div>
@@ -1040,7 +385,10 @@
     </div>
   </section>
 
+</div>
 
+<div class="footnote">
+  Each shot above is a live iframe of <code>../ui-kit/index.html?seed=&lt;name&gt;</code>. The kit's React components render the same DOM the shipping Electron renderer does, driven by <code>app/lib/tokens.json</code>. Change the product → R1/R2 pipeline regenerates the kit → these mocks update on refresh. No hand-coded duplicate CSS.
 </div>
 
 </body>
