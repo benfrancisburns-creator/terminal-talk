@@ -105,6 +105,24 @@ function diag(msg) {
   } catch {}
 }
 
+// Process-level safety nets. Electron's main process has no DevTools in
+// production, so any async throw that escapes a try/catch would be lost
+// to the ether. These handlers ensure every unexpected error makes it to
+// _toolbar.log with a stack trace — diagnosable after the fact.
+// Audit R35.
+process.on('unhandledRejection', (reason) => {
+  try {
+    const msg = reason && reason.stack ? reason.stack : String(reason);
+    diag(`unhandledRejection: ${msg}`);
+  } catch {}
+});
+process.on('uncaughtException', (err) => {
+  try {
+    const msg = err && err.stack ? err.stack : String(err);
+    diag(`uncaughtException: ${msg}`);
+  } catch {}
+});
+
 let win = null;
 let watcher = null;
 let watchDebounce = null;
@@ -505,9 +523,25 @@ function notifyQueue() {
 
 function startWatcher() {
   try {
+    if (watcher) { try { watcher.close(); } catch {} watcher = null; }
     watcher = fs.watch(QUEUE_DIR, () => {
       if (watchDebounce) clearTimeout(watchDebounce);
       watchDebounce = setTimeout(notifyQueue, 150);
+    });
+    // Self-healing: the initial try/catch only covers construction errors.
+    // A successfully-started watcher can still silently die on transient
+    // ENOSPC, permission change, drive eject, or (rarely) a native handle
+    // leak. Without these two handlers, clip detection would stop forever
+    // with no log trace. Audit R27.
+    watcher.on('error', (err) => {
+      diag(`watcher error: ${err && err.message}`);
+      try { watcher.close(); } catch {}
+      watcher = null;
+      setTimeout(startWatcher, 1000);
+    });
+    watcher.on('close', () => {
+      watcher = null;
+      setTimeout(startWatcher, 1000);
     });
   } catch {
     setTimeout(startWatcher, 1000);
