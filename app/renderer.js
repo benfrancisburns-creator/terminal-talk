@@ -184,26 +184,17 @@ const STALE_MS = 5 * 60 * 1000;
 let autoPruneSec = 20;
 const MAX_VISIBLE_DOTS = 40;            // hard cap to keep DOM light; overflow scrolls horizontally
 
-// Base 8 colours. Same order statusline.ps1 uses for its 8 emojis.
-// Brown is a richer copper (was muddy beige #a08060) so it reads clearly in splits.
-const BASE_COLOURS = [
-  '#ff5e5e', // 0 red
-  '#ffa726', // 1 orange (warmer/yellower so it reads clearly next to red)
-  '#ffd93d', // 2 yellow
-  '#4ade80', // 3 green
-  '#60a5fa', // 4 blue
-  '#c084fc', // 5 purple
-  '#c97b50', // 6 brown (copper -- distinct from orange)
-  '#e0e0e0'  // 7 white
-];
-const PALETTE_SIZE = 24;
-const NEUTRAL_COLOUR = '#8a8a8a';
-
-// Split partners chosen by max hue distance so the two halves never blur.
-// hsplit pairs (top, bottom):  red/green, orange/blue, yellow/purple, brown/white (+ reverses)
-const HSPLIT_PARTNER = [3, 4, 5, 0, 1, 2, 7, 6];
-// vsplit pairs (left, right):  red/blue, orange/purple, yellow/brown, green/white (+ reverses)
-const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
+// Palette comes from app/lib/tokens.json via the generated tokens-window.js
+// script (loaded in index.html before this file). Same order statusline.ps1
+// uses for its 8 emojis. Brown is a richer copper so splits read clearly.
+const {
+  BASE_COLOURS,
+  PALETTE_SIZE,
+  NEUTRAL_COLOUR,
+  HSPLIT_PARTNER,
+  VSPLIT_PARTNER,
+  COLOUR_NAMES,
+} = window.TT_TOKENS.palette;
 
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
@@ -1055,7 +1046,7 @@ function fillVoiceSelect(el, list, selected) {
   }
 }
 
-const COLOUR_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple', 'Brown', 'White'];
+// COLOUR_NAMES is supplied by window.TT_TOKENS.palette (destructured at the top of this file).
 function arrangementLabel(i) {
   if (i < 8) return `${COLOUR_NAMES[i]}`;
   if (i < 16) {
