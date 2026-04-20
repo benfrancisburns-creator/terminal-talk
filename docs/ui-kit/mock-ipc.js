@@ -344,7 +344,7 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Demo chrome — "Add fake clip" / "Clear queue" / "Toggle panel" buttons
+  // Demo chrome — add / clear / hey-jarvis / panel / reset buttons
   // Hidden when ?chrome=0 (mocks-annotated and components iframes).
   // ═══════════════════════════════════════════════════════════════════════
   function mountChrome() {
@@ -356,6 +356,7 @@
       <button data-action="clear">Clear queue</button>
       <button data-action="heyj">"hey jarvis" clip</button>
       <button data-action="panel">Toggle panel</button>
+      <button data-action="reset" title="Re-seed the demo to its initial ?seed=... state without a page reload">↺ Reset demo</button>
       <span class="caption">Kit demo — real app/renderer.js driven by mock IPC</span>
     `;
     document.body.appendChild(root);
@@ -376,6 +377,24 @@
       } else if (action === 'panel') {
         // Click the settings button the renderer already wired up.
         const s = document.getElementById('settingsBtn'); if (s) s.click();
+      } else if (action === 'reset') {
+        // EX2 — re-seed the kit demo to its initial state without a
+        // page reload. Rebuilds queueFiles + sessions + staleShorts
+        // from buildSeed(SEED_NAME); emits queue-updated + stale-
+        // sessions so the renderer repaints. If the panel was open
+        // the seed might have it closed — click the settings button
+        // to restore the panelOpen seed default.
+        const fresh = buildSeed(SEED_NAME);
+        queueFiles  = fresh.queueFiles;
+        sessions    = fresh.sessions;
+        staleShorts = fresh.staleShorts || [];
+        notifyQueue();
+        emit('stale-sessions', staleShorts.slice());
+        const panelWanted = !!fresh.panelOpen;
+        const panelOpen = document.body.classList.contains('settings-open');
+        if (panelWanted !== panelOpen) {
+          const s = document.getElementById('settingsBtn'); if (s) s.click();
+        }
       }
     });
   }
