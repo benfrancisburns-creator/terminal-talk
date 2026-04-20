@@ -16,6 +16,50 @@ if (-not $sessionId) { Write-Host ""; exit 0 }
 # First 8 hex chars -- same slice the hook uses in filenames.
 $short = $sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))
 
+# Z2-6: 100 ms file-level debounce.
+# Claude Code can fire the statusline many times in quick succession while
+# a single prompt is being typed. Every fire previously did a full
+# Read-Registry -> Update-SessionAssignment -> Save-Registry cycle on a
+# JSON file that can be hundreds of entries long. If two consecutive fires
+# land inside 100 ms AND the registry file hasn't been touched between
+# them (same mtime + length), we emit the last output verbatim and skip
+# the whole cycle. PID-file and last_seen heartbeats miss one update every
+# ~100 ms of rapid fire -- irrelevant because the next non-cached
+# invocation catches up inside the same debounce window.
+$sessionsDirEarly = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
+if (-not (Test-Path $sessionsDirEarly)) {
+    New-Item -ItemType Directory -Path $sessionsDirEarly -Force | Out-Null
+}
+$registryPathEarly = if ($env:TT_REGISTRY_PATH) {
+    $env:TT_REGISTRY_PATH
+} else {
+    Join-Path $env:USERPROFILE '.terminal-talk\session-colours.json'
+}
+$cachePath = Join-Path $sessionsDirEarly "$short.statusline-cache"
+$regMtimeTicks = 0
+$regLength = 0
+if (Test-Path $registryPathEarly) {
+    try {
+        $regInfo = Get-Item $registryPathEarly -ErrorAction Stop
+        $regMtimeTicks = $regInfo.LastWriteTimeUtc.Ticks
+        $regLength = $regInfo.Length
+    } catch {}
+}
+$nowTicks = (Get-Date).Ticks
+# 100 ms = 1_000_000 ticks (1 tick = 100 ns).
+$debounceTicks = 1000000
+if (Test-Path $cachePath) {
+    try {
+        $cache = Get-Content $cachePath -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($cache.registry_mtime_ticks -eq $regMtimeTicks `
+            -and $cache.registry_length -eq $regLength `
+            -and ($nowTicks - [long]$cache.emitted_ticks) -lt $debounceTicks) {
+            Write-Host $cache.output
+            exit 0
+        }
+    } catch {}
+}
+
 # Load the shared session-registry module (Read-Registry /
 # Touch-Or-Assign-Session / Write-Registry-Atomic / Write-SessionPidFile).
 # Lives alongside this script in the installed `app/` directory.
@@ -96,4 +140,26 @@ $label = $assignments[$short].label
 $mutedPrefix = if ($assignments[$short].muted) { [char]::ConvertFromUtf32(0x1F507) + ' ' } else { '' }
 $focusPrefix = if ($assignments[$short].focus) { [char]::ConvertFromUtf32(0x2B50) + ' ' } else { '' }
 $prefix = "$focusPrefix$mutedPrefix"
-if ($label) { Write-Host "$prefix$emoji $label" } else { Write-Host "$prefix$emoji" }
+$output = if ($label) { "$prefix$emoji $label" } else { "$prefix$emoji" }
+Write-Host $output
+
+# Z2-6: persist the cache so the next invocation inside the 100 ms debounce
+# window can skip this whole pipeline. Update mtime+length AFTER Save-Registry
+# because the registry file we just wrote is the one the cache guard tests.
+try {
+    $regMtimeTicksAfter = 0
+    $regLengthAfter = 0
+    if (Test-Path $registryPathEarly) {
+        $info = Get-Item $registryPathEarly -ErrorAction Stop
+        $regMtimeTicksAfter = $info.LastWriteTimeUtc.Ticks
+        $regLengthAfter = $info.Length
+    }
+    $cacheObj = [ordered]@{
+        registry_mtime_ticks = $regMtimeTicksAfter
+        registry_length = $regLengthAfter
+        emitted_ticks = (Get-Date).Ticks
+        output = $output
+    }
+    $cacheJson = $cacheObj | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($cachePath, $cacheJson, [System.Text.UTF8Encoding]::new($false))
+} catch {}
