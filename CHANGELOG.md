@@ -2,6 +2,20 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.9] — 2026-04-20
+
+Accessibility — the 8-colour palette no longer collapses under red-green colour-blindness.
+
+### Fixed
+
+- **H3-palette (v0.2 carry-over, tracked in v0.3.8).** Palette slot 5 swapped from purple `#c084fc` to magenta `#ee2bbd` in `app/lib/tokens.json`. Under deuteranopia (~6 % of men) the old purple was ~30× below the distinguishability threshold against slot 4 (blue `#60a5fa`) — Δ=0.004 vs. threshold ~0.15. The new magenta measures Δ=0.124, ~30× above where it was. `COLOUR_NAMES[5]` also renamed "Purple" → "Magenta" so the Settings panel's colour picker label matches what the user sees. Regenerated `app/lib/tokens-window.js`, `docs/ui-kit/tokens.mjs`, `docs/colors_and_type.css`, and `app/lib/palette-classes.css` via `scripts/generate-tokens-css.cjs`. Pixel-diff baselines updated; all 24 arrangements within the existing 2 % tolerance.
+
+### Chose Option 1 over Option 2
+
+The v0.3.0 assessment tabled two fixes: Option 1 (hex swap, ~2 min, affects all users) or Option 2 (CB-friendly palette toggle in Settings, ~30 min, opt-in). Picked Option 1 because correct accessibility is the right default — Option 2 puts the discovery burden on the affected user, most of whom will blame their eyes rather than the palette. Magenta is purple's neighbour on the colour wheel so brand impact is minimal. If anyone wants the old purple back, Option 2 (toggle) is still available as a future add-on without undoing this change.
+
+---
+
 ## [0.3.8] — 2026-04-20
 
 Independent v0.3.0 assessment follow-up — two concrete items closed, one carry-over tracked in AUDIT-FINAL.
