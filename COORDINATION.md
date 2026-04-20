@@ -2,8 +2,8 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-2 (Opus 4.7, 1M ctx) — 2026-04-20
-**Pinned baseline commit:** after this push — **ULTRAPLAN CLOSED**. Every scoped stream merged. Only deferred D1/D2/D3 remain.
+**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (ULTRAPLAN-2 kickoff)
+**Pinned baseline commit:** `73e637f` (v0.2.0 tagged). **ULTRAPLAN v1 CLOSED. ULTRAPLAN-ADDENDUM (v2) OPEN** — see `Claude Assesments/ULTRAPLAN-ADDENDUM.md`.
 
 ---
 
@@ -29,6 +29,21 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | Tier C — polish (Z1–Z11) | ✅ shipped | Terminal-2 merged. All 11 Z items + R2-reconciliation commit |
 | D1/D2/D3 — deferred | out of scope | separate sessions per ULTRAPLAN |
 
+### ULTRAPLAN-ADDENDUM (v2) — 23 new items + 6 explicit deferrals
+
+Post-ship audit caught ~23 untriaged items from the original six assessments. Full plan: `Claude Assesments/ULTRAPLAN-ADDENDUM.md`.
+
+| Scope | Tier / Stream | Status | Owner |
+|---|---|---|---|
+| Quick wins — preload disposers, AUDIO_FILE_RE, edge_tts constants, sentence_split expansions | Tier A-2 | 🚧 in progress | split between terminals |
+| Renderer observability (window.onerror → IPC log) | Stream S1 | ❌ not started | Terminal-1 |
+| Python helper robustness (synth_turn lock, key_helper SendInput, wake-word adaptive) | Stream S2 | ❌ not started | Terminal-2 |
+| IPC hardening (rate limits, redact-keys set, config validator) | Stream S3 | ❌ not started | Terminal-1 |
+| Test harness modernisation (behaviour tests, voice catalogue snapshot, c8 coverage) | Stream S4 | ❌ not started | Terminal-1 |
+| §8d — mocks-annotated iframes the kit | Stream S5 | ❌ not started | Terminal-2 |
+| Polish — CI matrix + SHA pins + Playwright CI + install manifest + statusline debounce | Tier Z-2 | ❌ not started | split between terminals |
+| §8e, §8f, ajv config, IPC signing, D1/D2/D3 | Tier D-2 | out of scope | v0.3+ |
+
 ---
 
 ## Stream ownership table
@@ -39,6 +54,8 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | **Terminal-1** | ✅ shipped (6 commits, 107 tests green, merged at `df0f03b`) |
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
 | Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | ✅ shipped (merged via no-ff) |
+| **UA2 — JS/TS/CI** (A2-1/2, S1, S3, S4, Z2-1..5) | `stream-ua2-js` | `../terminal-talk-ua2/` | **Terminal-1** | 🚧 claiming now |
+| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | available — please claim |
 
 Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
@@ -80,6 +97,42 @@ Terminal-2 note: I worked R3 directly on `main` before this coordination doc rea
 - R1 and Tier C both touch `app/renderer.js`. R1 only touches the palette constants block (~lines 166–183). Tier C only touches event handlers and dropdown rebuild logic. **No line overlap if both stay in scope** — but pull and resolve at commit time.
 - R3 (R3.8 regenerate `toolbar-idle.png`) **depends on Tier C Z2** (Chrome path fallback in `render-mocks.cjs`). R3 should land Z2 first or wait for Tier C to ship Z2.
 - R2 cannot start until R1's `app/lib/tokens.json` exists on `main`.
+
+---
+
+## File-scope for ULTRAPLAN-ADDENDUM (v2) streams
+
+Language-based split — no overlap on any single source file.
+
+**Terminal-1 (stream-ua2-js) touches and ONLY touches:**
+- `app/preload.js` (A2-1 disposers, S1.1 IPC channel)
+- `app/main.js` (A2-2 AUDIO_FILE_RE, S1.2 renderer-error IPC, S3.1 rate limits, S3.2 redactForLog, S3.3 config validator, Z2-4 spawn SHA-256, Z2-5 keyHelper watchdog)
+- `app/renderer.js` (S1.3 window.onerror, S4.2 voices.json import)
+- `scripts/run-tests.cjs` (S1.4, S3 tests, S4.1 behaviour tests, Z2 tests) — **append-only** inside NEW describe blocks at end of file
+- `scripts/verify-voices.cjs` (new — S4.2)
+- `app/lib/voices.json` (new — S4.2)
+- `config.schema.js` (new — S3.3)
+- `package.json` (S4.3 c8 dep + script)
+- `.github/workflows/*.yml` (Z2-1 SHA pins, Z2-2 Node matrix, Z2-3 Playwright job, S4.3 coverage artefact)
+
+**Terminal-2 (stream-ua2-py) touches and ONLY touches:**
+- `app/edge_tts_speak.py` (A2-3)
+- `app/sentence_split.py` (A2-4)
+- `app/synth_turn.py` (S2.1 lock + executor + metrics)
+- `app/key_helper.py` (S2.2 SendInput + cache + per-cmd log)
+- `app/wake-word-listener.py` (S2.3 adaptive + selftest)
+- `app/statusline.ps1` (Z2-6 debounce)
+- `install.ps1` (Z2-7 manifest)
+- `uninstall.ps1` (Z2-8 wait-process)
+- `docs/design-system/mocks-annotated.html` (S5)
+- `docs/ui-kit/index.html` (S5 seed loader) — **ONLY the seed-loader URL-param read**; all other kit logic stays as R2 shipped it
+- `scripts/run-tests.cjs` — **append-only** inside EXISTING `describe('SENTENCE SPLIT', ...)` block around line 860 (for new A2-4 abbreviation tests)
+
+**Conflict zone — only one:**
+`scripts/run-tests.cjs` is touched by both terminals. Contract:
+- Terminal-2 adds `it(...)` lines INSIDE the existing `describe('SENTENCE SPLIT', ...)` block at ~line 860 (A2-4 abbreviations).
+- Terminal-1 adds NEW `describe(...)` blocks at the end of the file (S1, S3, S4, Z2 tests).
+- Zero line overlap if both stay inside their islands. Pull before each commit regardless. Merge conflicts will be trivially resolvable via additive join.
 
 ---
 
