@@ -31,6 +31,19 @@ html, body {
   position: static !important;
   margin: 0 auto !important;
   left: auto !important;
+  /* v0.3.7 — release the height cap in the kit. app/styles.css sets
+     max-height: calc(100vh - 72px) + overflow-y: auto so the panel
+     can scroll independently inside the chromeless Electron window.
+     In a browser the bar above the panel is in normal flow (see
+     `position: static` above), so the 72 px budget is wrong — on
+     short viewports the panel capped at ~viewport height, the
+     "About Terminal Talk" section truncated, and the demo controls
+     below the panel got pushed off-screen because the panel
+     absorbed wheel events instead of the body. Letting the panel
+     render at content height + having body handle all scrolling is
+     the browser-native behaviour users already expect. */
+  max-height: none !important;
+  overflow-y: visible !important;
 }
 
 /* Demo controls strip — only shown when ?chrome=0 is NOT set.
