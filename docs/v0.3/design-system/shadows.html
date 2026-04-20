@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:
+    radial-gradient(circle at 30% 20%, #1c2b48 0%, transparent 60%),
+    radial-gradient(circle at 80% 70%, #2a1c3a 0%, transparent 60%),
+    #0f1014;
+    font-family:var(--tt-font-ui);color:var(--tt-fg-2)}
+  .stage{padding:22px 24px;display:flex;gap:16px;align-items:center}
+  .card{padding:12px 16px;border-radius:var(--tt-radius-block)}
+  .cap{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5);margin-bottom:6px}
+  .tok{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tt-fg-5);margin-top:4px}
+  .bar{background:var(--tt-surface-bar);border:1px solid var(--tt-border-surface);backdrop-filter:var(--tt-blur);box-shadow:var(--tt-shadow-bar);width:200px;height:64px;border-radius:var(--tt-radius-pill);display:flex;align-items:center;justify-content:center;color:var(--tt-fg-3);font-size:11px}
+  .dotwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .dot{width:18px;height:18px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 2px rgba(255,255,255,0.35),0 0 10px rgba(255,255,255,0.25);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 2px rgba(255,255,255,0.35),0 0 8px rgba(255,255,255,0.2)}50%{box-shadow:0 0 0 3px rgba(255,255,255,0.55),0 0 14px rgba(255,255,255,0.4)}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="dotwrap">
+    <div class="cap">Bar shadow</div>
+    <div class="bar">floats over desktop</div>
+    <div class="tok">0 12px 32px .45 · 0 2px 6px .3</div>
+  </div>
+  <div class="dotwrap">
+    <div class="cap">Active dot glow</div>
+    <div class="dot"></div>
+    <div class="tok">2px ring + 10px blur · pulse 1.6s</div>
+  </div>
+  <div class="dotwrap">
+    <div class="cap">Scrubber halo</div>
+    <div style="width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 0 0 6px rgba(79,163,255,0.18)"></div>
+    <div class="tok">0 0 0 6px #4FA3FF .18</div>
+  </div>
+</div>
+</body>
+</html>
