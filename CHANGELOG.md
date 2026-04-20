@@ -2,6 +2,16 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.7] — 2026-04-20
+
+Kit demo — settings panel bottom was unreachable on short viewports.
+
+### Fixed
+
+- **`docs/ui-kit/kit-chrome.css` now releases the panel's height cap.** `app/styles.css` sets `max-height: calc(100vh - 72px)` + `overflow-y: auto` on `.panel` so it scrolls independently inside the chromeless Electron window (72 px ≈ fixed-position bar above). In the kit the bar is `position: static` (renders in normal flow so mocks-annotated iframes size correctly), which makes the 72 px budget wrong — on short browser viewports the panel capped at roughly viewport height, the "About Terminal Talk" section truncated, and the demo controls below the panel got pushed below the fold because the panel swallowed wheel events. Kit override: `max-height: none` + `overflow-y: visible` so the panel renders at full content height and body handles all scrolling. Browser-native behaviour users already expect.
+
+---
+
 ## [0.3.6] — 2026-04-20
 
 Playback UX fix — clicking a dot no longer turns re-listening into a "click exercise".
