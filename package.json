@@ -15,6 +15,7 @@
     "test:palette-diff": "node scripts/palette-pixel-diff.cjs",
     "test:palette-diff:update": "node scripts/palette-pixel-diff.cjs --update",
     "verify-voices": "node scripts/verify-voices.cjs",
+    "sonar": "bash scripts/run-sonar.sh",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
   "engines": {

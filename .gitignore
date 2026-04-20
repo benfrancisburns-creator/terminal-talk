@@ -36,3 +36,7 @@ desktop.ini
 /.tmp-mocks/
 /.tmp-pixel-diff/
 /coverage/
+
+# SonarQube local scan artefacts + token
+.sonarqube-token
+.scannerwork/
