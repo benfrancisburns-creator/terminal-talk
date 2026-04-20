@@ -12,6 +12,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm test && npm run test:e2e",
     "test:coverage": "c8 --reporter=text --reporter=lcov node scripts/run-tests.cjs --logic-only",
+    "test:palette-diff": "node scripts/palette-pixel-diff.cjs",
+    "test:palette-diff:update": "node scripts/palette-pixel-diff.cjs --update",
     "verify-voices": "node scripts/verify-voices.cjs",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
