@@ -143,7 +143,53 @@ html, body {
 /* --- Session blocks --------------------------------------- */
 .tt-sessions-table { display: flex; flex-direction: column; gap: 4px; }
 .tt-session-block { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 8px; padding: 4px 8px; }
-.tt-session-row { display: grid; grid-template-columns: 18px 24px 90px 1fr 180px; gap: 10px; align-items: center; padding: 4px 0; font-size: 12px; }
+.tt-session-row {
+  display: grid;
+  grid-template-columns: 18px 24px 90px 1fr 180px 26px 26px 22px;
+  gap: 10px; align-items: center; padding: 4px 0; font-size: 12px;
+}
+
+/* Focus star — exclusive: only one row can be focused at a time. */
+.tt-focus-btn {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.45);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease, transform .08s ease;
+}
+.tt-focus-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.tt-focus-btn.is-focused { color: #ffd93d; }
+.tt-focus-btn.is-focused:hover { color: #ffd93d; background: rgba(255,217,61,0.12); }
+
+/* Mute — 🔊 / 🔇 ; matches the product's emoji approach. */
+.tt-mute-btn {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.75);
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease;
+}
+.tt-mute-btn:hover { background: rgba(255,255,255,0.08); }
+.tt-mute-btn.is-muted { opacity: 0.55; }
+.tt-mute-btn.is-muted:hover { opacity: 1; }
+
+/* Remove × — destructive tint on hover, faint otherwise. */
+.tt-session-remove {
+  width: 22px; height: 22px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.35);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease;
+}
+.tt-session-remove:hover { color: #ff6b6b; background: rgba(255,70,70,0.18); }
+
+/* Row state — focused session gets a faint warm border; muted fades. */
+.tt-session-block--focused {
+  border-color: rgba(255,217,61,0.28);
+  background: rgba(255,217,61,0.04);
+}
+.tt-session-block--muted { opacity: 0.55; }
+.tt-session-block--muted:hover { opacity: 1; }
 .tt-chev { width: 18px; height: 18px; background: transparent; border: none; color: rgba(255,255,255,0.5); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .tt-chev:hover { color: #fff; background: rgba(255,255,255,0.08); border-radius: 4px; }
 .tt-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); }

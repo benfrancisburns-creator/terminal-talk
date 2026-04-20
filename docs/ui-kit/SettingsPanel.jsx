@@ -1,5 +1,5 @@
 /* global React, SessionsTable, AsciiBanner */
-function SettingsPanel({ speed, onSpeedChange, sessions, expanded, onToggleSession, onUpdateSession }) {
+function SettingsPanel({ speed, onSpeedChange, sessions, expanded, onToggleSession, onUpdateSession, onRemoveSession }) {
   return (
     <div className="tt-panel">
       <div className="tt-panel-inner">
@@ -16,7 +16,8 @@ function SettingsPanel({ speed, onSpeedChange, sessions, expanded, onToggleSessi
         <section className="tt-panel-section">
           <header>Sessions</header>
           <SessionsTable sessions={sessions} expanded={expanded}
-                         onToggle={onToggleSession} onUpdate={onUpdateSession} />
+                         onToggle={onToggleSession} onUpdate={onUpdateSession}
+                         onRemove={onRemoveSession} />
         </section>
 
         <section className="tt-panel-section tt-panel-section--about">
