@@ -1340,6 +1340,113 @@ describe('SESSION STALE DETECTION', () => {
 });
 
 // =============================================================================
+// PALETTE ALLOCATION — lowest-free-index with LRU eviction fallback.
+// =============================================================================
+// Fixes G10: when the 24-slot palette was full, the old hash-mod fallback
+// produced a GUARANTEED visual collision (two different sessions painted
+// the same colour). LRU eviction drops whoever's been quiet longest and
+// reuses their slot, so the new session always gets a unique colour.
+describe('PALETTE ALLOCATION (LRU eviction)', () => {
+  const { allocatePaletteIndex } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'palette-alloc.js')
+  );
+
+  it('empty registry -> index 0, no eviction', () => {
+    const r = allocatePaletteIndex('aabbccdd', {}, 24);
+    assertEqual(r.index, 0);
+    assertEqual(r.evicted, null);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('lowest free index -- fills 0,1,2,... in order', () => {
+    const all = {};
+    for (let i = 0; i < 10; i++) {
+      all[`sess${i.toString().padStart(4, '0')}`] = { index: i, last_seen: 100 + i };
+    }
+    const r = allocatePaletteIndex('aabbccdd', all, 24);
+    assertEqual(r.index, 10);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('palette full -> evicts LRU non-pinned (oldest last_seen)', () => {
+    const all = {};
+    // 24 sessions, last_seen ascending so session #00000000 is the LRU.
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = { index: i, last_seen: 1000 + i };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000');         // oldest last_seen
+    assertEqual(r.index, 0);                     // their slot
+  });
+
+  it('LRU eviction SKIPS pinned sessions', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i,
+        pinned: i === 0     // oldest is pinned -> must NOT be evicted
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    // Second-oldest (unpinned) wins eviction.
+    assertEqual(r.evicted, 's0000001');
+    assertEqual(r.index, 1);
+  });
+
+  it('all 24 slots pinned -> hash-collision fallback (no unique slot)', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: true
+      };
+    }
+    const r = allocatePaletteIndex('aabbccdd', all, 24);
+    assertEqual(r.reason, 'hash-collision');
+    assertEqual(r.evicted, null);
+    // Hash: 'a'*4 + 'b'*2 + 'c'*2 + 'd'*1 chars = sum of charCodes.
+    let sum = 0; for (const c of 'aabbccdd') sum += c.charCodeAt(0);
+    assertEqual(r.index, sum % 24);
+  });
+
+  it('LRU tiebreak is deterministic (alphabetical when last_seen equal)', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = { index: i, last_seen: 500 };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000');          // alphabetically first
+  });
+
+  it('main.js delegates to allocatePaletteIndex (no inline hash-mod)', () => {
+    const mainPath = path.join(__dirname, '..', 'app', 'main.js');
+    const src = fs.readFileSync(mainPath, 'utf8');
+    if (!/allocatePaletteIndex\s*\(/.test(src)) {
+      throw new Error('main.js must call allocatePaletteIndex from the shared helper');
+    }
+    // Old inline fallback: `sum % 24` when palette full. Must be gone.
+    if (/let\s+sum\s*=\s*0[\s\S]{0,120}%\s*24/.test(src)) {
+      throw new Error('main.js still has the inline hash-mod fallback; LRU eviction was bypassed');
+    }
+  });
+
+  it('session-registry.psm1 mirrors LRU eviction (not hash-only)', () => {
+    const psPath = path.join(__dirname, '..', 'app', 'session-registry.psm1');
+    const src = fs.readFileSync(psPath, 'utf8');
+    // The LRU branch must be present. Easiest stable signal: "Sort-Object LastSeen".
+    if (!/Sort-Object\s+LastSeen/i.test(src)) {
+      throw new Error('session-registry.psm1 must LRU-evict when palette full (Sort-Object LastSeen missing)');
+    }
+    // Pinned sessions must be skipped from eviction candidates.
+    if (!/pinned\s*-ne\s*\$true/.test(src)) {
+      throw new Error('session-registry.psm1 LRU eviction must exclude pinned entries');
+    }
+  });
+});
+
+// =============================================================================
 // IPC WIRING — the renderer's 10 s poll needs main.js to expose the handler
 // and preload.js to bridge it. Lock-step test so future refactors don't
 // silently break the stale-UI signal.

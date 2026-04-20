@@ -116,12 +116,32 @@ function Update-SessionAssignment {
     for ($i = 0; $i -lt $script:PaletteSize; $i++) {
         if (-not $busy.ContainsKey($i)) { $idx = $i; break }
     }
-    # Palette full — deterministic hash-fallback so the same short always
-    # maps to the same index. Matches the JS fallback in main.js.
+
+    # Palette full — LRU eviction among non-pinned entries. Matches the
+    # allocatePaletteIndex() helper in app/lib/palette-alloc.js so the
+    # statusline and the Electron UI always agree on the slot table.
     if ($null -eq $idx) {
-        $sum = 0
-        foreach ($ch in $Short.ToCharArray()) { $sum += [int]$ch }
-        $idx = $sum % $script:PaletteSize
+        $candidates = @()
+        foreach ($key in @($Assignments.Keys)) {
+            $entry = $Assignments[$key]
+            if ($entry.pinned -ne $true) {
+                $candidates += [pscustomobject]@{
+                    Short = $key
+                    LastSeen = [long]([int]$entry.last_seen)
+                    Index = [int]$entry.index
+                }
+            }
+        }
+        if ($candidates.Count -gt 0) {
+            $lru = $candidates | Sort-Object LastSeen, Short | Select-Object -First 1
+            $idx = $lru.Index
+            [void]$Assignments.Remove($lru.Short)
+        } else {
+            # Every slot is pinned — hash-mod collision is unavoidable.
+            $sum = 0
+            foreach ($ch in $Short.ToCharArray()) { $sum += [int]$ch }
+            $idx = $sum % $script:PaletteSize
+        }
     }
 
     $Assignments[$Short] = @{

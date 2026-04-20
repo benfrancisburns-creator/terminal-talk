@@ -568,6 +568,7 @@ function stripForTTS(text) {
 }
 
 const { computeStaleSessions } = require('./lib/session-stale');
+const { allocatePaletteIndex } = require('./lib/palette-alloc');
 
 function chunkText(text, maxLen = 3800) {
   if (text.length <= maxLen) return [text];
@@ -956,28 +957,26 @@ function ensureAssignmentsForFiles(files) {
     }
   }
 
-  const busy = new Set(Object.values(all).map(e => e.index));
   for (const f of files) {
     const short = shortFromFile(path.basename(f.path));
     if (!short || all[short]) continue;
-    let idx = 0;
-    while (busy.has(idx) && idx < 24) idx++;
-    if (idx >= 24) {
-      let sum = 0;
-      for (const ch of short) sum += ch.charCodeAt(0);
-      idx = sum % 24;
+    const alloc = allocatePaletteIndex(short, all, 24);
+    if (alloc.evicted) {
+      diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
+      delete all[alloc.evicted];
+    } else if (alloc.reason === 'hash-collision') {
+      diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
     }
     all[short] = {
-      index: idx,
+      index: alloc.index,
       session_id: short,
       claude_pid: 0,
       label: '',
       pinned: false,
       last_seen: now
     };
-    busy.add(idx);
     changed = true;
-    diag(`ensureAssignments: new session ${short} -> index ${idx}`);
+    diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason})`);
   }
 
   if (changed) writeAssignments(all);
