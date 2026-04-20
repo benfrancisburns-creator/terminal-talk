@@ -1121,20 +1121,13 @@ function renderSessionRow(shortId, entry) {
     : 'Focus this session — its clips play before other sessions\' clips';
   focusBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
-    const next = !entry.focus;
-    const ok = await window.api.setSessionFocus(shortId, next);
-    if (ok) {
-      // Exclusive focus: clear every other session's focus flag in the
-      // local cache so the re-render immediately reflects the new state.
-      if (next) {
-        for (const key of Object.keys(sessionAssignments)) {
-          if (key !== shortId) sessionAssignments[key].focus = false;
-        }
-      }
-      sessionAssignments[shortId].focus = next;
-      renderSessionsTable();
-      renderDots();
-    }
+    // main.js updates the registry and fires notifyQueue() synchronously
+    // after save, which delivers authoritative assignments back to us via
+    // the queue-updated listener. Any local mutation here would just be a
+    // second source of truth -- and a subtly wrong one, since `entry` was
+    // captured at render time and may be stale if the user clicked twice
+    // in quick succession.
+    await window.api.setSessionFocus(shortId, !entry.focus);
   });
   row.appendChild(focusBtn);
 
