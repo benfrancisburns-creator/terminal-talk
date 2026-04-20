@@ -2,7 +2,13 @@
    Terminal Talk UI kit — product CSS
    Mirrors app/styles.css 1:1, with class prefixes (.tt-) so it
    can coexist with other kits.
+
+   Colour + type tokens live in ../colors_and_type.css. This file
+   keeps rgba literals for docs-site portability, but those
+   literals are mirrored (1:1) in the token sheet.
    ============================================================= */
+
+@import url("../colors_and_type.css");
 
 * { box-sizing: border-box; }
 html, body {
