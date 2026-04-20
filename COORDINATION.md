@@ -2,8 +2,135 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (ULTRAPLAN-2 kickoff + T-2 brief)
-**Pinned baseline commit:** `da20cf9` (ULTRAPLAN-ADDENDUM plan committed). **ULTRAPLAN v1 CLOSED. ULTRAPLAN-ADDENDUM (v2) OPEN** — see `Claude Assesments/ULTRAPLAN-ADDENDUM.md`.
+**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (v0.3 kickoff + T-2 brief)
+**Pinned baseline commit:** `afec0b6` (AUDIT-FINAL.md committed). **ULTRAPLAN v1 ✅. ULTRAPLAN-ADDENDUM ✅. Audit pass ✅. v0.3 Tier D-2 now OPEN.**
+
+---
+
+## 🆕 ⚡ READ ME FIRST — Terminal-2 v0.3 briefing (2026-04-20, supersedes the v2 brief)
+
+The ULTRAPLAN-ADDENDUM is complete — your 9 items plus my 14 all shipped. v0.2.0 is tagged at `73e637f`, full audit pass `afec0b6` published as `Claude Assesments/AUDIT-FINAL.md`. CI green on main at `eda368f` + `3b18a3c`.
+
+**11 items remain from the audit as explicit Tier D-2 deferrals.** Ready to start them as v0.3 work. I've split them by language lane. **4 items for you, 8 for me** — smaller share because Python/design/PS items are inherently scoped narrower than the JS/TS/CI stack this time.
+
+Do these steps in order:
+
+1. **Pull** — `git log --oneline -3` should show `afec0b6` at or before HEAD.
+
+2. **Read `Claude Assesments/AUDIT-FINAL.md`** — every source finding's disposition is there. The "Tier D-2" table at the bottom is your v0.3 shopping list.
+
+3. **Your lane is `stream-v3-py-docs`** (new branch). Files are Python / PowerShell / design-system HTML / docs/release automation — no JS/TS/renderer work.
+
+4. **Create your worktree:**
+   ```bash
+   cd C:/Users/Ben/Desktop/terminal-talk
+   git worktree add ../terminal-talk-v3-py-docs -b stream-v3-py-docs
+   cd ../terminal-talk-v3-py-docs
+   ```
+
+5. **Claim your stream.** Edit the v0.3 Stream ownership table below — change `stream-v3-py-docs` status `available` → `🚧 claimed (Terminal-2)`. Commit on a branch, push, so I see the claim before doing my first merge.
+
+6. **Your four items, in recommended execution order (smallest first):**
+
+   ### D2-2 — Docs versioning (`docs/v0.2/` archive on release) — ~1h
+   **What:** when `v0.X.0` is tagged, snapshot `docs/` into `docs/v0.X/` so old README screenshots keep working even as the shipping docs move on. Right now `main` serves docs only from the tip — tag v0.1.0 linked-to-latest docs have already drifted.
+
+   **Implement:**
+   - `scripts/archive-docs.sh` (or `.ps1` — match your host). Takes a tag arg. Copies everything under `docs/` (EXCLUDING `docs/vX.Y/` sub-archives) into `docs/<tag-slug>/`. Skips binary PNG collisions by using `rsync -a --ignore-existing` or equivalent.
+   - Run it once manually against `v0.2.0` to seed `docs/v0.2/`.
+   - `.github/workflows/release.yml` (new) — on tag push `v*`, run the archive script, commit back to main with `docs: archive docs/ snapshot for <tag>`, push.
+   - README.md: add a line pointing readers at `docs/v0.2/` for v0.2-era specifics.
+
+   **Acceptance:** `docs/v0.2/` exists on main containing the CURRENT `docs/` snapshot at the time of seeding. `docs/v0.3/` is what will be created the first time a v0.3.0 tag pushes.
+
+   ### D2-1 — Collapse duplicated design-system pages (§8e) — ~2h
+   **What:** `colors-session.html`, `components-dots.html`, `component-sessions-row.html`, `components-forms.html` are all "render this component with X" pages that duplicate kit CSS. Replace them with a single dynamic `docs/design-system/components.html?name=dots` that iframes the kit (same pattern as S5 just shipped in `bd1d923`).
+
+   **Implement:**
+   - `docs/design-system/components.html` — new file. Reads `?name=NAME` URL param. iframes `../ui-kit/index.html?seed=<matching-seed>&chrome=0` (extend the kit's SEEDS object with component-focused presets if needed). Falls back to listing available names when `?name=` is missing.
+   - Delete the 4 old files OR replace each with an HTTP-style redirect `<meta http-equiv="refresh" content="0; url=components.html?name=dots">` so any bookmarks keep working during the deprecation window.
+   - Update `docs/design-system/index.html` (if it exists) or the README's design-system section to link only to `components.html?name=X` rather than the 4 separate files.
+
+   **Acceptance:** `docs/design-system/components.html?name=dots` shows the dot strip. `?name=session-row` shows a session row. `?name=forms` shows the panel. `?name=palette-swatches` shows all 24 arrangements. `check-doc-drift.cjs` still passes.
+
+   **File scope:** `docs/design-system/components.html` (new), `docs/design-system/colors-session.html`, `components-dots.html`, `component-sessions-row.html`, `components-forms.html` (delete or redirect), `docs/ui-kit/index.html` (extend SEEDS if needed — this is the ONE kit-js file T-2 may touch).
+
+   ### D2-4 — PS → synth_turn IPC integrity (design + PS side) — ~2h
+   **What:** the Stop-hook / PreToolUse-hook PowerShell scripts spawn `synth_turn.py` detached, passing config + session state as argv or env. Nothing authenticates that stream — a malicious process on the same user account could theoretically spawn `synth_turn.py` with fake args and drop files into the queue dir. Threat model is low (same-user, local) but full-review flagged it as a hardening opportunity.
+
+   **Design decision first:** write `docs/architecture/ipc-integrity.md` with three options:
+   1. **HMAC**: hooks and Python share a user-scoped secret (generated on install into `~/.terminal-talk/hook-secret.bin`, DPAPI-protected on Windows). Every hook invocation passes an HMAC of argv + timestamp; Python verifies.
+   2. **Named-pipe owned by user**: only the hook processes can write. Python reads from it. More plumbing but no secret rotation.
+   3. **Accept the current threat model**: document that same-user local processes are trusted. Add a comment in `synth_turn.py`'s arg parser explaining the boundary.
+
+   **Implement the chosen option** OR land the decision doc + option-3 comment as a signed-off deferral. Either is fine — the ask here is clarity on what's being done.
+
+   **File scope:** `hooks/speak-response.ps1`, `hooks/speak-on-tool.ps1`, `hooks/speak-notification.ps1`, `app/synth_turn.py`, `app/session-registry.psm1`, `install.ps1` (secret generation if option 1), `uninstall.ps1` (secret removal), plus `docs/architecture/ipc-integrity.md` (new).
+
+   ### D2 safeStorage follow-up (PS-hook side) — ~1h (wait for T-1)
+   **What:** I'm taking D2 (main.js) — `safeStorage.encryptString(openai_api_key)` on save, `decryptString()` on load. But three PS hooks currently read the key directly from `~/.terminal-talk/config.json`. Once I land the encryption, hooks need a path to get the decrypted key without duplicating safeStorage's DPAPI ceremony.
+
+   **Implement AFTER T-1 lands main-side encryption** (I'll ping in the communication log when ready):
+   - Option A (simplest): new `get-openai-key` IPC handler in main that hooks call via a short-lived `electron --app=<script>` invocation → overkill for hooks
+   - Option B (chosen): T-1's main, on encryption, also writes a sidecar `~/.terminal-talk/config.secrets.json` containing ONLY the decrypted key, ACL'd to current user. PS hooks read that sidecar instead of config.json. Install-time sets correct ACL via `icacls`.
+   - Update `hooks/speak-response.ps1`, `hooks/speak-notification.ps1`, and `app/synth_turn.py` to read from `config.secrets.json` instead of `config.json.openai_api_key`. If the file doesn't exist, fall back to null (don't speak via OpenAI; already handled by existing null-check logic).
+
+   **File scope:** `hooks/speak-response.ps1`, `hooks/speak-notification.ps1`, `app/synth_turn.py`, `install.ps1` (icacls call), `uninstall.ps1` (sidecar removal).
+
+7. **Testing protocol** — run `node scripts/run-tests.cjs --logic-only` after every commit. Must stay green (146 currently). If any new test is needed, add INSIDE existing describe blocks matching your file scope — don't clash with my new describes for D2-5/9/10.
+
+8. **Commit message style** — same as v2:
+   ```
+   <type>(<D-id>): <one-liner>
+   
+   <body>
+   
+   Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+   ```
+   Where `<D-id>` is `D2-2`, `D2-1`, `D2-4`, or `D2`.
+
+9. **Push protocol** — push your branch as you go:
+   ```bash
+   git push -u origin stream-v3-py-docs
+   ```
+
+10. **Merge protocol** — when an item is done and tests are green, ff-merge to main or `git merge --no-ff` for merge-commit history:
+    ```bash
+    cd C:/Users/Ben/Desktop/terminal-talk
+    git checkout main && git pull --ff-only
+    git merge --ff-only stream-v3-py-docs
+    git push origin main
+    ```
+    If I've landed something and ff-merge fails, `git rebase main` on your branch and try again.
+
+11. **Stop-on-conflict** — if `git pull --rebase` produces a conflict in a file NOT in your scope above, STOP. Add a `### Blocked` entry at the bottom of this doc naming the conflict + my commit hash, commit + push, wait for me or Ben.
+
+12. **Out of scope for you (T-1's lane):**
+    - `app/preload.js`
+    - `app/main.js`
+    - `app/renderer.js`
+    - `app/styles.css`
+    - `scripts/run-tests.cjs` (except adding tests for YOUR items' acceptance)
+    - `scripts/verify-voices.cjs`, `scripts/generate-tokens-css.cjs`, `scripts/generate-voices-window.cjs`, `scripts/render-mocks.cjs`
+    - `app/lib/*` (tokens.json, voices.json, rate-limit.js, etc.)
+    - `package.json`, `playwright.config.ts`
+    - `.github/workflows/*.yml` (except `release.yml` for D2-2 — that's new and yours)
+    - `docs/ui-kit/*` — EXCEPT SEEDS extension in `index.html` for D2-1
+
+13. **When all four items are done** — update the v0.3 Stream ownership table to mark ✅ for each. Add a "Terminal-2 v0.3 COMPLETE" communication log entry at the bottom.
+
+14. **If in doubt, ask in a log entry at the bottom of this file.** I check on every pull.
+
+**Expected effort for your lane: ~6h focused.** My lane is 8 items, probably ~10h. Our two lanes are independent — no blocking dependencies except D2 waits for me.
+
+---
+
+## v0.3 Stream ownership table
+
+| Stream | Owner | Items | Branch | Status |
+|---|---|---|---|---|
+| **v3-js-ts-ci** | **Terminal-1** | D2-8 SHA pins · D2-11 playwright config · D2-5 ajv · D2-10 reconciliation · D2-9 CSP unsafe-inline · D3 pixel-diff rig · D2-3 §8b kit-as-iframe · D1 Electron 41 · D2 safeStorage main side | `stream-v3-js-ts-ci` (new — created below) | 🚧 starting with D2-8 |
+| **v3-py-docs** | **Terminal-2** | D2-2 docs versioning · D2-1 §8e collapse design-system · D2-4 PS IPC integrity · D2 safeStorage PS side (wait for T-1) | `stream-v3-py-docs` | available — please claim |
 
 ---
 
