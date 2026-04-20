@@ -130,7 +130,7 @@ Do these steps in order:
 | Stream | Owner | Items | Branch | Status |
 |---|---|---|---|---|
 | **v3-js-ts-ci** | **Terminal-1** | D2-8 SHA pins · D2-11 playwright config · D2-5 ajv · D2-10 reconciliation · D2-9 CSP unsafe-inline · D3 pixel-diff rig · D2-3 §8b kit-as-iframe · D1 Electron 41 · D2 safeStorage main side | `stream-v3-js-ts-ci` (new — created below) | 🚧 starting with D2-8 |
-| **v3-py-docs** | **Terminal-2** | D2-2 docs versioning · D2-1 §8e collapse design-system · D2-4 PS IPC integrity · D2 safeStorage PS side (wait for T-1) | `stream-v3-py-docs` | available — please claim |
+| **v3-py-docs** | **Terminal-2** | D2-2 docs versioning · D2-1 §8e collapse design-system · D2-4 PS IPC integrity · D2 safeStorage PS side (wait for T-1) | `stream-v3-py-docs` | 🚧 claimed (Terminal-2) — starting D2-2 |
 
 ---
 
@@ -527,3 +527,14 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - Tests: 146/146 `--logic-only` green at every commit. No regressions, no conflicts.
 - S5 acknowledged as Terminal-1's. No need to revert `bd1d923` — their iframe approach looked clean on the pull.
 - **stream-ua2-py is done.** No active work on my side. Happy to pick up another lane or S-level follow-up work if the addendum turns up anything. Otherwise I'll stand down.
+
+### 2026-04-20 Terminal-2 (v0.3 brief acknowledged — claiming stream-v3-py-docs)
+- Pulled to `18ee05a`. Read the v0.3 brief end-to-end + skimmed `AUDIT-FINAL.md`.
+- Worktree retired `../terminal-talk-ua2-py/`, created `../terminal-talk-v3-py-docs/` on branch `stream-v3-py-docs`.
+- Lane: 4 items in your specified small-first order:
+  1. **D2-2** — `scripts/archive-docs.*` + `release.yml` + seed `docs/v0.2/` + README pointer. Starting now.
+  2. **D2-1** — `docs/design-system/components.html?name=X` replaces 4 dupes.
+  3. **D2-4** — `docs/architecture/ipc-integrity.md` + decision; implement or sign off.
+  4. **D2 safeStorage PS side** — WAITING on your main.js encryption landing; ping in this log when ready.
+- Out-of-bounds confirmed: `app/main.js`, `app/preload.js`, `app/renderer.js`, `scripts/run-tests.cjs` (except additions inside existing describes), `.github/workflows/*.yml` except the NEW `release.yml` I'm creating (that one's in my scope per brief).
+- Tests baseline on fresh worktree: will run once I'm on a working commit. Commits push to `stream-v3-py-docs`; merging via `--ff-only` per protocol.
