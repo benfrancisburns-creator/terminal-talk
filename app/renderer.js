@@ -538,16 +538,100 @@ async function deleteDot(p) {
   await window.api.deleteFile(p);
 }
 
+// EX4 — undo-clear state. clearAllPlayed now soft-deletes: the clips
+// disappear from the visible queue immediately but their actual
+// fs.unlink is deferred 10 s, giving users an Undo window. Once the
+// window elapses, the queued paths really get deleted. Clicking
+// Undo cancels the timer and restores the removed entries to the
+// queue + heardPaths + playedPaths.
+const UNDO_CLEAR_WINDOW_MS = 10_000;
+let _pendingClear = null;  // { entries, timer, toastEl }
+
+function _finaliseClear() {
+  if (!_pendingClear) return;
+  const paths = _pendingClear.entries.map((e) => e.path);
+  _pendingClear = null;
+  for (const p of paths) {
+    window.api.deleteFile(p).catch(() => {});
+  }
+}
+
+function _removeToast() {
+  if (_pendingClear && _pendingClear.toastEl) {
+    try { _pendingClear.toastEl.remove(); } catch {}
+    _pendingClear.toastEl = null;
+  }
+}
+
+function _undoClear() {
+  if (!_pendingClear) return;
+  clearTimeout(_pendingClear.timer);
+  _removeToast();
+  // Restore state: re-insert entries into queue at their original
+  // mtime order (existing queue already ordered by main.js; we'll
+  // merge + the renderer's dot layout handles sort).
+  const restored = _pendingClear.entries;
+  _pendingClear = null;
+  for (const e of restored) {
+    queue.push({ path: e.path, mtime: e.mtime });
+    if (e.wasHeard) heardPaths.add(e.path);
+    if (e.wasPlayed) playedPaths.add(e.path);
+  }
+  renderDots();
+}
+
+function _showClearToast(count) {
+  const toast = document.createElement('div');
+  toast.className = 'tt-toast';
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  toast.innerHTML = `<span>${count} clip${count === 1 ? '' : 's'} cleared</span>`;
+  const undoBtn = document.createElement('button');
+  undoBtn.type = 'button';
+  undoBtn.className = 'tt-toast-undo';
+  undoBtn.textContent = 'Undo';
+  undoBtn.addEventListener('click', _undoClear);
+  toast.appendChild(undoBtn);
+  document.body.appendChild(toast);
+  return toast;
+}
+
 async function clearAllPlayed() {
-  const toDelete = queue.filter(f => heardPaths.has(f.path) && f.path !== currentPath).map(f => f.path);
-  for (const p of toDelete) {
+  // If a prior clear is still pending, finalise it immediately before
+  // opening a new undo window. Otherwise two in-flight clears would
+  // race on the deleteFile calls.
+  if (_pendingClear) {
+    clearTimeout(_pendingClear.timer);
+    _removeToast();
+    _finaliseClear();
+  }
+
+  const toDelete = queue.filter((f) => heardPaths.has(f.path) && f.path !== currentPath);
+  if (toDelete.length === 0) return;
+
+  const entries = toDelete.map((f) => ({
+    path: f.path,
+    mtime: f.mtime,
+    wasHeard: heardPaths.has(f.path),
+    wasPlayed: playedPaths.has(f.path),
+  }));
+  const paths = entries.map((e) => e.path);
+
+  // Remove from visible state immediately — user sees the UI react.
+  for (const p of paths) {
     cancelAutoDelete(p);
     heardPaths.delete(p);
     playedPaths.delete(p);
-    try { await window.api.deleteFile(p); } catch {}
   }
-  queue = queue.filter(f => !toDelete.includes(f.path));
+  queue = queue.filter((f) => !paths.includes(f.path));
   renderDots();
+
+  const toastEl = _showClearToast(paths.length);
+  const timer = setTimeout(() => {
+    _removeToast();
+    _finaliseClear();
+  }, UNDO_CLEAR_WINDOW_MS);
+  _pendingClear = { entries, timer, toastEl };
 }
 
 function playNextPending() {

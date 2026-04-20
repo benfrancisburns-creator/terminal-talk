@@ -897,6 +897,41 @@ select option:checked, .panel .row select option:checked {
   white-space: nowrap;
   border: 0;
 }
+/* EX4 — transient toast for the undo-clear flow. Fixed position,
+   dark background, auto-hides via a JS timer. The `.tt-toast-undo`
+   button is inline inside; whole toast disappears when clicked. */
+.tt-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 26, 32, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  z-index: 9999;
+}
+.tt-toast-undo {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.tt-toast-undo:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 /* EX3 — inline button in settings panel (Reload toolbar etc). Visually
    distinct from the icon-btn toolbar buttons; reads as a link-shaped
    action rather than a primary control. */
