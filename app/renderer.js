@@ -1,3 +1,34 @@
+// S1.3 — renderer-side error capture. Anything thrown inside a handler,
+// any promise that rejects without a .catch, now makes it to main via
+// api.logRendererError (preload exposes it) and ends up in _toolbar.log.
+// Main dedupes on the top-4 stack lines with a 1 s window so an exception
+// loop can't flood the log. Wired before anything else so an error during
+// module-top-level init still reports.
+window.addEventListener('error', (e) => {
+  try {
+    if (window.api && window.api.logRendererError) {
+      window.api.logRendererError({
+        type: 'error',
+        message: e.message || String(e.error || ''),
+        stack:   e.error && e.error.stack ? e.error.stack : '',
+        source:  e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '',
+      });
+    }
+  } catch {}
+});
+window.addEventListener('unhandledrejection', (e) => {
+  try {
+    if (window.api && window.api.logRendererError) {
+      const reason = e.reason;
+      window.api.logRendererError({
+        type: 'unhandledrejection',
+        message: reason && reason.message ? reason.message : String(reason),
+        stack:   reason && reason.stack   ? reason.stack   : '',
+      });
+    }
+  } catch {}
+});
+
 const audio = document.getElementById('audio');
 const dotsEl = document.getElementById('dots');
 const playPauseBtn = document.getElementById('playPause');

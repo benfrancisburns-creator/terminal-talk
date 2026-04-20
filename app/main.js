@@ -1116,6 +1116,26 @@ function ensureAssignmentsForFiles(files) {
   return all;
 }
 
+// S1.2 — renderer-side error sink. The main process has R35 handlers for
+// unhandledRejection / uncaughtException; the renderer had none, so any
+// throw in renderer.js silently killed the UI with zero diagnostics.
+// preload exposes api.logRendererError; renderer.js wires window.onerror
+// and window.onunhandledrejection to call it. The dedupe helper lives in
+// app/lib/renderer-error-dedupe.js so the unit harness can exercise it.
+const { createDedupe } = require('./lib/renderer-error-dedupe');
+const rendererErrorDedupe = createDedupe();
+ipcMain.handle('log-renderer-error', (_e, payload) => {
+  try {
+    if (!payload || typeof payload !== 'object') return;
+    const type = String(payload.type || 'error').slice(0, 32);
+    const message = String(payload.message || '').slice(0, 500);
+    const stack = String(payload.stack || '').slice(0, 2000);
+    const source = String(payload.source || '').slice(0, 300);
+    if (!rendererErrorDedupe.accept(stack || message, Date.now())) return;
+    diag(`[renderer-${type}] ${message}${source ? ` @ ${source}` : ''}${stack ? `\n${stack}` : ''}`);
+  } catch {}
+});
+
 ipcMain.handle('get-queue', () => {
   const files = getQueueFiles();
   return { files, assignments: ensureAssignmentsForFiles(files) };
