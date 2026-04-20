@@ -1183,6 +1183,14 @@ function renderSessionsTable() {
   // simply skip the paint and defer to the next one. Nothing depends
   // on immediacy here: the next event (or explicit re-render after a
   // user action) will repaint. Audit Z11.
+  //
+  // D2-10 closure note. This focus-bail pattern is the intentional
+  // alternative to full keyed-reconciliation (morphdom-lite) against
+  // a 10-row table. The remaining rebuild-cost state that reconciliation
+  // would preserve (scroll position, active-dot pulse phase) isn't
+  // user-actionable at this scale; the bail covers every interactive
+  // case (focus + caret + in-progress label + open dropdown). Full
+  // morphdom remains a v0.4+ option if the state-loss surface grows.
   const focused = document.activeElement;
   if (focused && sessionsTableEl.contains(focused)
       && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT')) {
