@@ -14,13 +14,19 @@ permissions:
   contents: read
 
 jobs:
+  # Z2-2 — Node matrix catches regressions for users on older Node.
+  # engines.node says >=18.0.0, so we run on all supported lines.
   pure-logic-tests:
-    name: Pure JS tests (cross-platform)
+    name: Pure JS tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with: { node-version: '${{ matrix.node }}' }
 
       - name: Run logic-only test subset
         run: node scripts/run-tests.cjs --logic-only --verbose
@@ -35,6 +41,27 @@ jobs:
 
       - name: Scan docs for stale phrases
         run: node scripts/check-doc-drift.cjs
+
+  # S4.3 — coverage via c8, uploaded as a CI artefact. No floor enforced
+  # yet; floor will be ratcheted up after the first run tells us the
+  # baseline. Log-only for now.
+  coverage:
+    name: Coverage (c8) — log-only baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Install devDependencies
+        run: npm install --no-audit --no-fund
+      - name: Run coverage
+        run: npm run test:coverage || true   # report-only, don't fail CI while we establish the floor
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: warn
 
   windows-full:
     name: Full harness (Windows + PowerShell + edge-tts)
@@ -56,3 +83,37 @@ jobs:
 
       - name: Run full test harness
         run: node scripts/run-tests.cjs --verbose
+
+  # Z2-3 — E2E Playwright on Windows. Full suite of 13 tests covering
+  # launch smoke, sessions UI, settings panel, settings persistence.
+  # Runs after windows-full so the build step gets primed caches.
+  e2e-windows:
+    name: E2E (Playwright, windows-latest)
+    runs-on: windows-latest
+    needs: windows-full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Install app devDependencies (Playwright)
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Install Electron dependencies for app/
+        run: npm install --prefix app --no-audit --no-fund
+      - name: Run E2E suite
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+
+  # Z2-1 — Action SHA pinning is tracked as a follow-up. Pinning here
+  # requires looking up each action's current commit SHA via the GitHub
+  # API (dependabot will then rewrite the SHA + version comment on bump).
+  # Deferred as D2-8 in ULTRAPLAN-ADDENDUM until we can run the lookup
+  # locally or add a scripts/pin-action-shas.sh helper.
