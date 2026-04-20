@@ -24,9 +24,11 @@ Military-grade bits:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
+import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -151,10 +153,16 @@ class _SessionLock:
 
     def __enter__(self):
         _ensure_dirs()
+        # S2.1: lockfile payload now records pid + host + acquisition time
+        # (ms since epoch) instead of a bare PID. Host guards against
+        # different machines sharing a networked sessions/ via cloud
+        # backup; ms timestamp disambiguates PID re-use on fast turn loops.
+        payload = f'{os.getpid()}:{socket.gethostname()}:{int(time.time() * 1000)}'
+        self._payload = payload
         for _ in range(40):  # ~2s of polling
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode())
+                os.write(fd, payload.encode())
                 os.close(fd)
                 self.acquired = True
                 return self
@@ -172,11 +180,29 @@ class _SessionLock:
         return self
 
     def __exit__(self, *_exc):
-        if self.acquired:
-            try:
+        if not self.acquired:
+            return
+        # S2.1: only unlink if the lockfile still has OUR payload. Prevents
+        # an __exit__ after PID reuse from deleting another invocation's
+        # fresh lock. A crash-then-restart scenario would otherwise hand
+        # the stale-lock path a running PID that happens to match.
+        try:
+            existing = self.path.read_bytes().decode('utf-8', 'replace')
+            mine_pid = str(os.getpid())
+            # Match pid prefix only (payload might've been truncated on
+            # disk or the host/timestamp rewritten). Enough to prevent
+            # the cross-process delete-wrong-lock failure mode.
+            if existing.split(':', 1)[0] == mine_pid:
                 self.path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            else:
+                _log(
+                    f'session lock owned by another process '
+                    f'(payload={existing!r}, mine_pid={mine_pid}) -- leaving in place'
+                )
+        except FileNotFoundError:
+            pass  # already gone; nothing to do
+        except Exception as e:
+            _log(f'session lock release failed: {type(e).__name__}: {e}')
 
 
 # ---------------------------------------------------------------------------
@@ -510,11 +536,27 @@ def synthesize_parallel(
             results[seq] = tmp if ok else None
             _release_ready()
 
+    # S2.1: wrap the executor's implicit join in an explicit wait() so a
+    # rogue sentence hang can't keep the whole turn hostage. SYNTH_TIMEOUT
+    # is the per-attempt cap; 2× that gives comfortable headroom for the
+    # retry logic but still bounded. Any future still running after the
+    # cap gets cancelled -- its clip is lost, but the turn progresses.
+    _started = time.monotonic()
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SYNTH) as ex:
         futures: List[Future] = []
         for seq, sent in enumerate(sentences):
             futures.append(ex.submit(_synth_task, seq, sent))
-        # Wait for everything (ThreadPool.__exit__ joins)
+        done, not_done = concurrent.futures.wait(
+            futures,
+            timeout=SYNTH_TIMEOUT_SEC * 2,
+        )
+        if not_done:
+            _log(
+                f'synth turn exceeded {SYNTH_TIMEOUT_SEC * 2}s cap; '
+                f'cancelling {len(not_done)} leftover futures'
+            )
+            for f in not_done:
+                f.cancel()
 
     # Clean up tmp dir if empty
     try:
@@ -522,6 +564,14 @@ def synthesize_parallel(
     except OSError:
         pass  # still has files from partial failures; cleanup later
 
+    # S2.1: one-line summary with the shape `synth_turn: n=<total> ok=<ok>
+    # total_ms=<ms> parallelism=<n>` so log greps can pull per-turn
+    # throughput stats without parsing multiple log lines.
+    _total_ms = int((time.monotonic() - _started) * 1000)
+    _log(
+        f'synth_turn: n={len(sentences)} ok={written_count[0]} '
+        f'total_ms={_total_ms} parallelism={MAX_PARALLEL_SYNTH}'
+    )
     _log(f'synth complete: {written_count[0]}/{len(sentences)} clips for {session_short}')
     return written_count[0]
 
