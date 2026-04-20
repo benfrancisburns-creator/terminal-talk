@@ -2,6 +2,22 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-04-20
+
+Kit-demo completeness release. Two small follow-ups to v0.3.0's D2-3 renderer-iframed kit that close the last user-visible gaps in the online preview. Product code untouched.
+
+### Added
+
+- **D2-3a — silent-WAV audio shim in `docs/ui-kit/mock-ipc.js`.** The kit demo can't play real `file://` audio in a browser sandbox, so `HTMLMediaElement.prototype.src` is patched to swap any `file://*.mp3` for a 200 ms, 8 kHz silent base64-encoded WAV. This lets `audio.ended` fire naturally, so the full clip lifecycle — `playNextPending` → `scheduleAutoDelete` → dot-state transition — plays through exactly as it would on a real machine. Silently, but completely. Closes the "kit demo looks frozen when you press play" papercut.
+- **D2-3b — runtime fetch + splice of `app/index.html` in the kit.** New `docs/ui-kit/kit-bootstrap.js` fetches the real product's `index.html`, strips its `<script>` / `<link>` tags (they'd re-fire with wrong paths), splices the body into the kit document, then sequentially loads `tokens-window.js` → `voices-window.js` → `mock-ipc.js` → `../../app/renderer.js`. Replaces the ~100 lines of hand-duplicated DOM the kit carried in v0.3.0 — a structural drift surface that would silently break every time the product added a new `id=`. Three new regression tests guard the new shape.
+
+### Changed
+
+- `docs/ui-kit/index.html` shrunk from ~130 lines of mirrored DOM to a 28-line shell loading `kit-bootstrap.js`. The kit's drift surface is now structurally zero.
+- Tests: **162 → 164 logic-only.** Replaced the single `kit index.html loads app/renderer.js + mock-ipc + canonical tokens` assertion with three tighter ones: `kit index.html delegates to kit-bootstrap.js`, `kit-bootstrap loads app/renderer.js + mock-ipc + canonical tokens`, and `kit fetch-splices app/index.html at runtime`.
+
+---
+
 ## [0.3.0] — 2026-04-20
 
 Audit-closure release. Every deferral from v0.2.0's shipping audit (11 D-tier items + 3 explicit deferrals) is now resolved. The ULTRAPLAN backlog is closed.
