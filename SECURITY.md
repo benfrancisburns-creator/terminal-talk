@@ -94,7 +94,7 @@ that's already covered:
   instead.
 - **Path traversal guard**: `isPathInside()` gates every filesystem
   write that takes a caller-provided path.
-- **Secret redaction**: `redactSecrets()` strips API key patterns
+- **Secret redaction**: `redactForLog()` strips API key patterns
   before anything reaches log files.
 - **Orphan sweep + watchdog**: stale Python wake-word listeners from
   crashed sessions are killed on startup and every 30 minutes.
@@ -106,7 +106,7 @@ that's already covered:
   npm, pip, and GitHub Actions updates weekly.
 - **Static analysis**: GitHub CodeQL scans JavaScript + Python on
   every push to `main`.
-- **Tests**: 83 unit tests + 13 Playwright E2E, including hardening
+- **Tests**: 121 unit tests + 13 Playwright E2E, including hardening
   cases (secret-redaction, path-traversal, registry BOM tolerance,
   watchdog composition).
 

@@ -23,14 +23,24 @@ terminal-talk/
 │   ├── wake-word-listener.py     openWakeWord + ctypes Ctrl+Shift+S
 │   ├── key_helper.py             Long-lived stdin-driven Win32 key sender
 │   ├── edge_tts_speak.py         edge-tts wrapper (handles SelectorEventLoop quirk)
+│   ├── sentence_split.py         Abbreviation/URL/decimal-safe sentence splitter
+│   ├── synth_turn.py             Streaming synthesis orchestrator (parallel edge-tts
+│   │                             with rolling in-order release + sync state)
+│   ├── lib/text.js               Canonical stripForTTS (markdown → speakable prose)
+│   ├── session-registry.psm1     Shared PS module — Read-Registry /
+│   │                             Update-SessionAssignment / Save-Registry /
+│   │                             Write-SessionPidFile
 │   └── statusline.ps1            Reads/writes session-colours.json, emits emoji
 ├── hooks/
 │   ├── speak-response.ps1        Claude Code Stop hook
+│   ├── speak-on-tool.ps1         Claude Code PreToolUse hook (streaming spawn)
 │   └── speak-notification.ps1    Claude Code Notification hook
 ├── scripts/
 │   ├── start-toolbar.vbs         Silent Electron launcher (used by Startup shortcut)
-│   └── run-tests.cjs             75-test harness
-└── docs/                         (planned)
+│   ├── render-mocks.cjs          Chrome-headless mock renderer
+│   └── run-tests.cjs             121-test harness
+├── tests/e2e/                    Playwright end-to-end tests (13 specs)
+└── docs/                         Design system, ui-kit, screenshots, landing site
 ```
 
 ## Working on the code
@@ -80,7 +90,13 @@ describe('YOUR GROUP', () => {
 });
 ```
 
-The test file inlines its own copies of pure functions (`stripForTTS`, `arrangementForIndex`, etc.) to keep `app/renderer.js` Electron-free. **Keep these inline copies in lock-step** with `app/renderer.js` and `app/main.js` — comments at the top of each duplicated block flag this.
+The test file `require()`s the shipping modules where possible:
+`stripForTTS` from `app/lib/text.js`, session-registry helpers from
+`app/session-registry.psm1`. For pure renderer-side pieces (`arrangementForIndex`,
+palette partner tables) the test still inlines the logic — comments at the
+top of each inline block explain why, and `run-tests.cjs` has a dedicated
+group (`PS SESSION-REGISTRY MODULE IS CANONICAL`, `STRIP-FOR-TTS PARITY`)
+that hard-fails if someone re-inlines a shared helper.
 
 Tests that exercise the real PowerShell scripts spawn `powershell.exe` via `spawnSync` with the `TT_REGISTRY_PATH` env var pointing at the tmp file.
 
