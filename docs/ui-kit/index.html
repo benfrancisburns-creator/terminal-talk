@@ -10,49 +10,37 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
-<!-- palette — plain ESM replaced with window export -->
-<script>
-  (function(){
-    // 24-arrangement palette: 8 solid + 8 hsplit + 8 vsplit (complementary pairs).
-    const BASE_COLOURS = ['#ff5e5e','#ffa726','#ffd93d','#4ade80','#60a5fa','#c084fc','#c97b50','#e0e0e0'];
-    const NEUTRAL = '#8a8a8a'; const SIZE = 24;
-    const NAMES = ['Red','Orange','Yellow','Green','Blue','Purple','Brown','White'];
-    const HEX = { Red:'#ff5e5e', Orange:'#ffa726', Yellow:'#ffd93d', Green:'#4ade80', Blue:'#60a5fa', Purple:'#c084fc', Brown:'#c97b50', White:'#e0e0e0' };
-    const HSPLIT_PAIRS = [
-      ['Red','Green'],   ['Green','Red'],
-      ['Orange','Blue'], ['Blue','Orange'],
-      ['Yellow','Purple'], ['Purple','Yellow'],
-      ['Brown','White'], ['White','Brown'],
-    ];
-    const VSPLIT_PAIRS = [
-      ['Red','Blue'],   ['Blue','Red'],
-      ['Orange','Purple'], ['Purple','Orange'],
-      ['Yellow','Brown'], ['Brown','Yellow'],
-      ['Green','White'], ['White','Green'],
-    ];
-    function arrangementForIndex(idx) {
-      const i = ((idx % SIZE) + SIZE) % SIZE;
-      if (i < 8)  return { kind:'solid',  colours:[BASE_COLOURS[i]] };
-      if (i < 16) { const [a,b] = HSPLIT_PAIRS[i-8];  return { kind:'hsplit', colours:[HEX[a], HEX[b]] }; }
-      const [a,b] = VSPLIT_PAIRS[i-16]; return { kind:'vsplit', colours:[HEX[a], HEX[b]] };
-    }
-    function backgroundForArrangement(arr) {
-      if (!arr) return NEUTRAL;
-      const c = arr.colours;
-      if (arr.kind === 'solid')  return c[0];
-      if (arr.kind === 'hsplit') return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
-      if (arr.kind === 'vsplit') return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
-      return c[0];
-    }
-    function primaryColourForArrangement(arr) { return arr && arr.colours ? arr.colours[0] : NEUTRAL; }
-    function arrangementLabel(i) {
-      if (i < 8)  return NAMES[i];
-      if (i < 16) { const [a,b] = HSPLIT_PAIRS[i-8];  return `${a} / ${b} — top/bottom`; }
-      const [a,b] = VSPLIT_PAIRS[i-16]; return `${a} / ${b} — left/right`;
-    }
-    function hashToIndex(s) { let n = 0; for (const c of (s||'')) n += c.charCodeAt(0); return n % SIZE; }
-    window.TTPalette = { arrangementForIndex, backgroundForArrangement, primaryColourForArrangement, arrangementLabel, hashToIndex, PALETTE_SIZE: SIZE };
-  })();
+<!-- Palette: imported from canonical tokens (app/lib/tokens.json via tokens.mjs).
+     Builds window.TTPalette synchronously so JSX components below see it on
+     first render. The previous inline IIFE drifted from the product on 9 of
+     16 split arrangements; this version cannot drift because the same JSON
+     drives the renderer. -->
+<script type="module">
+  import { PALETTE } from './tokens.mjs';
+  const { BASE_COLOURS, NEUTRAL_COLOUR, PALETTE_SIZE, COLOUR_NAMES, HSPLIT_PARTNER, VSPLIT_PARTNER } = PALETTE;
+
+  function arrangementForIndex(idx) {
+    const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
+    if (i < 8)  return { kind: 'solid',  colours: [BASE_COLOURS[i]] };
+    if (i < 16) { const p = i - 8;  return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[HSPLIT_PARTNER[p]]] }; }
+    const p = i - 16; return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[VSPLIT_PARTNER[p]]] };
+  }
+  function backgroundForArrangement(arr) {
+    if (!arr) return NEUTRAL_COLOUR;
+    const c = arr.colours;
+    if (arr.kind === 'solid')  return c[0];
+    if (arr.kind === 'hsplit') return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
+    if (arr.kind === 'vsplit') return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
+    return c[0];
+  }
+  function primaryColourForArrangement(arr) { return arr && arr.colours ? arr.colours[0] : NEUTRAL_COLOUR; }
+  function arrangementLabel(i) {
+    if (i < 8)  return COLOUR_NAMES[i];
+    if (i < 16) { const p = i - 8;  return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[HSPLIT_PARTNER[p]]} — top/bottom`; }
+    const p = i - 16; return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[VSPLIT_PARTNER[p]]} — left/right`;
+  }
+  function hashToIndex(s) { let n = 0; for (const c of (s || '')) n += c.charCodeAt(0); return n % PALETTE_SIZE; }
+  window.TTPalette = { arrangementForIndex, backgroundForArrangement, primaryColourForArrangement, arrangementLabel, hashToIndex, PALETTE_SIZE };
 </script>
 
 <script type="text/babel" src="icons.jsx"></script>
