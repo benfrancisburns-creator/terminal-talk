@@ -112,58 +112,31 @@ if ((Test-Path $registryPath2) -and $sessionShort) {
     } catch {}
 }
 Log "voices: edge_response=$edgeResponseVoice; includes: code=$($inc.code_blocks) urls=$($inc.urls) bullets=$($inc.bullet_markers)"
-if (-not $openaiApiKey -and $env:OPENAI_API_KEY) { $openaiApiKey = $env:OPENAI_API_KEY }
-if (-not $openaiApiKey) {
-    $claudeEnv = Join-Path $env:USERPROFILE '.claude\.env'
-    if (Test-Path $claudeEnv) {
-        Get-Content $claudeEnv | ForEach-Object {
-            if ($_ -match '^\s*OPENAI_API_KEY\s*=\s*(.+)\s*$') {
-                $openaiApiKey = $Matches[1].Trim().Trim('"').Trim("'")
-            }
-        }
-    }
-}
+
+# Canonical edge-tts + OpenAI fallback chain — see app/tts-helper.psm1.
+# Previously the Invoke-TTS function + the openai-key resolution block
+# were both duplicated across speak-response.ps1 and speak-notification.ps1
+# with subtly different retry counts + timeouts (audit CC-8). Both hooks
+# now share the module.
+Import-Module (Join-Path $ttHome 'app\tts-helper.psm1') -Force -ErrorAction SilentlyContinue
+# Resolve-OpenAiApiKey walks env → config.json → ~/.claude/.env. If the
+# config.json already set $openaiApiKey (above), keep that; otherwise
+# fall back to the canonical resolver.
+if (-not $openaiApiKey) { $openaiApiKey = Resolve-OpenAiApiKey -ConfigPath $configPath }
 
 function Invoke-TTS($text, $edgeVoice, $openAiVoice, $openAiInstructions, $basePath) {
-    # Try edge-tts first (free)
-    $edgeOut = "$basePath.mp3"
-    try {
-        $text | python $edgeScript $edgeVoice $edgeOut 2>$null
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $edgeOut) -and (Get-Item $edgeOut).Length -gt 500) {
-            Log "edge-tts OK: $edgeOut"
-            return $edgeOut
-        } else {
-            Log "edge-tts FAIL exit=$LASTEXITCODE, falling back to OpenAI"
-            Remove-Item $edgeOut -ErrorAction SilentlyContinue
-        }
-    } catch {
-        Log "edge-tts EXCEPTION: $($_.Exception.Message)"
-    }
-
-    # Fallback: OpenAI
-    if (-not $openaiApiKey) { Log "no OpenAI key, giving up"; return $null }
-    $wavOut = "$basePath.wav"
-    $body = @{
-        model = 'gpt-4o-mini-tts'
-        voice = $openAiVoice
-        input = $text
-        instructions = $openAiInstructions
-        response_format = 'wav'
-    } | ConvertTo-Json -Compress
-    $bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
-    try {
-        Invoke-WebRequest -Uri 'https://api.openai.com/v1/audio/speech' `
-            -Method Post `
-            -Headers @{ 'Authorization' = "Bearer $openaiApiKey"; 'Content-Type' = 'application/json; charset=utf-8' } `
-            -Body $bodyBytes -OutFile $wavOut -UseBasicParsing -TimeoutSec 60
-        if ((Test-Path $wavOut) -and (Get-Item $wavOut).Length -ge 100) {
-            Log "OpenAI fallback OK: $wavOut"
-            return $wavOut
-        }
-    } catch {
-        Log "OpenAI fallback FAIL: $($_.Exception.Message)"
-    }
-    return $null
+    $result = Invoke-TtsWithFallback `
+        -EdgeScriptPath      $edgeScript `
+        -EdgeVoice           $edgeVoice `
+        -OpenAiVoice         $openAiVoice `
+        -Text                $text `
+        -BasePath            $basePath `
+        -OpenAiApiKey        $openaiApiKey `
+        -OpenAiInstructions  $openAiInstructions `
+        -OpenAiTimeoutSec    60
+    if ($result) { Log "TTS OK: $result" }
+    else         { Log "TTS FAIL: no provider produced audio" }
+    return $result
 }
 
 # --- Streaming path (primary since v0.2): spawn synth_turn.py detached.

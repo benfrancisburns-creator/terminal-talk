@@ -35,7 +35,8 @@ const NEEDS_INSTALL = new Set([
   'HARDENING: navigation guards',
   'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP',
   'STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)',
-  'PS SESSION-REGISTRY MODULE IS CANONICAL'
+  'PS SESSION-REGISTRY MODULE IS CANONICAL',
+  'PS TTS-HELPER MODULE IS CANONICAL'
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -895,6 +896,7 @@ describe('INSTALL SANITY', () => {
       'app/sentence_split.py', 'app/synth_turn.py',
       'app/lib/text.js',
       'app/session-registry.psm1',
+      'app/tts-helper.psm1',
       'hooks/speak-response.ps1', 'hooks/speak-notification.ps1',
       'hooks/speak-on-tool.ps1',
       'config.json'
@@ -978,6 +980,53 @@ describe('STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)', () => {
       throw new Error('main.js stripForTTS must be a thin wrapper over ./lib/text');
     }
   });
+});
+
+describe('PS TTS-HELPER MODULE IS CANONICAL', () => {
+  // CC-8 guard: the edge-tts + OpenAI fallback chain used to be
+  // copy-pasted in speak-response.ps1 and speak-notification.ps1
+  // (+ key-resolution logic in four places total, counting main.js).
+  // Now both hooks Import-Module the shared app/tts-helper.psm1.
+  const modulePath  = path.join(APP_DIR, 'tts-helper.psm1');
+  const respHook    = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-response.ps1'), 'utf8');
+  const notifHook   = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-notification.ps1'), 'utf8');
+  const moduleSrc   = fs.readFileSync(modulePath, 'utf8');
+
+  it('module exports the four canonical functions', () => {
+    for (const fn of ['Resolve-OpenAiApiKey', 'Invoke-EdgeTts', 'Invoke-OpenAiTts', 'Invoke-TtsWithFallback']) {
+      if (!moduleSrc.includes(`function ${fn}`)) {
+        throw new Error(`tts-helper.psm1 missing function ${fn}`);
+      }
+    }
+  });
+
+  const CONSUMERS = [
+    { name: 'speak-response.ps1',     src: respHook },
+    { name: 'speak-notification.ps1', src: notifHook },
+  ];
+
+  for (const c of CONSUMERS) {
+    it(`${c.name} imports the shared tts-helper module`, () => {
+      if (!/Import-Module[^\n]*tts-helper\.psm1/.test(c.src)) {
+        throw new Error(`${c.name}: missing Import-Module .../tts-helper.psm1`);
+      }
+    });
+    it(`${c.name} no longer hand-rolls Invoke-WebRequest to OpenAI`, () => {
+      // The direct POST used to live in both files. Module moves it
+      // behind Invoke-OpenAiTts. If this shows up in a consumer, the
+      // duplication has crept back.
+      if (/Invoke-WebRequest[\s\S]{0,80}api\.openai\.com/.test(c.src)) {
+        throw new Error(`${c.name}: still contains an inline Invoke-WebRequest to OpenAI`);
+      }
+    });
+    it(`${c.name} no longer hand-rolls the ~/.claude/.env key walk`, () => {
+      // That walk belongs inside Resolve-OpenAiApiKey. Consumers just
+      // call the function.
+      if (/\\.claude\\\\.env[\s\S]{0,200}OPENAI_API_KEY/.test(c.src)) {
+        throw new Error(`${c.name}: still walks ~/.claude/.env manually (should use Resolve-OpenAiApiKey)`);
+      }
+    });
+  }
 });
 
 describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {

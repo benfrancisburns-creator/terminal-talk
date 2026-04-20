@@ -36,72 +36,37 @@ $spoken = "Claude needs permission. $message"
 # Config
 $edgeVoice = 'en-GB-RyanNeural'
 $openaiVoice = 'onyx'
-$openaiApiKey = $null
 if (Test-Path $configPath) {
     try {
         $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
         if ($cfg.voices.edge_response) { $edgeVoice = $cfg.voices.edge_response }
         if ($cfg.voices.openai_response) { $openaiVoice = $cfg.voices.openai_response }
-        if ($cfg.openai_api_key) { $openaiApiKey = $cfg.openai_api_key }
     } catch {}
 }
-if (-not $openaiApiKey -and $env:OPENAI_API_KEY) { $openaiApiKey = $env:OPENAI_API_KEY }
-if (-not $openaiApiKey) {
-    $claudeEnv = Join-Path $env:USERPROFILE '.claude\.env'
-    if (Test-Path $claudeEnv) {
-        Get-Content $claudeEnv | ForEach-Object {
-            if ($_ -match '^\s*OPENAI_API_KEY\s*=\s*(.+)\s*$') {
-                $openaiApiKey = $Matches[1].Trim().Trim('"').Trim("'")
-            }
-        }
-    }
-}
+
+# Shared TTS helper — Resolve-OpenAiApiKey + Invoke-TtsWithFallback.
+# Same canonical chain used by speak-response.ps1 (audit CC-8).
+Import-Module (Join-Path $env:USERPROFILE '.terminal-talk\app\tts-helper.psm1') -Force -ErrorAction SilentlyContinue
+$openaiApiKey = Resolve-OpenAiApiKey -ConfigPath $configPath
 
 if (-not (Test-Path $queueDir)) {
     New-Item -ItemType Directory -Path $queueDir -Force | Out-Null
 }
 
 $timestamp = Get-Date -Format 'yyyyMMddTHHmmssfff'
-$basePath = Join-Path $queueDir ($timestamp + '-notif-' + $sessionShort)
-$edgeOut = "$basePath.mp3"
-$wavOut = "$basePath.wav"
+$basePath  = Join-Path $queueDir ($timestamp + '-notif-' + $sessionShort)
 
-$delivered = $null
-try {
-    $spoken | python $edgeScript $edgeVoice $edgeOut 2>$null
-    if ($LASTEXITCODE -eq 0 -and (Test-Path $edgeOut) -and (Get-Item $edgeOut).Length -gt 500) {
-        Log "edge-tts OK: $edgeOut"
-        $delivered = $edgeOut
-    } else {
-        Log "edge-tts FAIL exit=$LASTEXITCODE, fallback to OpenAI"
-        Remove-Item $edgeOut -ErrorAction SilentlyContinue
-    }
-} catch {
-    Log "edge-tts EXCEPTION: $($_.Exception.Message)"
-}
-
-if (-not $delivered -and $openaiApiKey) {
-    $body = @{
-        model = 'gpt-4o-mini-tts'
-        voice = $openaiVoice
-        input = $spoken
-        instructions = 'Speak with a calm, alerting tone. Clear and direct, like a brief notification.'
-        response_format = 'wav'
-    } | ConvertTo-Json -Compress
-    $bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
-    try {
-        Invoke-WebRequest -Uri 'https://api.openai.com/v1/audio/speech' `
-            -Method Post `
-            -Headers @{ 'Authorization' = "Bearer $openaiApiKey"; 'Content-Type' = 'application/json; charset=utf-8' } `
-            -Body $bodyBytes -OutFile $wavOut -UseBasicParsing -TimeoutSec 30
-        if ((Test-Path $wavOut) -and (Get-Item $wavOut).Length -ge 100) {
-            Log "OpenAI fallback OK"
-            $delivered = $wavOut
-        }
-    } catch {
-        Log "EXIT: OpenAI fallback fail: $($_.Exception.Message)"
-    }
-}
+# Canonical edge-tts + OpenAI fallback chain, 30 s timeout (notifications
+# are short so the 60 s default is overkill).
+$delivered = Invoke-TtsWithFallback `
+    -EdgeScriptPath      $edgeScript `
+    -EdgeVoice           $edgeVoice `
+    -OpenAiVoice         $openaiVoice `
+    -Text                $spoken `
+    -BasePath            $basePath `
+    -OpenAiApiKey        $openaiApiKey `
+    -OpenAiInstructions  'Speak with a calm, alerting tone. Clear and direct, like a brief notification.' `
+    -OpenAiTimeoutSec    30
 
 if ($delivered) { Log "DONE: $delivered" } else { Log "EXIT: all TTS providers failed" }
 exit 0
