@@ -2,6 +2,27 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.6] — 2026-04-20
+
+Playback UX fix — clicking a dot no longer turns re-listening into a "click exercise".
+
+### Added
+
+- **`playback.auto_continue_after_click` setting (default ON).** When on, clicking a dot plays that clip and then auto-continues through the remaining clips strictly forward in time, regardless of played state. When off, a click plays only the clicked clip. New row in the Playback settings panel with helper copy on hover.
+- Schema entry, validator rule, and config parity test covering the new key.
+
+### Fixed
+
+- **State C — "everything already played, click one to re-listen".** Before: `playNextPending`'s fallback branch filtered out `playedPaths`, so after the whole queue had been heard once, the continuation found nothing and died on the first clip; the user had to click every subsequent clip individually. Now: when a user-click-originated clip ends and the setting is on, the renderer picks the next clip by strict mtime ordering (not by played/unplayed state) and chains `userClick=true` so the whole run honours the setting.
+- **State B — interrupt mid-auto-play by clicking ahead.** Before: click #3 while #1 was auto-playing would play #3, then resume from `pendingQueue`'s front — which was still #2 — producing an out-of-order 1 → 3 → 2 → 4 → … sequence. Now: a click signals "start from here", the continuation walks strictly forward in time (#3 → #4 → … → #N), and earlier clips stay unplayed until the user clicks them (which they can).
+
+### Internal
+
+- Renderer now distinguishes `currentIsManual` (priority/hey-jarvis or user-click) from `currentIsUserClick` (user-click only). `playPath` gained a third `userClick` parameter; `userPlay` passes `true`, priority callers continue to pass `false`. This is the surface that made the State B/C fixes possible without touching `playNextPending`'s well-established priority → pending → fallback chain.
+- Tests: **172 → 177 logic-only.** Four source-grep regression tests lock the new invariants + one schema/validator parity test.
+
+---
+
 ## [0.3.5] — 2026-04-20
 
 Latent-boot-playback fix surfaced by the kit demo.
