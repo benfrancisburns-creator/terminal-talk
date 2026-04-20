@@ -108,6 +108,39 @@ if (-not (Test-Path $configPath)) {
 }
 Write-Ok "Files copied"
 
+# Z2-7: after the copy loop, stamp ~/.terminal-talk/manifest.json with a
+# SHA-256 of every runtime source file so a future `verify-install.ps1`
+# run can detect hand-edits, corrupted updates, or partial-failure
+# states. The manifest is rewritten on every install; it's a snapshot
+# of "what this version of Terminal Talk shipped", not a diff ledger.
+Write-Step "Writing integrity manifest"
+$manifest = [ordered]@{
+    generated_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    install_dir  = $installDir
+    files        = [ordered]@{}
+}
+$patterns = @(
+    (Join-Path $appDir '*.py'),
+    (Join-Path $appDir '*.js'),
+    (Join-Path $appDir '*.ps1'),
+    (Join-Path $appDir '*.psm1'),
+    (Join-Path $appDir 'lib\*.js'),
+    (Join-Path $hooksDir '*.ps1')
+)
+$manifestCount = 0
+foreach ($pattern in $patterns) {
+    Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $rel = $_.FullName.Substring($installDir.Length).TrimStart('\', '/').Replace('\', '/')
+        $sha = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+        $manifest.files[$rel] = $sha
+        $manifestCount++
+    }
+}
+$manifestPath = Join-Path $installDir 'manifest.json'
+$manifestJson = $manifest | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText($manifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
+Write-Ok "Manifest: $manifestCount files SHA-256'd -> manifest.json"
+
 # 4. Python packages
 #    Pinned via requirements.txt so a surprise upstream release can't break
 #    install or runtime on your box. Dependabot raises weekly PRs for upgrades;
