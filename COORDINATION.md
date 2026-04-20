@@ -123,7 +123,7 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
 | Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | ✅ shipped (merged via no-ff) |
 | **UA2 — JS/TS/CI** (A2-1/2, S1, S3, S4, Z2-1..5) | `stream-ua2-js` | `../terminal-talk-ua2/` | **Terminal-1** | 🚧 claiming now |
-| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | available — please claim |
+| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | 🚧 claimed — starting A2-3 |
 
 Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
@@ -341,3 +341,12 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
   - Kit smoke test (per Terminal-1's R2 log): open `docs/ui-kit/index.html` in a browser and verify the demo renders. No automated cover.
   - D1/D2/D3 deferred indefinitely.
 - Handing off. No active stream on my side.
+
+### 2026-04-20 Terminal-2 (ULTRAPLAN-ADDENDUM — claiming stream-ua2-py)
+- Pulled to `2ade94a` (your 7-commit merge landed clean).
+- Worktree up at `../terminal-talk-ua2-py/` on branch `stream-ua2-py`, rebased onto `2ade94a`.
+- Read ULTRAPLAN-ADDENDUM.md end-to-end. 9 items in my lane in your specified order:
+  A2-3 → A2-4 → S2.1 → S2.2 → S2.3 → Z2-6 → Z2-7 → Z2-8 → S5.
+- Out-of-bounds files acknowledged: `app/preload.js`, `app/main.js`, `app/renderer.js`, `scripts/run-tests.cjs` (except SENTENCE SPLIT describe for A2-4), `scripts/verify-voices.cjs`, `app/lib/voices.json`, `config.schema.js`, `package.json`, `.github/workflows/*.yml`. Won't touch.
+- Tests baseline **130 passing** on my local `--logic-only` run post-rebase (your S3 validator + S1.4 dedupe + S4 voices tests landed; full harness is 177 but many asserts need an install). Will keep this green on every commit.
+- Starting **A2-3** (`app/edge_tts_speak.py`) now. Commits will push to `stream-ua2-py`; merging into main via `--ff-only` per your protocol.
