@@ -100,8 +100,35 @@ Write-Step "Install directory"
 if (Test-Path $installDir) {
     $resp = Read-Host "Delete $installDir (config.json, logs, queue, session colours)? [y/N]"
     if ($resp -match '^[Yy]') {
-        Remove-Item -Recurse -Force $installDir
-        Write-Ok "Install directory deleted"
+        # Z2-8: partial-failure guard. Remove-Item -Recurse -Force throws
+        # on any file currently held open by a Terminal Talk process --
+        # electron.exe / terminal-talk.exe / python.exe can leave dangling
+        # handles during a hot-kill. Sweep by install-path first (wider
+        # net than name alone), sleep briefly for the OS to release
+        # handles, then Wait-Process on the rebranded binaries with a 5 s
+        # ceiling. Matches the audit §22 recipe.
+        Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and ($_.Path -like "$installDir\*") } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        Get-Process -Name 'terminal-talk','electron' -ErrorAction SilentlyContinue |
+            Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $installDir -ErrorAction SilentlyContinue
+        # Leftover report. Remove-Item suppresses failures via the
+        # -ErrorAction above; if files remain locked they'll surface
+        # here so the user can see what's still held.
+        if (Test-Path $installDir) {
+            $leftovers = Get-ChildItem $installDir -Recurse -Force -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+            if ($leftovers) {
+                Write-Warn2 "Install directory still has $($leftovers.Count) leftover item(s):"
+                foreach ($item in $leftovers) { Write-Host "    $item" }
+            } else {
+                Write-Warn2 "Install directory is empty but couldn't be removed -- retry manually."
+            }
+        } else {
+            Write-Ok "Install directory deleted"
+        }
     } else {
         Write-Warn2 "Install directory kept at $installDir"
     }
