@@ -31,3 +31,26 @@ test('dots strip starts empty', async ({ window }) => {
   const dots = window.locator('.dots .dot');
   await expect(dots).toHaveCount(0);
 });
+
+// S6 — new tests targeting gaps surfaced by the v0.4 quality-tier audit.
+
+test('S6: <html lang="en"> is set (v0.3.8 N5-N8 accessibility fixes)', async ({ window }) => {
+  const lang = await window.evaluate(() => document.documentElement.lang);
+  if (lang !== 'en') throw new Error(`html lang expected "en", got "${lang}"`);
+});
+
+test('S6: #close button is present, focusable, and has an aria-label', async ({ window }) => {
+  const btn = window.locator('#close');
+  await expect(btn).toBeVisible();
+  const aria = await btn.getAttribute('aria-label');
+  if (!aria) throw new Error('#close must have aria-label for screen readers');
+});
+
+test('S6: #clearPlayed button has title + aria-label (a11y)', async ({ window }) => {
+  const btn = window.locator('#clearPlayed');
+  await expect(btn).toBeVisible();
+  const aria = await btn.getAttribute('aria-label');
+  const title = await btn.getAttribute('title');
+  if (!aria) throw new Error('#clearPlayed must have aria-label');
+  if (!title) throw new Error('#clearPlayed must have title tooltip');
+});

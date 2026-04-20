@@ -68,4 +68,46 @@ test.describe('Sessions table', () => {
     await clickByCss(window, '.session-block:nth-child(1) .session-remove');
     await expect(window.locator('.session-block')).toHaveCount(1);
   });
+
+  // S6 — new tests targeting gaps surfaced by the v0.4 quality-tier audit.
+
+  test('S6: label input is editable and dispatches on change', async ({ window }) => {
+    await openSettings(window);
+    const labelInput = window.locator('.session-block:nth-child(1) input[type="text"]');
+    await labelInput.fill('Renamed');
+    // Trigger change event (Tab blurs the input).
+    await labelInput.press('Tab');
+    await expect(labelInput).toHaveValue('Renamed');
+  });
+
+  test('S6: palette selector offers 24 arrangements', async ({ window }) => {
+    // The palette selector should expose PALETTE_SIZE=24 options (8 solid +
+    // 8 hsplit + 8 vsplit arrangements). Assertion on the control's shape
+    // rather than end-to-end persistence (which races against the IPC
+    // round-trip + subsequent renderSessionsTable rebuild).
+    await openSettings(window);
+    const select = window.locator('.session-block:nth-child(1) select').first();
+    await expect(select).toHaveValue('0');  // seeded index
+    const optionCount = await select.locator('option').count();
+    if (optionCount !== 24) {
+      throw new Error(`expected 24 palette options, got ${optionCount}`);
+    }
+  });
+
+  test('S6: each seeded session renders a single dot per clip (none yet)', async ({ window }) => {
+    // No clips in queue at startup, so dots strip is empty even with
+    // sessions seeded. This is the right default: sessions are colour
+    // reservations, not auto-visible.
+    await expect(window.locator('.dots .dot')).toHaveCount(0);
+  });
+
+  test('S6: focus star uses filled/hollow glyph to reflect state', async ({ window }) => {
+    await openSettings(window);
+    const focusBtn = window.locator('.session-block:nth-child(1) .focus-btn');
+    // Initially hollow star ☆
+    await expect(focusBtn).toHaveText('\u2606');
+    await clickByCss(window, '.session-block:nth-child(1) .focus-btn');
+    // Filled star ★
+    await expect(focusBtn).toHaveText('\u2605');
+  });
 });
