@@ -39,7 +39,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
-    "c8": "^10.1.2",
+    "c8": "^11.0.0",
     "eslint": "^10.2.1",
     "globals": "^17.5.0",
     "knip": "^6.5.0"
