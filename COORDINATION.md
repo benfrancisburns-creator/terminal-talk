@@ -2,12 +2,113 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20 (v0.3 kickoff + T-2 brief)
-**Pinned baseline commit:** `afec0b6` (AUDIT-FINAL.md committed). **ULTRAPLAN v1 ✅. ULTRAPLAN-ADDENDUM ✅. Audit pass ✅. v0.3 Tier D-2 now OPEN.**
+**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-21 (v0.4 EXECUTION kickoff + T-2 brief)
+**Pinned baseline commit:** `2f1f524` (v0.4 EXECUTION ULTRAPLAN committed). **Quality tier S1-S7 ✅. EXECUTION tier OPEN.**
 
 ---
 
-## 🆕 ⚡ READ ME FIRST — Terminal-2 v0.3 briefing (2026-04-20, supersedes the v2 brief)
+## 🆕 ⚡ READ ME FIRST — Terminal-2 v0.4 EXECUTION briefing (2026-04-21)
+
+Quality-tier assessment is done. All seven streams (S1 Knip / S2 ESLint / S3 ruff+PSScriptAnalyzer / S4 SonarQube / S5 coverage floor / S6 E2E expansion / S7 deps+file-length) shipped and gating CI. Plan for post-assessment execution work is at `Claude Assesments/v0.4-EXECUTION-ULTRAPLAN.md`.
+
+**This cycle's lanes:**
+
+| Terminal | Item | Files | Wall time |
+|---|---|---|---|
+| **T-1 (in flight)** | EX1 — taskkill + powershell absolute paths | `app/main.js` only (3 call sites: L1562, L1578, possibly L1611) | ~30 min |
+| **T-2 (available — grab it)** | EX2 — kit demo reset button | `docs/ui-kit/mock-ipc.js` only (`mountChrome()` at ~L341) | ~15 min |
+
+**Zero file overlap.** Parallel-safe.
+
+### T-2 14-step brief — copy/paste this
+
+```
+0. cd C:\Users\Ben\Desktop\terminal-talk
+1. git pull origin main            # MUST have 2f1f524 at or near HEAD
+2. git log --oneline -5             # confirm
+3. Read Claude Assesments/v0.4-EXECUTION-ULTRAPLAN.md — §0 regression protocol + §3 EX2 plan.
+4. Create worktree:
+     git worktree add ../terminal-talk-ex2 -b stream-ex2
+     cd ../terminal-talk-ex2
+5. Claim EX2 by appending to §Comm-log at the bottom of this file:
+     - 2026-04-21 HH:MM T-2: claimed EX2, starting.
+6. LOCKDOWN (required before any edit):
+     npm run lint                          # expect 0 errors
+     npm run knip                          # expect 0 findings
+     python -m ruff check app/*.py         # "All checks passed"
+     npm run check:file-length             # OK
+     node scripts/run-tests.cjs --logic-only   # 195/195
+   If ANY of these fails on a clean checkout, STOP — broken before your
+   change.
+7. Implement EX2 per plan §3:
+     - `docs/ui-kit/mock-ipc.js::mountChrome()` — add 5th button
+       <button data-action="reset">↺ Reset demo</button>
+     - Add "reset" action handler: re-run buildSeed(SEED_NAME), reset
+       queueFiles/sessions/staleShorts, call notifyQueue().
+     - No CSS change — existing .kit-demo-controls button rules cover it.
+8. Regression after edit:
+     npm run lint && npm run knip && node scripts/run-tests.cjs --logic-only
+     npx playwright test tests/e2e/settings.spec.ts --grep CSP   # CSP intact
+9. Commit:
+     git commit -m "feat(kit): reset button for kit demo (EX2)"
+     (Use the Co-Authored-By trailer per feedback-commit-style.md)
+10. Push + ff-merge to main:
+     git push -u origin stream-ex2
+     cd ../terminal-talk
+     git fetch origin && git merge --ff-only origin/stream-ex2
+     git push origin main
+    If ff-only fails (T-1 shipped first), rebase your branch onto fresh
+    main, re-run lockdown, retry.
+11. Prune worktree + branch:
+     git worktree remove ../terminal-talk-ex2
+     git branch -d stream-ex2
+     git push origin :stream-ex2
+12. Append to §Comm-log:
+     - 2026-04-21 HH:MM T-2: shipped EX2 at <SHA>. Tests 195/195.
+13. Read §v0.4 next-assignments below. Pick up whichever next item is
+    unclaimed.
+14. If in doubt, drop a line in §Comm-log — T-1 checks on every pull.
+```
+
+### Out of scope for T-2 this cycle
+
+- `app/main.js` — T-1's for EX1, then EX5 queued.
+- `app/renderer.js` — T-1's for EX6/EX7 later.
+- `config.schema.json`, `app/lib/tokens.json` — T-1's EX5 scope.
+- Anything else in `app/` outside the kit demo.
+
+### v0.4 next-assignments (unclaim-as-you-claim)
+
+After EX1 + EX2 both land, next available items by priority:
+
+1. **EX9** — extend doc-drift checker (scripts/check-doc-drift.cjs). 1 h. No main.js collision. Either terminal.
+2. **EX5** — CB-palette toggle. Touches app/main.js + schema + tokens. Single-lane.
+3. **EX3** — needs Ben's A+B confirmation first. Parked.
+4. **EX6** — main.js refactor. Solo session, don't parallel.
+5. **EX7** — renderer.js refactor. Solo session.
+
+### Stop-on-conflict
+
+If `git merge --ff-only` is rejected:
+1. Do NOT force-push.
+2. Do NOT rebase main.
+3. Rebase YOUR stream onto fresh main: `git rebase origin/main stream-ex<N>`.
+4. Re-run lockdown. If any test that was green now fails, the merge introduced a regression — investigate before retrying.
+5. Re-push + re-merge.
+
+### §Comm-log (append-only — this cycle)
+
+- 2026-04-21 T-1: claimed EX1, starting. Baseline: 195 logic / 25 E2E / 268 full / 44 files under ceiling 3000 / 0 lint/knip/ruff/pip/npm findings.
+
+---
+
+## 🗄 ARCHIVE — earlier cycles (v0.2, v0.3, UA2, ULTRAPLAN)
+
+Below is the historical coordination log. Keep for git-bisect context but the active instructions are the v0.4 EXECUTION section above.
+
+---
+
+## ⚡ READ ME FIRST — Terminal-2 v0.3 briefing (2026-04-20, COMPLETE — archive)
 
 The ULTRAPLAN-ADDENDUM is complete — your 9 items plus my 14 all shipped. v0.2.0 is tagged at `73e637f`, full audit pass `afec0b6` published as `Claude Assesments/AUDIT-FINAL.md`. CI green on main at `eda368f` + `3b18a3c`.
 
