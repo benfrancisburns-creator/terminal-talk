@@ -860,3 +860,48 @@ code {
   padding: 1px 4px;
   border-radius: 3px;
 }
+
+/* =============================================================
+   R4.4 — Focus indicators. Keyboard-first users need to see
+   which control the Tab key is on. We suppress the default
+   browser outline on mouse focus but bring back a bright ring
+   on :focus-visible so it only shows up when needed.
+   ============================================================= */
+:focus { outline: none; }
+.icon-btn:focus-visible,
+.chevron:focus-visible,
+.focus-btn:focus-visible,
+.mute-btn:focus-visible,
+.session-remove:focus-visible,
+.dot:focus-visible,
+.panel button:focus-visible,
+.panel input:focus-visible,
+.panel select:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #9ccaff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(79, 163, 255, 0.22);
+}
+/* Scrubber thumb focus ring — native range doesn't expose thumb
+   focus, so the whole track picks up the highlight. */
+input[type="range"]:focus-visible {
+  outline: 2px solid #9ccaff;
+  outline-offset: 2px;
+}
+
+/* =============================================================
+   R4.5 — Reduced-motion pass. Anything that moves, pulses,
+   slides, or auto-collapses gets killed when the user has
+   'Reduce motion' enabled in their OS settings.
+   ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .dot.active { animation: none; }
+  .dot:hover { filter: none; transform: none; }
+  .scrubber-mascot,
+  .scrubber-mascot .leg { animation: none !important; }
+  .bar, .bar.collapsed, .panel {
+    transition: none !important;
+  }
+}

@@ -23,15 +23,15 @@
 <body>
   <div class="bar" id="bar">
     <div class="bar-top">
-    <button class="icon-btn" id="back10" title="Back 10s">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
     </button>
-    <button class="icon-btn play" id="playPause" title="Play/Pause">
-      <svg id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-      <svg id="pauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    <button class="icon-btn play" id="playPause" title="Play/Pause" aria-label="Play or pause">
+      <svg aria-hidden="true" id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg aria-hidden="true" id="pauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
     </button>
-    <button class="icon-btn" id="fwd10" title="Forward 10s">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    <button class="icon-btn" id="fwd10" title="Forward 10s" aria-label="Forward 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
     </button>
     <!-- The native <input type="range"> handles all pointer events (drag, -->
     <!-- click-to-seek). Its thumb is made transparent in styles.css. The -->
@@ -39,8 +39,8 @@
     <!-- can animate individual legs (walking) and rotate him 180° when -->
     <!-- the user scrubs backward (angry face). -->
     <div id="scrubberWrap" class="scrubber-wrap">
-      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1">
-      <svg id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
+      <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
         <!-- Body, ears, face (fixed) -->
         <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
         <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
@@ -59,18 +59,18 @@
         <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
       </svg>
     </div>
-    <span id="time">0:00 / 0:00</span>
-    <button class="icon-btn" id="clearPlayed" title="Clear all played">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    <span id="time" aria-live="off">0:00 / 0:00</span>
+    <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
-    <button class="icon-btn" id="settingsBtn" title="Settings">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
-    <button class="icon-btn close" id="close" title="Hide (Esc)">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    <button class="icon-btn close" id="close" title="Hide (Esc)" aria-label="Hide the toolbar">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
     </div>
-    <div class="dots-row"><div class="dots" id="dots"></div></div>
+    <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
   </div>
   <div class="panel" id="panel">
     <div class="panel-inner">
@@ -93,7 +93,7 @@
 
       <section class="panel-section">
         <header>Sessions</header>
-        <div id="sessionsTable" class="sessions-table"></div>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Claude Code sessions"></div>
       </section>
 
       <section class="panel-section about">

@@ -1690,6 +1690,87 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
   });
 });
 
+// =============================================================================
+// R4 — ACCESSIBILITY BASELINE. Every icon-only button must have an
+// aria-label, every decorative SVG must be aria-hidden, and the app
+// must respect prefers-reduced-motion + expose visible focus rings
+// on keyboard navigation.
+// =============================================================================
+describe('R4 ACCESSIBILITY BASELINE', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+  const rend = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+
+  it('R4.2: every icon-btn in index.html has an aria-label', () => {
+    const iconBtns = html.match(/<button[^>]*class=["'][^"']*\bicon-btn\b[^"']*["'][^>]*>/g) || [];
+    if (iconBtns.length < 6) {
+      throw new Error(`expected >=6 icon-btn elements, found ${iconBtns.length}`);
+    }
+    for (const tag of iconBtns) {
+      if (!/\baria-label\s*=\s*["']/.test(tag)) {
+        throw new Error(`icon-btn without aria-label: ${tag}`);
+      }
+    }
+  });
+
+  it('R4.1: every decorative svg in index.html has aria-hidden="true"', () => {
+    const svgs = html.match(/<svg[^>]*>/g) || [];
+    if (svgs.length < 6) throw new Error(`expected several svgs, found ${svgs.length}`);
+    for (const tag of svgs) {
+      if (!/\baria-hidden\s*=\s*["']true["']/.test(tag)) {
+        throw new Error(`svg without aria-hidden="true": ${tag}`);
+      }
+    }
+  });
+
+  it('R4.3: sessions table has role="grid"; dots strip has role="list"', () => {
+    if (!/id=["']sessionsTable["'][^>]*role=["']grid["']/.test(html)) {
+      throw new Error('sessionsTable should expose role="grid"');
+    }
+    if (!/id=["']dots["'][^>]*role=["']list["']/.test(html)) {
+      throw new Error('dots container should expose role="list"');
+    }
+  });
+
+  it('R4.3: renderer gives each session-block role="row" and dot role="listitem"', () => {
+    if (!/wrap\.setAttribute\(['"]role['"],\s*['"]row['"]\)/.test(rend)) {
+      throw new Error('renderSessionRow should set role="row" on wrap');
+    }
+    if (!/dot\.setAttribute\(['"]role['"],\s*['"]listitem['"]\)/.test(rend)) {
+      throw new Error('renderDots should set role="listitem" on each dot');
+    }
+  });
+
+  it('R4.3: settings button exposes aria-expanded + gets updated on click', () => {
+    if (!/id=["']settingsBtn["'][^>]*aria-expanded=["']false["']/.test(html)) {
+      throw new Error('settings button should start with aria-expanded="false"');
+    }
+    if (!/settingsBtn\.setAttribute\(['"]aria-expanded['"]/.test(rend)) {
+      throw new Error('renderer should update settingsBtn aria-expanded on toggle');
+    }
+  });
+
+  it('R4.4: styles.css defines :focus-visible outlines', () => {
+    if (!/:focus-visible/.test(css)) {
+      throw new Error('styles.css missing :focus-visible selectors');
+    }
+    if (!/\.dot:focus-visible/.test(css)) {
+      throw new Error('styles.css should give .dot a focus-visible ring');
+    }
+  });
+
+  it('R4.5: styles.css honours prefers-reduced-motion on active pulse + mascot walk', () => {
+    const rm = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\n\}/g) || [];
+    const combined = rm.join('\n');
+    if (!/\.dot\.active\s*\{\s*animation:\s*none/.test(combined)) {
+      throw new Error('reduce-motion block should stop .dot.active pulse');
+    }
+    if (!/scrubber-mascot[\s\S]{0,80}animation:\s*none/.test(combined)) {
+      throw new Error('reduce-motion block should stop mascot walk');
+    }
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');

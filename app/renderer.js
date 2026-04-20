@@ -434,6 +434,8 @@ function _renderDotsNow() {
     prevShort = thisShort;
     const dot = document.createElement('button');
     dot.className = 'dot';
+    dot.setAttribute('role', 'listitem');
+    dot.type = 'button';
     if (f.path === currentPath) dot.classList.add('active');
     const name = f.path.split(/[\\/]/).pop();
     const short = extractSessionShort(name);
@@ -461,7 +463,10 @@ function _renderDotsNow() {
     const label = entry && entry.label ? ` [${entry.label}]` : '';
     const d = new Date(f.mtime);
     const staleMark = (short && staleSessionShorts.has(short)) ? ' (closed)' : '';
-    dot.title = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
+    const titleText = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
+    dot.title = titleText;
+    dot.setAttribute('aria-label', titleText);
+    if (f.path === currentPath) dot.setAttribute('aria-current', 'true');
     dot.addEventListener('click', () => userPlay(f.path));
     dot.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -1092,6 +1097,7 @@ function renderSessionsTable() {
 function renderSessionRow(shortId, entry) {
   const wrap = document.createElement('div');
   wrap.className = 'session-block';
+  wrap.setAttribute('role', 'row');
   if (staleSessionShorts.has(shortId)) {
     wrap.classList.add('stale');
     wrap.title = 'Terminal closed — colour preserved in case you reopen it';
@@ -1102,15 +1108,21 @@ function renderSessionRow(shortId, entry) {
   row.className = 'session-row';
 
   const chevron = document.createElement('button');
+  chevron.type = 'button';
   chevron.className = 'chevron icon-btn';
-  chevron.innerHTML = expandedSessions.has(shortId)
-    ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>'
-    : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>';
+  const expanded = expandedSessions.has(shortId);
+  chevron.innerHTML = expanded
+    ? '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>'
+    : '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>';
   chevron.title = 'Per-session settings';
+  chevron.setAttribute('aria-label', expanded ? 'Collapse session settings' : 'Expand session settings');
+  chevron.setAttribute('aria-expanded', expanded ? 'true' : 'false');
   row.appendChild(chevron);
 
   const swatch = document.createElement('div');
   swatch.className = 'swatch';
+  swatch.setAttribute('role', 'img');
+  swatch.setAttribute('aria-label', `Colour swatch for session ${shortId}`);
   swatch.style.background = backgroundForArrangement(arrangementForIndex(entry.index || 0));
   row.appendChild(swatch);
 
@@ -1162,11 +1174,14 @@ function renderSessionRow(shortId, entry) {
   // exclusivity: only one session can be focused at a time, so clicking
   // here clears focus on every other row.
   const focusBtn = document.createElement('button');
+  focusBtn.type = 'button';
   focusBtn.className = 'focus-btn' + (entry.focus ? ' focused' : '');
   focusBtn.textContent = entry.focus ? '\u2605' : '\u2606';  // ★ / ☆
   focusBtn.title = entry.focus
     ? 'Unfocus this session (its clips lose priority)'
     : 'Focus this session — its clips play before other sessions\' clips';
+  focusBtn.setAttribute('aria-label', focusBtn.title);
+  focusBtn.setAttribute('aria-pressed', entry.focus ? 'true' : 'false');
   focusBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     // main.js updates the registry and fires notifyQueue() synchronously
@@ -1183,9 +1198,12 @@ function renderSessionRow(shortId, entry) {
   // background terminals. Uses 🔇 / 🔊 to make the state obvious at a glance;
   // the row also gets a muted class for a subtle fade.
   const muteBtn = document.createElement('button');
+  muteBtn.type = 'button';
   muteBtn.className = 'mute-btn' + (entry.muted ? ' muted' : '');
   muteBtn.textContent = entry.muted ? '\uD83D\uDD07' : '\uD83D\uDD0A';  // 🔇 / 🔊
   muteBtn.title = entry.muted ? 'Unmute this session' : 'Mute this session (no audio, no synthesis)';
+  muteBtn.setAttribute('aria-label', muteBtn.title);
+  muteBtn.setAttribute('aria-pressed', entry.muted ? 'true' : 'false');
   muteBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const next = !entry.muted;
@@ -1204,9 +1222,11 @@ function renderSessionRow(shortId, entry) {
   // Remove session button. Sessions no longer auto-prune on inactivity;
   // this is the only way to drop one short of reinstalling.
   const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
   removeBtn.className = 'session-remove';
   removeBtn.textContent = '\u00D7';  // ×
   removeBtn.title = 'Remove this session (colour slot freed)';
+  removeBtn.setAttribute('aria-label', `Remove session ${shortId} — colour slot freed`);
   removeBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const ok = await window.api.removeSession(shortId);
@@ -1385,6 +1405,7 @@ settingsBtn.addEventListener('click', async () => {
   const open = !document.body.classList.contains('settings-open');
   document.body.classList.toggle('settings-open', open);
   settingsOpen = open;
+  settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   await window.api.setPanelOpen(open);
   if (open) {
     applyCollapsed(false);
