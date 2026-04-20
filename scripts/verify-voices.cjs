@@ -33,7 +33,7 @@ for (const line of result.stdout.split('\n')) {
   if (m) availableIds.add(m[1]);
 }
 
-const missing = [...shippedIds].filter(id => !availableIds.has(id)).sort();
+const missing = [...shippedIds].filter(id => !availableIds.has(id)).sort((a, b) => a.localeCompare(b));
 if (missing.length > 0) {
   console.error(`verify-voices: ${missing.length} voice(s) in voices.json no longer shipping:`);
   for (const id of missing) console.error(`  ${id}`);

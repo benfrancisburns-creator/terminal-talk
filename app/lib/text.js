@@ -93,8 +93,12 @@ function stripForTTS(text, includes) {
   t = t.replace(/Cmd\+/g, 'command ');
 
   // Restore preserved code blocks if any (only when code_blocks=true).
+  // NOSONAR: the null-byte delimiters are intentional sentinel tokens
+  // written at line 45 above; no real markdown text contains \u0000 so
+  // the placeholder can't collide with input content. See the paired
+  // write at line 45 for the full rationale.
   if (codeBlocks.length > 0) {
-    t = t.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlocks[+i]);
+    t = t.replace(/\u0000CB(\d+)\u0000/g, (_, i) => codeBlocks[+i]);  // NOSONAR
   }
 
   return t.replace(/\s+/g, ' ').trim();

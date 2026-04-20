@@ -40,3 +40,4 @@ desktop.ini
 # SonarQube local scan artefacts + token
 .sonarqube-token
 .scannerwork/
+.tmp-*.json

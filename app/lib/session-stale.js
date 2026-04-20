@@ -41,7 +41,7 @@ function computeStaleSessions(assignments, liveShorts, livePids, nowSec, graceSe
     if (entry.last_seen && (nowSec - entry.last_seen) < graceSec) continue;
     stale.push(short);
   }
-  return stale.sort();
+  return stale.sort((a, b) => a.localeCompare(b));
 }
 
 module.exports = { computeStaleSessions };

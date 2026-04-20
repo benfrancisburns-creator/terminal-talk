@@ -881,6 +881,22 @@ select option:checked, .panel .row select option:checked {
   width: 140px;
   color: rgba(255, 255, 255, 0.6);
 }
+/* Screen-reader-only text. Accessible table headers for .shortcuts
+   stay invisible to sighted users (the table's two columns are
+   obvious — shortcut + action — so a visible header row would just
+   waste vertical space) but remain announced by assistive tech.
+   Classic `clip` pattern works with our strict CSP. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 kbd {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);

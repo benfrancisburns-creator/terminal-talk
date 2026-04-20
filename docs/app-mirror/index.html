@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Terminal Talk</title>
@@ -131,12 +131,18 @@
         </p>
         <p class="panel-hint shortcuts-title">Global shortcuts</p>
         <table class="shortcuts">
+          <caption class="sr-only">Global keyboard shortcuts</caption>
+          <thead>
+            <tr><th scope="col" class="sr-only">Shortcut</th><th scope="col" class="sr-only">Action</th></tr>
+          </thead>
+          <tbody>
           <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
           <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
           <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
           <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Pause / resume playback</td></tr>
           <tr><td><kbd>Ctrl+Shift+O</kbd></td><td>Pause only (without resuming on next clip)</td></tr>
           <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
+          </tbody>
         </table>
         <p class="panel-hint">
           Tip: labels you set on a session show up next to its emoji in that terminal's statusline

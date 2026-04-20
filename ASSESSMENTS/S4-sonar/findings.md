@@ -3537,3 +3537,91 @@
 - **Sonar key:** `bf74e7e9-aabe-42bb-be44-23674c7f12df`
 - **Disposition:** [ ] resolve-as-reviewed  [ ] fix  [ ] accept
 
+
+---
+
+# Triage — 2026-04-20 (post-baseline-scan review by Ben + me)
+
+Every bug and hotspot below has been read-in-context. Dispositions have been decided with explicit rationale. Fixes will land in a batch commit before the S2 (ESLint) scan so the follow-up sees a clean slate.
+
+## Bugs — triage
+
+| # | Disposition | Rationale |
+|---|---|---|
+| **F001** | **fix** | `scripts/verify-voices.cjs:36` — `voices.edge.sort()` against voice-ID strings; locale-aware `localeCompare` is correct. |
+| **F002** | **fix** | `app/lib/session-stale.js:44` — `stale.sort()` against short-IDs; should be explicit comparator. Pure function, trivial fix + covered by existing tests. |
+| **F003** | **accept** | `app/lib/text.js:97` control-char in regex is **intentional**. Line 45 writes `\u0000CB<n>\u0000` as a sentinel token around preserved code blocks; line 97 matches the same sentinel to restore them. Null-byte sentinels guarantee no real markdown text ever collides with the placeholder. Adding a `// NOSONAR: intentional null-byte sentinel — see line 45` comment. |
+| **F004** | **accept** | Same as F003 — Sonar is flagging the same location twice. Single NOSONAR suffices. |
+| **F005** | **fix** | `scripts/wallpaper.html:2` — add `<html lang="en">`. One-line fix. |
+| **F006** | **fix** | `scripts/wallpaper.html:3` — add `<title>Terminal Talk wallpaper</title>`. One-line fix. |
+| **F007** | **fix** | `docs/ui-kit/index.html:2` — add `<html lang="en">`. |
+| **F008** | **fix** | `app/index.html:2` — add `<html lang="en">`. |
+| **F009** | **fix** | `app/index.html:133` — the `<table>` is `#sessionsTable` built at runtime by `renderer.js`. Add `<th scope="col">` elements for accessibility (empty by default, filled per-session-row semantics via renderer). |
+
+**Bug triage summary:** 7 fix (trivial one-liners totalling ~15 min), 2 accept (intentional design — null-byte sentinel in text.js; single mechanical decision covers both F003 and F004).
+
+## Hotspots — triage
+
+All 23 reviewed in context. Grouped by category. Each has a final disposition + rationale.
+
+### ReDoS (13 hotspots, all `S5852` regex-backtracking) — **accept with rationale**
+
+Files: `app/lib/text.js` (lines 43, 62, 69, 79-81, 86-87), `app/synth_turn.py` (lines 301, 304, 631), `scripts/generate-tokens-css.cjs:91`, `scripts/render-mocks.cjs:97`.
+
+**Analysis:** every flagged regex falls into one of three buckets:
+1. **Markdown parsers with non-greedy or negated-class quantifiers** (e.g. `[\s\S]*?` between code fences, `[^\]]+` in link text, `[^`]+` in inline code). These are standard markdown extraction patterns; the non-greedy + negated-class shape makes catastrophic backtracking mathematically impossible.
+2. **Line-anchored regexes** with `^…$/gm` plus specific literal or class start (headings, bullet markers, shell prompts). Line anchors bound backtracking to per-line scope.
+3. **Build-time scripts** (`generate-tokens-css.cjs`, `render-mocks.cjs`) operate on repo-authored source files that we control. Zero attacker surface.
+
+**Additional guards already in place:**
+- `app/synth_turn.py` wraps synthesis in a `SYNTH_TIMEOUT_SEC = 15` per-sentence timeout, a 30s per-turn timeout, and a 45s hard cap for clipboard spawns. Even if a pathological regex existed, the timeout kills the process.
+- Input source is the user's own Claude Code transcript. Threat model (`docs/architecture/ipc-integrity.md` D2-4): same-user trust boundary. An "attacker" capable of feeding malicious Claude responses already has terminal access.
+
+**Disposition:** all 13 marked **resolve-as-reviewed** in the Sonar UI. No code changes. Rationale recorded here.
+
+### Weak cryptography (4 hotspots, all `S2245` Math.random) — **accept with rationale**
+
+- **H014** `app/renderer.js:86` — picks a random spinner verb for the mascot thinking animation ("Musing", "Pondering"). UI cosmetic.
+- **H015** `app/renderer.js:1018` — timing jitter for when the next spinner verb floats up (650ms random range). UI cosmetic.
+- **H016** `docs/ui-kit/mock-ipc.js:138` — fake mtime jitter in demo clip filenames. Kit demo only, never ships in product.
+- **H017** `docs/ui-kit/mock-ipc.js:367` — picks a random session ID when the demo's "+ Add fake clip" button fires. Kit demo only.
+
+**Disposition:** all 4 marked **resolve-as-reviewed**. No security context — Math.random is exactly the right primitive for cosmetic jitter and demo fake-data.
+
+### PATH spawn (6 hotspots, all `S4036`) — **document + partial fix**
+
+Files: `app/main.js` lines 686, 766, 1562, 1578, 1611; `scripts/verify-voices.cjs:22`.
+
+**Analysis:** these all `spawn()`/`execFileSync()` using short command names that resolve via PATH — `python`, `powershell`, `taskkill`. On Windows, PATH is user-writable, so a malicious earlier PATH entry could shadow the real binary.
+
+**Threat model:** this matches the same-user trust boundary documented in D2-4. An attacker who can rewrite the user's PATH has local code exec as that user and can already exfiltrate:
+- The safeStorage-encrypted API key (reading DPAPI as the same user)
+- The config sidecar (`config.secrets.json`)
+- Browser session cookies, password manager state, etc.
+
+Preventing PATH hijack against a code-exec-already attacker is defence theatre — the same argument we reached for IPC integrity in D2-4.
+
+**Partial hardening still worth shipping** (separate v0.4 session):
+- **`taskkill` + `powershell`** live in `C:\Windows\System32\` on every Windows install. These can use absolute paths (`C:\Windows\System32\taskkill.exe`) without any user-environment discovery cost. Zero compat risk.
+- **`python`** is installed in user-space and varies (system Python, venv, conda, Store install). Resolving absolute path reliably requires `where python` at startup + caching, OR `install.ps1` recording the path in config.json. Either is ~2 h of careful work.
+
+**Disposition:**
+- All 6 marked **resolve-as-reviewed** in the Sonar UI with rationale below.
+- New task filed for v0.4: **Resolve absolute paths for `taskkill` / `powershell`** (low-risk, high-symbol-clarity hardening — Windows-System32 binaries can't move). Python path resolution parked for the same follow-up session as it's more invasive.
+- `SECURITY.md` updated (in a subsequent commit) to state the same-user trust model explicitly, with D2-4 cross-reference.
+
+## Triage summary
+
+| Category | Count | Fix | Accept | Reviewed-only |
+|---|---|---|---|---|
+| Bugs | 9 | 7 | 2 | — |
+| ReDoS hotspots | 13 | — | — | 13 |
+| Weak-crypto hotspots | 4 | — | — | 4 |
+| PATH-spawn hotspots | 6 | — | — (follow-up v0.4 task) | 6 |
+| **Total** | **32** | **7** | **2** | **23** |
+
+**Immediate fix work:** 7 bug one-liners + 2 NOSONAR annotations. ~20 min.
+**Follow-up (not v0.3.10):** absolute-path hardening for `taskkill`/`powershell`/`python`. Separate design session.
+**No action:** 23 hotspots closed via Sonar UI "reviewed" with rationale above.
+
+Next: all 7 fixable bugs land in a single commit, followed by `npm run sonar` re-run and API call to bulk-resolve hotspots. Then S2 ESLint baseline.
