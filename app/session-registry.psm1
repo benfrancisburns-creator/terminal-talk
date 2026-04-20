@@ -88,9 +88,17 @@ function Update-SessionAssignment {
     pick the lowest free index (0..23) and create the entry with
     default fields. Returns the resolved index.
 
-    Existing sessions KEEP their slot forever -- the Electron UI's ×
-    button is the only way to free a slot. This matches main.js's
-    "no auto-prune" policy.
+    This function never prunes. Slot freeing is done by main.js's
+    ensureAssignmentsForFiles, which applies the following rules via
+    isSessionLive():
+      - pinned=true sessions are NEVER pruned (user opt-in retention)
+      - PID still alive -> keep
+      - last_seen within SESSION_GRACE_SEC (14400s = 4h) -> keep
+      - otherwise -> remove
+
+    The settings panel's x button is the user-driven path to the same
+    outcome. Call sites here just touch bookkeeping; they rely on
+    main.js being authoritative for lifetime decisions.
     #>
     param(
         [Parameter(Mandatory = $true)] [hashtable]$Assignments,

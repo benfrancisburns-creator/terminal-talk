@@ -26,7 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main (full history so we can commit back)
-        uses: actions/checkout@v4
+        # D2-8 + N5 (v0.3.0 assessment) — SHA-pinned to match every
+        # other workflow. Release.yml is the only workflow with
+        # `contents: write`, so leaving it unpinned was the worst
+        # inconsistency in the fleet.
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
           # We need main, not the tag, so the commit lands on the branch.
           ref: main

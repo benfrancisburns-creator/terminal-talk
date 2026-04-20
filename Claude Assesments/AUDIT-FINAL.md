@@ -247,31 +247,47 @@ This table was the "outstanding" list at v0.2.0 ship. Updated post-v0.3 push:
 
 ---
 
-## Remaining TRULY outstanding
+## Post-v0.3.0 independent assessment (2026-04-20)
 
-**Exactly one item:** **D2-3 §8b kit-as-iframe-wrapper.**
+Separate Claude session reviewed tag `v0.3.0` (`e542256`) and produced `v0.3.0-assessment-for-claude-code.md`. Three concrete items:
 
-Full scope: replace the kit's ~8 JSX files + parallel React implementation with a single page that loads `app/renderer.js` verbatim and stubs `window.api` with an in-memory mock IPC. 17 invoke handlers + 8 event channels to impersonate. ~5–7 h focused effort. Zero product-side risk (docs/kit only). Eliminates every remaining drift vector between kit and product.
+| ID | Finding | Disposition |
+|----|---------|-------------|
+| N4 | `session-registry.psm1:91-93` docstring misstates main.js "no auto-prune" policy | ✅ shipped v0.3.8 |
+| N5 | `release.yml:29` uses `actions/checkout@v4` (not SHA-pinned); inconsistent with D2-8 and high-stakes since release.yml has `contents: write` | ✅ shipped v0.3.8 |
+| **H3-palette** | Purple `#c084fc` ↔ Blue `#60a5fa` collapse under deuteranopia (Δ=0.004, ~30× below distinguishability threshold). Affects ~6% of men. Carry-over from v0.2 pass 4 that was never added to this catalog. | ⏸ **open — awaiting decision between Option 1 (hex swap to magenta `#ee2bbd`, Δ=0.124) or Option 2 (CB-friendly palette toggle in Settings)** |
 
-Three possible next actions on D2-3:
-1. Do it as a v0.3.1 session
-2. Ship v0.3.0 without it (kit today is correct, just parallel)
-3. Park under v0.4 milestone
+Cosmetic observations from the assessment (not tracked, roll along with nearby commits): N1 (renderer-error-dedupe O(n)→O(1) eviction), N2 (config-validate openai key maxLen=200 loose), N3 (stale-session recycled-PID race, negligible window), `statusline.ps1:22` stale function name, README-FOR-ASSESSOR drift.
+
+v0.4 suggestion from the assessment: extend `scripts/check-doc-drift.cjs` to scan code comments for specific assertion patterns (would have caught N4 automatically).
 
 ---
 
-## Verdict (post-v0.3)
+## Remaining TRULY outstanding
 
-**13 of 13 scoped audit items closed** across v0.2.0 (Tier A–C, Streams R1–R6) and v0.3 (Tier D-2). **1 structural item (D2-3) remains deferred with explicit rationale.**
+**Exactly one item:** **H3-palette** (see table above).
 
-**Shipping state at `c8707ec`:**
-- 161 `--logic-only` tests green (was 107 at plan kickoff)
+All ULTRAPLAN + ULTRAPLAN-ADDENDUM + D-tier + N4/N5 work is shipped. Only the colour-blindness palette collapse remains, and it's pending a two-option UX decision (hex swap vs. toggle).
+
+---
+
+## Verdict (post-v0.3.8)
+
+**All 114 prior-audit items closed** (across v0.2.0 Tier A–C, Streams R1–R6, and v0.3 Tier D-2). **N4, N5 shipped in v0.3.8. H3-palette deferred with explicit two-option tracking row.**
+
+**Shipping state at tag `v0.3.8`:**
+- 177 `--logic-only` tests green (was 107 at plan kickoff, 162 at v0.3.0)
 - 13 Playwright E2E green on Electron 41.2.1
 - Windows full harness green on CI
 - Doc-drift CI guard green
-- Palette pixel-diff rig: 24 baselines, 0.000–0.352 % drift
-- v0.2.0 tagged and pushed
-- v0.3.0 tag-ready when Ben chooses to cut
+- Palette pixel-diff rig: 24 baselines within 2% tolerance
+- v0.2.0, v0.3.0 through v0.3.8 all tagged and pushed
+- D2-3 kit-as-iframe landed in v0.3.0 and polished across v0.3.1–v0.3.7 (see `terminal-talk-v3-patches.md` in memory)
+
+**Post-v0.3 real product bugs surfaced by the kit demo running on GitHub Pages:**
+- v0.3.3 phantom-audio race (test harness + live Electron concurrent `saveAssignments`) — three-part hardening (TT_HOME env, stale-guard, registry lock)
+- v0.3.5 `initialLoad` never sorted `pendingQueue` (invisible in daily use, glaring on kit)
+- v0.3.6 "click exercise" for re-listening to played queues (new `auto_continue_after_click` setting, default on)
 
 **Out-of-scope decisions** (never intended for audit-driven shipping):
 - Mac/Linux port — on the roadmap, no ETA
