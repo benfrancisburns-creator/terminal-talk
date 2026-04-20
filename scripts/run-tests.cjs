@@ -1640,6 +1640,34 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     }
   });
 
+  it('R6.3 R23: synth placeholder dot is wired through clipboard-status', () => {
+    const mainPath = path.join(__dirname, '..', 'app', 'main.js');
+    const rendSrc = fs.readFileSync(rendererPath, 'utf8');
+    const mainSrc = fs.readFileSync(mainPath, 'utf8');
+    if (!/sendClipboardStatus\(['"]synth['"]\)/.test(mainSrc)) {
+      throw new Error("main.js must emit clipboard-status {state:'synth'} when speakClipboard starts");
+    }
+    if (!/sendClipboardStatus\(['"]idle['"]\)/.test(mainSrc)) {
+      throw new Error("main.js must emit clipboard-status {state:'idle'} from speakClipboard finally");
+    }
+    if (!/onClipboardStatus/.test(rendSrc)) {
+      throw new Error('renderer.js must subscribe to onClipboardStatus');
+    }
+    if (!/synthInProgress/.test(rendSrc)) {
+      throw new Error('renderer.js should track synthInProgress');
+    }
+    if (!/pending-synth/.test(rendSrc)) {
+      throw new Error('renderer.js should append a .dot.pending-synth placeholder');
+    }
+    const styles = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+    if (!/\.dot\.pending-synth\b/.test(styles)) {
+      throw new Error('styles.css missing .dot.pending-synth rule');
+    }
+    if (!/prefers-reduced-motion[\s\S]{0,300}pending-synth/.test(styles)) {
+      throw new Error('styles.css must honour prefers-reduced-motion for the pulse');
+    }
+  });
+
   it('R6.1 R12: renderDots is rAF-throttled to one paint per frame', () => {
     const src = fs.readFileSync(rendererPath, 'utf8');
     // The top-level renderDots() must enqueue; the hot body is _renderDotsNow.

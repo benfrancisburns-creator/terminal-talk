@@ -214,6 +214,12 @@ let sessionAssignments = {};
 // user's colour pick is preserved if the terminal reopens.
 let staleSessionShorts = new Set();
 
+// True while speakClipboard() is synthesising between wake-word detection
+// and first real clip arriving. Drives a placeholder pulsing dot so the
+// user gets visual confirmation TT heard them -- otherwise the 2-5 s
+// synth window feels like "did it fire?".
+let synthInProgress = false;
+
 // Helpers that read muted / focus state off the current sessionAssignments
 // cache. Kept here (not inside renderDots / playNextPending) so every
 // call site uses the exact same rule.
@@ -463,6 +469,16 @@ function _renderDotsNow() {
     });
     dotsEl.appendChild(dot);
   });
+  // R6.3: placeholder dot while edge-tts is synthesising from a wake-word
+  // or Ctrl+Shift+S trigger. Removed the moment a priority-play arrives
+  // (onPriorityPlay flips the flag) or main fires state=idle in finally.
+  if (synthInProgress) {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'dot pending-synth';
+    placeholder.title = 'Listening -- synth in progress';
+    placeholder.setAttribute('aria-label', 'Synthesis in progress');
+    dotsEl.appendChild(placeholder);
+  }
 }
 
 function playPath(p, manual = false) {
@@ -628,7 +644,17 @@ window.api.onQueueUpdated((payload) => {
   }
 });
 
+window.api.onClipboardStatus((msg) => {
+  const state = msg && msg.state;
+  const prev = synthInProgress;
+  synthInProgress = (state === 'synth');
+  if (prev !== synthInProgress) renderDots();
+});
+
 window.api.onPriorityPlay((paths) => {
+  // Real clip landed -- retire the placeholder even if main hasn't
+  // yet sent state=idle (races between the two IPC channels).
+  if (paths && paths.length) synthInProgress = false;
   for (const p of paths) {
     priorityPaths.add(p);
     playedPaths.delete(p);

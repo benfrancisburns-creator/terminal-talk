@@ -130,6 +130,23 @@ html, body {
   animation: none;
 }
 
+/* R6.3: placeholder dot while speakClipboard is synthesising -- tells
+   the user TT heard their hey-jarvis / hotkey BEFORE the first real
+   clip has time to land in the queue. Same footprint as a real dot so
+   the row doesn't reflow when it swaps out. */
+.dot.pending-synth {
+  background: rgba(255, 255, 255, 0.35);
+  cursor: default;
+  animation: synthPulse 1.1s ease-in-out infinite;
+}
+@keyframes synthPulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.9); }
+  50%      { opacity: 1;    transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.pending-synth { animation: none; opacity: 0.75; }
+}
+
 /* Highlight-to-speak clip: show "J" for Jarvis centered on the dot.
    Colour is inherited from the dot's background (session colour or neutral);
    heard clips flip to black text on white so the J stays legible. */

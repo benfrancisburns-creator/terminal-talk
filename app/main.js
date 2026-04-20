@@ -818,10 +818,24 @@ async function captureSelection() {
 }
 
 let clipboardBusy = false;
+// Broadcast clipboard synth state to the renderer so it can show a
+// pulsing placeholder dot for the 2-5s gap between wake-word detection
+// and the first synth file landing in the queue. Without this the user
+// thinks TT didn't hear them. Paired with the onClipboardStatus bridge
+// in preload.js.
+function sendClipboardStatus(state) {
+  try {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('clipboard-status', { state });
+    }
+  } catch {}
+}
+
 async function speakClipboard() {
   diag('speakClipboard: TRIGGERED');
   if (clipboardBusy) { diag('speakClipboard: BUSY, skipping'); return; }
   clipboardBusy = true;
+  sendClipboardStatus('synth');
   try {
     const { captured } = await captureSelection();
     if (!captured || !captured.trim()) { diag('speakClipboard: EMPTY capture, exit'); return; }
@@ -874,6 +888,7 @@ async function speakClipboard() {
     }
   } finally {
     clipboardBusy = false;
+    sendClipboardStatus('idle');
   }
 }
 
