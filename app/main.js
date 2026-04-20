@@ -84,44 +84,22 @@ const DEFAULTS = {
 // would either throw in parse (caught, fall back to DEFAULTS) or succeed
 // parse with garbage values (silent misbehaviour). Now we JSON-parse
 // first, then validate against a rules table, then either merge with
-// DEFAULTS or archive-and-fall-back. The archive lets the user recover
-// if we reject legitimately-tweaked config by mistake.
+// DEFAULTS or archive-and-fall-back.
+//
+// EX6a — load + save extracted to app/lib/config-store.js. main.js
+// creates one store at boot and uses store.load() / store.save() at
+// the old call sites. Behaviour byte-for-byte preserved; the
+// extraction makes the logic unit-testable without Electron.
 const { validateConfig } = require('./lib/config-validate');
-function loadConfig() {
-  let parsed;
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    parsed = JSON.parse(raw);
-  } catch { return DEFAULTS; }
-  const v = validateConfig(parsed);
-  if (!v.ok) {
-    try {
-      const archivePath = CONFIG_PATH + '.invalid-' + Date.now();
-      fs.renameSync(CONFIG_PATH, archivePath);
-      diag(`config.json invalid (${v.violations.join('; ')}) — archived to ${archivePath}; using DEFAULTS`);
-    } catch (e) { diag(`config.json invalid (${v.violations.join('; ')}); archive failed: ${e.message}`); }
-    return DEFAULTS;
-  }
-  return {
-    voices: { ...DEFAULTS.voices, ...(parsed.voices || {}) },
-    hotkeys: { ...DEFAULTS.hotkeys, ...(parsed.hotkeys || {}) },
-    playback: { ...DEFAULTS.playback, ...(parsed.playback || {}) },
-    speech_includes: { ...DEFAULTS.speech_includes, ...(parsed.speech_includes || {}) },
-    window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
-    openai_api_key: parsed.openai_api_key ?? null
-  };
-}
-
-function saveConfig(cfg) {
-  // Atomic: write to .tmp first, then rename. A crash mid-write leaves either
-  // the old config or the new config intact -- never a half-written file.
-  try {
-    const tmp = CONFIG_PATH + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), 'utf8');
-    fs.renameSync(tmp, CONFIG_PATH);
-    return true;
-  } catch (e) { diag(`saveConfig fail: ${e.message}`); return false; }
-}
+const { createConfigStore } = require('./lib/config-store');
+const _configStore = createConfigStore({
+  configPath: CONFIG_PATH,
+  defaults: DEFAULTS,
+  validator: validateConfig,
+  logger: (msg) => diag(msg),
+});
+const loadConfig = _configStore.load;
+const saveConfig = _configStore.save;
 
 // D2 — safeStorage-backed key store. Replaces the inline openai_api_key
 // in config.json. Kept as a module so the unit harness can exercise the
