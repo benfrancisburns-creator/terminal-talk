@@ -13,7 +13,9 @@
     "_comment": "Electron accelerator syntax: https://www.electronjs.org/docs/latest/api/accelerator",
     "toggle_window": "Control+Shift+A",
     "speak_clipboard": "Control+Shift+S",
-    "toggle_listening": "Control+Shift+J"
+    "toggle_listening": "Control+Shift+J",
+    "pause_resume": "Control+Shift+P",
+    "pause_only": "Control+Shift+O"
   },
 
   "playback": {

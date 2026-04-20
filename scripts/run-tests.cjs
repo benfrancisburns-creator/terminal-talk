@@ -592,6 +592,8 @@ describe('PALETTE PARITY — kit ↔ product (R1.7)', () => {
 
   // Strip CR from file reads — on Windows, git's autocrlf rewrites LF → CRLF
   // on checkout, but the generator emits plain LF. Normalise before comparing.
+  // Real content drift still fails these asserts; line-ending policy is
+  // deliberately not a test concern.
   const normNL = (s) => s.replace(/\r\n/g, '\n');
 
   it('generated tokens-window.js matches tokens.json palette byte-for-byte', () => {

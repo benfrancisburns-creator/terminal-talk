@@ -726,6 +726,65 @@ audio.addEventListener('error', () => {
   playNextPending();
 });
 
+// Audit R21: the browser fires `stalled` when the media element hasn't
+// received data for a while, and `waiting` when readyState drops below
+// HAVE_FUTURE_DATA. Under normal desktop conditions (local .mp3 files)
+// these are rare -- but they DO happen when the clip file is being
+// written on a slow disk, or when a USB audio device is reconnecting,
+// or when antivirus software briefly blocks reads. Without these
+// handlers the toolbar just stops mid-clip with no visible recovery.
+//
+// Strategy: wait ~3s for stall to resolve on its own (file might be
+// mid-flush); if we're still stuck, skip to the next clip so the user
+// isn't stranded.
+let _stallRecoveryTimer = null;
+function armStallRecovery(reason) {
+  if (_stallRecoveryTimer) return;  // already armed; one recovery per hang
+  _stallRecoveryTimer = setTimeout(() => {
+    _stallRecoveryTimer = null;
+    // Only act if we're still playing the same clip and haven't made
+    // forward progress (currentTime hasn't advanced since we armed).
+    if (audio.src && audio.paused === false && audio.readyState < 3) {
+      const p = currentPath;
+      try { audio.pause(); } catch {}
+      audio.src = '';
+      currentPath = null;
+      currentIsManual = false;
+      if (p) playedPaths.add(p);      // don't loop on the same broken clip
+      renderDots();
+      playNextPending();
+    }
+  }, 3000);
+}
+function cancelStallRecovery() {
+  if (_stallRecoveryTimer) { clearTimeout(_stallRecoveryTimer); _stallRecoveryTimer = null; }
+}
+audio.addEventListener('stalled', () => armStallRecovery('stalled'));
+audio.addEventListener('waiting', () => armStallRecovery('waiting'));
+audio.addEventListener('playing', cancelStallRecovery);
+audio.addEventListener('canplay', cancelStallRecovery);
+audio.addEventListener('ended', cancelStallRecovery);
+
+// Audit R30: devicechange fires when the user plugs / unplugs headphones,
+// switches default audio device, starts a Bluetooth session, etc. The
+// <audio> element binds to whatever output was default at play() time --
+// so if we're mid-clip when the device changes, the audio can either keep
+// playing out of a now-hidden endpoint OR go silent. Re-bind by nudging
+// currentTime; Chromium re-picks the default output on the next frame.
+try {
+  if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      if (!audio.src || audio.ended) return;
+      const wasPaused = audio.paused;
+      const ct = audio.currentTime;
+      try {
+        audio.currentTime = Math.max(0, ct - 0.001);
+        if (!wasPaused) audio.play().catch(() => {});
+      } catch {}
+    });
+  }
+} catch {}
+
 // Scrubber mascot positioning + state. The native <input type="range">
 // thumb is transparent; the visible mascot is an <svg> overlay we
 // position by setting its .style.left based on scrubber.value. Native
@@ -1069,7 +1128,41 @@ const INCLUDE_LABELS = [
   ['image_alt',      'Image alt-text']
 ];
 
+// Cached <option> template for the per-session palette selector. The
+// palette is immutable at runtime (24 arrangements) and the label text
+// for each index is pure, so we can build the option list once and
+// clone it into every rerender instead of doing 24 createElement +
+// appendChild calls per row every time a queue event fires. Audit Z11.
+let _paletteOptionsFragment = null;
+function paletteOptionsClone() {
+  if (!_paletteOptionsFragment) {
+    _paletteOptionsFragment = document.createDocumentFragment();
+    for (let i = 0; i < PALETTE_SIZE; i++) {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = arrangementLabel(i);
+      _paletteOptionsFragment.appendChild(opt);
+    }
+  }
+  return _paletteOptionsFragment.cloneNode(true);
+}
+
 function renderSessionsTable() {
+  // Guard against yanking focus out from under the user. If any control
+  // inside the sessions table currently has keyboard / dropdown focus,
+  // a full innerHTML clear here would destroy it mid-interaction:
+  //   - typing in the label input would suddenly lose its caret,
+  //   - the palette <select> dropdown would snap shut before the user
+  //     picked an option.
+  // A background queue-updated event can land at any moment, so we
+  // simply skip the paint and defer to the next one. Nothing depends
+  // on immediacy here: the next event (or explicit re-render after a
+  // user action) will repaint. Audit Z11.
+  const focused = document.activeElement;
+  if (focused && sessionsTableEl.contains(focused)
+      && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT')) {
+    return;
+  }
   sessionsTableEl.innerHTML = '';
   const entries = Object.entries(sessionAssignments);
   if (entries.length === 0) {
@@ -1138,13 +1231,8 @@ function renderSessionRow(shortId, entry) {
   row.appendChild(labelInput);
 
   const select = document.createElement('select');
-  for (let i = 0; i < PALETTE_SIZE; i++) {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = arrangementLabel(i);
-    if (i === (entry.index || 0)) opt.selected = true;
-    select.appendChild(opt);
-  }
+  select.appendChild(paletteOptionsClone());
+  select.value = String(entry.index || 0);
   select.addEventListener('change', async () => {
     const newIdx = Number(select.value);
     await window.api.setSessionIndex(shortId, newIdx);

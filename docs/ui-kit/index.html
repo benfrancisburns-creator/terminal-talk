@@ -6,15 +6,33 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="kit.css">
-<!-- React production builds (React 18.3.1, ~140 KB combined vs ~1.3 MB dev).
-     The dev builds log warnings about strict-mode double-renders and other
-     development-only diagnostics that aren't useful in a demo. SRI hashes
-     are intentionally omitted here — regenerate before shipping:
-       curl -sL https://unpkg.com/react@18.3.1/umd/react.production.min.js \
-         | openssl dgst -sha384 -binary | openssl base64 -A
-     and paste the result as integrity="sha384-<output>".
-     Babel standalone stays as-is (still a dev dependency by design; there is
-     no "production" build of it because it's a compiler, not a runtime). -->
+<!--
+  Script load order for the kit demo (DO NOT reorder):
+    1. React (umd production build) — defines window.React
+    2. ReactDOM (umd production build) — defines window.ReactDOM; depends on (1)
+    3. Babel standalone — defines window.Babel, transpiles <script type="text/babel"> at runtime
+    4. Palette <script type="module"> — imports from ./tokens.mjs (which
+       reads app/lib/tokens.json at build time) and assigns
+       window.TTPalette so the non-module JSX components see it
+    5. Component modules (IconButton/Dot/Scrubber/etc., type="text/babel") —
+       use window.React + window.TTPalette
+    6. App boot (type="text/babel") — ReactDOM.createRoot(...) into #root
+
+  The palette script is an ES module. Modules defer by default, so
+  components (type="text/babel", not modules) will actually execute
+  BEFORE the palette module finishes. The JSX components read
+  window.TTPalette lazily inside their render functions, so the
+  lazy-read is what makes this ordering safe. A future component that
+  reads TTPalette at MODULE TOP LEVEL will see undefined — make it
+  read inside the component body instead.
+
+  React is loaded from the production build (~140 KB combined vs ~1.3 MB
+  dev). SRI hashes are intentionally omitted — regenerate before shipping:
+     curl -sL https://unpkg.com/react@18.3.1/umd/react.production.min.js \
+       | openssl dgst -sha384 -binary | openssl base64 -A
+  Babel standalone stays as-is (it's a compiler, not a runtime; no
+  production build exists).
+-->
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>

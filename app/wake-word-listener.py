@@ -82,28 +82,54 @@ def main():
         return 1
 
     last_fire = 0.0
-    buffer = np.array([], dtype=np.int16)
+    # Preallocated ring so the audio callback doesn't allocate a fresh
+    # ndarray every ~80 ms (blocksize=1280 @ 16 kHz). The old code did
+    # np.concatenate + slice-drop on every block -- on a busy box those
+    # allocations are enough to push the realtime audio thread over its
+    # budget and drop samples. RING_CAPACITY = 4 × CHUNK_SAMPLES leaves
+    # headroom for odd-sized chunks around stream start/stop.
+    RING_CAPACITY = CHUNK_SAMPLES * 4
+    ring = np.zeros(RING_CAPACITY, dtype=np.int16)
+    ring_fill = [0]   # one-element list so nested callback can mutate
     last_score = 0.0
     heartbeat_interval = 30
     last_heartbeat = time.time()
 
     def callback(indata, frames, time_info, status):
-        nonlocal buffer, last_fire, last_score, last_heartbeat
+        nonlocal last_fire, last_score, last_heartbeat
         if status:
             log.warning(f'audio status: {status}')
 
         chunk = (indata[:, 0] * 32767).astype(np.int16)
-        buffer = np.concatenate([buffer, chunk])
+        n = chunk.shape[0]
+        fill = ring_fill[0]
+        # Overflow guard: audio thread can briefly deliver bursts if the
+        # predict() loop below was slow for a beat. Drop the oldest samples
+        # rather than grow unbounded -- the user's next utterance is what
+        # matters, not the last half second of background noise.
+        if fill + n > RING_CAPACITY:
+            drop = (fill + n) - RING_CAPACITY
+            ring[:fill - drop] = ring[drop:fill]
+            fill -= drop
+            log.warning(f'ring overflow, dropped {drop} samples')
+        ring[fill:fill + n] = chunk
+        fill += n
 
-        while len(buffer) >= CHUNK_SAMPLES:
-            window = buffer[:CHUNK_SAMPLES]
-            buffer = buffer[CHUNK_SAMPLES:]
-
+        while fill >= CHUNK_SAMPLES:
+            # openWakeWord copies internally, so a view is fine here.
+            window = ring[:CHUNK_SAMPLES]
             try:
                 prediction = model.predict(window)
             except Exception as e:
                 log.error(f'predict fail: {e}')
-                continue
+                # Still consume the window so we don't loop forever on
+                # a persistent predict failure.
+                prediction = {}
+            # Shift remaining samples down in place. Amortised O(1) in
+            # steady state because blocksize == CHUNK_SAMPLES means fill
+            # returns to ~0 after every emit.
+            ring[:fill - CHUNK_SAMPLES] = ring[CHUNK_SAMPLES:fill]
+            fill -= CHUNK_SAMPLES
 
             for name, score in prediction.items():
                 if score > 0.3:
@@ -115,6 +141,8 @@ def main():
                         send_hotkey()
                         last_fire = now
                 last_score = max(last_score, score)
+
+        ring_fill[0] = fill
 
         now = time.time()
         if now - last_heartbeat >= heartbeat_interval:

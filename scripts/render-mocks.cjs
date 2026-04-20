@@ -13,7 +13,7 @@
  * gets a small wrapper HTML with :target styling.
  */
 const { spawnSync } = require('node:child_process');
-const { writeFileSync, readFileSync, mkdirSync } = require('node:fs');
+const { writeFileSync, readFileSync, mkdirSync, existsSync } = require('node:fs');
 const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..');
@@ -24,7 +24,52 @@ const TMP_DIR = path.join(REPO, '.tmp-mocks');
 mkdirSync(OUT_DIR, { recursive: true });
 mkdirSync(TMP_DIR, { recursive: true });
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+// Chrome headless path. Old implementation hardcoded the Windows path, so
+// this script couldn't run on a Mac or Linux dev box. Now we:
+//   1. honour $CHROME_PATH if set (explicit user override)
+//   2. probe known install locations per platform
+//   3. fall back to `which chrome`/`where chrome` via the shell
+// Throws a clear error if none work so a broken path fails loudly instead
+// of feeding garbage into spawnSync.
+function resolveChromePath() {
+  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+  const candidates = process.platform === 'win32' ? [
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google/Chrome/Application/chrome.exe'),
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  ] : process.platform === 'darwin' ? [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ] : [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+  ];
+  for (const p of candidates) {
+    if (p && existsSync(p)) return p;
+  }
+  // Last resort: ask the shell.
+  const cmd = process.platform === 'win32' ? 'where' : 'which';
+  for (const binary of ['google-chrome', 'chrome', 'chromium', 'msedge']) {
+    const res = spawnSync(cmd, [binary], { encoding: 'utf8' });
+    if (res.status === 0) {
+      const found = (res.stdout || '').split(/\r?\n/).map(s => s.trim()).find(Boolean);
+      if (found && existsSync(found)) return found;
+    }
+  }
+  throw new Error(
+    'Could not locate Chrome / Chromium. Set the CHROME_PATH env var to the ' +
+    'full path of a Chromium-family binary (chrome, chromium, or msedge).'
+  );
+}
+const CHROME = resolveChromePath();
+process.stdout.write(`[render-mocks] using browser: ${CHROME}\n`);
 
 // Four mocks in order: [slug, window height tuned to section]
 const SHOTS = [
