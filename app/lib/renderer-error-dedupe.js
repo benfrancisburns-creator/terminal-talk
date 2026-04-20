@@ -32,4 +32,4 @@ function createDedupe({ windowMs = RENDERER_ERROR_DEDUPE_MS, maxEntries = MAX_EN
   return { accept, _lastSeen: lastSeen };
 }
 
-module.exports = { createDedupe, RENDERER_ERROR_DEDUPE_MS, MAX_ENTRIES };
+module.exports = { createDedupe };

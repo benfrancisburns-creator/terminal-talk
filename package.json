@@ -18,6 +18,7 @@
     "sonar": "bash scripts/run-sonar.sh",
     "lint": "eslint app scripts docs/ui-kit eslint.config.js",
     "lint:fix": "eslint app scripts docs/ui-kit eslint.config.js --fix",
+    "knip": "knip",
     "start": "node -e \"console.log('Run install.ps1 first, then start via the Startup shortcut or wscript scripts/start-toolbar.vbs')\""
   },
   "engines": {
@@ -40,6 +41,7 @@
     "@playwright/test": "^1.59.1",
     "c8": "^10.1.2",
     "eslint": "^10.2.1",
-    "globals": "^17.5.0"
+    "globals": "^17.5.0",
+    "knip": "^6.5.0"
   }
 }

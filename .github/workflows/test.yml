@@ -70,6 +70,24 @@ jobs:
       - name: Lint
         run: npx eslint app scripts docs/ui-kit eslint.config.js --max-warnings=0
 
+  # v0.4 S1 — Knip blocking gate.
+  # Cross-module dead-code + unused-dependency detector. Complements
+  # ESLint's per-file no-unused-vars by walking the import graph and
+  # catching orphaned exports that no one imports. Config in knip.json.
+  knip:
+    name: Knip (unused code + deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '22' }
+
+      - name: Install dev dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Knip
+        run: npx knip
+
   # S4.3 — coverage via c8, uploaded as a CI artefact. No floor enforced
   # yet; floor will be ratcheted up after the first run tells us the
   # baseline. Log-only for now.

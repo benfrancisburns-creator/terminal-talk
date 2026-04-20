@@ -1,0 +1,33 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "app/main.js",
+    "app/preload.js",
+    "app/renderer.js",
+    "scripts/archive-docs.sh",
+    "scripts/generate-tokens-css.cjs",
+    "scripts/render-mocks.cjs",
+    "scripts/sync-app-mirror.cjs",
+    "scripts/fetch-sonar-findings.cjs",
+    "scripts/resolve-sonar-hotspots.cjs",
+    "scripts/generate-voices-window.cjs",
+    "scripts/wrap-ascii-face.cjs",
+    "scripts/run-sonar.sh",
+    "tests/e2e/**/*.spec.ts",
+    "tests/e2e/**/*.ts",
+    "docs/ui-kit/kit-bootstrap.js",
+    "docs/ui-kit/mock-ipc.js"
+  ],
+  "project": [
+    "app/**/*.js",
+    "scripts/**/*.{js,cjs,mjs}",
+    "docs/ui-kit/**/*.js"
+  ],
+  "ignore": [
+    "app/lib/tokens-window.js",
+    "app/lib/voices-window.js"
+  ],
+  "ignoreDependencies": [
+    "electron"
+  ]
+}

@@ -105,4 +105,4 @@ function stripForTTS(text, includes) {
   return t.replace(/\s+/g, ' ').trim();
 }
 
-module.exports = { stripForTTS, DEFAULTS };
+module.exports = { stripForTTS };

@@ -37,4 +37,4 @@ function createRateLimit({ rate = DEFAULT_RATE, burst = DEFAULT_BURST, now = () 
   return { allow, _buckets: buckets };
 }
 
-module.exports = { createRateLimit, DEFAULT_RATE, DEFAULT_BURST };
+module.exports = { createRateLimit };
