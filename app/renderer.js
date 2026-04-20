@@ -275,6 +275,16 @@ function isPathSessionMuted(p) {
   const name = p.split(/[\\/]/).pop();
   return isClipSessionMuted(name);
 }
+// S1 follow-up — a clip from a session whose terminal is closed
+// (staleSessionShorts set by the 10 s get-stale-sessions poll) should
+// not auto-play. The dot is still clickable so the user can hear it
+// manually; auto-play just skips closed-session clips the same way it
+// skips muted ones. Prevents phantom audio from detached late-arriving
+// synth jobs or leaked test fixtures.
+function isPathSessionStale(p) {
+  const short = extractSessionShort(p.split(/[\\/]/).pop());
+  return !!(short && staleSessionShorts.has(short));
+}
 // Returns the shortId of the focused session if any, else null.
 // Only one session can be focused at a time (main.js enforces exclusivity).
 function findFocusedSessionShort() {
@@ -608,16 +618,16 @@ function playNextPending() {
     }
   }
   // 2. Focus-session preference — if a session is marked focus and has
-  //    unplayed, unmuted clips, play the OLDEST of those before any
-  //    other session's clips. Doesn't interrupt currently-playing clip,
-  //    just tips the next-to-play decision. Lets the user keep one
-  //    terminal's narrative coherent while background terminals queue.
+  //    unplayed, unmuted, non-stale clips, play the OLDEST of those
+  //    before any other session's clips. Doesn't interrupt currently-
+  //    playing clip, just tips the next-to-play decision.
   const focusShort = findFocusedSessionShort();
   if (focusShort) {
     const focusClip = queue
       .filter(f => {
         if (playedPaths.has(f.path)) return false;
         if (isPathSessionMuted(f.path)) return false;
+        if (isPathSessionStale(f.path)) return false;
         const short = extractSessionShort(f.path.split(/[\\/]/).pop());
         return short === focusShort;
       })
@@ -629,19 +639,21 @@ function playNextPending() {
     }
   }
   // 3. Explicit pending queue — clips queued in arrival order.
-  //    Skip muted-session clips; drop the whole file (don't re-queue).
+  //    Skip muted- and stale-session clips; drop the whole file
+  //    (don't re-queue).
   while (pendingQueue.length > 0) {
     const next = pendingQueue.shift();
     if (isPathSessionMuted(next)) continue;
+    if (isPathSessionStale(next)) continue;
     if (queue.find(f => f.path === next)) {
       playPath(next);
       return;
     }
   }
-  // 4. Fallback: any unplayed, unmuted clip still sitting in the queue.
-  //    Covers edge cases where pendingQueue drifted. Oldest first.
+  // 4. Fallback: any unplayed, unmuted, non-stale clip still in the
+  //    queue. Covers edge cases where pendingQueue drifted. Oldest first.
   const candidate = queue
-    .filter(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path))
+    .filter(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path) && !isPathSessionStale(f.path))
     .sort((a, b) => a.mtime - b.mtime)[0];
   if (candidate) {
     playPath(candidate);

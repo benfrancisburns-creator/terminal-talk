@@ -61,7 +61,14 @@ except ImportError:
 # Paths + constants
 # ---------------------------------------------------------------------------
 
-TT_HOME = Path.home() / '.terminal-talk'
+# D2-3d — `TT_HOME` env var overrides the default root so the test
+# harness can redirect to a temp dir and never touch the user's live
+# registry / queue while an Electron toolbar is running. Without this,
+# a concurrent main.js `saveAssignments` can overwrite a test's
+# seeded registry between the seed-write and synth_turn reading it,
+# leaking a synthesised clip under a stale test-fixture short.
+_TT_HOME_ENV = os.environ.get('TT_HOME')
+TT_HOME = Path(_TT_HOME_ENV) if _TT_HOME_ENV else (Path.home() / '.terminal-talk')
 QUEUE_DIR = TT_HOME / 'queue'
 SESSIONS_DIR = TT_HOME / 'sessions'
 CONFIG_PATH = TT_HOME / 'config.json'

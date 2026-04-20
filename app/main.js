@@ -649,6 +649,7 @@ function stripForTTS(text) {
 
 const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
+const { withRegistryLock } = require('./lib/registry-lock');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
 
@@ -1316,12 +1317,14 @@ ipcMain.handle('update-config', (_e, partial) => {
 });
 
 function saveAssignments(all) {
-  try {
-    const tmp = COLOURS_REGISTRY + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
-    fs.renameSync(tmp, COLOURS_REGISTRY);
-    return true;
-  } catch (e) { diag(`saveAssignments fail: ${e.message}`); return false; }
+  return withRegistryLock(COLOURS_REGISTRY, () => {
+    try {
+      const tmp = COLOURS_REGISTRY + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
+      fs.renameSync(tmp, COLOURS_REGISTRY);
+      return true;
+    } catch (e) { diag(`saveAssignments fail: ${e.message}`); return false; }
+  });
 }
 
 // --- Input validation helpers (defend against malformed IPC + corrupt registry) ---

@@ -467,62 +467,74 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
 
 describe('SYNTH TURN MUTE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
-  const registryPath = path.join(os.homedir(), '.terminal-talk', 'session-colours.json');
+  // D2-3d — redirect synth_turn.py's whole TT_HOME into a per-run temp
+  // dir. Prior versions of this test wrote to the user's real
+  // ~/.terminal-talk/session-colours.json and raced a running Electron's
+  // saveAssignments(), which could clobber the test's muted seed between
+  // seed-write and synth_turn reading it — leaking a synthesised clip
+  // under the fake `cafebeef` fixture into the live queue.
+  const testTtHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-test-'));
+  const testEnv = { ...process.env, TT_HOME: testTtHome };
+  const registryPath = path.join(testTtHome, 'session-colours.json');
   const testShort = 'cafebeef';
   const testSessionId = testShort + 'abcdef012345678901234567';
-  const syncPath = path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSessionId}-sync.json`);
+  const syncPath = path.join(testTtHome, 'sessions', `${testSessionId}-sync.json`);
+  const queueDir = path.join(testTtHome, 'queue');
 
   function runPy(code) {
     const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import synth_turn; `;
-    const r = spawnSync('python', ['-c', prelude + code], { encoding: 'utf8', timeout: 15000 });
+    const r = spawnSync('python', ['-c', prelude + code], { encoding: 'utf8', timeout: 15000, env: testEnv });
     if (r.status !== 0) throw new Error(`python exit ${r.status}: ${r.stderr}`);
     return (r.stdout || '').trim();
   }
 
-  it('resolve_voice_and_flags reads muted=true from registry', () => {
-    // Stash prior registry so we don't nuke real state
-    let priorRaw = null;
-    try { priorRaw = fs.readFileSync(registryPath, 'utf8'); } catch {}
-
-    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, muted: true, last_seen: Math.floor(Date.now()/1000) } } };
+  function writeSeed(muted) {
+    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, muted, last_seen: Math.floor(Date.now()/1000) } } };
     fs.mkdirSync(path.dirname(registryPath), { recursive: true });
     fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
+  }
 
+  // Belt-and-brace: delete any `*-cafebeef.mp3` that ends up in the
+  // test TT_HOME queue. With TT_HOME redirected, this should never
+  // leak to the user's real queue, but if the env var ever fails to
+  // propagate, this stops the fixture short from accumulating.
+  function scrubCafebeef() {
+    try {
+      if (!fs.existsSync(queueDir)) return;
+      for (const f of fs.readdirSync(queueDir)) {
+        if (f.endsWith('-cafebeef.mp3')) {
+          try { fs.unlinkSync(path.join(queueDir, f)); } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  it('resolve_voice_and_flags reads muted=true from registry', () => {
+    writeSeed(true);
     try {
       const out = runPy(`v, f, k, m = synth_turn.resolve_voice_and_flags('${testShort}', {}); print('muted=' + str(m))`);
       if (out !== 'muted=True') throw new Error(`expected muted=True, got '${out}'`);
     } finally {
-      if (priorRaw !== null) fs.writeFileSync(registryPath, priorRaw, 'utf8');
-      else try { fs.unlinkSync(registryPath); } catch {}
+      try { fs.unlinkSync(registryPath); } catch {}
+      scrubCafebeef();
     }
   });
 
   it('resolve_voice_and_flags reads muted=false by default', () => {
-    let priorRaw = null;
-    try { priorRaw = fs.readFileSync(registryPath, 'utf8'); } catch {}
-    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, last_seen: Math.floor(Date.now()/1000) } } };
-    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
-    fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
+    writeSeed(false);
     try {
       const out = runPy(`v, f, k, m = synth_turn.resolve_voice_and_flags('${testShort}', {}); print('muted=' + str(m))`);
       if (out !== 'muted=False') throw new Error(`expected muted=False, got '${out}'`);
     } finally {
-      if (priorRaw !== null) fs.writeFileSync(registryPath, priorRaw, 'utf8');
-      else try { fs.unlinkSync(registryPath); } catch {}
+      try { fs.unlinkSync(registryPath); } catch {}
+      scrubCafebeef();
     }
   });
 
   it('run() on muted session advances sync state but does not synthesise', () => {
-    // Stash real registry + sync state
-    let priorReg = null;
-    try { priorReg = fs.readFileSync(registryPath, 'utf8'); } catch {}
     try { fs.unlinkSync(syncPath); } catch {}
+    writeSeed(true);
 
-    const seed = { assignments: { [testShort]: { index: 2, session_id: testSessionId, claude_pid: 0, label: '', pinned: false, muted: true, last_seen: Math.floor(Date.now()/1000) } } };
-    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
-    fs.writeFileSync(registryPath, JSON.stringify(seed), 'utf8');
-
-    // Build a fake transcript with one user line then an assistant text line
     const fakeTranscript = path.join(os.tmpdir(), `tt-mute-test-${Date.now()}.jsonl`);
     const transcriptLines = [
       JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }),
@@ -536,18 +548,17 @@ describe('SYNTH TURN MUTE', () => {
         '--session', testSessionId,
         '--transcript', fakeTranscript,
         '--mode', 'on-stop'
-      ], { encoding: 'utf8', timeout: 15000 });
+      ], { encoding: 'utf8', timeout: 15000, env: testEnv });
       if (r.status !== 0) throw new Error(`synth_turn exit ${r.status}: ${r.stderr}`);
-      // Sync state should exist showing line 1 as synthesised
       const syncRaw = fs.readFileSync(syncPath, 'utf8');
       const sync = JSON.parse(syncRaw);
       if (sync.turn_boundary !== 0) throw new Error(`turn_boundary expected 0, got ${sync.turn_boundary}`);
       if (!sync.synthesized_line_indices.includes(1)) throw new Error(`line 1 not marked synthesized: ${syncRaw}`);
     } finally {
-      if (priorReg !== null) fs.writeFileSync(registryPath, priorReg, 'utf8');
-      else try { fs.unlinkSync(registryPath); } catch {}
+      try { fs.unlinkSync(registryPath); } catch {}
       try { fs.unlinkSync(fakeTranscript); } catch {}
       try { fs.unlinkSync(syncPath); } catch {}
+      scrubCafebeef();
     }
   });
 });
@@ -782,6 +793,68 @@ describe('STATUSLINE OUTPUT', () => {
     if (!r.stdout.includes('Frontend')) throw new Error(`label missing from output: "${r.stdout}"`);
   });
   clearRegistry();
+});
+
+describe('REGISTRY LOCK (v0.3.3)', () => {
+  // Guards concurrent writes to session-colours.json. The leak that
+  // produced this lock: test harness seeded a fixture short, live
+  // Electron's saveAssignments overwrote it, synth_turn.py read the
+  // un-seeded registry, synthesised, leaked an MP3. Fix 1 (TT_HOME)
+  // made the test stop writing to the real registry; this lock
+  // serialises ANY future concurrent writer so the same class of
+  // interleaving can't recur.
+  const { withRegistryLock, _internals } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')
+  );
+  const tmpReg = path.join(os.tmpdir(), `tt-lock-test-${Date.now()}.json`);
+  const tmpLock = tmpReg + '.lock';
+  const cleanup = () => {
+    try { fs.unlinkSync(tmpReg); } catch {}
+    try { fs.unlinkSync(tmpLock); } catch {}
+  };
+
+  it('runs fn and returns its value', () => {
+    cleanup();
+    const r = withRegistryLock(tmpReg, () => 42);
+    assertEqual(r, 42);
+  });
+
+  it('releases lock after fn returns (next acquire succeeds)', () => {
+    cleanup();
+    withRegistryLock(tmpReg, () => {});
+    assertEqual(fs.existsSync(tmpLock), false);
+  });
+
+  it('releases lock even if fn throws', () => {
+    cleanup();
+    let caught = false;
+    try {
+      withRegistryLock(tmpReg, () => { throw new Error('boom'); });
+    } catch (e) { caught = true; }
+    assertEqual(caught, true);
+    assertEqual(fs.existsSync(tmpLock), false);
+  });
+
+  it('steals stale lock (older than LOCK_STALE_MS)', () => {
+    cleanup();
+    // Write a lock then back-date its mtime so the next acquire steals it.
+    fs.writeFileSync(tmpLock, '999999');
+    const old = (Date.now() - _internals.LOCK_STALE_MS - 1000) / 1000;
+    fs.utimesSync(tmpLock, old, old);
+    const r = withRegistryLock(tmpReg, () => 'stole-it');
+    assertEqual(r, 'stole-it');
+    cleanup();
+  });
+
+  it('second caller proceeds after first completes (serial)', () => {
+    cleanup();
+    const order = [];
+    withRegistryLock(tmpReg, () => { order.push('a'); });
+    withRegistryLock(tmpReg, () => { order.push('b'); });
+    assertEqual(order, ['a', 'b']);
+  });
+
+  cleanup();
 });
 
 describe('MAIN.JS REGISTRY READ TOLERANCE', () => {
@@ -1633,6 +1706,30 @@ describe('SESSION STALE DETECTION', () => {
       NOW
     );
     assertEqual(stale, []);
+  });
+
+  // v0.3.3 — renderer playback guard. The stale set was previously a
+  // visual-only signal; playNextPending filtered muted clips but not
+  // stale ones, so a late-arriving detached-synth clip (or a leaked
+  // test fixture) would still auto-play after the terminal closed.
+  // The renderer now treats stale like muted for auto-play purposes
+  // in all three non-priority branches; the dot stays clickable for
+  // manual play. This is a source-grep regression test — a DOM-level
+  // integration lives in e2e.
+  it('playNextPending skips stale-session clips (renderer guard)', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (!/function\s+isPathSessionStale\s*\(/.test(rendererSrc)) {
+      throw new Error('renderer.js must define isPathSessionStale(path)');
+    }
+    // The function must be called from all three non-priority branches.
+    // We count occurrences inside playNextPending by finding its body.
+    const m = rendererSrc.match(/function\s+playNextPending\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('playNextPending function body not found');
+    const body = m[1];
+    const calls = (body.match(/isPathSessionStale\s*\(/g) || []).length;
+    if (calls < 3) {
+      throw new Error(`playNextPending must call isPathSessionStale in at least 3 branches (focus, pending, fallback); found ${calls}`);
+    }
   });
 
   it('mixed live + dead -> only dead ones returned, sorted', () => {
