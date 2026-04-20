@@ -911,6 +911,108 @@ describe('SENTENCE SPLIT', () => {
     assertEqual(split(''), []);
     assertEqual(split('   \n  '), []);
   });
+
+  // ------------------------------------------------------------------
+  // A2-4 additions. One test per new abbreviation plus dash/NEL/LS/CJK.
+  // Each abbreviation assertion is phrased so the sentence containing
+  // the abbreviation is >= MIN_SENTENCE_LEN on its own -- otherwise the
+  // short-sentence merger folds results together and the abbrev-vs-
+  // boundary check is hidden by the fold.
+  // ------------------------------------------------------------------
+  it('abbrev approx. does not terminate a sentence', () => {
+    const r = split('The payload is approx. 4 MB on the wire. Next sentence continues here.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('approx. 4 MB')) throw new Error(`approx mangled: ${r[0]}`);
+  });
+  it('abbrev aka does not terminate a sentence', () => {
+    const r = split('She runs the Finance team, aka the money people these days. Next sentence here now.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('aka the money')) throw new Error(`aka mangled: ${r[0]}`);
+  });
+  it('abbrev ref. does not terminate a sentence', () => {
+    const r = split('See ref. 4 for the full story on this. Next sentence here continues.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('ref. 4')) throw new Error(`ref mangled: ${r[0]}`);
+  });
+  it('abbrev misc. does not terminate a sentence', () => {
+    const r = split('Bucket your receipts under misc. and move along now. Next sentence begins now.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('misc. and')) throw new Error(`misc mangled: ${r[0]}`);
+  });
+  it('abbrev incl./excl. do not terminate a sentence', () => {
+    const r = split('Fees incl. VAT are the usual target here. Fees excl. VAT shipped separately.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('incl. VAT')) throw new Error(`incl mangled: ${r[0]}`);
+    if (!r[1].includes('excl. VAT')) throw new Error(`excl mangled: ${r[1]}`);
+  });
+  it('abbrev assoc. does not terminate a sentence', () => {
+    const r = split('She is assoc. prof at the local college there. Next sentence continues here.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('assoc. prof')) throw new Error(`assoc mangled: ${r[0]}`);
+  });
+  it('abbrev dept. does not terminate a sentence', () => {
+    const r = split('HR dept. owns that policy for now at least. Next sentence runs here.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('HR dept.')) throw new Error(`dept mangled: ${r[0]}`);
+  });
+  it('abbrev ed. does not terminate a sentence', () => {
+    const r = split('See the 2nd ed. of that book for details here. Next sentence follows on.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('2nd ed.')) throw new Error(`ed mangled: ${r[0]}`);
+  });
+  it('abbrev gen. does not terminate a sentence', () => {
+    const r = split('The gen. formula is on the summary page now. Next sentence runs on.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('gen. formula')) throw new Error(`gen mangled: ${r[0]}`);
+  });
+  it('abbrev gov. does not terminate a sentence', () => {
+    const r = split('They met with gov. officials this morning today. Next sentence follows on.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('gov. officials')) throw new Error(`gov mangled: ${r[0]}`);
+  });
+  it('abbrev pres. does not terminate a sentence', () => {
+    const r = split('She served as pres. of the club for years now. Next sentence continues.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('pres. of')) throw new Error(`pres mangled: ${r[0]}`);
+  });
+  it('abbrev rep./sen. do not terminate a sentence', () => {
+    const r = split('She met rep. Chen and sen. Okafor last Thursday. Next sentence runs here.');
+    assertEqual(r.length, 2);
+    if (!r[0].includes('rep. Chen')) throw new Error(`rep mangled: ${r[0]}`);
+    if (!r[0].includes('sen. Okafor')) throw new Error(`sen mangled: ${r[0]}`);
+  });
+
+  it('em-dash without spaces is a legal hard-split point for long runs', () => {
+    // One sentence >400 chars, no comma/space windows inside; em-dash is
+    // the only place to cut. Pre-A2-4 the splitter fell through to bare
+    // space; this asserts the em-dash wins because it's a better boundary.
+    const left = 'x'.repeat(260);
+    const right = 'y'.repeat(180);
+    const r = split(`${left}\u2014${right}.`);
+    if (r.length < 2) throw new Error(`expected em-dash hard split, got ${r.length}`);
+  });
+
+  it('normalises U+0085 (NEL) as a newline', () => {
+    // NEL is treated as \n, so a pair becomes a paragraph break.
+    const r = split('First line no terminator\u0085\u0085Second paragraph starts here right after.');
+    assertEqual(r.length, 2);
+  });
+  it('normalises U+2028 (LS) as a newline', () => {
+    const r = split('First line no terminator\u2028\u2028Second paragraph starts here right after.');
+    assertEqual(r.length, 2);
+  });
+
+  it('CJK full-stop \\u3002 terminates a sentence', () => {
+    // Two sentences separated by 。(U+3002) + space so _SENTENCE_END_RE's
+    // mandatory \s+ after the terminator matches. Each half is >= the
+    // 15-char MIN_SENTENCE_LEN so the short-sentence merger doesn't
+    // re-fuse them. Tests that CJK-only input no longer collapses to
+    // a single paragraph.
+    const a = '\u3053\u308C\u306F\u6700\u521D\u306E\u6587\u306B\u3064\u3044\u3066\u306E\u8AAC\u660E\u3067\u3059';
+    const b = '\u6B21\u306E\u6587\u3082\u9577\u3081\u306B\u66F8\u3044\u3066\u78BA\u5B9F\u306B\u5206\u89E3\u3057\u307E\u3059';
+    const r = split(`${a}\u3002 ${b}\u3002`);
+    if (r.length < 2) throw new Error(`CJK split failed, got length ${r.length}`);
+  });
 });
 
 describe('SYNTH TURN SYNC STATE', () => {

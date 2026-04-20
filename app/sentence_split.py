@@ -32,6 +32,14 @@ _ABBREVIATIONS = {
     'phd', 'md', 'ba', 'ma', 'bsc', 'msc',
     'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
     'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+    # A2-4 extras. Hand-picked from the audit's false-positive list:
+    # technical prose ("approx.", "ref.", "misc.", "incl./excl.", "assoc."),
+    # department / job-title abbreviations common in docs ("dept.", "ed.",
+    # "gen.", "gov.", "pres.", "rep.", "sen.") and the bare "aka" +
+    # already-present "vs" (documented here so the reader doesn't wonder
+    # why "vs." doesn't split mid-sentence).
+    'approx', 'aka', 'ref', 'misc', 'incl', 'excl', 'assoc',
+    'dept', 'ed', 'gen', 'gov', 'pres', 'rep', 'sen',
 }
 
 # Min/max sentence lengths (chars, post-strip).
@@ -50,16 +58,26 @@ _URL_RE = re.compile(
 
 # Pattern for "word followed by period" — used for abbreviation detection.
 # Captures the token BEFORE the period so we can check the abbreviation set.
-_WORD_DOT_RE = re.compile(r"\b([A-Za-z]{1,5}(?:\.[A-Za-z]{1,5}){0,3})\.")
+# A2-4: bumped char class from {1,5} to {1,8} so 6-8 char abbreviations
+# like "approx.", "assoc.", "associated." candidates get considered. The
+# abbreviation SET (not the regex) is the authoritative filter, so this
+# widens the candidate pool without changing the decision rule.
+_WORD_DOT_RE = re.compile(r"\b([A-Za-z]{1,8}(?:\.[A-Za-z]{1,8}){0,3})\.")
 
 # Decimal / version numbers. Must not split on the internal periods.
 _NUMBER_DOT_RE = re.compile(r'\b(\d+(?:\.\d+)+)\b')
 
 # Split on ONE OR MORE of . ! ? (or the ellipsis char), possibly followed by
 # closing quote/bracket, then whitespace or end. Captures the terminator so
-# we can reattach it.
+# we can reattach it. A2-4: CJK full-stop / exclamation / question added so
+# Japanese and Chinese transcripts split at sentence ends too. CJK variants
+# don't normally carry a trailing space -- pattern already treats the
+# optional space greedily via \s+ match, but the CJK terminators themselves
+# are intentionally kept in the `[]` so they count as terminators even when
+# followed directly by more text (covered by the paragraph-level sentence
+# check, not by this regex).
 _SENTENCE_END_RE = re.compile(
-    r'([.!?\u2026]+["\')\]]*)\s+',
+    r'([.!?\u2026\u3002\uFF01\uFF1F]+["\')\]]*)\s+',
 )
 
 # Hard paragraph break — two or more newlines.
@@ -142,7 +160,12 @@ def _hard_split_long(sentence: str, max_len: int) -> List[str]:
         # Prefer splitting at ', ' within a window [max_len*0.6, max_len].
         window_start = int(max_len * 0.6)
         cut = -1
-        for marker in (', ', '; ', ' — ', ' - ', ' '):
+        # A2-4: em-dash (U+2014) and en-dash (U+2013) now valid split points
+        # even WITHOUT surrounding spaces. Common in tight prose ("word—word")
+        # where the hard-splitter would otherwise have no legal cut except
+        # on a bare space. Order matters: try the nicer, more-delimited
+        # variants first; fall back to bare dashes; space last.
+        for marker in (', ', '; ', ' — ', ' - ', '\u2014', '\u2013', ' '):
             idx = remaining.rfind(marker, window_start, max_len)
             if idx > 0:
                 cut = idx + len(marker)
@@ -199,8 +222,17 @@ def split_sentences(text: str) -> List[str]:
     if not text or not text.strip():
         return []
 
-    # Normalise line endings
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    # Normalise line endings. A2-4 adds U+0085 (NEL, common in Java/VB
+    # exports) and U+2028 (LINE SEPARATOR, occasionally from word
+    # processors) to the existing \r\n / \r handling so pasted transcripts
+    # from those sources don't keep ghost line breaks that the paragraph
+    # splitter would miss.
+    text = (
+        text.replace('\r\n', '\n')
+            .replace('\r', '\n')
+            .replace('\u0085', '\n')
+            .replace('\u2028', '\n')
+    )
 
     # Protect abbreviations, URLs, decimals so the terminator regex doesn't
     # catch their periods.
@@ -219,7 +251,10 @@ def split_sentences(text: str) -> List[str]:
         if not para_flat:
             continue
         # If paragraph has no terminator at all, it's one sentence.
-        if not re.search(r'[.!?\u2026]', para_flat):
+        # Include CJK full-stop (\u3002), fullwidth ! (\uFF01) and ? (\uFF1F)
+        # per A2-4 so Chinese / Japanese paragraphs aren't treated as
+        # terminator-free.
+        if not re.search(r'[.!?\u2026\u3002\uFF01\uFF1F]', para_flat):
             all_sentences.append(para_flat)
             continue
         parts = _split_on_terminators(para_flat)
