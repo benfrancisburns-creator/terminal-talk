@@ -1,5 +1,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Subscribe helpers return a disposer so the renderer can unsubscribe. Today
+// the renderer is a single window that lives for the app's lifetime, so leaks
+// are theoretical. But if we ever add a second renderer (popout, preference
+// pane, test harness iframe) without a disposer the `on` handlers stack up —
+// fixing that here is zero cost and closes the door. Callers that don't need
+// to unsubscribe can ignore the return value.
+function subscribe(channel, cb, unwrap) {
+  const handler = unwrap
+    ? (_e, ...args) => cb(unwrap(...args))
+    : (_e) => cb();
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.off(channel, handler);
+}
+
 contextBridge.exposeInMainWorld('api', {
   getQueue: () => ipcRenderer.invoke('get-queue'),
   deleteFile: (p) => ipcRenderer.invoke('delete-file', p),
@@ -16,28 +30,16 @@ contextBridge.exposeInMainWorld('api', {
   removeSession: (shortId) => ipcRenderer.invoke('remove-session', shortId),
   setClickthrough: (on) => ipcRenderer.invoke('set-clickthrough', on),
   setPanelOpen: (open) => ipcRenderer.invoke('set-panel-open', open),
-  onQueueUpdated: (cb) => {
-    ipcRenderer.on('queue-updated', (_e, payload) => cb(payload));
-  },
-  onPriorityPlay: (cb) => {
-    ipcRenderer.on('priority-play', (_e, paths) => cb(paths));
-  },
-  onClipboardStatus: (cb) => {
-    ipcRenderer.on('clipboard-status', (_e, msg) => cb(msg));
-  },
-  onListeningState: (cb) => {
-    ipcRenderer.on('listening-state', (_e, on) => cb(on));
-  },
-  onForceExpand: (cb) => {
-    ipcRenderer.on('force-expand', () => cb());
-  },
-  onSetOrientation: (cb) => {
-    ipcRenderer.on('set-orientation', (_e, payload) => cb(payload));
-  },
-  onTogglePausePlayback: (cb) => {
-    ipcRenderer.on('toggle-pause-playback', () => cb());
-  },
-  onPausePlaybackOnly: (cb) => {
-    ipcRenderer.on('pause-playback-only', () => cb());
-  }
+  // S1.1 — renderer-side error/rejection forwarding lives in main so the
+  // existing _toolbar.log is the single sink for diagnostics. Main rate-
+  // limits to 1 per distinct stack per second; see S1.2 in main.js.
+  logRendererError: (payload) => ipcRenderer.invoke('log-renderer-error', payload),
+  onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
+  onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
+  onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),
+  onListeningState:      (cb) => subscribe('listening-state',        cb, (on) => on),
+  onForceExpand:         (cb) => subscribe('force-expand',           cb),
+  onSetOrientation:      (cb) => subscribe('set-orientation',        cb, (p) => p),
+  onTogglePausePlayback: (cb) => subscribe('toggle-pause-playback',  cb),
+  onPausePlaybackOnly:   (cb) => subscribe('pause-playback-only',    cb),
 });
