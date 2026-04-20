@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/config.schema.json",
+  "title": "Terminal Talk config.json",
+  "description": "User-facing configuration for Terminal Talk. Edit ~/.terminal-talk/config.json to override defaults. VS Code and any editor that honours `$schema` / `json.schemas` will autocomplete these keys and validate values on save.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "voices": {
+      "type": "object",
+      "description": "Voice IDs for TTS playback. See app/lib/voices.json for the full 47-entry edge + 6-entry openai catalogue.",
+      "properties": {
+        "edge_clip": { "type": "string", "maxLength": 80, "description": "Voice for highlight-to-speak clips." },
+        "edge_response": { "type": "string", "maxLength": 80, "description": "Voice for Claude response playback." },
+        "edge_question": { "type": "string", "maxLength": 80, "description": "Voice for permission prompts." },
+        "edge_notification": { "type": "string", "maxLength": 80 },
+        "openai_clip": { "type": "string", "maxLength": 80, "description": "Used only when openai_api_key is set (premium fallback)." },
+        "openai_response": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "hotkeys": {
+      "type": "object",
+      "description": "Electron globalShortcut strings — e.g. 'Control+Shift+A'.",
+      "properties": {
+        "toggle_window":    { "type": "string", "maxLength": 64 },
+        "speak_clipboard":  { "type": "string", "maxLength": 64 },
+        "toggle_listening": { "type": "string", "maxLength": 64 },
+        "pause_resume":     { "type": "string", "maxLength": 64 },
+        "pause_only":       { "type": "string", "maxLength": 64 }
+      }
+    },
+    "playback": {
+      "type": "object",
+      "properties": {
+        "speed":          { "type": "number", "minimum": 0.25, "maximum": 4.0, "default": 1.25 },
+        "auto_prune":     { "type": "boolean", "default": true },
+        "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 }
+      }
+    },
+    "speech_includes": {
+      "type": "object",
+      "description": "Which markdown features get read aloud. Per-session overrides live in the sessions panel.",
+      "properties": {
+        "code_blocks":    { "type": "boolean" },
+        "inline_code":    { "type": "boolean" },
+        "urls":           { "type": "boolean" },
+        "headings":       { "type": "boolean" },
+        "bullet_markers": { "type": "boolean" },
+        "image_alt":      { "type": "boolean" }
+      }
+    },
+    "window": {
+      "type": ["object", "null"],
+      "description": "Last-saved window position. Managed by main.js; don't hand-edit.",
+      "additionalProperties": true
+    },
+    "openai_api_key": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "Optional — premium TTS fallback. Stored encrypted via Electron safeStorage after v0.3 (see D2)."
+    },
+    "_comment": {
+      "type": "string",
+      "description": "Free-form note. JSON has no native comments; _comment is ignored by the loader."
+    }
+  }
+}

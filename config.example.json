@@ -1,5 +1,6 @@
 {
-  "_comment": "Copy to ~/.terminal-talk/config.json and edit. All fields optional; defaults apply.",
+  "$schema": "./config.schema.json",
+  "_comment": "Copy to ~/.terminal-talk/config.json and edit. All fields optional; defaults apply. The $schema reference above gives VS Code + any editor that honours json.schemas autocomplete + validation on save.",
 
   "voices": {
     "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are fallback voices used only when edge-tts is unreachable. Full voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",

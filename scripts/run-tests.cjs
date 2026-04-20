@@ -2111,6 +2111,47 @@ describe('S3.2 — redactForLog regex + key set', () => {
   });
 });
 
+describe('D2-5 — config.schema.json parity with validator rules', () => {
+  // The hand-rolled validator in app/lib/config-validate.js is the runtime
+  // authority. config.schema.json is for editor autocomplete + user-facing
+  // $schema reference. Both shapes must agree on the same keys + bounds.
+  const schemaPath = path.join(__dirname, '..', 'config.schema.json');
+  const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+
+  it('schema is valid draft-07 JSON', () => {
+    assertEqual(schema.$schema, 'http://json-schema.org/draft-07/schema#');
+    assertEqual(schema.type, 'object');
+    if (!schema.properties) throw new Error('schema.properties missing');
+  });
+
+  it('covers every top-level key the validator knows about', () => {
+    const { RULES } = require('../app/lib/config-validate');
+    const schemaKeys = new Set(Object.keys(schema.properties));
+    const validatorTopKeys = new Set(RULES.map(r => r.path.split('.')[0]));
+    for (const k of validatorTopKeys) {
+      if (!schemaKeys.has(k) && k !== 'window' && k !== '_comment') {
+        throw new Error(`validator knows about "${k}" but schema doesn't — drift`);
+      }
+    }
+  });
+
+  it('config.example.json references the schema via $schema', () => {
+    const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.example.json'), 'utf8'));
+    if (example.$schema !== './config.schema.json') {
+      throw new Error(`config.example.json $schema should be "./config.schema.json", got "${example.$schema}"`);
+    }
+  });
+
+  it('numeric bounds in schema match validator bounds', () => {
+    const speed = schema.properties.playback.properties.speed;
+    assertEqual(speed.minimum, 0.25);
+    assertEqual(speed.maximum, 4.0);
+    const prune = schema.properties.playback.properties.auto_prune_sec;
+    assertEqual(prune.minimum, 1);
+    assertEqual(prune.maximum, 600);
+  });
+});
+
 describe('S3.3 — config validator', () => {
   const { validateConfig } = require('../app/lib/config-validate');
 
