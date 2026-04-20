@@ -95,7 +95,41 @@ if (Test-Path $claudeSettings) {
     Write-Warn2 "~/.claude/settings.json not found"
 }
 
-# 4. Install dir
+# 4. Secrets (always removed, regardless of install-dir decision below).
+# D2 introduced two credential artefacts that must NOT outlive the
+# uninstall even if the user keeps their install dir for config / log
+# review:
+#   - config.secrets.json  plaintext sidecar the PS hooks + synth_turn.py
+#                          read (ACL'd to the current user but still on
+#                          disk in plaintext; removing it on uninstall is
+#                          mandatory -- leaving a plaintext API key behind
+#                          would be a security regression vs v0.2 where
+#                          the key only ever lived in config.json).
+#   - openai_key.enc       safeStorage ciphertext written by main.js. The
+#                          DPAPI wrapping is user-scoped so it's not
+#                          portable, but best-practice is still to clean
+#                          up credentials.
+Write-Step "Removing credential artefacts"
+$secretsPath = Join-Path $installDir 'config.secrets.json'
+$keyEncPath  = Join-Path $installDir 'openai_key.enc'
+$removed = 0
+foreach ($p in @($secretsPath, $keyEncPath)) {
+    if (Test-Path $p) {
+        try {
+            Remove-Item $p -Force -ErrorAction Stop
+            $removed++
+        } catch {
+            Write-Warn2 "Could not remove $p : $($_.Exception.Message)"
+        }
+    }
+}
+if ($removed -gt 0) {
+    Write-Ok "Removed $removed credential file(s)"
+} else {
+    Write-Warn2 "No credential files found (nothing to clean up)"
+}
+
+# 5. Install dir
 Write-Step "Install directory"
 if (Test-Path $installDir) {
     $resp = Read-Host "Delete $installDir (config.json, logs, queue, session colours)? [y/N]"

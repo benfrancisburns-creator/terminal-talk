@@ -5,10 +5,11 @@
 # subtly different retry counts and timeout-secs. Audit CC-8.
 #
 # Shape:
-#   Resolve-OpenAiApiKey  → string|null   (env → config.json → ~/.claude/.env)
-#   Invoke-EdgeTts        → bool          (spawn python edge_tts_speak.py)
-#   Invoke-OpenAiTts      → bool          (POST to OpenAI speech endpoint)
-#   Invoke-TtsWithFallback → path|null    (edge-tts first, OpenAI if configured)
+#   Resolve-OpenAiApiKey  -> string|null
+#       walks env -> config.secrets.json -> config.json -> ~/.claude/.env
+#   Invoke-EdgeTts        -> bool          (spawn python edge_tts_speak.py)
+#   Invoke-OpenAiTts      -> bool          (POST to OpenAI speech endpoint)
+#   Invoke-TtsWithFallback -> path|null    (edge-tts first, OpenAI if configured)
 #
 # The module is language-agnostic: both hooks dot-source it via
 # Import-Module and call the same functions. Callers supply the edge-tts
@@ -18,13 +19,32 @@
 function Resolve-OpenAiApiKey {
     <#
     .SYNOPSIS
-    Resolve the OpenAI API key in priority order: env var, config.json,
-    ~/.claude/.env. Returns $null if none found. Never throws.
+    Resolve the OpenAI API key in priority order:
+      1. $env:OPENAI_API_KEY
+      2. $ttHome/config.secrets.json (D2 safeStorage sidecar -- main.js
+         writes decrypted key here after unwrapping safeStorage.encrypted)
+      3. $ConfigPath (legacy config.json.openai_api_key -- kept so v0.2
+         installs still work until main.js migrates them)
+      4. ~/.claude/.env OPENAI_API_KEY=... line
+    Returns $null if none found. Never throws.
+
+    The sidecar takes precedence over legacy config.json so once main.js
+    has written the sidecar for the first time the old plaintext copy
+    (if still present) becomes ignored by hooks.
     #>
     param(
         [Parameter(Mandatory = $true)] [string]$ConfigPath
     )
     if ($env:OPENAI_API_KEY) { return $env:OPENAI_API_KEY.Trim() }
+
+    # D2 safeStorage sidecar. Same directory as ConfigPath.
+    $secretsPath = Join-Path (Split-Path -Parent $ConfigPath) 'config.secrets.json'
+    if (Test-Path $secretsPath) {
+        try {
+            $s = Get-Content $secretsPath -Raw -Encoding utf8 | ConvertFrom-Json
+            if ($s.openai_api_key) { return [string]$s.openai_api_key }
+        } catch {}
+    }
 
     if (Test-Path $ConfigPath) {
         try {

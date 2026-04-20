@@ -141,6 +141,31 @@ $manifestJson = $manifest | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText($manifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
 Write-Ok "Manifest: $manifestCount files SHA-256'd -> manifest.json"
 
+# D2 safeStorage sidecar hardening.
+# `config.secrets.json` is created lazily by main.js (Electron) the first
+# time the user sets an OpenAI key. It contains plaintext so the same-
+# user PS hooks + synth_turn.py can read it without re-implementing
+# safeStorage's DPAPI ceremony. We need two guarantees:
+#   1. The INSTALL DIR ACL is tight -- SYSTEM + current user only.
+#   2. If the sidecar exists (user upgraded with key already set, or
+#      a previous run wrote it), its inheritance matches.
+# The install dir itself lives under $env:USERPROFILE which is already
+# ACL'd to the current user, so this is belt-and-braces. `icacls
+# /inheritance:r /grant <user>:(R,W)` removes any accidentally broader
+# inheritance without trying to be clever about existing ACLs.
+Write-Step "Tightening sidecar ACL"
+$secretsPath = Join-Path $installDir 'config.secrets.json'
+if (Test-Path $secretsPath) {
+    try {
+        & icacls $secretsPath /inheritance:r /grant "$($env:USERNAME):(R,W)" 2>&1 | Out-Null
+        Write-Ok "Sidecar ACL: $env:USERNAME R,W only"
+    } catch {
+        Write-Warn2 "icacls on config.secrets.json failed (non-fatal): $($_.Exception.Message)"
+    }
+} else {
+    Write-Ok "Sidecar absent (created lazily by main.js on first key-set)"
+}
+
 # 4. Python packages
 #    Pinned via requirements.txt so a surprise upstream release can't break
 #    install or runtime on your box. Dependabot raises weekly PRs for upgrades;

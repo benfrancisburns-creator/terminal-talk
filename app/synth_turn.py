@@ -65,9 +65,30 @@ TT_HOME = Path.home() / '.terminal-talk'
 QUEUE_DIR = TT_HOME / 'queue'
 SESSIONS_DIR = TT_HOME / 'sessions'
 CONFIG_PATH = TT_HOME / 'config.json'
+# D2 safeStorage sidecar. Main.js (Electron) decrypts the OpenAI API
+# key via safeStorage on load and writes plaintext here for same-user
+# non-Electron consumers (PS hooks + this script) to read. ACL'd to
+# the current user on install; absent if the user never set a key.
+SECRETS_PATH = TT_HOME / 'config.secrets.json'
 REGISTRY_PATH = TT_HOME / 'session-colours.json'
 LOG_PATH = QUEUE_DIR / '_hook.log'
 EDGE_TTS_SCRIPT = Path(__file__).resolve().parent / 'edge_tts_speak.py'
+
+
+def _load_openai_key_from_secrets():
+    """Return the OpenAI API key from `config.secrets.json`, or None.
+    Never throws -- a malformed or unreadable sidecar is treated as
+    "no key", which falls through to the legacy config.json reader
+    and from there to the null path (no OpenAI fallback this turn)."""
+    if not SECRETS_PATH.exists():
+        return None
+    try:
+        with open(SECRETS_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        key = data.get('openai_api_key')
+        return str(key) if key else None
+    except Exception:
+        return None
 
 # Max parallel edge-tts workers. Edge-tts endpoint tolerates a handful of
 # concurrent requests; too many → rate limits and backoff storm.
@@ -373,8 +394,15 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
     # global response voice in the settings panel, the streaming hook
     # silently ignored it and always fell back to the hardcoded Ryan default.
     voice = config.get('voices', {}).get('edge_response', 'en-GB-RyanNeural')
-    # openai_api_key lives at the config root, not under `voices.*`.
-    openai_key = config.get('openai_api_key') or None
+    # D2 safeStorage: the OpenAI key moved out of config.json into
+    # `~/.terminal-talk/config.secrets.json` on the same boot cycle
+    # main.js first encrypts it via safeStorage. The sidecar is the
+    # single plaintext copy, ACL'd to the current user. We prefer
+    # the sidecar if present; fall through to legacy config.json for
+    # v0.2-era installs that haven't yet had main.js migrate them;
+    # fall through to None if neither has a key (existing null-check
+    # logic below skips OpenAI synthesis without breaking anything).
+    openai_key = _load_openai_key_from_secrets() or config.get('openai_api_key') or None
     flags = dict(DEFAULT_SPEECH_INCLUDES)
     cfg_inc = config.get('speech_includes', {})
     for k in flags:

@@ -2207,6 +2207,76 @@ describe('D2 — safeStorage-backed API key store', () => {
     assertEqual(out, cfg);        // same object — no migration
     assertEqual(store.get(), null);
   });
+
+  // ------------------------------------------------------------------
+  // D2 PS-hook + synth_turn sidecar consumer contract (Terminal-2 side).
+  // The three asserts below verify the CODE ACTUALLY LOOKS AT THE
+  // SIDECAR. They don't exercise real PS/Python spawn -- that would
+  // need an installed tree with a fake sidecar -- but they do the
+  // same source-grep-for-wiring check pattern used elsewhere in this
+  // file. If the wiring gets reverted, these fail.
+  // ------------------------------------------------------------------
+  it('tts-helper Resolve-OpenAiApiKey reads config.secrets.json before config.json', () => {
+    const ttsHelper = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'tts-helper.psm1'),
+      'utf8'
+    );
+    if (!/config\.secrets\.json/.test(ttsHelper)) {
+      throw new Error('tts-helper.psm1 no longer references config.secrets.json');
+    }
+    const secretsIdx = ttsHelper.indexOf('config.secrets.json');
+    // The legacy ConfigPath read must live AFTER the sidecar block,
+    // not before -- else the sidecar precedence promise breaks.
+    const legacyIdx = ttsHelper.indexOf('$ConfigPath');
+    if (secretsIdx < 0 || legacyIdx < 0) {
+      throw new Error('tts-helper.psm1 missing one of sidecar/legacy code paths');
+    }
+    if (secretsIdx > legacyIdx) {
+      throw new Error('tts-helper.psm1 reads legacy config.json before sidecar -- precedence inverted');
+    }
+  });
+
+  it('synth_turn.py prefers secrets sidecar over legacy config key', () => {
+    const synthPy = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'synth_turn.py'),
+      'utf8'
+    );
+    if (!/_load_openai_key_from_secrets\s*\(\s*\)/.test(synthPy)) {
+      throw new Error('synth_turn.py is not calling _load_openai_key_from_secrets()');
+    }
+    if (!/SECRETS_PATH\s*=\s*TT_HOME\s*\/\s*['"]config\.secrets\.json['"]/.test(synthPy)) {
+      throw new Error('synth_turn.py SECRETS_PATH constant missing or wrong path');
+    }
+    // The or-chain must try sidecar FIRST so a legacy key in config.json
+    // loses to the freshly-written sidecar on any user that upgraded.
+    const assign = synthPy.match(
+      /openai_key\s*=\s*_load_openai_key_from_secrets\(\)\s*or\s*config\.get\(['"]openai_api_key['"]\)/
+    );
+    if (!assign) {
+      throw new Error('synth_turn.py openai_key assignment does not prefer sidecar over config.json');
+    }
+  });
+
+  it('uninstall.ps1 always removes credential artefacts (sidecar + openai_key.enc)', () => {
+    const uninstall = fs.readFileSync(
+      path.join(__dirname, '..', 'uninstall.ps1'),
+      'utf8'
+    );
+    if (!/config\.secrets\.json/.test(uninstall)) {
+      throw new Error('uninstall.ps1 does not clean up config.secrets.json');
+    }
+    if (!/openai_key\.enc/.test(uninstall)) {
+      throw new Error('uninstall.ps1 does not clean up openai_key.enc');
+    }
+    // The credential cleanup step must run BEFORE the interactive
+    // install-dir prompt -- otherwise a user who answers "keep the
+    // install dir" leaves a plaintext API key behind.
+    const credIdx = uninstall.indexOf('config.secrets.json');
+    const promptIdx = uninstall.indexOf('Read-Host');
+    if (credIdx < 0 || promptIdx < 0 || credIdx > promptIdx) {
+      throw new Error('uninstall.ps1 credential cleanup must run before install-dir prompt');
+    }
+  });
 });
 
 describe('D2-5 — config.schema.json parity with validator rules', () => {

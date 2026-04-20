@@ -84,7 +84,10 @@ if (Test-Path $configPath) {
         if ($cfg.voices.edge_response) { $edgeResponseVoice = $cfg.voices.edge_response }
         if ($cfg.voices.openai_clip) { $openaiClipVoice = $cfg.voices.openai_clip }
         if ($cfg.voices.openai_response) { $openaiResponseVoice = $cfg.voices.openai_response }
-        if ($cfg.openai_api_key) { $openaiApiKey = $cfg.openai_api_key }
+        # D2: OpenAI key used to live under $cfg.openai_api_key here. It's
+        # now read via Resolve-OpenAiApiKey below, which walks
+        # env -> config.secrets.json (safeStorage sidecar)
+        # -> config.json legacy -> ~/.claude/.env. Nothing to read here.
         if ($cfg.speech_includes) {
             foreach ($p in $cfg.speech_includes.PSObject.Properties) {
                 if ($inc.ContainsKey($p.Name) -and $p.Value -is [bool]) { $inc[$p.Name] = $p.Value }
