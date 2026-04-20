@@ -1,14 +1,20 @@
-// D2-3b — fetch + splice the real app/index.html body into this page.
+// D2-3b — fetch + splice the real product body into this page.
 // Replaces the hand-duplicated DOM the kit carried in v0.3.0. Closes
 // the last structural drift surface: if someone adds a new element to
-// app/index.html, the kit now inherits it automatically on next load.
+// the product's index.html, the kit now inherits it automatically on
+// next load.
+//
+// D2-3c — paths target docs/app-mirror/ rather than ../../app/ so the
+// GitHub Pages build (which only publishes /docs) can resolve them.
+// The mirror is kept in sync by scripts/sync-app-mirror.cjs; a
+// --check run in the test suite fails if it drifts.
 //
 // Execution order matters: renderer.js reads elements by id at module
 // top level (audio, dots, playPause, scrubberMascot, sessionsTable,
 // speedSlider, …). The splice + script-chain load must complete in the
 // right order:
 //
-//   1. fetch ../../app/index.html (the real product's DOM source)
+//   1. fetch ../app-mirror/index.html (the mirrored product DOM)
 //   2. extract body — strip <script> and <link> tags (they'd either
 //      re-load the wrong paths or never fire)
 //   3. splice extracted body content into our document.body
@@ -19,7 +25,7 @@
 // demo shell visible rather than a silent blank page.
 
 (async function bootstrap() {
-  const APP_INDEX = '../../app/index.html';
+  const APP_INDEX = '../app-mirror/index.html';
 
   let html;
   try {
@@ -27,10 +33,10 @@
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     html = await res.text();
   } catch (e) {
-    console.error('[kit-bootstrap] failed to fetch app/index.html:', e);
+    console.error('[kit-bootstrap] failed to fetch app-mirror/index.html:', e);
     const err = document.createElement('div');
     err.style.cssText = 'padding:24px;color:#ff6b6b;font-family:monospace';
-    err.textContent = 'Kit demo failed to load app/index.html — open this page via a local HTTP server (not file://).';
+    err.textContent = 'Kit demo failed to load app-mirror/index.html — open this page via a local HTTP server (not file://).';
     document.body.appendChild(err);
     return;
   }
@@ -61,10 +67,10 @@
   });
 
   try {
-    await loadScript('../../app/lib/tokens-window.js');
-    await loadScript('../../app/lib/voices-window.js');
+    await loadScript('../app-mirror/lib/tokens-window.js');
+    await loadScript('../app-mirror/lib/voices-window.js');
     await loadScript('mock-ipc.js');
-    await loadScript('../../app/renderer.js');
+    await loadScript('../app-mirror/renderer.js');
   } catch (e) {
     console.error('[kit-bootstrap]', e);
   }

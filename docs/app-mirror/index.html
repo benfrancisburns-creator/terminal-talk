@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal Talk</title>
+  <!-- Strict CSP for the toolbar renderer. The renderer only loads local
+       scripts/styles, plays local audio clips (via the audio element
+       pointing at file: URLs), and has no network fetch surface — all
+       network calls (TTS, OpenAI fallback) happen in the main process
+       where contextIsolation + sandbox can't reach anyway.
+         - default-src 'none'  deny by default
+         - script-src 'self'   only renderer.js (and no inline <script>)
+         - style-src 'self'    styles.css + lib/palette-classes.css +
+                               renderer's Constructable Stylesheet for
+                               the 3 continuous-value sites (mascot /
+                               jarvis / spinner word positions). D2-9
+                               dropped 'unsafe-inline' in v0.3.
+         - img-src 'self' data:  SVG icons + any inline data: URLs
+         - media-src 'self' blob: file:  the <audio> tag plays queue files
+         - font-src 'self'  we don't load web fonts in the app
+         - connect-src 'none'  renderer must not call out to the network
+       Tightened per Electron's security checklist (see SECURITY.md). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none';">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="lib/palette-classes.css">
+</head>
+<body>
+  <div class="bar" id="bar">
+    <div class="bar-top">
+    <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <button class="icon-btn play" id="playPause" title="Play/Pause" aria-label="Play or pause">
+      <svg aria-hidden="true" id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg aria-hidden="true" id="pauseIcon" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button class="icon-btn" id="fwd10" title="Forward 10s" aria-label="Forward 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <!-- The native <input type="range"> handles all pointer events (drag, -->
+    <!-- click-to-seek). Its thumb is made transparent in styles.css. The -->
+    <!-- visible mascot is an SVG overlay positioned by renderer.js so we -->
+    <!-- can animate individual legs (walking) and rotate him 180° when -->
+    <!-- the user scrubs backward (angry face). -->
+    <div id="scrubberWrap" class="scrubber-wrap">
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
+      <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <!-- Body, ears, face (fixed) -->
+        <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+        <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+        <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+        <!-- Four legs — each on its own animation track for the walk cycle -->
+        <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+        <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+        <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+        <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+        <!-- Eyes -->
+        <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <!-- Smile (three grey rects form a shallow U) -->
+        <rect x="44" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
+      </svg>
+      <!-- Shown instead of the mascot when the currently-playing clip is a
+           highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clip. The mascot
+           is reserved for Claude Code responses — see renderer.js
+           updateScrubberMode() + README "About the mascot" for the why. -->
+      <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
+    </div>
+    <span id="time" aria-live="off">0:00 / 0:00</span>
+    <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button class="icon-btn close" id="close" title="Hide (Esc)" aria-label="Hide the toolbar">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    </div>
+    <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
+  </div>
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <section class="panel-section">
+        <header>Playback</header>
+        <div class="row">
+          <label for="speedSlider">Speed</label>
+          <input type="range" id="speedSlider" min="50" max="250" step="5" value="125">
+          <span id="speedValue" class="readout">1.25x</span>
+        </div>
+        <div class="row">
+          <label for="autoPruneToggle">Auto-prune played clips</label>
+          <label class="toggle"><input type="checkbox" id="autoPruneToggle" checked><span class="toggle-slider"></span></label>
+          <div class="prune-value">
+            <input type="number" id="autoPruneSec" min="3" max="600" step="1" value="20">
+            <span class="prune-suffix">s after play</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <header>Sessions</header>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Claude Code sessions"></div>
+      </section>
+
+      <section class="panel-section about">
+        <header>About Terminal Talk</header>
+<pre class="ascii-banner">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        ████████╗ █████╗ ██╗     ██╗  ██╗
+        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
+           ██║   ███████║██║     █████╔╝
+           ██║   ██╔══██║██║     ██╔═██╗
+           ██║   ██║  ██║███████╗██║  ██╗
+           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
+        <p class="panel-hint">
+          Hands-free voice workflow for Claude Code. Say "hey jarvis" with text highlighted anywhere
+          and it's read aloud. Claude's replies are auto-spoken. Each terminal gets its own colour,
+          shown as an emoji in its statusline and as a dot on the toolbar.
+        </p>
+        <p class="panel-hint shortcuts-title">Global shortcuts</p>
+        <table class="shortcuts">
+          <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
+          <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
+          <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
+          <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Pause / resume playback</td></tr>
+          <tr><td><kbd>Ctrl+Shift+O</kbd></td><td>Pause only (without resuming on next clip)</td></tr>
+          <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
+        </table>
+        <p class="panel-hint">
+          Tip: labels you set on a session show up next to its emoji in that terminal's statusline
+          (e.g. <code>&#x1f7e2; Frontend</code>).
+        </p>
+        <p class="panel-hint">
+          About the mascot: the walking character on the scrubber is a homage to
+          Claude Code's thinking-spinner humour. The verbs that float above his head
+          (Moonwalking, Finagling, Pontificating...) are the same list Claude Code
+          itself uses while thinking. He only appears while a Claude Code response is
+          playing; highlight-to-speak clips show a plain <b>J</b> badge instead.
+          No affiliation with Anthropic — this is a fan project.
+        </p>
+      </section>
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+  <script src="lib/tokens-window.js"></script>
+  <script src="lib/voices-window.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -609,22 +609,30 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
     }
   });
 
-  it('kit-bootstrap loads app/renderer.js + mock-ipc + canonical tokens (D2-3)', () => {
-    if (!/\.\.\/\.\.\/app\/renderer\.js/.test(kitBootstrapSrc)) {
-      throw new Error('kit-bootstrap.js must load ../../app/renderer.js');
+  it('kit-bootstrap loads mirrored renderer.js + mock-ipc + canonical tokens (D2-3c)', () => {
+    if (!/\.\.\/app-mirror\/renderer\.js/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must load ../app-mirror/renderer.js');
     }
     if (!/mock-ipc\.js/.test(kitBootstrapSrc)) {
       throw new Error('kit-bootstrap.js must load mock-ipc.js before renderer.js');
     }
-    if (!/\.\.\/\.\.\/app\/lib\/tokens-window\.js/.test(kitBootstrapSrc)) {
-      throw new Error('kit-bootstrap.js must load ../../app/lib/tokens-window.js');
+    if (!/\.\.\/app-mirror\/lib\/tokens-window\.js/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must load ../app-mirror/lib/tokens-window.js');
     }
   });
 
-  it('kit fetch-splices app/index.html at runtime (D2-3b)', () => {
+  it('kit fetch-splices app-mirror/index.html at runtime (D2-3c)', () => {
     if (!/fetch\s*\(\s*APP_INDEX\s*\)/.test(kitBootstrapSrc) ||
-        !/['"]\.\.\/\.\.\/app\/index\.html['"]/.test(kitBootstrapSrc)) {
-      throw new Error('kit-bootstrap.js must fetch ../../app/index.html — drift surface');
+        !/['"]\.\.\/app-mirror\/index\.html['"]/.test(kitBootstrapSrc)) {
+      throw new Error('kit-bootstrap.js must fetch ../app-mirror/index.html — drift surface');
+    }
+  });
+
+  it('docs/app-mirror/ is in sync with app/ (D2-3c)', () => {
+    const { spawnSync } = require('node:child_process');
+    const r = spawnSync(process.execPath, [path.join(__dirname, 'sync-app-mirror.cjs'), '--check'], { encoding: 'utf8' });
+    if (r.status !== 0) {
+      throw new Error('docs/app-mirror/ is stale — run `node scripts/sync-app-mirror.cjs` to refresh\n' + (r.stderr || r.stdout || ''));
     }
   });
 

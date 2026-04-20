@@ -5,14 +5,20 @@
   <title>Terminal Talk — UI Kit (D2-3: renderer-iframed)</title>
   <!--
     D2-3 — the kit is no longer a parallel React reimplementation.
-    It loads the shipping app/renderer.js verbatim (relative path
-    ../../app/renderer.js) with mock-ipc.js stubbing the IPC surface
+    It loads the shipping renderer.js verbatim (now sourced from
+    docs/app-mirror/ so GitHub Pages, which only publishes /docs,
+    can reach it) with mock-ipc.js stubbing the IPC surface
     Electron normally provides via preload.
 
-    D2-3b — the DOM itself is now fetched from app/index.html at
-    runtime by kit-bootstrap.js, then spliced into this page. Any
+    D2-3b — the DOM itself is now fetched from app-mirror/index.html
+    at runtime by kit-bootstrap.js, then spliced into this page. Any
     new element added to the product is inherited on next load.
     No drift possible.
+
+    D2-3c — the mirror at docs/app-mirror/ is generated from app/ by
+    scripts/sync-app-mirror.cjs; a --check run in the test suite
+    fails if it's stale, so an app/ change can't silently break the
+    online kit demo.
 
     URL params:
       ?seed=<name>    idle | three-sessions | mixed-states |
@@ -20,8 +26,8 @@
       ?chrome=0       hides the demo controls bar (mocks-annotated
                       and components.html iframes use this)
   -->
-  <link rel="stylesheet" href="../../app/styles.css">
-  <link rel="stylesheet" href="../../app/lib/palette-classes.css">
+  <link rel="stylesheet" href="../app-mirror/styles.css">
+  <link rel="stylesheet" href="../app-mirror/lib/palette-classes.css">
   <link rel="stylesheet" href="kit-chrome.css">
 </head>
 <body>
