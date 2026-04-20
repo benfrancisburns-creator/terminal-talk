@@ -1,6 +1,6 @@
 {
   "name": "terminal-talk",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Hands-free voice workflow for Claude Code: TTS playback for Claude responses + 'hey jarvis' highlight-to-speak. Free by default (Edge TTS + openWakeWord).",
   "homepage": "https://github.com/benfrancisburns-creator/terminal-talk",
   "license": "MIT",
