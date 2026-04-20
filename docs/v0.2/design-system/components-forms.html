@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:#0f1014;font-family:var(--tt-font-ui);color:var(--tt-fg-2)}
+  .stage{padding:18px 24px;display:flex;flex-direction:column;gap:10px}
+  .cap{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5)}
+  .row{display:flex;align-items:center;gap:10px;font-size:12px}
+  .row label{min-width:160px;color:rgba(255,255,255,0.7)}
+  input[type=range]{flex:1;height:4px;-webkit-appearance:none;background:rgba(255,255,255,0.12);border-radius:2px;accent-color:#4FA3FF}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff}
+  .read{min-width:48px;text-align:right;color:rgba(255,255,255,0.6);font-variant-numeric:tabular-nums;font-size:12px}
+  select,input[type=text]{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;color-scheme:dark}
+  .tri{display:inline-flex}
+  .tri-btn{padding:2px 8px;font-size:11px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.55);cursor:pointer;font-family:inherit}
+  .tri-btn:first-child{border-radius:4px 0 0 4px}
+  .tri-btn:last-child{border-radius:0 4px 4px 0;border-left:none}
+  .tri-btn:not(:first-child):not(:last-child){border-left:none}
+  .tri-btn.active.def{background:rgba(255,255,255,0.18);color:#fff}
+  .tri-btn.active.on{background:#4ade80;color:#08240f}
+  .tri-btn.active.off{background:#ff5e5e;color:#260606}
+  kbd{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:1px 6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#fff}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cap">Form controls · slider · select · text · tri-state · kbd</div>
+  <div class="row"><label>Speed</label><input type="range" min="50" max="250" step="5" value="125"><span class="read">1.25x</span></div>
+  <div class="row"><label>Voice for this session</label><select style="flex:1"><option>Ryan (UK, male)</option></select></div>
+  <div class="row"><label>Label</label><input type="text" value="Frontend" style="flex:1"></div>
+  <div class="row"><label>Code blocks</label>
+    <div class="tri">
+      <button class="tri-btn def">Default</button>
+      <button class="tri-btn on active">On</button>
+      <button class="tri-btn off">Off</button>
+    </div>
+  </div>
+  <div class="row"><label>Shortcut</label><kbd>Ctrl+Shift+S</kbd></div>
+</div>
+</body>
+</html>

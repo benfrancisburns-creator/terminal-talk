@@ -1,0 +1,272 @@
+/* =============================================================
+   Terminal Talk UI kit — product CSS
+   Mirrors app/styles.css 1:1, with class prefixes (.tt-) so it
+   can coexist with other kits.
+
+   Colour + type tokens live in ../colors_and_type.css. This file
+   keeps rgba literals for docs-site portability, but those
+   literals are mirrored (1:1) in the token sheet.
+   ============================================================= */
+
+@import url("../colors_and_type.css");
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; min-height: 100%;
+  background:
+    radial-gradient(circle at 18% 22%, #26324a 0%, transparent 55%),
+    radial-gradient(circle at 75% 80%, #30203e 0%, transparent 55%),
+    #0e0f13;
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+  color: #fff;
+  color-scheme: dark;
+}
+
+/* --- Toolbar letterbox ------------------------------------- */
+/* Two rows, 680 wide, content-driven height (~114 px: 36 controls + 4 gap +
+   44 dots + 6 top + 8 bottom padding). Mirrors app/styles.css .bar. */
+.tt-bar {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 14px 8px 14px;
+  background: rgba(24, 26, 32, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: none;
+  backdrop-filter: blur(24px) saturate(140%);
+  width: 680px; margin: 0 auto;
+}
+
+/* Row 1 — controls (matches product .bar-top, 36px tall). */
+.tt-bar-top {
+  display: flex; align-items: center; gap: 8px;
+  height: 36px;
+}
+
+/* Row 2 — clip-queue dots (matches product .dots-row, 44px tall, overflow
+   visible so the active dot's pulse halo isn't clipped). */
+.tt-dots-row {
+  width: 100%;
+  display: flex; align-items: center; justify-content: flex-start;
+  height: 44px; padding: 0 4px; overflow: visible;
+}
+
+.tt-dots { display: flex; align-items: center; gap: 5px; min-width: 20px; width: 100%; }
+
+.tt-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  border: none; padding: 0; cursor: pointer; flex-shrink: 0;
+  transition: transform .12s ease, background .3s ease, box-shadow .2s ease;
+}
+.tt-dot:hover { filter: brightness(1.2); transform: scale(1.2); }
+
+.tt-dot--active {
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 6px rgba(255,255,255,0.25);
+  animation: ttPulse 1.6s ease-in-out infinite;
+}
+@keyframes ttPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 8px rgba(255,255,255,0.2); }
+  50%      { box-shadow: 0 0 0 3px rgba(255,255,255,0.55), 0 0 14px rgba(255,255,255,0.4); }
+}
+
+.tt-dot--heard { animation: none; }
+
+.tt-dot--clip {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  color: rgba(0,0,0,0.72);
+  display: flex; align-items: center; justify-content: center;
+  padding-bottom: 1px;
+}
+
+.tt-divider { width: 1px; height: 22px; background: rgba(255,255,255,0.1); margin: 0 2px; }
+
+/* --- Icon buttons ----------------------------------------- */
+.tt-iconbtn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: none; padding: 0;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease, transform .08s ease;
+}
+.tt-iconbtn:hover { background: rgba(255,255,255,0.16); color: #fff; }
+.tt-iconbtn:active { transform: scale(0.93); }
+
+.tt-iconbtn--play {
+  background: rgba(79,163,255,0.18); color: #9ccaff;
+  width: 32px; height: 32px;
+}
+.tt-iconbtn--play:hover { background: rgba(79,163,255,0.3); color: #fff; }
+
+.tt-iconbtn--close {
+  background: transparent; width: 22px; height: 22px;
+  color: rgba(255,255,255,0.5); margin-left: 2px;
+}
+.tt-iconbtn--close:hover { background: rgba(255,70,70,0.18); color: #ff6b6b; }
+
+/* --- Scrubber --------------------------------------------- */
+.tt-scrubber {
+  flex: 1; min-width: 140px;
+  -webkit-appearance: none; appearance: none;
+  height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px;
+  cursor: pointer; margin: 0 4px;
+}
+.tt-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; cursor: pointer;
+  transition: box-shadow .15s ease, transform .1s ease;
+}
+.tt-scrubber:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(79,163,255,0.18); }
+
+/* --- Time readout ----------------------------------------- */
+.tt-time {
+  font-size: 11px; color: rgba(255,255,255,0.55);
+  font-variant-numeric: tabular-nums;
+  min-width: 78px; text-align: right; letter-spacing: 0.01em;
+}
+
+/* --- Panel ------------------------------------------------ */
+.tt-panel {
+  width: 680px; margin: 6px auto 0;
+  background: rgba(24,26,32,0.92);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  backdrop-filter: blur(24px) saturate(140%);
+  max-height: 540px; overflow-y: auto;
+}
+.tt-panel-inner { padding: 14px 16px; }
+.tt-panel-section { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.tt-panel-section > header {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 8px;
+}
+
+.tt-panel-hint { font-size: 11px; color: rgba(255,255,255,0.4); margin: 0 0 8px; }
+
+/* --- Rows inside panel ------------------------------------ */
+.tt-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 12px; color: rgba(255,255,255,0.85); }
+.tt-row label { min-width: 160px; color: rgba(255,255,255,0.7); }
+.tt-row input[type="range"] { flex: 1; height: 4px; -webkit-appearance: none; background: rgba(255,255,255,0.12); border-radius: 2px; }
+.tt-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; cursor: pointer; }
+.tt-readout { min-width: 48px; text-align: right; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+
+/* --- Session blocks --------------------------------------- */
+.tt-sessions-table { display: flex; flex-direction: column; gap: 4px; }
+.tt-session-block { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 8px; padding: 4px 8px; }
+.tt-session-row {
+  display: grid;
+  grid-template-columns: 18px 24px 90px 1fr 180px 26px 26px 22px;
+  gap: 10px; align-items: center; padding: 4px 0; font-size: 12px;
+}
+
+/* Focus star — exclusive: only one row can be focused at a time. */
+.tt-focus-btn {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.45);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease, transform .08s ease;
+}
+.tt-focus-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.tt-focus-btn.is-focused { color: #ffd93d; }
+.tt-focus-btn.is-focused:hover { color: #ffd93d; background: rgba(255,217,61,0.12); }
+
+/* Mute — 🔊 / 🔇 ; matches the product's emoji approach. */
+.tt-mute-btn {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.75);
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease;
+}
+.tt-mute-btn:hover { background: rgba(255,255,255,0.08); }
+.tt-mute-btn.is-muted { opacity: 0.55; }
+.tt-mute-btn.is-muted:hover { opacity: 1; }
+
+/* Remove × — destructive tint on hover, faint otherwise. */
+.tt-session-remove {
+  width: 22px; height: 22px; border: none; border-radius: 50%;
+  background: transparent; color: rgba(255,255,255,0.35);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s ease, background .15s ease;
+}
+.tt-session-remove:hover { color: #ff6b6b; background: rgba(255,70,70,0.18); }
+
+/* Row state — focused session gets a faint warm border; muted fades. */
+.tt-session-block--focused {
+  border-color: rgba(255,217,61,0.28);
+  background: rgba(255,217,61,0.04);
+}
+.tt-session-block--muted { opacity: 0.55; }
+.tt-session-block--muted:hover { opacity: 1; }
+.tt-chev { width: 18px; height: 18px; background: transparent; border: none; color: rgba(255,255,255,0.5); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.tt-chev:hover { color: #fff; background: rgba(255,255,255,0.08); border-radius: 4px; }
+.tt-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); }
+.tt-short { font-family: 'Cascadia Mono','Consolas','JetBrains Mono',monospace; color: rgba(255,255,255,0.55); font-size: 11px; }
+.tt-text, .tt-select {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px; padding: 4px 8px; color: #fff; font-size: 12px; font-family: inherit; color-scheme: dark;
+}
+.tt-sessions-empty { color: rgba(255,255,255,0.4); font-size: 12px; padding: 4px 0; }
+
+/* --- Expanded session row --------------------------------- */
+.tt-session-expanded { margin: 8px 0 4px; padding: 8px 28px 4px; border-top: 1px dashed rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 8px; }
+.tt-expanded-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.tt-expanded-row label { min-width: 180px; color: rgba(255,255,255,0.6); }
+.tt-expanded-subheader { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255,255,255,0.45); margin-top: 4px; }
+
+/* Tri-state */
+.tt-tri-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+.tt-tri-cell { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.tt-tri-label { color: rgba(255,255,255,0.75); }
+.tt-tri { display: inline-flex; }
+.tt-tri-btn {
+  padding: 2px 8px; font-size: 11px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.55);
+  cursor: pointer; font-family: inherit;
+}
+.tt-tri-btn:first-child { border-radius: 4px 0 0 4px; }
+.tt-tri-btn:last-child  { border-radius: 0 4px 4px 0; border-left: none; }
+.tt-tri-btn:not(:first-child):not(:last-child) { border-left: none; }
+.tt-tri-btn:hover { color: #fff; }
+.tt-tri-btn.is-active.tt-tri-btn--def { background: rgba(255,255,255,0.18); color: #fff; }
+.tt-tri-btn.is-active.tt-tri-btn--on  { background: #4ade80; color: #08240f; }
+.tt-tri-btn.is-active.tt-tri-btn--off { background: #ff5e5e; color: #260606; }
+
+/* --- About / ASCII ---------------------------------------- */
+.tt-ascii-banner {
+  font-family: 'Cascadia Mono','Consolas','JetBrains Mono',monospace;
+  font-size: 8px; line-height: 1.05;
+  margin: 0 0 10px; padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.55);
+  white-space: pre; overflow-x: auto;
+}
+.tt-shortcuts-title { margin-top: 10px; font-weight: 600; color: rgba(255,255,255,0.55); }
+.tt-shortcuts { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 4px; }
+.tt-shortcuts td { padding: 3px 6px; color: rgba(255,255,255,0.8); vertical-align: top; }
+.tt-shortcuts td:first-child { white-space: nowrap; width: 140px; color: rgba(255,255,255,0.6); }
+kbd {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px; padding: 1px 6px;
+  font-family: 'Cascadia Mono','Consolas','JetBrains Mono',monospace;
+  font-size: 11px; color: #fff;
+}
+
+/* --- Demo shell ------------------------------------------- */
+.tt-demo-chrome { padding: 16px 16px 40px; }
+.tt-demo-controls { width: 680px; margin: 18px auto 0; display: flex; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.4); }
+.tt-demo-controls button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); border-radius: 14px; padding: 4px 12px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.tt-demo-controls button:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.tt-demo-caption { width: 680px; margin: 10px auto 0; font-size: 11px; color: rgba(255,255,255,0.35); text-align: center; }

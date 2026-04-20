@@ -1,0 +1,50 @@
+# D2-2: release-time docs snapshot.
+#
+# Fires on any `v*` tag push. Runs `scripts/archive-docs.sh` against the
+# tag, then commits the resulting `docs/vMAJOR.MINOR/` snapshot back to
+# main. If the archive already exists (patch release of an existing minor
+# line) the script is a no-op and no commit is made.
+#
+# The archive commit lands on main as a separate commit authored by the
+# GitHub Actions bot with `[skip ci]` in the message so it doesn't
+# re-trigger the tests workflow.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  # Needs write access to push the archive commit back.
+  contents: write
+
+jobs:
+  archive-docs:
+    name: Archive docs/ snapshot for tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (full history so we can commit back)
+        uses: actions/checkout@v4
+        with:
+          # We need main, not the tag, so the commit lands on the branch.
+          ref: main
+          fetch-depth: 0
+
+      - name: Run archive-docs.sh against the pushed tag
+        run: |
+          chmod +x scripts/archive-docs.sh
+          scripts/archive-docs.sh "${GITHUB_REF_NAME}"
+
+      - name: Commit + push the snapshot if anything changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ -n "$(git status --porcelain)" ]; then
+            git add docs/
+            git commit -m "docs: archive docs/ snapshot for ${GITHUB_REF_NAME} [skip ci]"
+            git push origin main
+          else
+            echo "No new snapshot to commit (archive already exists for this minor line)."
+          fi

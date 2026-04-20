@@ -1,0 +1,159 @@
+/* =============================================================
+   Terminal Talk — canonical design tokens
+   -------------------------------------------------------------
+   Single source of truth for colour + type values used across
+   app/styles.css and docs/ui-kit/kit.css. Imported by kit.css
+   for documentation; the app itself still inlines the same
+   rgba literals so the electron bundle has no extra fetch.
+
+   When a magic number here changes, the matching literal in
+   app/styles.css and kit.css should change with it.
+   ============================================================= */
+
+:root {
+  /* --- Fonts --------------------------------------------- */
+  --tt-font-ui:   'Segoe UI', 'Inter', system-ui, sans-serif;
+  --tt-font-mono: 'Cascadia Mono', 'Consolas', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* --- Background (dark canvas) ------------------------- */
+  --tt-bg-base:        #0e0f13;
+  --tt-bg-accent-blue: #26324a;   /* radial glow, top-left */
+  --tt-bg-accent-plum: #30203e;   /* radial glow, bottom-right */
+
+  /* --- Surfaces (all on top of base, layered) ----------- */
+  --tt-surface-bar:    rgba(24, 26, 32, 0.88);   /* toolbar */
+  --tt-surface-panel:  rgba(24, 26, 32, 0.92);   /* settings panel */
+
+  /* Surface fill ladder — used for rows, chips, buttons. */
+  --tt-fill-02: rgba(255,255,255,0.02);
+  --tt-fill-04: rgba(255,255,255,0.04);
+  --tt-fill-06: rgba(255,255,255,0.06);   /* input / iconbtn resting */
+  --tt-fill-08: rgba(255,255,255,0.08);
+  --tt-fill-12: rgba(255,255,255,0.12);   /* scrubber track */
+  --tt-fill-16: rgba(255,255,255,0.16);   /* iconbtn hover */
+  --tt-fill-18: rgba(255,255,255,0.18);   /* heard dot, play button */
+
+  /* Border ladder — hairlines on top of surfaces. */
+  --tt-border-04: rgba(255,255,255,0.04);
+  --tt-border-06: rgba(255,255,255,0.06);
+  --tt-border-08: rgba(255,255,255,0.08);
+  --tt-border-10: rgba(255,255,255,0.10);
+  --tt-border-15: rgba(255,255,255,0.15);
+
+  /* --- Text on dark ------------------------------------- */
+  --tt-text-100: #ffffff;
+  --tt-text-85:  rgba(255,255,255,0.85);   /* body / row default */
+  --tt-text-75:  rgba(255,255,255,0.75);
+  --tt-text-70:  rgba(255,255,255,0.70);
+  --tt-text-60:  rgba(255,255,255,0.60);
+  --tt-text-55:  rgba(255,255,255,0.55);   /* labels, monospace small */
+  --tt-text-50:  rgba(255,255,255,0.50);
+  --tt-text-45:  rgba(255,255,255,0.45);
+  --tt-text-40:  rgba(255,255,255,0.40);
+  --tt-text-35:  rgba(255,255,255,0.35);
+
+  /* Text on light accent (e.g. coloured dots). */
+  --tt-text-on-accent: rgba(0,0,0,0.72);
+
+  /* --- Accent colours ----------------------------------- */
+  --tt-accent-blue:       #4fa3ff;   /* brand primary */
+  --tt-accent-blue-soft:  #9ccaff;   /* play icon */
+  --tt-accent-blue-wash:  rgba(79,163,255,0.18);
+  --tt-accent-blue-wash2: rgba(79,163,255,0.30);
+
+  --tt-success:        #4ade80;
+  --tt-success-ink:    #08240f;
+
+  --tt-danger:         #ff6b6b;
+  --tt-danger-strong:  #ff5e5e;
+  --tt-danger-ink:     #260606;
+  --tt-danger-wash:    rgba(255,70,70,0.18);
+
+  /* --- Radii ------------------------------------------- */
+  --tt-radius-sm:   4px;    /* chev hover, shortcut cells */
+  --tt-radius-md:   6px;    /* inputs, ascii card */
+  --tt-radius-lg:   8px;    /* session block */
+  --tt-radius-xl:   14px;   /* demo buttons */
+  --tt-radius-2xl:  16px;   /* settings panel */
+  --tt-radius-pill: 22px;   /* toolbar letterbox */
+
+  /* --- Spacing ----------------------------------------- */
+  --tt-space-1: 2px;
+  --tt-space-2: 4px;
+  --tt-space-3: 6px;
+  --tt-space-4: 8px;
+  --tt-space-5: 10px;
+  --tt-space-6: 14px;
+  --tt-space-7: 16px;
+
+  /* --- Elevation --------------------------------------- */
+  --tt-shadow-bar:
+    0 12px 32px rgba(0,0,0,0.45),
+    0 2px 6px  rgba(0,0,0,0.30);
+  --tt-shadow-dot-active:
+    0 0 0 2px rgba(255,255,255,0.35),
+    0 0 10px  rgba(255,255,255,0.25);
+
+  /* --- Motion ------------------------------------------ */
+  --tt-ease:     cubic-bezier(.2, .8, .2, 1);
+  --tt-dur-fast: 80ms;
+  --tt-dur-base: 150ms;
+  --tt-dur-slow: 300ms;
+
+  /* --- Type scale -------------------------------------- */
+  --tt-fs-ascii:   8px;    /* banner */
+  --tt-fs-dot:    10px;    /* clip pip label */
+  --tt-fs-xs:     11px;    /* readouts, kbd, hint */
+  --tt-fs-sm:     12px;    /* rows, shortcuts */
+  --tt-lh-ui:     1.4;
+  --tt-lh-mono:   1.05;
+  --tt-tracking-caps: 0.08em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tt-dur-fast: 0ms;
+    --tt-dur-base: 0ms;
+    --tt-dur-slow: 0ms;
+  }
+}
+
+/* === BEGIN GENERATED PALETTE — do not edit (run scripts/generate-tokens-css.cjs) === */
+:root {
+  --tt-palette-base-00: #ff5e5e;   /* Red */
+  --tt-palette-base-01: #ffa726;   /* Orange */
+  --tt-palette-base-02: #ffd93d;   /* Yellow */
+  --tt-palette-base-03: #4ade80;   /* Green */
+  --tt-palette-base-04: #60a5fa;   /* Blue */
+  --tt-palette-base-05: #c084fc;   /* Purple */
+  --tt-palette-base-06: #c97b50;   /* Brown */
+  --tt-palette-base-07: #e0e0e0;   /* White */
+
+  --tt-palette-neutral: #8a8a8a;
+
+  --tt-palette-00-bg: #ff5e5e;
+  --tt-palette-01-bg: #ffa726;
+  --tt-palette-02-bg: #ffd93d;
+  --tt-palette-03-bg: #4ade80;
+  --tt-palette-04-bg: #60a5fa;
+  --tt-palette-05-bg: #c084fc;
+  --tt-palette-06-bg: #c97b50;
+  --tt-palette-07-bg: #e0e0e0;
+  --tt-palette-08-bg: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%);
+  --tt-palette-09-bg: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%);
+  --tt-palette-10-bg: linear-gradient(to bottom, #ffd93d 50%, #c084fc 50%);
+  --tt-palette-11-bg: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%);
+  --tt-palette-12-bg: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%);
+  --tt-palette-13-bg: linear-gradient(to bottom, #c084fc 50%, #ffd93d 50%);
+  --tt-palette-14-bg: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%);
+  --tt-palette-15-bg: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%);
+  --tt-palette-16-bg: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%);
+  --tt-palette-17-bg: linear-gradient(to right, #ffa726 50%, #c084fc 50%);
+  --tt-palette-18-bg: linear-gradient(to right, #ffd93d 50%, #c97b50 50%);
+  --tt-palette-19-bg: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%);
+  --tt-palette-20-bg: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%);
+  --tt-palette-21-bg: linear-gradient(to right, #c084fc 50%, #ffa726 50%);
+  --tt-palette-22-bg: linear-gradient(to right, #c97b50 50%, #ffd93d 50%);
+  --tt-palette-23-bg: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%);
+}
+/* === END GENERATED PALETTE === */
