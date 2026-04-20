@@ -135,11 +135,13 @@ jobs:
           }
           Write-Host "PSScriptAnalyzer: 0 findings"
 
-  # S4.3 — coverage via c8, uploaded as a CI artefact. No floor enforced
-  # yet; floor will be ratcheted up after the first run tells us the
-  # baseline. Log-only for now.
+  # v0.4 S5 — coverage floor (ratchet-only-up).
+  # c8 runs the --logic-only subset and compares against thresholds
+  # below the current baseline (76.26 % lines, 68.34 % branches,
+  # 89.06 % functions). Any drop fails CI. When coverage improves,
+  # bump the thresholds in the same PR to lock the gain.
   coverage:
-    name: Coverage (c8) — log-only baseline
+    name: Coverage (c8) — blocking floor
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
@@ -147,8 +149,15 @@ jobs:
         with: { node-version: '22' }
       - name: Install devDependencies
         run: npm install --no-audit --no-fund
-      - name: Run coverage
-        run: npm run test:coverage || true   # report-only, don't fail CI while we establish the floor
+      - name: Run coverage with floor check
+        run: >-
+          npx c8
+          --check-coverage
+          --lines 76
+          --branches 68
+          --functions 89
+          --reporter=text --reporter=lcov
+          node scripts/run-tests.cjs --logic-only
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         if: always()
         with:

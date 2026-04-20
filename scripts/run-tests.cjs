@@ -2658,6 +2658,239 @@ describe('S1 — renderer-error dedupe', () => {
   });
 });
 
+// =============================================================================
+// S5 — coverage-gap fills.
+// =============================================================================
+// Unit tests for branches the baseline c8 run surfaced as uncovered:
+// error paths, defensive-fallback branches, and contention paths that
+// the happy-path tests don't reach. Each describe below ties back to
+// the ASSESSMENTS/S5-coverage/findings.md gap list.
+// =============================================================================
+
+describe('S5 — registry-lock contention', () => {
+  const { withRegistryLock, _internals } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')
+  );
+  const tmpReg = path.join(os.tmpdir(), `tt-s5-reglock-${Date.now()}.json`);
+  const tmpLock = tmpReg + '.lock';
+  const cleanup = () => {
+    try { fs.unlinkSync(tmpReg); } catch {}
+    try { fs.unlinkSync(tmpLock); } catch {}
+  };
+
+  it('acquire times out and returns false when lock is held fresh', () => {
+    cleanup();
+    // Seed a fresh (non-stale) lock directly, simulating a concurrent holder.
+    fs.writeFileSync(tmpLock, '999999');
+    const start = Date.now();
+    const held = _internals.acquire(tmpLock);
+    const elapsed = Date.now() - start;
+    assertEqual(held, false);
+    // Must have busy-waited up to the timeout (500 ms) before giving up.
+    // Check lower bound with a safety margin for slow CI.
+    if (elapsed < _internals.ACQUIRE_TIMEOUT_MS - 50) {
+      throw new Error(`acquire returned false too fast: ${elapsed}ms`);
+    }
+    cleanup();
+  });
+
+  it('second caller proceeds unlocked if first is frozen (graceful degrade)', () => {
+    cleanup();
+    fs.writeFileSync(tmpLock, '999999');
+    // withRegistryLock still runs fn even when acquire failed — the
+    // philosophy comment in registry-lock.js says "a stuck lock
+    // shouldn't freeze the toolbar".
+    const r = withRegistryLock(tmpReg, () => 'ran-without-lock');
+    assertEqual(r, 'ran-without-lock');
+    cleanup();
+  });
+});
+
+describe('S5 — api-key-store corruption paths', () => {
+  const { createApiKeyStore } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'api-key-store.js')
+  );
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-s5-aks-'));
+  const encPath = path.join(tmpDir, 'openai_key.enc');
+  const secretPath = path.join(tmpDir, 'config.secrets.json');
+  const logs = [];
+  const store = createApiKeyStore({
+    dir: tmpDir,
+    logger: (msg) => logs.push(msg),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (s) => Buffer.from(s),
+      decryptString: () => { throw new Error('corrupt enc payload'); },
+    },
+  });
+
+  it('logs a warning when .enc cannot be decrypted, falls through to .secret', () => {
+    logs.length = 0;
+    fs.writeFileSync(encPath, 'aGVsbG8=');  // valid base64; decrypt throws per the fake
+    fs.writeFileSync(secretPath, JSON.stringify({ openai_api_key: 'sk-fallback' }));
+    const got = store.get();
+    assertEqual(got, 'sk-fallback');
+    if (!logs.some(m => /\.enc decrypt failed/.test(m))) {
+      throw new Error(`expected decrypt-failed log line; got: ${JSON.stringify(logs)}`);
+    }
+    try { fs.unlinkSync(encPath); } catch {}
+    try { fs.unlinkSync(secretPath); } catch {}
+  });
+
+  it('logs a warning when .secret is not valid JSON, returns null', () => {
+    logs.length = 0;
+    fs.writeFileSync(secretPath, '{ this is not json');
+    const got = store.get();
+    assertEqual(got, null);
+    if (!logs.some(m => /\.secret parse failed/.test(m))) {
+      throw new Error(`expected parse-failed log line; got: ${JSON.stringify(logs)}`);
+    }
+    try { fs.unlinkSync(secretPath); } catch {}
+  });
+});
+
+describe('S5 — palette-alloc defensive branches', () => {
+  const { allocatePaletteIndex } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'palette-alloc.js')
+  );
+
+  it('null assignments coerces to empty — returns index 0, free', () => {
+    const r = allocatePaletteIndex('abcd1234', null);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('undefined assignments coerces to empty — returns index 0, free', () => {
+    const r = allocatePaletteIndex('abcd1234', undefined);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('LRU tiebreak by shortId when last_seen equal', () => {
+    // All 24 slots busy with identical last_seen; tie should resolve by
+    // shortId ascending so 'aaaaaaaa' evicts before 'zzzzzzzz'.
+    const assignments = {};
+    const chars = 'abcdefghijklmnopqrstuvwx';  // 24 chars
+    for (let i = 0; i < 24; i++) {
+      const short = chars[i].repeat(8);
+      assignments[short] = { index: i, last_seen: 1000 };
+    }
+    const r = allocatePaletteIndex('newshort', assignments);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 'aaaaaaaa');
+  });
+
+  it('missing last_seen coerces to 0 for LRU comparison', () => {
+    const assignments = {
+      aaaaaaaa: { index: 0 },                        // no last_seen
+      bbbbbbbb: { index: 1, last_seen: 5000 },
+    };
+    for (let i = 2; i < 24; i++) {
+      assignments[String(i).padStart(8, 'x')] = { index: i, last_seen: 9999 };
+    }
+    const r = allocatePaletteIndex('newshort', assignments);
+    assertEqual(r.reason, 'lru');
+    // 'aaaaaaaa' has effectively last_seen=0; should evict first.
+    assertEqual(r.evicted, 'aaaaaaaa');
+  });
+
+  it('hash-collision fallback uses empty string for null newShort', () => {
+    // All 24 slots pinned so LRU has no candidates; forces hash-mod path.
+    const assignments = {};
+    const chars = 'abcdefghijklmnopqrstuvwx';
+    for (let i = 0; i < 24; i++) {
+      const short = chars[i].repeat(8);
+      assignments[short] = { index: i, last_seen: 1000, pinned: true };
+    }
+    const r = allocatePaletteIndex(null, assignments);
+    assertEqual(r.reason, 'hash-collision');
+    assertEqual(r.evicted, null);
+    // Empty string sums to 0; 0 % 24 = 0.
+    assertEqual(r.index, 0);
+  });
+});
+
+describe('S5 — concurrency mapLimit defensive branches', () => {
+  const { mapLimit } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'concurrency.js')
+  );
+
+  it('non-array input coerces to empty array', async () => {
+    const r = await mapLimit(null, 4, async () => 'x');
+    assertEqual(r.length, 0);
+  });
+
+  it('limit of 0 or NaN coerces to 1 (at least one worker)', async () => {
+    const r = await mapLimit([1, 2, 3], 0, async (n) => n * 2);
+    assertEqual(r, [2, 4, 6]);
+  });
+
+  it('non-Error throw is wrapped in Error', async () => {
+    const r = await mapLimit([1], 1, async () => { throw 'plain-string'; });
+    if (!(r[0] instanceof Error)) throw new Error('expected Error wrap');
+    assertEqual(r[0].message, 'plain-string');
+  });
+});
+
+describe('S5 — session-stale defensive branches', () => {
+  const { computeStaleSessions } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'session-stale.js')
+  );
+
+  it('non-object assignments returns empty', () => {
+    assertEqual(computeStaleSessions(null, new Set(), new Set(), 1000), []);
+    assertEqual(computeStaleSessions('nope', new Set(), new Set(), 1000), []);
+    assertEqual(computeStaleSessions(42, new Set(), new Set(), 1000), []);
+  });
+
+  it('non-Set liveShorts is coerced via new Set(x)', () => {
+    const assignments = { aabbccdd: { index: 0, last_seen: 0 } };
+    const r = computeStaleSessions(assignments, ['aabbccdd'], [], 1000);
+    assertEqual(r, []);  // aabbccdd is in shorts list, so NOT stale
+  });
+
+  it('malformed entry (non-object) is skipped', () => {
+    const assignments = { aabbccdd: 'not-an-object', bbccddee: { index: 1, last_seen: 0 } };
+    const r = computeStaleSessions(assignments, new Set(), new Set(), 1000, 10);
+    assertEqual(r, ['bbccddee']);
+  });
+});
+
+describe('S5 — config-validate string maxLen', () => {
+  const { validateConfig } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-validate.js')
+  );
+
+  it('string exceeding maxLen is rejected', () => {
+    const cfg = {
+      voices: { edge_response: 'x'.repeat(500) },  // maxLen 80
+      hotkeys: {}, playback: { speed: 1 },
+      speech_includes: {}, openai_api_key: null,
+    };
+    const r = validateConfig(cfg);
+    assertEqual(r.ok, false);
+    if (!r.violations.some(v => /string too long/.test(v))) {
+      throw new Error(`expected too-long violation; got: ${JSON.stringify(r.violations)}`);
+    }
+  });
+});
+
+describe('S5 — text.js image_alt=false strips entire image markdown', () => {
+  const { stripForTTS } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'text.js')
+  );
+
+  it('with image_alt:false, image markdown is dropped', () => {
+    const r = stripForTTS('hello ![cat pic](https://x/y.png) world', { image_alt: false });
+    assertEqual(r, 'hello world');
+  });
+
+  it('with image_alt:true, alt text is preserved', () => {
+    const r = stripForTTS('hello ![cat pic](https://x/y.png) world', { image_alt: true });
+    assertEqual(r, 'hello cat pic world');
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');
