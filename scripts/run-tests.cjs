@@ -1884,6 +1884,51 @@ describe('R4 ACCESSIBILITY BASELINE', () => {
   });
 });
 
+describe('S1 — renderer-error dedupe', () => {
+  const { createDedupe } = require('../app/lib/renderer-error-dedupe');
+
+  it('first occurrence of a stack accepts', () => {
+    const d = createDedupe();
+    assertEqual(d.accept('TypeError: foo\n  at x', 1000), true);
+  });
+
+  it('duplicate within window is rejected', () => {
+    const d = createDedupe();
+    d.accept('TypeError: foo\n  at x', 1000);
+    assertEqual(d.accept('TypeError: foo\n  at x', 1500), false);
+  });
+
+  it('same stack after window accepts again', () => {
+    const d = createDedupe();
+    d.accept('TypeError: foo\n  at x', 1000);
+    assertEqual(d.accept('TypeError: foo\n  at x', 2001), true);
+  });
+
+  it('different stacks both accept independently', () => {
+    const d = createDedupe();
+    d.accept('TypeError: foo\n  at x', 1000);
+    assertEqual(d.accept('ReferenceError: bar\n  at y', 1001), true);
+  });
+
+  it('dedupe key uses only top 4 stack lines (argv-drift resilient)', () => {
+    const d = createDedupe();
+    const base = 'TypeError: foo\n  at x\n  at y\n  at z';
+    d.accept(base + '\n  at a', 1000);
+    assertEqual(d.accept(base + '\n  at b', 1001), false);
+    assertEqual(d.accept('TypeError: foo\n  at DIFFERENT\n  at y\n  at z', 1002), true);
+  });
+
+  it('map is pruned when over maxEntries', () => {
+    const d = createDedupe({ maxEntries: 3 });
+    d.accept('a', 1);
+    d.accept('b', 2);
+    d.accept('c', 3);
+    d.accept('d', 4);
+    if (d._lastSeen.size > 3) throw new Error(`expected size ≤ 3, got ${d._lastSeen.size}`);
+    assertEqual(d.accept('a', 5), true);
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');
