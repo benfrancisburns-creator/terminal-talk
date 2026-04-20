@@ -1578,6 +1578,20 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     }
   });
 
+  it('R6.1 R12: renderDots is rAF-throttled to one paint per frame', () => {
+    const src = fs.readFileSync(rendererPath, 'utf8');
+    // The top-level renderDots() must enqueue; the hot body is _renderDotsNow.
+    if (!/_renderDotsQueued/.test(src)) {
+      throw new Error('renderDots should coalesce via a _renderDotsQueued flag');
+    }
+    if (!/requestAnimationFrame\(/.test(src)) {
+      throw new Error('renderDots should use requestAnimationFrame to coalesce paints');
+    }
+    if (!/function _renderDotsNow/.test(src)) {
+      throw new Error('hot body should live in _renderDotsNow so renderDots can no-op when queued');
+    }
+  });
+
   it('R5.5: archive destination uses .corrupt-<timestamp>.json suffix', () => {
     const src = fs.readFileSync(mainPath, 'utf8');
     if (!/\.corrupt-.{0,40}\$\{ts\}/.test(src) && !/\.corrupt-\$\{ts\}/.test(src)) {

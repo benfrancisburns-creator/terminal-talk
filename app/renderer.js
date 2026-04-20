@@ -374,7 +374,29 @@ function isAudioIdle() {
   return !audio.src || audio.ended || (audio.paused && audio.currentTime === 0);
 }
 
+// renderDots is called from ~15 sites -- queue-updated events, every
+// play/delete/mute/focus/index change, manual click, priority shift,
+// stale-session poll. A heavy paste can fan those calls out to >100
+// in a single tick, each of which rebuilds the dots DOM node from
+// scratch. requestAnimationFrame coalesces to a single render per
+// frame so the work matches the display refresh rate, not the event
+// rate. Visible effect on 150-clip pastes: dot strip updates smoothly
+// instead of flickering.
+let _renderDotsQueued = false;
 function renderDots() {
+  if (_renderDotsQueued) return;
+  _renderDotsQueued = true;
+  requestAnimationFrame(() => {
+    _renderDotsQueued = false;
+    _renderDotsNow();
+  });
+}
+// Synchronous paint is exposed for the single call site that needs
+// immediate result (the Playwright harness and the next-clip scheduling
+// loop, which reads fresh DOM layout right after renderDots()). Prefer
+// renderDots() everywhere else.
+function renderDotsNow() { _renderDotsQueued = false; _renderDotsNow(); }
+function _renderDotsNow() {
   dotsEl.innerHTML = '';
   // Muted sessions' clips are hidden entirely — no dot, no trace. "Cut the
   // wire" per Ben: the user should not be aware a background muted terminal
