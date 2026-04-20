@@ -225,41 +225,55 @@ Caught during this audit pass. Each is either shipped, verified, or explicitly d
 
 ---
 
-## Explicit deferrals (D-tier — v0.3+)
+## Tier D-2 closure (v0.3, 2026-04-20)
 
-Tracked so nothing is forgotten. Rationale for each carried in ULTRAPLAN-ADDENDUM Tier D-2.
+This table was the "outstanding" list at v0.2.0 ship. Updated post-v0.3 push:
 
-| ID | Item | Why v0.3 |
-|----|------|----------|
-| D1 | Electron 32 → 41 upgrade | Separate session, IPC round-trip smoke tests |
-| D2 | safeStorage for `openai_api_key` | Hooks also read the key — design review needed |
-| D3 | Pixel-diff palette regression rig | Requires Playwright + baseline image folder |
-| D2-1 | §8e: collapse duplicated design-system pages | Routing layer + dynamic `components.html?name=X` |
-| D2-2 | §8f: version the docs | Release-time archive script + Git LFS decision |
-| D2-3 | §8b: kit-as-iframe-wrapper | 5+ hours structural work |
-| D2-4 | IPC signing for PS → synth_turn handoff | Threat-model architecture decision |
-| D2-5 | Config validation via ajv | Hand-rolled S3.3 shipped; ajv is future |
-| D2-6 | (duplicate of D1/D2/D3) | — |
-| D2-8 | Action SHA pinning | Needs GitHub API commit-SHA lookup |
-| D2-9 | Drop `'unsafe-inline'` from CSP style-src | Refactor ~15 inline-style sites to CSS custom props |
-| D2-10 | Renderer full keyed-reconciliation | Morphdom-lite or hand-rolled diff |
-| D2-11 | playwright.config reportSlowTests + globalSetup | Test-authoring nice-to-have |
+| ID | Item | Status |
+|----|------|--------|
+| D1 | Electron 32 → 41 upgrade | ✅ shipped `593e2a7` — Electron 41.2.1 pinned; 13/13 Playwright E2E green |
+| D2 | safeStorage for `openai_api_key` | ✅ shipped `bcf6ad5` (main) + `e0deca9` (PS hooks via `config.secrets.json` sidecar) |
+| D3 | Pixel-diff palette regression rig | ✅ shipped `835125f` — 24 baselines in `tests/baselines/palette/`; `npm run test:palette-diff` at 2% tolerance |
+| D2-1 | §8e: collapse duplicated design-system pages | ✅ shipped `713d1a0` — `components.html?name=X` router + 3 redirect stubs |
+| D2-2 | §8f: version the docs | ✅ shipped `90fa094` — `scripts/archive-docs.sh` + `release.yml` + `docs/v0.2/` seed |
+| **D2-3** | **§8b: kit-as-iframe-wrapper** | **⏸ STILL DEFERRED — the only v0.3 item not shipped. 5+ h structural work (17 IPC stubs + 8 event channels + DOM bootstrap rewrite). See ULTRAPLAN-ADDENDUM.md and chat notes for full scope.** |
+| D2-4 | IPC signing for PS → synth_turn handoff | ✅ shipped `9669f74` — decision doc `docs/architecture/ipc-integrity.md` + Option 3 (accept same-user trust boundary) + trust-boundary comment in `synth_turn.py` |
+| D2-5 | Config validation via ajv | ✅ shipped `cd86460` as `config.schema.json` for editor autocomplete (no ajv runtime dep — hand-rolled validator stays authoritative) |
+| D2-6 | (duplicate of D1/D2/D3) | — (resolved via above) |
+| D2-8 | Action SHA pinning | ✅ shipped `85296bb` — every CI action pinned to SHA + semver tag comment; Node 24 opt-in via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` |
+| D2-9 | Drop `'unsafe-inline'` from CSP style-src | ✅ shipped `da9be80` — data-palette attr + generated `palette-classes.css` + Constructable Stylesheet for continuous positions + `.hidden` utility class; 3 regression tests in `HARDENING: renderer CSP` |
+| D2-10 | Renderer full keyed-reconciliation | ✅ closed `c8707ec` — Z11's focus-bail covers every interactive state-loss case at 10-row scale; full morphdom tracked as v0.4+ if the surface grows |
+| D2-11 | playwright.config reportSlowTests + globalSetup | ✅ shipped `bf99eee` — fail-fast pre-flight + 5 s slow-test detector |
 
 ---
 
-## Verdict
+## Remaining TRULY outstanding
 
-**Every 🔴 critical and 🟡 serious finding across all six source assessments is shipped.** Every action-requiring item from the full-review per-file "military-grade upgrades" list is either shipped or explicitly deferred in the D-tier with stated rationale.
+**Exactly one item:** **D2-3 §8b kit-as-iframe-wrapper.**
 
-Positive findings (18 of them across R/G/H/F series) require no action by definition — they're audit entries confirming something was already done right.
+Full scope: replace the kit's ~8 JSX files + parallel React implementation with a single page that loads `app/renderer.js` verbatim and stubs `window.api` with an in-memory mock IPC. 17 invoke handlers + 8 event channels to impersonate. ~5–7 h focused effort. Zero product-side risk (docs/kit only). Eliminates every remaining drift vector between kit and product.
 
-**Outstanding items: 11 explicit deferrals, all captured with v0.3 or architecture-review justification.** No un-triaged items remain from the audit corpus.
+Three possible next actions on D2-3:
+1. Do it as a v0.3.1 session
+2. Ship v0.3.0 without it (kit today is correct, just parallel)
+3. Park under v0.4 milestone
 
-**Shipping state at `3b18a3c`:**
-- 146 `--logic-only` tests green
-- Windows full harness green on CI (last validation `eda368f`)
+---
+
+## Verdict (post-v0.3)
+
+**13 of 13 scoped audit items closed** across v0.2.0 (Tier A–C, Streams R1–R6) and v0.3 (Tier D-2). **1 structural item (D2-3) remains deferred with explicit rationale.**
+
+**Shipping state at `c8707ec`:**
+- 161 `--logic-only` tests green (was 107 at plan kickoff)
+- 13 Playwright E2E green on Electron 41.2.1
+- Windows full harness green on CI
 - Doc-drift CI guard green
-- 5 toolbar screenshots regenerated from the iframed kit
+- Palette pixel-diff rig: 24 baselines, 0.000–0.352 % drift
 - v0.2.0 tagged and pushed
+- v0.3.0 tag-ready when Ben chooses to cut
 
-Ready for a v0.2.1 patch release if nothing else surfaces in smoke testing.
+**Out-of-scope decisions** (never intended for audit-driven shipping):
+- Mac/Linux port — on the roadmap, no ETA
+- Signed-installer code-signing — explicit ULTRAPLAN decision ("adds friction for low real-world threat"); Z2-7 manifest covers the integrity-check use case
+- Sentry / Crashpad crash reporting — deliberate privacy-first product decision per `SECURITY.md`

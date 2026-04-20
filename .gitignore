@@ -31,3 +31,8 @@ desktop.ini
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# render-mocks.cjs and palette-pixel-diff.cjs scratch output
+/.tmp-mocks/
+/.tmp-pixel-diff/
+/coverage/
