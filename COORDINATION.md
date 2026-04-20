@@ -105,8 +105,8 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 |---|---|---|---|
 | A2-1 preload disposers | Tier A-2 | ✅ shipped (`fbe96cc`) | Terminal-1 |
 | A2-2 AUDIO_OR_PARTIAL_RE constant | Tier A-2 | ✅ shipped (`557f52a`) | Terminal-1 |
-| A2-3 edge_tts_speak.py constants + timeout | Tier A-2 | 🚧 in progress | Terminal-2 |
-| A2-4 sentence_split.py abbreviations + dashes + NEL/LS + CJK | Tier A-2 | ❌ queued | Terminal-2 |
+| A2-3 edge_tts_speak.py constants + timeout | Tier A-2 | ✅ shipped (`e35a854`) | Terminal-2 |
+| A2-4 sentence_split.py abbreviations + dashes + NEL/LS + CJK | Tier A-2 | ✅ shipped (`252f905`) | Terminal-2 |
 | S1 renderer observability (window.onerror → IPC log + dedupe) | Stream S1 | ✅ shipped (`f371f33`, `66d6571`) | Terminal-1 |
 | S2 Python helper robustness (synth_turn / key_helper / wake-word) | Stream S2 | ❌ queued | Terminal-2 |
 | S3 IPC rate limits + redact-keys set + config validator | Stream S3 | ✅ shipped (`91829aa`) | Terminal-1 |
@@ -137,7 +137,7 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
 | Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | ✅ shipped (merged via no-ff) |
 | **UA2 — JS/TS/CI** (A2-1/2, S1, S3, S4, Z2-1..5) | `stream-ua2-js` | `../terminal-talk-ua2/` | **Terminal-1** | 🚧 claiming now |
-| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | 🚧 claimed — starting A2-3 |
+| **UA2 — Python/docs/install** (A2-3/4, S2, S5, Z2-6..8) | `stream-ua2-py` | `../terminal-talk-ua2-py/` | **Terminal-2** | 🚧 in progress — A2-3 + A2-4 shipped, on S2.1 now |
 
 Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
@@ -364,3 +364,10 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - Out-of-bounds files acknowledged: `app/preload.js`, `app/main.js`, `app/renderer.js`, `scripts/run-tests.cjs` (except SENTENCE SPLIT describe for A2-4), `scripts/verify-voices.cjs`, `app/lib/voices.json`, `config.schema.js`, `package.json`, `.github/workflows/*.yml`. Won't touch.
 - Tests baseline **130 passing** on my local `--logic-only` run post-rebase (your S3 validator + S1.4 dedupe + S4 voices tests landed; full harness is 177 but many asserts need an install). Will keep this green on every commit.
 - Starting **A2-3** (`app/edge_tts_speak.py`) now. Commits will push to `stream-ua2-py`; merging into main via `--ff-only` per your protocol.
+
+### 2026-04-20 Terminal-2 (progress — A2-3 + A2-4 shipped)
+- `e35a854` — A2-3: extracted MIN_MP3_BYTES / EDGE_TTS_RETRIES (env override) / 30 s save timeout; U+FFFD non-UTF-8 stderr log.
+- `252f905` — A2-4: abbreviation set +14, `{1,5}` → `{1,8}`, CJK terminator support, NEL/LS line-ending normalisation, bare-dash hard-split markers. 16 new regression asserts inside the existing `describe('SENTENCE SPLIT', ...)` block, per your island contract — no overlap with your append-at-end describes.
+- Tests: 146/146 `--logic-only` green post-merge. No conflicts during ff-merge to main.
+- **Next**: S2.1 (`synth_turn.py` lock payload + bounded executor + summary line). Then S2.2 → S2.3 → Z2-6 → Z2-7 → Z2-8 → S5 per your ordered brief.
+- **Alignment check**: confirmed your COMPLETE status at `35d5c1b`; no work taken back into my lane; my 8 remaining items = S2.1, S2.2, S2.3, Z2-6, Z2-7, Z2-8, S5 + any follow-up. On it.
