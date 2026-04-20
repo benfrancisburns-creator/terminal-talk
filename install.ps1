@@ -131,8 +131,33 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
     if (-not (Test-Path $claudeSettings)) {
         Write-Warn2 "~/.claude/settings.json not found (Claude Code not installed?). Skipping."
     } else {
+        # C4: validate the existing settings.json parses BEFORE we
+        # touch it. Blindly editing a corrupt file would either crash
+        # the script mid-edit (leaving user with no hooks AND a broken
+        # settings.json) or silently overwrite their working config.
+        # On parse failure we refuse to proceed and nudge the user.
+        $settingsRaw = Get-Content $claudeSettings -Raw
+        try {
+            $settings = $settingsRaw | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            Write-Fail "~/.claude/settings.json is not valid JSON:"
+            Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
+            Write-Warn2 "Refusing to edit. Fix or delete settings.json and rerun install.ps1."
+            exit 1
+        }
+
+        # Backup with timestamp, then rotate: keep the latest 5 so a
+        # decade of reinstalls don't leave a graveyard of backups in
+        # ~/.claude. Sorted by LastWriteTime so "oldest" is unambiguous.
         Copy-Item -Force $claudeSettings "$claudeSettings.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
-        $settings = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+        $backups = Get-ChildItem -Path (Split-Path -Parent $claudeSettings) -Filter "$(Split-Path -Leaf $claudeSettings).backup-*" -File -ErrorAction SilentlyContinue |
+                   Sort-Object LastWriteTime -Descending
+        if ($backups.Count -gt 5) {
+            $backups | Select-Object -Skip 5 | ForEach-Object {
+                try { Remove-Item -Force $_.FullName } catch {}
+            }
+        }
+
         if (-not $settings.hooks) { $settings | Add-Member -NotePropertyName hooks -NotePropertyValue (@{}) -Force }
         $respHook = Join-Path $hooksDir 'speak-response.ps1'
         $notifHook = Join-Path $hooksDir 'speak-notification.ps1'
