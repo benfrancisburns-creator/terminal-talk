@@ -103,14 +103,28 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 
 | Scope | Tier / Stream | Status | Owner |
 |---|---|---|---|
-| Quick wins — preload disposers, AUDIO_FILE_RE, edge_tts constants, sentence_split expansions | Tier A-2 | 🚧 in progress | split between terminals |
-| Renderer observability (window.onerror → IPC log) | Stream S1 | ❌ not started | Terminal-1 |
-| Python helper robustness (synth_turn lock, key_helper SendInput, wake-word adaptive) | Stream S2 | ❌ not started | Terminal-2 |
-| IPC hardening (rate limits, redact-keys set, config validator) | Stream S3 | ❌ not started | Terminal-1 |
-| Test harness modernisation (behaviour tests, voice catalogue snapshot, c8 coverage) | Stream S4 | ❌ not started | Terminal-1 |
-| §8d — mocks-annotated iframes the kit | Stream S5 | ❌ not started | Terminal-2 |
-| Polish — CI matrix + SHA pins + Playwright CI + install manifest + statusline debounce | Tier Z-2 | ❌ not started | split between terminals |
-| §8e, §8f, ajv config, IPC signing, D1/D2/D3 | Tier D-2 | out of scope | v0.3+ |
+| A2-1 preload disposers | Tier A-2 | ✅ shipped (`fbe96cc`) | Terminal-1 |
+| A2-2 AUDIO_OR_PARTIAL_RE constant | Tier A-2 | ✅ shipped (`557f52a`) | Terminal-1 |
+| A2-3 edge_tts_speak.py constants + timeout | Tier A-2 | 🚧 in progress | Terminal-2 |
+| A2-4 sentence_split.py abbreviations + dashes + NEL/LS + CJK | Tier A-2 | ❌ queued | Terminal-2 |
+| S1 renderer observability (window.onerror → IPC log + dedupe) | Stream S1 | ✅ shipped (`f371f33`, `66d6571`) | Terminal-1 |
+| S2 Python helper robustness (synth_turn / key_helper / wake-word) | Stream S2 | ❌ queued | Terminal-2 |
+| S3 IPC rate limits + redact-keys set + config validator | Stream S3 | ✅ shipped (`91829aa`) | Terminal-1 |
+| S4.1 test-only inspection IPC (pattern demo: watchdog) | Stream S4 | ✅ shipped (`35d5c1b`) | Terminal-1 |
+| S4.2 voices.json extraction + verify-voices script | Stream S4 | ✅ shipped (`a3f1b06`) | Terminal-1 |
+| S4.3 c8 coverage scaffold | Stream S4 | ✅ shipped (`2ade94a`) | Terminal-1 |
+| S5 §8d mocks-annotated iframes the kit | Stream S5 | ❌ queued | Terminal-2 |
+| Z2-1 pin action SHAs | Tier Z-2 | ⏸ deferred as D2-8 | needs GitHub-API SHA lookup |
+| Z2-2 Node 18/20/22 matrix | Tier Z-2 | ✅ shipped (`2ade94a`) | Terminal-1 |
+| Z2-3 Playwright-on-Windows CI job | Tier Z-2 | ✅ shipped (`2ade94a`) | Terminal-1 |
+| Z2-4 main.js boot-time SHA-256 integrity log | Tier Z-2 | ✅ shipped (`0f0d655`) | Terminal-1 |
+| Z2-5 keyHelper parent-side respawn on stall | Tier Z-2 | ✅ shipped (`0f0d655`) | Terminal-1 |
+| Z2-6 statusline.ps1 debounce | Tier Z-2 | ❌ queued | Terminal-2 |
+| Z2-7 install.ps1 manifest + verify-install.ps1 | Tier Z-2 | ❌ queued | Terminal-2 |
+| Z2-8 uninstall.ps1 Wait-Process | Tier Z-2 | ❌ queued | Terminal-2 |
+| §8e, §8f, ajv config, IPC signing, D1/D2/D3, Z2-1 | Tier D-2 | out of scope | v0.3+ |
+
+**Terminal-1 lane status: COMPLETE (12 commits, 130 tests green, +23 from session start).** Full merge to main at `35d5c1b`. Remaining 10 items are all Terminal-2's lane (A2-3, A2-4, S2.1/2/3, Z2-6/7/8, S5). I'm standing by for any conflict-resolution help or review.
 
 ---
 
