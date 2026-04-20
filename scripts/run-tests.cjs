@@ -590,17 +590,20 @@ describe('PALETTE PARITY — kit ↔ product (R1.7)', () => {
     }
   });
 
+  // Strip CR from file reads — on Windows, git's autocrlf rewrites LF → CRLF
+  // on checkout, but the generator emits plain LF. Normalise before comparing.
+  const normNL = (s) => s.replace(/\r\n/g, '\n');
+
   it('generated tokens-window.js matches tokens.json palette byte-for-byte', () => {
-    // Run the generator in-memory logic and compare.
     const expected = `window.TT_TOKENS = Object.freeze(${JSON.stringify(TOKENS, null, 2)});`;
-    if (!tokensWin.includes(expected)) {
+    if (!normNL(tokensWin).includes(expected)) {
       throw new Error('app/lib/tokens-window.js is out of date — run `node scripts/generate-tokens-css.cjs`');
     }
   });
 
   it('generated tokens.mjs matches tokens.json palette byte-for-byte', () => {
     const expected = `export const TOKENS = Object.freeze(${JSON.stringify(TOKENS, null, 2)});`;
-    if (!tokensMjs.includes(expected)) {
+    if (!normNL(tokensMjs).includes(expected)) {
       throw new Error('docs/ui-kit/tokens.mjs is out of date — run `node scripts/generate-tokens-css.cjs`');
     }
   });
