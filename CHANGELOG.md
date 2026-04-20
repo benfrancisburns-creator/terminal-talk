@@ -2,6 +2,24 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.3] — 2026-04-20
+
+Three-part hardening against a phantom-audio class of bug. Field report: an "orange" session (`cafebeef`, marked "(closed)") played a synthesised clip despite never matching an active terminal. Root cause was a race between the test harness seeding the real registry and a live Electron's `saveAssignments` overwriting that seed between seed-write and `synth_turn.py` reading it — the synth fell back to default (`muted=false`) and emitted an MP3 under the test fixture short. Three independent defences now cover this class of bug.
+
+### Fixed
+
+- **Fix 1 — synth-mute tests can no longer touch the user's real `~/.terminal-talk/`.** `app/synth_turn.py` now honours a `TT_HOME` env var to override its whole root (registry, sessions, queue, logs). `scripts/run-tests.cjs`'s SYNTH TURN MUTE block creates a per-run `mkdtemp`'d temp dir and passes `TT_HOME` to every spawned python. Belt-and-brace: a `scrubCafebeef()` finally step deletes any `*-cafebeef.mp3` produced under the test's TT_HOME in case the env var ever fails to propagate.
+- **Fix 2 — `playNextPending` now treats closed-terminal sessions like muted for auto-play.** Prior behaviour: `staleSessionShorts` (populated by the 10 s `get-stale-sessions` poll) was a visual-only signal; a late-arriving detached-synth clip (or a leaked fixture) would still auto-play after the terminal closed. New: a `isPathSessionStale(path)` helper is applied in the three non-priority branches (focus, pendingQueue, fallback). Priority (hey-jarvis) still plays unconditionally. The dot stays clickable so the user can hear the clip manually if they want it.
+- **Fix 3 — registry writes are now serialised via `app/lib/registry-lock.js`.** `saveAssignments` wraps its atomic temp-then-rename in `withRegistryLock()`, which O_EXCL-creates a sentinel `.lock` file next to `session-colours.json`, retries for up to 500 ms, and steals locks older than 3 s. Protects against any future concurrent writer (second Electron instance, PS hook direct write, future tooling). Fix 1 solves the specific race that motivated this release; Fix 3 prevents the class.
+
+### Added
+
+- Five unit tests covering `withRegistryLock`: runs-and-returns, releases-on-success, releases-on-throw, stale-steal, and serial-order-preserved.
+- Source-grep test asserting `playNextPending` calls `isPathSessionStale` in at least three branches.
+- Tests: **165 → 171 logic-only.**
+
+---
+
 ## [0.3.2] — 2026-04-20
 
 Hotfix for the kit demo on GitHub Pages.
