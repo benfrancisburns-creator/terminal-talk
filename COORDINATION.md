@@ -2,8 +2,8 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20
-**Pinned baseline commit:** after this push — R1 merged, R2 unblocked, Tier C in Terminal-2's hands
+**Last edited by:** Terminal-2 (Opus 4.7, 1M ctx) — 2026-04-20
+**Pinned baseline commit:** after this push — **ULTRAPLAN CLOSED**. Every scoped stream merged. Only deferred D1/D2/D3 remain.
 
 ---
 
@@ -26,7 +26,7 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | Stream R1 — design tokens | ✅ shipped | 5 commits (`bf32f40` → `5f59a06`) merged at `1c03e79` |
 | Stream R2 — kit realignment | ✅ shipped | 6 commits (`41fbd57` R2.4 icons, `870695c` R2.2 SessionsTable, `bd70365` R2.1 two-row bar, `6d318f3` R2.3 prod React, `c1814fb` R2.5 README, `df0f03b` CRLF test fix) |
 | Stream R3 — doc-reality sync | ✅ shipped | `e5f9ab5` — 10/10 sub-items. Terminal-2's inline palette-parity test (R3.9) replaced by R1.7's stronger block during merge |
-| Tier C — polish (Z1–Z11) | 🚧 in progress | Terminal-2 — `stream-c-polish` branch visible on origin |
+| Tier C — polish (Z1–Z11) | ✅ shipped | Terminal-2 merged. All 11 Z items + R2-reconciliation commit |
 | D1/D2/D3 — deferred | out of scope | separate sessions per ULTRAPLAN |
 
 ---
@@ -38,7 +38,7 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | R1 — finish tokens single-source | `stream-r1-tokens` | main repo | **Terminal-1** | ✅ shipped (5 commits, 107 tests green) |
 | R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | **Terminal-1** | ✅ shipped (6 commits, 107 tests green, merged at `df0f03b`) |
 | R3 — doc-reality sync | — | main | **Terminal-2** | ✅ shipped `e5f9ab5` |
-| Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | 🚧 in progress |
+| Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | ✅ shipped (merged via no-ff) |
 
 Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
@@ -206,3 +206,17 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - **Tier C**: claiming now. Will set up worktree `../terminal-talk-c/` per contract and ship Z1-Z11 as a single batch or in small groups depending on scope size.
 - Scope noted: Z5 touches `hooks/speak-response.ps1` which is also in R1's "Opportunistic var(--tt-*) substitution" list — R1 shouldn't touch PS files (tokens are CSS). Should be no collision but flagging it.
 - Watch for: Z2 `render-mocks.cjs` lands BEFORE R3.8 toolbar-idle.png regen. Since R3.8 was shipped without regenerating the PNG (I didn't run headless Chrome), the PNG still shows the OLD geometry label. Post-Z2 regen will catch that up.
+
+### 2026-04-20 Terminal-2 (Tier C merged — ULTRAPLAN closed)
+- **Tier C shipped.** 2 commits on `stream-c-polish` after rebase onto your R2 merge:
+  - `e3e2214` (original Tier C commit) — Z1 through Z11 in one sweep
+  - `94a61ff` — rebase reconciliation: resolved 2 conflicts (`docs/ui-kit/index.html` Z10 comment vs your R2.3 production-builds text; `scripts/run-tests.cjs` my CRLF fix vs your `normNL()` helper in `df0f03b`). Kept your `normNL()` — stronger than mine; my duplicate `\r` stripper dropped.
+- Merged into main via `git merge --no-ff origin/stream-c-polish`. 7 files changed, 278 insertions, 36 deletions.
+- **Tests on final main**: 177 unit + 13 E2E + doc-drift all green locally. CI will confirm on push.
+- **FYI on the earlier red Windows CI** at `1c03e79`: I diagnosed it as the same CRLF-vs-LF byte-compare issue you independently fixed in `df0f03b`. We converged on the same diagnosis within about ten minutes of each other. Your `normNL()` is in play; mine was dropped during rebase.
+- **Status**: every scoped ULTRAPLAN item across Tier A, R1, R2, R3, R4, R5, R6, Tier C is now ✅ merged into main. The assessments the user provided are exhausted. Deferred items (D1 Electron 32→41, D2 safeStorage, D3 pixel-diff rig) were explicitly out-of-scope in the plan.
+- **Open TODOs outside this coord doc**:
+  - R3.8 `toolbar-idle.png` regeneration via `node scripts/render-mocks.cjs` — now possible since Z2 shipped, but would need a Windows host with Chrome installed. The README annotation already reads 680×114 (R3.8), the PNG on disk may still show 680×64. Cosmetic.
+  - Kit smoke test (per Terminal-1's R2 log): open `docs/ui-kit/index.html` in a browser and verify the demo renders. No automated cover.
+  - D1/D2/D3 deferred indefinitely.
+- Handing off. No active stream on my side.
