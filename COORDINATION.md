@@ -2,8 +2,8 @@
 
 **Owner of this doc:** whichever terminal is editing it. Update the "Last edited by" line below before pushing.
 
-**Last edited by:** Terminal-1 (Opus 4.7, 1M ctx) — 2026-04-20
-**Pinned baseline commit:** `3cc143e` (`feat(R4): accessibility baseline`)
+**Last edited by:** Terminal-2 (Opus 4.7, 1M ctx) — 2026-04-20
+**Pinned baseline commit:** `a68f9b8` (`docs(R3): doc-reality sync — 10 sub-items`)
 
 ---
 
@@ -25,7 +25,7 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 | Stream R6 — responsiveness | ✅ shipped | `0ee7a1f`, `89d1abb`, `bde9355` |
 | Stream R1 — design tokens | 🟡 partial (A10 only) | `ac7d853` wrote `docs/colors_and_type.css`. Still missing: `app/lib/tokens.json`, `scripts/generate-tokens-css.cjs`, renderer.js refactor, kit refactor, R1.7 parity test |
 | Stream R2 — kit realignment | ❌ not started | depends on R1.5 |
-| Stream R3 — doc-reality sync | ❌ not started | 10 items + CI grep guard |
+| Stream R3 — doc-reality sync | ✅ shipped | `a68f9b8` — 10/10 sub-items. Also added R1.7's test (KIT PALETTE LOCK-STEP) as part of R3.9 since `docs/README.md:58` claimed it existed |
 | Tier C — polish (Z1–Z11) | ❌ not started | 11 items |
 | D1/D2/D3 — deferred | out of scope | separate sessions per ULTRAPLAN |
 
@@ -35,12 +35,12 @@ Two Claude Code terminals are working on this repo in parallel. This file is the
 
 | Stream | Branch | Worktree path | Owner | Status |
 |---|---|---|---|---|
-| R1 — finish tokens single-source | `stream-r1-tokens` | main repo (`C:/Users/Ben/Desktop/terminal-talk`) | **Terminal-1** | claiming now |
-| R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | unassigned (waits on R1 merge) | blocked |
-| R3 — doc-reality sync | `stream-r3-docsync` | `../terminal-talk-r3/` | **available — Terminal-2 please claim** | unassigned |
-| Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **available — Terminal-2 please claim** | unassigned |
+| R1 — finish tokens single-source | `stream-r1-tokens` | main repo (`C:/Users/Ben/Desktop/terminal-talk`) | **Terminal-1** | in progress |
+| R2 — kit realignment | `stream-r2-kit` | `../terminal-talk-r2/` | **Terminal-1** (reserved) | blocked on R1 merge |
+| R3 — doc-reality sync | — | main (rebased on `3cc143e`) | **Terminal-2** | ✅ shipped `a68f9b8` |
+| Tier C — polish | `stream-c-polish` | `../terminal-talk-c/` | **Terminal-2** | claiming now |
 
-Terminal-2: pick **R3** if you want low-risk doc work (~2h, 100% markdown/HTML edits). Pick **Tier C** if you want surgical code polish (~2h, 11 small fixes across config/scripts/main.js/renderer.js).
+Terminal-2 note: I worked R3 directly on `main` before this coordination doc reached my context. No worktree was used. My `a68f9b8` is rebased onto `6d1f526` (Terminal-1's coord commit) — clean history, no conflicts, 174 unit + 13 E2E + doc-drift guard all green. I'll move to Tier C next, using the worktree at `../terminal-talk-c/` per this doc's contract.
 
 ---
 
@@ -174,3 +174,11 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - **Claimed Stream R1.** Will start with `app/lib/tokens.json` extraction from `app/renderer.js:166-183`, then write the generator, then refactor renderer.js to require it.
 - Stream R2 reserved for me too once R1 lands.
 - Terminal-2: please pick R3 or Tier C and update the ownership table above on your next push.
+
+### 2026-04-20 Terminal-2
+- Pulled to `6d1f526`. Read COORDINATION.md in full.
+- Heads-up: I **already shipped Stream R3** before seeing this doc — commit `a68f9b8`, rebased cleanly on top of your coord commit. All 10 R3 sub-items done including R3.10 CI grep-guard (`scripts/check-doc-drift.cjs` + new `doc-drift` job in `.github/workflows/test.yml`).
+- Side-effect: R3.9 docs/README.md:58 claimed "there's a regression test in scripts/run-tests.cjs" — that test didn't exist. Rather than delete the claim I landed it: new `KIT PALETTE IN LOCK-STEP WITH PRODUCT` group (3 asserts) in `run-tests.cjs`. This overlaps slightly with your R1.7 scope — when you do the proper generator-based parity test, feel free to subsume or replace mine. Heads-up so we don't end up with two palette-parity tests.
+- **Tier C**: claiming now. Will set up worktree `../terminal-talk-c/` per contract and ship Z1-Z11 as a single batch or in small groups depending on scope size.
+- Scope noted: Z5 touches `hooks/speak-response.ps1` which is also in R1's "Opportunistic var(--tt-*) substitution" list — R1 shouldn't touch PS files (tokens are CSS). Should be no collision but flagging it.
+- Watch for: Z2 `render-mocks.cjs` lands BEFORE R3.8 toolbar-idle.png regen. Since R3.8 was shipped without regenerating the PNG (I didn't run headless Chrome), the PNG still shows the OLD geometry label. Post-Z2 regen will catch that up.
