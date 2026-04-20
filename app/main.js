@@ -1485,6 +1485,20 @@ ipcMain.handle('delete-file', (_e, filePath) => {
 });
 ipcMain.handle('hide-window', () => { if (win) win.hide(); });
 
+// S4.1 — test-only inspection IPC. Exposes internal state the E2E harness
+// can assert against instead of grepping main.js source. Guarded by
+// TT_TEST_MODE so production builds don't leak internal state to a
+// compromised renderer. Watchdog is the first of many; nav-guard and
+// CSP probes can follow the same pattern in a future commit.
+if (process.env.TT_TEST_MODE === '1') {
+  ipcMain.handle('__test__/watchdog-state', () => ({
+    armed: watchdogTimer !== null,
+    lastSweepMs: watchdogLastSweepMs,
+    lastSweepAgeMs: watchdogLastSweepMs === 0 ? null : Date.now() - watchdogLastSweepMs,
+    intervalMs: WATCHDOG_INTERVAL_MS,
+  }));
+}
+
 let voiceProc = null;
 function isListeningEnabled() {
   try { return fs.readFileSync(LISTENING_STATE_FILE, 'utf8').trim() !== 'off'; }
@@ -1629,6 +1643,7 @@ if (!process.env.TT_TEST_MODE) {
 const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;  // 30 minutes
 const WATCHDOG_LOG = path.join(QUEUE_DIR, '_watchdog.log');
 let watchdogTimer = null;
+let watchdogLastSweepMs = 0;
 
 function countFiles(dir, predicate) {
   try {
@@ -1653,6 +1668,7 @@ function runWatchdogSweep() {
   try { killOrphanVoiceListeners(); } catch (e) { stats.errors.push(`killOrphanVoiceListeners: ${e.message}`); }
 
   const ts = new Date().toISOString();
+  watchdogLastSweepMs = Date.now();
   const line = `${ts} sweep ok · pruned ${stats.audio_removed} audio · ${stats.sessions_removed} session files · ${Date.now() - t0}ms` +
     (stats.errors.length ? ` · errors: ${stats.errors.join('; ')}` : '') + '\n';
   try { fs.appendFileSync(WATCHDOG_LOG, line); } catch {}
