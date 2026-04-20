@@ -1732,6 +1732,22 @@ describe('SESSION STALE DETECTION', () => {
     }
   });
 
+  it('initialLoad populates pendingQueue oldest-first (v0.3.4 kit regression)', () => {
+    // main.js returns queue newest-first; pendingQueue.shift() must yield
+    // oldest so playback walks the dot strip left-to-right. Without an
+    // explicit ascending sort in initialLoad, pending ends up newest-first
+    // and playback sweeps rightmost-to-leftmost. onQueueUpdated already
+    // sorts ascending — initialLoad must do the same.
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    const m = rendererSrc.match(/async\s+function\s+initialLoad\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('initialLoad function body not found');
+    const body = m[1];
+    // Must sort ascending by mtime before pushing to pendingQueue.
+    if (!/\.sort\s*\(\s*\(a,\s*b\)\s*=>\s*a\.mtime\s*-\s*b\.mtime\s*\)/.test(body)) {
+      throw new Error('initialLoad must sort unplayed files ascending (a.mtime - b.mtime) before pushing to pendingQueue');
+    }
+  });
+
   it('mixed live + dead -> only dead ones returned, sorted', () => {
     const assignments = {
       '11111111': { index: 1, last_seen: NOW - 1 },               // live (in shorts)

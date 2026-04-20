@@ -666,12 +666,23 @@ async function initialLoad() {
   sessionAssignments = (resp && resp.assignments) || {};
   const cutoff = Date.now() - STALE_MS;
   queue = files;
+  // main.js returns newest-first (getQueueFiles sorts `b.mtime - a.mtime`).
+  // pendingQueue must hold clips in ARRIVAL order (oldest first) so
+  // pendingQueue.shift() yields the oldest-unplayed clip and playback
+  // walks the dot strip left-to-right. onQueueUpdated already sorts
+  // newArrivals ascending before push; initialLoad used to skip that
+  // sort, producing newest-first pending — playback started on the
+  // newest clip and swept rightmost-to-leftmost until the pending
+  // buffer drained. Visible on a preloaded queue (kit demo, or toolbar
+  // boot with 4+ unplayed clips).
+  const unplayed = files
+    .filter(f => f.mtime >= cutoff)
+    .sort((a, b) => a.mtime - b.mtime);
   for (const f of files) {
-    if (f.mtime < cutoff) {
-      playedPaths.add(f.path);
-    } else if (!pendingQueue.includes(f.path)) {
-      pendingQueue.push(f.path);
-    }
+    if (f.mtime < cutoff) playedPaths.add(f.path);
+  }
+  for (const f of unplayed) {
+    if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
   }
   renderDots();
   if (isAudioIdle()) {
