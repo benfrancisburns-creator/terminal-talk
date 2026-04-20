@@ -265,9 +265,19 @@
   // ═══════════════════════════════════════════════════════════════════════
   // window.api — 16 invoke handlers + 8 event subscribers
   // ═══════════════════════════════════════════════════════════════════════
+  // v0.3.4 — the real main.js sorts its getQueue result descending by
+  // mtime (newest first) at main.js:220. renderer.js relies on that
+  // ordering: _renderDotsNow takes `.slice(0, MAX_VISIBLE_DOTS).reverse()`
+  // to paint oldest-left / newest-right. If the mock returns ascending
+  // seed order, the reverse produces newest-left / oldest-right and
+  // playback appears to walk the dots right-to-left. Mirror main's
+  // sort so seed-authoring order can't corrupt playback direction.
+  const byNewestFirst = (a, b) => b.mtime - a.mtime;
+  const sortedFiles = () => queueFiles.slice().sort(byNewestFirst);
+
   window.api = {
     // --- reads --------------------------------------------------------
-    getQueue:          () => Promise.resolve({ files: queueFiles.slice(), assignments: { ...sessions } }),
+    getQueue:          () => Promise.resolve({ files: sortedFiles(), assignments: { ...sessions } }),
     getConfig:         () => Promise.resolve({ ...config }),
     getStaleSessions:  () => Promise.resolve(staleShorts.slice()),
 
@@ -331,7 +341,7 @@
   };
 
   function notifyQueue() {
-    emit('queue-updated', { files: queueFiles.slice(), assignments: { ...sessions } });
+    emit('queue-updated', { files: sortedFiles(), assignments: { ...sessions } });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
