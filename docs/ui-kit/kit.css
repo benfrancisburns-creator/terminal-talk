@@ -23,30 +23,45 @@ html, body {
 }
 
 /* --- Toolbar letterbox ------------------------------------- */
+/* Two rows, 680 wide, content-driven height (~114 px: 36 controls + 4 gap +
+   44 dots + 6 top + 8 bottom padding). Mirrors app/styles.css .bar. */
 .tt-bar {
-  display: flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0 10px 0 14px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 14px 8px 14px;
   background: rgba(24, 26, 32, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 22px;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3);
+  border-radius: 16px;
+  box-shadow: none;
   backdrop-filter: blur(24px) saturate(140%);
   width: 680px; margin: 0 auto;
 }
 
-.tt-dots { display: flex; align-items: center; gap: 6px; min-width: 20px; }
+/* Row 1 — controls (matches product .bar-top, 36px tall). */
+.tt-bar-top {
+  display: flex; align-items: center; gap: 8px;
+  height: 36px;
+}
+
+/* Row 2 — clip-queue dots (matches product .dots-row, 44px tall, overflow
+   visible so the active dot's pulse halo isn't clipped). */
+.tt-dots-row {
+  width: 100%;
+  display: flex; align-items: center; justify-content: flex-start;
+  height: 44px; padding: 0 4px; overflow: visible;
+}
+
+.tt-dots { display: flex; align-items: center; gap: 5px; min-width: 20px; width: 100%; }
 
 .tt-dot {
-  width: 16px; height: 16px; border-radius: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
   background: rgba(255,255,255,0.18);
-  border: none; padding: 0; cursor: pointer;
+  border: none; padding: 0; cursor: pointer; flex-shrink: 0;
   transition: transform .12s ease, background .3s ease, box-shadow .2s ease;
 }
 .tt-dot:hover { filter: brightness(1.2); transform: scale(1.2); }
 
 .tt-dot--active {
-  width: 18px; height: 18px;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 10px rgba(255,255,255,0.25);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 6px rgba(255,255,255,0.25);
   animation: ttPulse 1.6s ease-in-out infinite;
 }
 @keyframes ttPulse {
