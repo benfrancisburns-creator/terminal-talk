@@ -60,7 +60,13 @@ MAX_PARALLEL_SYNTH = 4
 
 # Per-synthesis safety timeout (seconds). edge_tts_speak already retries up
 # to 6 times with its own backoff; this is the last-resort kill.
-SYNTH_TIMEOUT_SEC = 40
+# Per-attempt timeout on the edge-tts subprocess. Was 40 s but _run_edge_tts
+# retries 3 times — so worst case was 120 s of total silence on a single
+# flaky sentence (the rolling-release lock blocks later sentences until the
+# stuck one resolves). At 15 s × 3 retries = 45 s worst case, users now
+# notice "oh, something's gone wrong" instead of assuming the app is frozen.
+# Responsiveness audit R4.
+SYNTH_TIMEOUT_SEC = 15
 
 # Lock file timeout: if another invocation is holding the lock for this
 # session longer than this, assume it's dead and proceed.

@@ -548,6 +548,12 @@ function chunkText(text, maxLen = 3800) {
 
 const EDGE_SCRIPT = path.join(__dirname, 'edge_tts_speak.py');
 
+// 45 s hard timeout on the Python subprocess — edge-tts can hang indefinitely
+// on a stuck WebSocket / DNS wedge. Without this the Promise never resolves
+// and the Python process lives forever, accumulating over hours of use
+// (30-50 MB + open FDs per wedged call). Responsiveness audit R17.
+const EDGE_TTS_HARD_TIMEOUT_MS = 45_000;
+
 function callEdgeTTS(input, voice, outPath) {
   return new Promise((resolve, reject) => {
     const proc = spawn('python', [EDGE_SCRIPT, voice, outPath], {
@@ -555,9 +561,25 @@ function callEdgeTTS(input, voice, outPath) {
       stdio: ['pipe', 'ignore', 'pipe']
     });
     let err = '';
+    let settled = false;
+    const killTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { proc.kill('SIGKILL'); } catch {}
+      diag(`edge-tts hard-timeout after ${EDGE_TTS_HARD_TIMEOUT_MS}ms — killed zombie spawn`);
+      reject(new Error(`edge-tts timeout after ${EDGE_TTS_HARD_TIMEOUT_MS / 1000}s`));
+    }, EDGE_TTS_HARD_TIMEOUT_MS);
     proc.stderr.on('data', (d) => { err += d.toString(); });
-    proc.on('error', reject);
+    proc.on('error', (e) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
+      reject(e);
+    });
     proc.on('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
       if (code === 0) resolve(outPath);
       else reject(new Error(`edge-tts exit ${code}: ${err.trim().slice(0, 200)}`));
     });
