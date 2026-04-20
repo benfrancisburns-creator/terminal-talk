@@ -81,6 +81,19 @@ function saveConfig(cfg) {
 
 let CFG = loadConfig();
 
+// Cap on the number of clips returned to the renderer by getQueueFiles.
+// Chosen to match the dot-strip's MAX_VISIBLE_DOTS = 40-ish budget while
+// leaving headroom for the session-run-gap spacers: the renderer slices
+// the newest 40 dots off the top anyway, so returning more here just
+// pays syscall cost for nothing.
+//
+// Why 20 and not 40? Empirically the user cares about the recent past
+// -- older clips have already been played AND auto-pruned, OR the user
+// disabled auto-prune and is reviewing on purpose (in which case the
+// older clips are in the filesystem but the UI fits one horizon on the
+// strip regardless). Audit R33/R34: see docs/DESIGN-AUDIT.md §11 for
+// the rationale. If you bump this, also raise MAX_VISIBLE_DOTS in
+// renderer.js to match or the dots just get truncated client-side.
 const MAX_FILES = 20;
 const STALE_MS = 60 * 60 * 1000;
 
@@ -697,17 +710,26 @@ function helperRequest(cmd, timeoutMs = 500) {
     try {
       const helper = getKeyHelper();
       let buf = '';
+      // Both success and timeout must clean up the listener AND cancel
+      // the other path's timer, else a late response from a previous
+      // request can resolve the CURRENT one with stale data. Audit R26.
+      let timer = null;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+        helper.stdout.off('data', onData);
+        resolve(value);
+      };
       const onData = (chunk) => {
         buf += chunk.toString();
         const nl = buf.indexOf('\n');
-        if (nl >= 0) {
-          helper.stdout.off('data', onData);
-          resolve(buf.slice(0, nl));
-        }
+        if (nl >= 0) finish(buf.slice(0, nl));
       };
       helper.stdout.on('data', onData);
       helper.stdin.write(cmd + '\n');
-      setTimeout(() => { helper.stdout.off('data', onData); resolve(null); }, timeoutMs);
+      timer = setTimeout(() => finish(null), timeoutMs);
     } catch (e) {
       diag(`helperRequest ${cmd} fail: ${e.message}`);
       resolve(null);
@@ -813,11 +835,39 @@ async function captureSelection() {
     if (after && after !== marker) { captured = after; break; }
   }
   diag(`captureSelection: polls=${polls} elapsed=${Date.now()-start}ms captured.len=${captured.length}`);
-  setTimeout(() => { clipboard.writeText(original); }, 300);
+  // Restore the user's pre-capture clipboard after a short grace, BUT
+  // only if the clipboard still holds the text we captured. If the user
+  // pressed Ctrl+C on something else in the 300 ms gap, their new copy
+  // is on the board and we must not clobber it. Audit R11.
+  setTimeout(() => {
+    try {
+      const now = clipboard.readText();
+      if (now === captured) {
+        clipboard.writeText(original);
+      } else {
+        diag('captureSelection: clipboard changed mid-gap -- skipping restore');
+      }
+    } catch (e) {
+      diag(`captureSelection restore fail: ${e && e.message}`);
+    }
+  }, 300);
   return { captured, original };
 }
 
 let clipboardBusy = false;
+let clipboardBusyTimer = null;
+// Hard ceiling on how long speakClipboard can stay busy before we force-
+// clear the flag. If the try-block throws in a way that the finally
+// somehow misses (ctypes crash, unhandled native error, kill -9 of a
+// spawned child), clipboardBusy=true would wedge the feature forever:
+// every subsequent hey-jarvis / Ctrl+Shift+S trigger would be swallowed
+// with "BUSY, skipping" and the user would have to restart TT.
+//
+// 60 s is longer than any legitimate clipboard synth (longest observed
+// in testing: ~18 s for a 15 k-char paste across 4 chunks parallelised)
+// but short enough that the user only waits a minute before the feature
+// heals itself. Audit R10.
+const CLIPBOARD_BUSY_HARD_TIMEOUT_MS = 60_000;
 // Broadcast clipboard synth state to the renderer so it can show a
 // pulsing placeholder dot for the 2-5s gap between wake-word detection
 // and the first synth file landing in the queue. Without this the user
@@ -831,10 +881,20 @@ function sendClipboardStatus(state) {
   } catch {}
 }
 
+function clearClipboardBusy() {
+  clipboardBusy = false;
+  if (clipboardBusyTimer) { clearTimeout(clipboardBusyTimer); clipboardBusyTimer = null; }
+  sendClipboardStatus('idle');
+}
+
 async function speakClipboard() {
   diag('speakClipboard: TRIGGERED');
   if (clipboardBusy) { diag('speakClipboard: BUSY, skipping'); return; }
   clipboardBusy = true;
+  clipboardBusyTimer = setTimeout(() => {
+    diag(`speakClipboard: hard-timeout after ${CLIPBOARD_BUSY_HARD_TIMEOUT_MS}ms -- clearing busy flag`);
+    clearClipboardBusy();
+  }, CLIPBOARD_BUSY_HARD_TIMEOUT_MS);
   sendClipboardStatus('synth');
   try {
     const { captured } = await captureSelection();
@@ -887,8 +947,7 @@ async function speakClipboard() {
       }, 250);
     }
   } finally {
-    clipboardBusy = false;
-    sendClipboardStatus('idle');
+    clearClipboardBusy();
   }
 }
 
