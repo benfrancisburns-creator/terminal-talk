@@ -587,12 +587,28 @@ describe('PALETTE PARITY — kit ↔ product (R1.7)', () => {
     }
   });
 
-  it('kit index.html inline IIFE no longer contains the pair-tuple encoding', () => {
+  it('kit index.html has no parallel palette reimplementation (D2-3)', () => {
+    // Pre-D2-3 the kit's index.html had an inline IIFE with the wrong
+    // HSPLIT_PAIRS / VSPLIT_PAIRS tuple encoding. R1 replaced that with
+    // an ESM import from local tokens.mjs. D2-3 went further: the kit
+    // now iframes app/renderer.js verbatim, so palette data flows
+    // through the shared app/lib/tokens-window.js + palette-classes.css
+    // — no kit-side palette code at all. Verify all three drift vectors
+    // are gone.
     if (/HSPLIT_PAIRS\s*=\s*\[/.test(kitHtmlSrc) || /VSPLIT_PAIRS\s*=\s*\[/.test(kitHtmlSrc)) {
       throw new Error('docs/ui-kit/index.html still declares the old tuple pairs');
     }
-    if (!/from\s+['"]\.\/tokens\.mjs['"]/.test(kitHtmlSrc)) {
-      throw new Error('docs/ui-kit/index.html no longer imports tokens.mjs');
+    if (/const\s+BASE_COLOURS\s*=\s*\[\s*['"]#ff5e5e['"]/.test(kitHtmlSrc)) {
+      throw new Error('docs/ui-kit/index.html still inlines a BASE_COLOURS literal');
+    }
+    // Kit must source palette from the canonical pipeline — either the
+    // generated tokens-window.js (D2-3 renderer-iframed path) OR the
+    // generated tokens.mjs (pre-D2-3 hand-rolled React path). Accept
+    // either; the drift guards above are what actually catch regressions.
+    const viaWindow = /tokens-window\.js/.test(kitHtmlSrc);
+    const viaEsm    = /tokens\.mjs/.test(kitHtmlSrc);
+    if (!viaWindow && !viaEsm) {
+      throw new Error('docs/ui-kit/index.html must source palette from tokens-window.js or tokens.mjs');
     }
   });
 

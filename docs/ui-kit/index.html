@@ -1,287 +1,129 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Terminal Talk — UI Kit</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="kit.css">
-<!--
-  Script load order for the kit demo (DO NOT reorder):
-    1. React (umd production build) — defines window.React
-    2. ReactDOM (umd production build) — defines window.ReactDOM; depends on (1)
-    3. Babel standalone — defines window.Babel, transpiles <script type="text/babel"> at runtime
-    4. Palette <script type="module"> — imports from ./tokens.mjs (which
-       reads app/lib/tokens.json at build time) and assigns
-       window.TTPalette so the non-module JSX components see it
-    5. Component modules (IconButton/Dot/Scrubber/etc., type="text/babel") —
-       use window.React + window.TTPalette
-    6. App boot (type="text/babel") — ReactDOM.createRoot(...) into #root
+  <meta charset="UTF-8">
+  <title>Terminal Talk — UI Kit (D2-3: renderer-iframed)</title>
+  <!--
+    D2-3 — the kit is no longer a parallel React reimplementation.
+    It loads the shipping app/renderer.js verbatim (relative path
+    ../../app/renderer.js) with mock-ipc.js stubbing the IPC surface
+    Electron normally provides via preload.
 
-  The palette script is an ES module. Modules defer by default, so
-  components (type="text/babel", not modules) will actually execute
-  BEFORE the palette module finishes. The JSX components read
-  window.TTPalette lazily inside their render functions, so the
-  lazy-read is what makes this ordering safe. A future component that
-  reads TTPalette at MODULE TOP LEVEL will see undefined — make it
-  read inside the component body instead.
+    When the product changes, this page changes automatically.
+    No drift possible.
 
-  React is loaded from the production build (~140 KB combined vs ~1.3 MB
-  dev). SRI hashes are intentionally omitted — regenerate before shipping:
-     curl -sL https://unpkg.com/react@18.3.1/umd/react.production.min.js \
-       | openssl dgst -sha384 -binary | openssl base64 -A
-  Babel standalone stays as-is (it's a compiler, not a runtime; no
-  production build exists).
--->
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-
-<!-- Palette: imported from canonical tokens (app/lib/tokens.json via tokens.mjs).
-     Builds window.TTPalette synchronously so JSX components below see it on
-     first render. The previous inline IIFE drifted from the product on 9 of
-     16 split arrangements; this version cannot drift because the same JSON
-     drives the renderer. -->
-<script type="module">
-  import { PALETTE } from './tokens.mjs';
-  const { BASE_COLOURS, NEUTRAL_COLOUR, PALETTE_SIZE, COLOUR_NAMES, HSPLIT_PARTNER, VSPLIT_PARTNER } = PALETTE;
-
-  function arrangementForIndex(idx) {
-    const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
-    if (i < 8)  return { kind: 'solid',  colours: [BASE_COLOURS[i]] };
-    if (i < 16) { const p = i - 8;  return { kind: 'hsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[HSPLIT_PARTNER[p]]] }; }
-    const p = i - 16; return { kind: 'vsplit', colours: [BASE_COLOURS[p], BASE_COLOURS[VSPLIT_PARTNER[p]]] };
-  }
-  function backgroundForArrangement(arr) {
-    if (!arr) return NEUTRAL_COLOUR;
-    const c = arr.colours;
-    if (arr.kind === 'solid')  return c[0];
-    if (arr.kind === 'hsplit') return `linear-gradient(to bottom, ${c[0]} 50%, ${c[1]} 50%)`;
-    if (arr.kind === 'vsplit') return `linear-gradient(to right,  ${c[0]} 50%, ${c[1]} 50%)`;
-    return c[0];
-  }
-  function primaryColourForArrangement(arr) { return arr && arr.colours ? arr.colours[0] : NEUTRAL_COLOUR; }
-  function arrangementLabel(i) {
-    if (i < 8)  return COLOUR_NAMES[i];
-    if (i < 16) { const p = i - 8;  return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[HSPLIT_PARTNER[p]]} — top/bottom`; }
-    const p = i - 16; return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[VSPLIT_PARTNER[p]]} — left/right`;
-  }
-  function hashToIndex(s) { let n = 0; for (const c of (s || '')) n += c.charCodeAt(0); return n % PALETTE_SIZE; }
-  window.TTPalette = { arrangementForIndex, backgroundForArrangement, primaryColourForArrangement, arrangementLabel, hashToIndex, PALETTE_SIZE };
-</script>
-
-<script type="text/babel" src="icons.jsx"></script>
-<script type="text/babel" src="IconButton.jsx"></script>
-<script type="text/babel" src="Dot.jsx"></script>
-<script type="text/babel" src="Scrubber.jsx"></script>
-<script type="text/babel" src="Toolbar.jsx"></script>
-<script type="text/babel" src="AsciiBanner.jsx"></script>
-<script type="text/babel" src="SessionsTable.jsx"></script>
-<script type="text/babel" src="SettingsPanel.jsx"></script>
+    URL params:
+      ?seed=<name>    idle | three-sessions | mixed-states |
+                      settings-panel | snapped-top   (default: three-sessions)
+      ?chrome=0       hides the demo controls bar (mocks-annotated
+                      and components.html iframes use this)
+  -->
+  <link rel="stylesheet" href="../../app/styles.css">
+  <link rel="stylesheet" href="../../app/lib/palette-classes.css">
+  <link rel="stylesheet" href="kit-chrome.css">
 </head>
 <body>
-<div id="root"></div>
-
-<script type="text/babel">
-const { useState, useEffect, useRef } = React;
-
-function shortHex() {
-  return Array.from({length:8}, () => '0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
-}
-
-function demoInitialSessions() {
-  return {
-    'abcd1234': { index: 3,  label: 'Frontend',  session_id: 'abcd1234', pinned: true,  last_seen: Date.now()/1000 },
-    'a08f2b71': { index: 12, label: 'Auth API',  session_id: 'a08f2b71', pinned: false, last_seen: Date.now()/1000 },
-    '7e5c9a04': { index: 18, label: '',          session_id: '7e5c9a04', pinned: false, last_seen: Date.now()/1000, voice: 'en-US-AriaNeural' },
-  };
-}
-
-// S5 — seeded demo states, one per section of mocks-annotated.html.
-// URL-param `?seed=NAME` picks which state we boot into. `?chrome=0`
-// hides the dev controls at the bottom (add-fake-clip, clear queue,
-// collapse panel) so mocks-annotated iframes render cleanly.
-const SEEDS = {
-  idle: {
-    settingsOpen: false,
-    sessions: {},
-    queue: [],
-    currentId: null,
-    playing: false,
-    currentTime: 0,
-  },
-  'three-sessions': {
-    settingsOpen: false,
-    sessions: {
-      'abcd1234': { index: 0,  label: 'Terminal A', session_id: 'abcd1234', pinned: true,  last_seen: Date.now()/1000 },
-      'a08f2b71': { index: 2,  label: 'Terminal B', session_id: 'a08f2b71', pinned: true,  last_seen: Date.now()/1000 },
-      '7e5c9a04': { index: 3,  label: 'Terminal C', session_id: '7e5c9a04', pinned: true,  last_seen: Date.now()/1000 },
-    },
-    // A A A  —  B B B  —  C C
-    queue: [
-      { id: 'c1', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-30000, duration: 64 },
-      { id: 'c2', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-28000, duration: 22 },
-      { id: 'c3', short: 'abcd1234', paletteIndex: 0,  clip: false, heard: false, mtime: Date.now()-26000, duration: 15 },
-      { id: 'c4', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-22000, duration: 30 },
-      { id: 'c5', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-20000, duration: 44 },
-      { id: 'c6', short: 'a08f2b71', paletteIndex: 2,  clip: false, heard: false, mtime: Date.now()-18000, duration: 12 },
-      { id: 'c7', short: '7e5c9a04', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-14000, duration: 48 },
-      { id: 'c8', short: '7e5c9a04', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-12000, duration: 26 },
-    ],
-    currentId: 'c1',
-    playing: true,
-    currentTime: 12,
-  },
-  'mixed-states': {
-    settingsOpen: false,
-    sessions: {
-      'abcd1234': { index: 0, label: 'Terminal A', session_id: 'abcd1234', pinned: true, last_seen: Date.now()/1000 },
-      'a08f2b71': { index: 2, label: 'Terminal B', session_id: 'a08f2b71', pinned: true, last_seen: Date.now()/1000 },
-      '7e5c9a04': { index: 3, label: 'Terminal C', session_id: '7e5c9a04', pinned: true, last_seen: Date.now()/1000 },
-      'deadbeef': { index: 4, label: 'Claude',     session_id: 'deadbeef', pinned: true, last_seen: Date.now()/1000 },
-    },
-    // 2 heard + 1 playing red  —  2 queued yellow  —  2 queued green  —  1 J-clip blue
-    queue: [
-      { id: 'c1', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-30000, duration: 64 },
-      { id: 'c2', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-28000, duration: 22 },
-      { id: 'c3', short: 'abcd1234', paletteIndex: 0, clip: false, heard: false, mtime: Date.now()-26000, duration: 65 },
-      { id: 'c4', short: 'a08f2b71', paletteIndex: 2, clip: false, heard: false, mtime: Date.now()-22000, duration: 30 },
-      { id: 'c5', short: 'a08f2b71', paletteIndex: 2, clip: false, heard: false, mtime: Date.now()-20000, duration: 44 },
-      { id: 'c6', short: '7e5c9a04', paletteIndex: 3, clip: false, heard: false, mtime: Date.now()-14000, duration: 48 },
-      { id: 'c7', short: '7e5c9a04', paletteIndex: 3, clip: false, heard: false, mtime: Date.now()-12000, duration: 26 },
-      { id: 'c8', short: 'deadbeef', paletteIndex: 4, clip: true,  heard: false, mtime: Date.now()-6000,  duration: 18 },
-    ],
-    currentId: 'c3',
-    playing: true,
-    currentTime: 22,
-  },
-  'settings-panel': {
-    settingsOpen: true,
-    sessions: demoInitialSessions(),
-    expanded: new Set(['7e5c9a04']),
-    queue: [
-      { id: 'c1', short: 'abcd1234', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-20000, duration: 130 },
-      { id: 'c2', short: 'a08f2b71', paletteIndex: 12, clip: false, heard: false, mtime: Date.now()-15000, duration: 90 },
-      { id: 'c3', short: '7e5c9a04', paletteIndex: 18, clip: false, heard: true,  mtime: Date.now()-10000, duration: 74 },
-    ],
-    currentId: 'c1',
-    playing: true,
-    currentTime: 28,
-  },
-  'snapped-top': {
-    settingsOpen: false,
-    sessions: {
-      'abcd1234': { index: 0, label: '', session_id: 'abcd1234', pinned: true, last_seen: Date.now()/1000 },
-      'a08f2b71': { index: 4, label: '', session_id: 'a08f2b71', pinned: true, last_seen: Date.now()/1000 },
-    },
-    queue: [
-      { id: 'c1', short: 'abcd1234', paletteIndex: 0, clip: false, heard: true,  mtime: Date.now()-30000, duration: 32 },
-      { id: 'c2', short: 'abcd1234', paletteIndex: 0, clip: false, heard: false, mtime: Date.now()-28000, duration: 18 },
-      { id: 'c3', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-22000, duration: 72 },
-      { id: 'c4', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-20000, duration: 27 },
-      { id: 'c5', short: 'a08f2b71', paletteIndex: 4, clip: false, heard: false, mtime: Date.now()-18000, duration: 14 },
-    ],
-    currentId: 'c3',
-    playing: true,
-    currentTime: 45,
-  },
-};
-const URL_PARAMS = new URLSearchParams(location.search);
-const SEED_NAME  = URL_PARAMS.get('seed');
-const SEED       = (SEED_NAME && SEEDS[SEED_NAME]) ? SEEDS[SEED_NAME] : null;
-const SHOW_CHROME = URL_PARAMS.get('chrome') !== '0';
-
-function App() {
-  const [settingsOpen, setSettingsOpen] = useState(SEED ? SEED.settingsOpen : true);
-  const [speed, setSpeed] = useState(1.25);
-  const [sessions, setSessions] = useState(SEED ? SEED.sessions : demoInitialSessions());
-  const [expanded, setExpanded] = useState(() => SEED && SEED.expanded ? new Set(SEED.expanded) : new Set(['7e5c9a04']));
-  const [queue, setQueue] = useState(() => SEED ? SEED.queue : [
-    { id: 'c1', short: 'abcd1234', paletteIndex: 3,  clip: false, heard: false, mtime: Date.now()-20000, duration: 130 },
-    { id: 'c2', short: 'a08f2b71', paletteIndex: 12, clip: false, heard: false, mtime: Date.now()-15000, duration: 90 },
-    { id: 'c3', short: 'abcd1234', paletteIndex: 3,  clip: true,  heard: false, mtime: Date.now()-10000, duration: 18 },
-    { id: 'c4', short: '7e5c9a04', paletteIndex: 18, clip: false, heard: true,  mtime: Date.now()-5000,  duration: 74 },
-  ]);
-  const [currentId, setCurrentId] = useState(SEED ? SEED.currentId : 'c2');
-  const [playing, setPlaying] = useState(SEED ? SEED.playing : true);
-  const [currentTime, setCurrentTime] = useState(SEED ? SEED.currentTime : 41);
-
-  // Tick playback when playing
-  useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => {
-      setCurrentTime(t => {
-        const cur = queue.find(c => c.id === currentId);
-        if (!cur) return t;
-        if (t >= cur.duration) { setPlaying(false); return 0; }
-        return t + 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [playing, currentId, queue]);
-
-  const actions = {
-    playPause: () => setPlaying(p => !p),
-    back10: () => setCurrentTime(t => Math.max(0, t - 10)),
-    fwd10: () => setCurrentTime(t => t + 10),
-    userPlay: (id) => {
-      setCurrentId(id); setCurrentTime(0); setPlaying(true);
-      setQueue(q => q.map(c => c.id === id ? { ...c, heard: true } : c));
-    },
-    remove: (id) => setQueue(q => q.filter(c => c.id !== id)),
-    clearPlayed: () => setQueue(q => q.filter(c => !c.heard)),
-    scrubPreview: (v) => {
-      const cur = queue.find(c => c.id === currentId); if (!cur) return;
-      setCurrentTime((v/1000) * cur.duration);
-    },
-    seek: (v) => { const cur = queue.find(c => c.id === currentId); if (!cur) return; setCurrentTime((v/1000) * cur.duration); },
-    toggleSettings: () => setSettingsOpen(o => !o),
-    hide: () => alert('(demo) would hide the toolbar'),
-  };
-
-  const addFakeClip = () => {
-    const sessionKeys = Object.keys(sessions);
-    const pick = sessionKeys[Math.floor(Math.random() * sessionKeys.length)];
-    setQueue(q => [...q, {
-      id: 'c' + (q.length + 1) + '-' + Math.random().toString(36).slice(2,5),
-      short: pick, paletteIndex: sessions[pick].index,
-      clip: Math.random() < 0.3, heard: false,
-      mtime: Date.now(), duration: 30 + Math.floor(Math.random() * 120)
-    }]);
-  };
-
-  const toggleExpand = (shortId) => setExpanded(e => {
-    const n = new Set(e); n.has(shortId) ? n.delete(shortId) : n.add(shortId); return n;
-  });
-  const updateSession = (shortId, entry) => setSessions(s => ({ ...s, [shortId]: entry }));
-  const removeSession = (shortId) => setSessions(s => {
-    const next = { ...s }; delete next[shortId]; return next;
-  });
-
-  return (
-    <div className="tt-demo-chrome">
-      <Toolbar state={{ queue, currentId, currentTime, playing }} actions={actions} />
-      {settingsOpen && (
-        <SettingsPanel speed={speed} onSpeedChange={setSpeed}
-                       sessions={sessions} expanded={expanded}
-                       onToggleSession={toggleExpand} onUpdateSession={updateSession}
-                       onRemoveSession={removeSession} />
-      )}
-      {SHOW_CHROME && (
-        <>
-          <div className="tt-demo-controls">
-            <button onClick={addFakeClip}>＋ Add fake clip</button>
-            <button onClick={() => { setQueue([]); setCurrentId(null); setPlaying(false); }}>Clear queue</button>
-            <button onClick={() => setSettingsOpen(o => !o)}>{settingsOpen ? 'Collapse panel' : 'Expand panel'}</button>
-          </div>
-          <div className="tt-demo-caption">UI-kit recreation · not wired to real audio · click a dot to replay</div>
-        </>
-      )}
+  <!-- DOM matches app/index.html exactly — renderer.js queries for each of
+       these by ID. Keep in lockstep; a drift here would break the demo. -->
+  <div class="bar" id="bar">
+    <div class="bar-top">
+      <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+      </button>
+      <button class="icon-btn play" id="playPause" title="Play/Pause" aria-label="Play or pause">
+        <svg aria-hidden="true" id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg aria-hidden="true" id="pauseIcon" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <button class="icon-btn" id="fwd10" title="Forward 10s" aria-label="Forward 10 seconds">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+      </button>
+      <div id="scrubberWrap" class="scrubber-wrap">
+        <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
+        <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="44" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+          <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+          <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
+        </svg>
+        <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
+      </div>
+      <span id="time" aria-live="off">0:00 / 0:00</span>
+      <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn close" id="close" title="Hide (Esc)" aria-label="Hide the toolbar">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
-  );
-}
+    <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
+  </div>
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <section class="panel-section">
+        <header>Playback</header>
+        <div class="row">
+          <label for="speedSlider">Speed</label>
+          <input type="range" id="speedSlider" min="50" max="250" step="5" value="125">
+          <span id="speedValue" class="readout">1.25x</span>
+        </div>
+        <div class="row">
+          <label for="autoPruneToggle">Auto-prune played clips</label>
+          <label class="toggle"><input type="checkbox" id="autoPruneToggle" checked><span class="toggle-slider"></span></label>
+          <div class="prune-value">
+            <input type="number" id="autoPruneSec" min="3" max="600" step="1" value="20">
+            <span class="prune-suffix">s after play</span>
+          </div>
+        </div>
+      </section>
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-</script>
+      <section class="panel-section">
+        <header>Sessions</header>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Claude Code sessions"></div>
+      </section>
+
+      <section class="panel-section about">
+        <header>About Terminal Talk</header>
+<pre class="ascii-banner">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        ████████╗ █████╗ ██╗     ██╗  ██╗
+        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
+           ██║   ███████║██║     █████╔╝
+           ██║   ██╔══██║██║     ██╔═██╗
+           ██║   ██║  ██║███████╗██║  ██╗
+           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
+        <p class="panel-hint">
+          Hands-free voice workflow for Claude Code. Say "hey jarvis" with text highlighted anywhere
+          and it's read aloud. Claude's replies are auto-spoken. Each terminal gets its own colour,
+          shown as an emoji in its statusline and as a dot on the toolbar.
+        </p>
+      </section>
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+
+  <!-- Order matters:
+       1. tokens-window.js    ← window.TT_TOKENS (palette)
+       2. voices-window.js    ← window.TT_VOICES
+       3. mock-ipc.js         ← window.api stub
+       4. ../../app/renderer.js   ← the real product code -->
+  <script src="../../app/lib/tokens-window.js"></script>
+  <script src="../../app/lib/voices-window.js"></script>
+  <script src="mock-ipc.js"></script>
+  <script src="../../app/renderer.js"></script>
 </body>
 </html>
