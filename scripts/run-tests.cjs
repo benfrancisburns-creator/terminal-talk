@@ -1473,7 +1473,14 @@ describe('HARDENING: renderer CSP', () => {
   // production — catch it in tests instead.
   it("CSP style-src is 'self' (no 'unsafe-inline' — D2-9)", () => {
     const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
-    const m = html.match(/style-src\s+([^;]+);/);
+    // Extract the policy STRING from the meta tag first — a naive
+    // /style-src\s+([^;]+);/ match against the whole file hits the
+    // multi-line HTML comment above the meta tag that explains each
+    // directive in prose, and greedy matches across its line breaks.
+    const metaMatch = html.match(/http-equiv="Content-Security-Policy"[^>]*content="([^"]+)"/);
+    if (!metaMatch) throw new Error('no Content-Security-Policy meta tag');
+    const policy = metaMatch[1];
+    const m = policy.match(/style-src\s+([^;]+);/);
     if (!m) throw new Error('CSP missing style-src directive');
     if (/'unsafe-inline'/.test(m[1])) {
       throw new Error(`style-src must not include 'unsafe-inline' (D2-9): ${m[1].trim()}`);
@@ -1494,10 +1501,11 @@ describe('HARDENING: renderer CSP', () => {
 
   it('renderer.js has no element.style assignments for display/left/background/boxShadow (D2-9)', () => {
     const rend = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'renderer.js'), 'utf8');
-    // Match actual JS assignments like `foo.style.left = ...`, but not
-    // substrings inside comments or template literals. Strip line
-    // comments first so rationale comments don't trip the check.
-    const code = rend.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+    // Strip `// ...` comments globally — `[^\r\n]*` explicitly excludes
+    // CR and LF so the regex behaves identically on LF and CRLF files.
+    // Also strip `/* ... */` block comments in case future code adds
+    // rationale explanations for the removed `.style.X = ...` patterns.
+    const code = rend.replace(/\/\/[^\r\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
     const blocked = /\w+\.style\.(display|left|background|boxShadow)\s*=/.exec(code);
     if (blocked) {
       throw new Error(`renderer.js contains blocked inline-style assignment: "${blocked[0]}" — use data-palette, .hidden class, or setDynamicStyle() instead (D2-9)`);
