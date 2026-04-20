@@ -1,4 +1,4 @@
-# Terminal Talk statusline for Claude Code.
+﻿# Terminal Talk statusline for Claude Code.
 # Reads session context JSON from stdin, emits an emoji circle derived from a
 # hash of the session ID. The Terminal Talk renderer uses the SAME hash to
 # colour the queue dot, so your terminal's statusline emoji matches the dot.
@@ -84,7 +84,6 @@ foreach ($ch in $short.ToCharArray()) { $sum += [int]$ch }
 $codepoints = @(0x1F534, 0x1F7E0, 0x1F7E1, 0x1F7E2, 0x1F535, 0x1F7E3, 0x1F7E4, 0x26AA)
 # 24 arrangement slots: 0-7 solid / 8-15 hsplit / 16-23 vsplit.
 # Must stay in lock-step with arrangementForIndex() in app/renderer.js.
-$paletteSize = 24
 # Same partner tables as renderer.js -- complementary pairings for split arrangements.
 $hsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
 $vsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)

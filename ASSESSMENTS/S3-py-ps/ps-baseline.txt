@@ -1,0 +1,12 @@
+
+[32;1mCount[0m[32;1m Name[0m
+[32;1m-----[0m [32;1m----[0m
+   50 PSAvoidUsingWriteHost
+   24 PSAvoidUsingEmptyCatchBlock
+    4 PSUseBOMForUnicodeEncodedFile
+    2 PSUseSingularNouns
+    1 PSAvoidAssignmentToAutomaticVariable
+    1 PSReviewUnusedParameter
+    1 PSUseDeclaredVarsMoreThanAssignments
+
+Total: 83

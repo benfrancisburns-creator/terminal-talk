@@ -78,14 +78,14 @@ if (-not (Test-Path $synthScript)) {
 }
 
 try {
-    $args = @(
+    $synthArgs = @(
         '-u',
         $synthScript,
         '--session', $sessionId,
         '--transcript', $transcript,
         '--mode', 'on-tool'
     )
-    Start-Process -FilePath 'python' -ArgumentList $args -WindowStyle Hidden -WorkingDirectory $ttHome
+    Start-Process -FilePath 'python' -ArgumentList $synthArgs -WindowStyle Hidden -WorkingDirectory $ttHome
     Log "spawned synth for $sessionShort"
 } catch {
     Log "spawn failed: $($_.Exception.Message)"

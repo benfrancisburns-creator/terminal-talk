@@ -1,0 +1,34 @@
+# Ruff config for terminal-talk.
+#
+# S3 of the v0.4 quality tier (see Claude Assesments/v0.4-QUALITY-ULTRAPLAN.md).
+# Ruff = fast Python linter that replaces flake8 + isort + pylint + a few
+# more for most purposes. ~10-100× faster than the tools it replaces.
+#
+# Target: 5 files — synth_turn.py, sentence_split.py, edge_tts_speak.py,
+# wake-word-listener.py, key_helper.py.
+
+line-length = 120
+target-version = "py310"  # min Python we support (install.ps1 pins 3.10+)
+
+[lint]
+# Ruleset selection — curated for this codebase:
+#   E   — pycodestyle errors
+#   F   — pyflakes (unused imports, undefined names, etc.)
+#   W   — pycodestyle warnings
+#   I   — isort (import ordering)
+#   B   — bugbear (common bug patterns)
+#   C90 — mccabe complexity
+#   UP  — pyupgrade (modernize 2.x/3.y patterns)
+#   SIM — flake8-simplify (dict.get instead of if/else, etc.)
+#   PIE — flake8-pie
+select = ["E", "F", "W", "I", "B", "C90", "UP", "SIM", "PIE"]
+
+# E501 line-length handled by the top-level `line-length = 120`; don't
+# double-enforce. synth_turn.py has some legitimately long regex
+# strings that push beyond 100.
+ignore = ["E501"]
+
+[lint.mccabe]
+# McCabe complexity threshold. Functions with more branching than this
+# are flagged. synth_turn.py::run() is the big one; we'll see.
+max-complexity = 15

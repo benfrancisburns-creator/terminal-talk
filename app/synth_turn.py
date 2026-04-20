@@ -38,17 +38,17 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 import re
 import socket
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, List, Optional
 
 try:
     from sentence_split import split_sentences
@@ -90,7 +90,7 @@ def _load_openai_key_from_secrets():
     if not SECRETS_PATH.exists():
         return None
     try:
-        with open(SECRETS_PATH, 'r', encoding='utf-8') as f:
+        with open(SECRETS_PATH, encoding='utf-8') as f:
             data = json.load(f)
         key = data.get('openai_api_key')
         return str(key) if key else None
@@ -157,7 +157,7 @@ def load_sync_state(session_id: str) -> dict:
     if not p.exists():
         return {'turn_boundary': -1, 'synthesized_line_indices': []}
     try:
-        with open(p, 'r', encoding='utf-8') as f:
+        with open(p, encoding='utf-8') as f:
             data = json.load(f)
         return {
             'turn_boundary': int(data.get('turn_boundary', -1)),
@@ -250,12 +250,12 @@ class _SessionLock:
 # Transcript extraction
 # ---------------------------------------------------------------------------
 
-def read_transcript_lines(transcript_path: Path) -> List[dict]:
+def read_transcript_lines(transcript_path: Path) -> list[dict]:
     """Parse transcript JSONL. Invalid lines are skipped with a log entry."""
-    entries: List[dict] = []
+    entries: list[dict] = []
     try:
-        with open(transcript_path, 'r', encoding='utf-8') as f:
-            for i, raw in enumerate(f):
+        with open(transcript_path, encoding='utf-8') as f:
+            for raw in f:
                 raw = raw.strip()
                 if not raw:
                     entries.append({})  # keep index alignment
@@ -271,7 +271,7 @@ def read_transcript_lines(transcript_path: Path) -> List[dict]:
     return entries
 
 
-def find_last_user_idx(entries: List[dict]) -> int:
+def find_last_user_idx(entries: list[dict]) -> int:
     """Line index (0-based) of most recent user-type entry, or -1."""
     for i in range(len(entries) - 1, -1, -1):
         if entries[i].get('type') == 'user':
@@ -279,9 +279,9 @@ def find_last_user_idx(entries: List[dict]) -> int:
     return -1
 
 
-def assistant_text_entries_after(entries: List[dict], start_idx: int) -> List[tuple]:
+def assistant_text_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
     """Return list of (line_idx, text) for assistant-text content after start_idx."""
-    out: List[tuple] = []
+    out: list[tuple] = []
     for i in range(start_idx + 1, len(entries)):
         e = entries[i]
         if e.get('type') != 'assistant':
@@ -314,20 +314,22 @@ def sanitize(text: str, flags: dict) -> str:
         return ''
     t = text
 
-    # Code blocks
-    if flags.get('code_blocks', False):
+    # Code blocks. noqa SIM108: the suggested ternary is a single line
+    # with nested lambda + method chain + boolean — less readable than
+    # explicit if/else even though it's shorter.
+    if flags.get('code_blocks', False):  # noqa: SIM108
         t = _CODE_FENCE_RE.sub(lambda m: m.group(1), t)
     else:
         t = _CODE_FENCE_RE.sub('', t)
 
     # Inline code
-    if flags.get('inline_code', False):
+    if flags.get('inline_code', False):  # noqa: SIM108
         t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t)
     else:
         t = _INLINE_CODE_RE.sub('', t)
 
     # Images: alt text or strip entirely
-    if flags.get('image_alt', True):
+    if flags.get('image_alt', True):  # noqa: SIM108
         t = _IMG_RE.sub(lambda m: m.group(1), t)
     else:
         t = _IMG_RE.sub('', t)
@@ -382,14 +384,14 @@ def load_config() -> dict:
     if not CONFIG_PATH.exists():
         return {}
     try:
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        with open(CONFIG_PATH, encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
         _log(f'config read fail: {e}')
         return {}
 
 
-def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict, Optional[str], bool]:
+def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict, str | None, bool]:
     """Returns (voice, speech_includes, openai_key_or_none, muted).
 
     Per-session override beats config default. If nothing set, uses a conservative
@@ -421,7 +423,7 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
     # Per-session override
     try:
         if REGISTRY_PATH.exists():
-            with open(REGISTRY_PATH, 'r', encoding='utf-8') as f:
+            with open(REGISTRY_PATH, encoding='utf-8') as f:
                 reg_raw = f.read()
             # Tolerate BOM written by PowerShell paths
             if reg_raw.startswith('\ufeff'):
@@ -481,8 +483,8 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
         # Clean partial output between attempts so the next retry starts
         # from a known-empty path.
         if out_path.exists():
-            try: out_path.unlink()
-            except Exception: pass
+            with contextlib.suppress(Exception):
+                out_path.unlink()
         if attempt < attempts:
             _log(f'edge-tts attempt {attempt}/{attempts} failed ({last_err}); retrying')
             time.sleep(0.4 * (2 ** (attempt - 1)))  # 0.4 s, 0.8 s
@@ -513,10 +515,10 @@ def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path
 
 
 def synthesize_parallel(
-    sentences: List[str],
+    sentences: list[str],
     voice: str,
     session_short: str,
-    openai_key: Optional[str],
+    openai_key: str | None,
     prefix: str = '',  # e.g., 'Q-' for questions
 ) -> int:
     """Synthesize each sentence; write to queue in order as they finish.
@@ -541,7 +543,7 @@ def synthesize_parallel(
     tmp_dir.mkdir(exist_ok=True)
 
     # seq → tmp_path (set when synth completes, None on failure)
-    results: dict[int, Optional[Path]] = {}
+    results: dict[int, Path | None] = {}
     next_release = [0]
     release_lock = Lock()
     written_count = [0]
@@ -591,7 +593,7 @@ def synthesize_parallel(
     # cap gets cancelled -- its clip is lost, but the turn progresses.
     _started = time.monotonic()
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SYNTH) as ex:
-        futures: List[Future] = []
+        futures: list[Future] = []
         for seq, sent in enumerate(sentences):
             futures.append(ex.submit(_synth_task, seq, sent))
         done, not_done = concurrent.futures.wait(
@@ -606,11 +608,10 @@ def synthesize_parallel(
             for f in not_done:
                 f.cancel()
 
-    # Clean up tmp dir if empty
-    try:
+    # Clean up tmp dir if empty. OSError fires if files remain from
+    # partial failures — left on disk for next run / manual cleanup.
+    with contextlib.suppress(OSError):
         tmp_dir.rmdir()
-    except OSError:
-        pass  # still has files from partial failures; cleanup later
 
     # S2.1: one-line summary with the shape `synth_turn: n=<total> ok=<ok>
     # total_ms=<ms> parallelism=<n>` so log greps can pull per-turn
@@ -631,7 +632,7 @@ def synthesize_parallel(
 _QUESTION_RE = re.compile(r'([^.!?\n]{5,}\?)')
 
 
-def extract_questions(text: str) -> List[str]:
+def extract_questions(text: str) -> list[str]:
     """Pull standalone questions out of response text. Mirrors the existing
     PowerShell regex exactly to preserve behaviour."""
     return [m.strip() for m in _QUESTION_RE.findall(text or '')]
@@ -705,7 +706,7 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             return 0
 
         # For on-stop: questions extracted separately and played first
-        question_sentences: List[str] = []
+        question_sentences: list[str] = []
         if mode == 'on-stop':
             questions = extract_questions(clean)
             if questions:
@@ -733,7 +734,7 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description='Terminal Talk per-turn synthesis')
     p.add_argument('--session', required=True, help='Claude Code session ID (UUID or similar)')
     p.add_argument('--transcript', required=True, help='Path to transcript JSONL')

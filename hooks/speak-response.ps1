@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'SilentlyContinue'
+﻿$ErrorActionPreference = 'SilentlyContinue'
 
 $ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
 $queueDir = Join-Path $ttHome 'queue'

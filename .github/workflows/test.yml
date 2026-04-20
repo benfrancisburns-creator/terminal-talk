@@ -88,6 +88,53 @@ jobs:
       - name: Knip
         run: npx knip
 
+  # v0.4 S3a — ruff blocking gate for Python sources.
+  # Config in ruff.toml (target py310, rules E+F+W+I+B+C90+UP+SIM+PIE,
+  # mccabe complexity threshold 15).
+  python-lint:
+    name: ruff (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.1
+        with: { python-version: '3.10' }
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check app/*.py
+
+  # v0.4 S3b — PSScriptAnalyzer blocking gate for PowerShell sources.
+  # Config in PSScriptAnalyzerSettings.psd1. Exclusions documented there.
+  # Runs on windows-latest because PSScriptAnalyzer's Windows-specific
+  # rules (e.g. on cmdlet availability) only work correctly under PS on
+  # Windows.
+  powershell-lint:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Analyze
+        shell: pwsh
+        run: |
+          $files = @()
+          Get-ChildItem -Path hooks,app,scripts -Include *.ps1,*.psm1 -Recurse | ForEach-Object { $files += $_.FullName }
+          $files += (Resolve-Path install.ps1).Path
+          $files += (Resolve-Path uninstall.ps1).Path
+          $results = @()
+          foreach ($f in $files) { $results += Invoke-ScriptAnalyzer -Path $f -Settings PSScriptAnalyzerSettings.psd1 }
+          if ($results.Count -gt 0) {
+            $results | Format-Table ScriptName, Line, RuleName, Severity, Message -AutoSize -Wrap
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: 0 findings"
+
   # S4.3 — coverage via c8, uploaded as a CI artefact. No floor enforced
   # yet; floor will be ratcheted up after the first run tells us the
   # baseline. Log-only for now.

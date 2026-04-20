@@ -18,7 +18,6 @@ Pure function. No I/O, no side effects. Exports `split_sentences(text)`.
 from __future__ import annotations
 
 import re
-from typing import List
 
 # Abbreviations that commonly end with a period but NOT a sentence.
 # Lowercased check, period stripped. If a token (lowercase, period-stripped)
@@ -102,9 +101,9 @@ def _protect_abbreviations(text: str) -> str:
     return _WORD_DOT_RE.sub(repl, text)
 
 
-def _protect_urls(text: str) -> tuple[str, List[str]]:
+def _protect_urls(text: str) -> tuple[str, list[str]]:
     """Replace URLs with placeholders; return (protected_text, urls)."""
-    urls: List[str] = []
+    urls: list[str] = []
 
     def repl(m: re.Match) -> str:
         urls.append(m.group(0))
@@ -122,21 +121,21 @@ def _protect_decimals(text: str) -> str:
     return _NUMBER_DOT_RE.sub(repl, text)
 
 
-def _restore(text: str, urls: List[str]) -> str:
+def _restore(text: str, urls: list[str]) -> str:
     text = text.replace(_DOT_SENTINEL, '.')
     for i, url in enumerate(urls):
         text = text.replace(f'{_URL_SENTINEL_PREFIX}{i}\uE002', url)
     return text
 
 
-def _split_on_terminators(paragraph: str) -> List[str]:
+def _split_on_terminators(paragraph: str) -> list[str]:
     """Split a single paragraph (no internal \\n\\n) on sentence terminators.
     Input is expected to already have abbreviations / URLs / decimals protected.
     """
     if not paragraph.strip():
         return []
 
-    parts: List[str] = []
+    parts: list[str] = []
     last_end = 0
     for m in _SENTENCE_END_RE.finditer(paragraph):
         terminator_end = m.end(1)  # include the punctuation, exclude trailing space
@@ -148,13 +147,13 @@ def _split_on_terminators(paragraph: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def _hard_split_long(sentence: str, max_len: int) -> List[str]:
+def _hard_split_long(sentence: str, max_len: int) -> list[str]:
     """For sentences over max_len, split on ', ' or space boundaries so no
     single edge-tts request blows up. Preserves order; never drops content."""
     if len(sentence) <= max_len:
         return [sentence]
 
-    chunks: List[str] = []
+    chunks: list[str] = []
     remaining = sentence
     while len(remaining) > max_len:
         # Prefer splitting at ', ' within a window [max_len*0.6, max_len].
@@ -179,13 +178,13 @@ def _hard_split_long(sentence: str, max_len: int) -> List[str]:
     return [c for c in chunks if c]
 
 
-def _merge_shorts(sentences: List[str], min_len: int) -> List[str]:
+def _merge_shorts(sentences: list[str], min_len: int) -> list[str]:
     """Merge sentences shorter than min_len with the NEXT sentence so the TTS
     queue doesn't get flooded with tiny clips ('OK.' / 'Yes.' / 'Right.')."""
     if not sentences:
         return []
 
-    merged: List[str] = []
+    merged: list[str] = []
     buf = ''
     for s in sentences:
         if buf:
@@ -210,7 +209,7 @@ def _merge_shorts(sentences: List[str], min_len: int) -> List[str]:
     return merged
 
 
-def split_sentences(text: str) -> List[str]:
+def split_sentences(text: str) -> list[str]:
     """Split `text` into TTS-ready sentences.
 
     - Returns a list of non-empty, stripped strings in original order.
@@ -243,7 +242,7 @@ def split_sentences(text: str) -> List[str]:
     # Split into paragraphs first
     paragraphs = _PARA_BREAK_RE.split(text)
 
-    all_sentences: List[str] = []
+    all_sentences: list[str] = []
     for para in paragraphs:
         # Flatten internal single newlines to spaces — treat paragraph as one
         # block for terminator-based splitting.
@@ -264,7 +263,7 @@ def split_sentences(text: str) -> List[str]:
     all_sentences = [_restore(s, urls) for s in all_sentences]
 
     # Hard-split anything over max length
-    expanded: List[str] = []
+    expanded: list[str] = []
     for s in all_sentences:
         expanded.extend(_hard_split_long(s, MAX_SENTENCE_LEN))
 

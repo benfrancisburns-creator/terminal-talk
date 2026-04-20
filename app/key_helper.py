@@ -22,6 +22,7 @@ forensic replay (command + ts only, no output payloads).
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import json
 import sys
@@ -228,10 +229,8 @@ def _log_cmd(cmd: str) -> None:
 
 
 def main() -> int:
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(line_buffering=True)
-    except Exception:
-        pass
     for raw in sys.stdin:
         cmd = raw.strip().lower()
         if not cmd:

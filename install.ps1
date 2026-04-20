@@ -25,6 +25,12 @@
   Run from the terminal-talk/ folder (the one containing install.ps1).
   Re-running is safe: existing install dir is updated in place.
 #>
+[CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    'Unattended',
+    Justification = 'Referenced inside Get-Consent function; analyzer does not track script-param usage through nested function bodies.'
+)]
 param(
     [switch]$Unattended,
     [bool]$HooksYes      = $true,

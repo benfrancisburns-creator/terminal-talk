@@ -11,6 +11,7 @@ the model, open the stream for 3 s and exit without having to say the wake
 word out loud on a headless box.
 """
 import argparse
+import contextlib
 import ctypes
 import logging
 import os
@@ -193,38 +194,49 @@ def main():
             last_score = 0.0
             last_heartbeat = now
 
-    # Defense-in-depth mute: open/close the InputStream in response to the
-    # _listening.state flag. When 'off', the stream is torn down so the OS
-    # actually releases the microphone at the driver level — no "hot mic"
-    # even if another instance of this listener is somehow lingering.
+    return _run_stream_loop(callback)
+
+
+def _open_stream(callback):
+    stream = sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=1,
+        dtype='float32',
+        blocksize=CHUNK_SAMPLES,
+        callback=callback,
+    )
+    stream.start()
+    log.info('stream opened; listening (say "hey jarvis")...')
+    return stream
+
+
+def _close_stream(stream):
+    with contextlib.suppress(Exception):
+        stream.stop()
+        stream.close()
+
+
+def _run_stream_loop(callback) -> int:
+    """Defense-in-depth mute: open/close the InputStream in response to the
+    _listening.state flag. When 'off', the stream is torn down so the OS
+    actually releases the microphone at the driver level — no "hot mic"
+    even if another instance of this listener is somehow lingering.
+    Extracted from main() to keep main's complexity readable."""
     stream = None
     try:
         while True:
             wanted = is_listening_on()
             if wanted and stream is None:
                 try:
-                    stream = sd.InputStream(
-                        samplerate=SAMPLE_RATE,
-                        channels=1,
-                        dtype='float32',
-                        blocksize=CHUNK_SAMPLES,
-                        callback=callback,
-                    )
-                    stream.start()
-                    log.info('stream opened; listening (say "hey jarvis")...')
+                    stream = _open_stream(callback)
                 except Exception as e:
                     log.error(f'stream open fail: {type(e).__name__}: {e}')
                     time.sleep(2)
                     continue
             elif not wanted and stream is not None:
-                try:
-                    stream.stop()
-                    stream.close()
-                except Exception as e:
-                    log.error(f'stream close fail: {type(e).__name__}: {e}')
-                finally:
-                    stream = None
-                    log.info('listening toggled off; mic released')
+                _close_stream(stream)
+                stream = None
+                log.info('listening toggled off; mic released')
             time.sleep(0.25)
     except KeyboardInterrupt:
         log.info('interrupted')
@@ -234,11 +246,7 @@ def main():
         return 1
     finally:
         if stream is not None:
-            try:
-                stream.stop()
-                stream.close()
-            except Exception:
-                pass
+            _close_stream(stream)
 
 def selftest() -> int:
     """S2.3: load the model, open the input stream for 3 s, exit 0.

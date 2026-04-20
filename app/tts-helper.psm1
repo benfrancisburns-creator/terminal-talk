@@ -1,4 +1,4 @@
-# TTS helper module -- canonical `edge-tts + OpenAI-fallback` chain.
+﻿# TTS helper module -- canonical `edge-tts + OpenAI-fallback` chain.
 #
 # Extracts ~90 lines of duplicated logic that used to live copy-pasted
 # in hooks/speak-response.ps1 AND hooks/speak-notification.ps1, with

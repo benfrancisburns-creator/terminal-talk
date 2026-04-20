@@ -1,0 +1,530 @@
+SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+   --> app\key_helper.py:231:5
+    |
+230 |   def main() -> int:
+231 | /     try:
+232 | |         sys.stdout.reconfigure(line_buffering=True)
+233 | |     except Exception:
+234 | |         pass
+    | |____________^
+235 |       for raw in sys.stdin:
+236 |           cmd = raw.strip().lower()
+    |
+help: Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:105:44
+    |
+105 | def _protect_urls(text: str) -> tuple[str, List[str]]:
+    |                                            ^^^^
+106 |     """Replace URLs with placeholders; return (protected_text, urls)."""
+107 |     urls: List[str] = []
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:107:11
+    |
+105 | def _protect_urls(text: str) -> tuple[str, List[str]]:
+106 |     """Replace URLs with placeholders; return (protected_text, urls)."""
+107 |     urls: List[str] = []
+    |           ^^^^
+108 |
+109 |     def repl(m: re.Match) -> str:
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:125:31
+    |
+125 | def _restore(text: str, urls: List[str]) -> str:
+    |                               ^^^^
+126 |     text = text.replace(_DOT_SENTINEL, '.')
+127 |     for i, url in enumerate(urls):
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:132:46
+    |
+132 | def _split_on_terminators(paragraph: str) -> List[str]:
+    |                                              ^^^^
+133 |     """Split a single paragraph (no internal \\n\\n) on sentence terminators.
+134 |     Input is expected to already have abbreviations / URLs / decimals protected.
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:139:12
+    |
+137 |         return []
+138 |
+139 |     parts: List[str] = []
+    |            ^^^^
+140 |     last_end = 0
+141 |     for m in _SENTENCE_END_RE.finditer(paragraph):
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:151:54
+    |
+151 | def _hard_split_long(sentence: str, max_len: int) -> List[str]:
+    |                                                      ^^^^
+152 |     """For sentences over max_len, split on ', ' or space boundaries so no
+153 |     single edge-tts request blows up. Preserves order; never drops content."""
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:157:13
+    |
+155 |         return [sentence]
+156 |
+157 |     chunks: List[str] = []
+    |             ^^^^
+158 |     remaining = sentence
+159 |     while len(remaining) > max_len:
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:182:30
+    |
+182 | def _merge_shorts(sentences: List[str], min_len: int) -> List[str]:
+    |                              ^^^^
+183 |     """Merge sentences shorter than min_len with the NEXT sentence so the TTS
+184 |     queue doesn't get flooded with tiny clips ('OK.' / 'Yes.' / 'Right.')."""
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:182:58
+    |
+182 | def _merge_shorts(sentences: List[str], min_len: int) -> List[str]:
+    |                                                          ^^^^
+183 |     """Merge sentences shorter than min_len with the NEXT sentence so the TTS
+184 |     queue doesn't get flooded with tiny clips ('OK.' / 'Yes.' / 'Right.')."""
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:188:13
+    |
+186 |         return []
+187 |
+188 |     merged: List[str] = []
+    |             ^^^^
+189 |     buf = ''
+190 |     for s in sentences:
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:213:35
+    |
+213 | def split_sentences(text: str) -> List[str]:
+    |                                   ^^^^
+214 |     """Split `text` into TTS-ready sentences.
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:246:20
+    |
+244 |     paragraphs = _PARA_BREAK_RE.split(text)
+245 |
+246 |     all_sentences: List[str] = []
+    |                    ^^^^
+247 |     for para in paragraphs:
+248 |         # Flatten internal single newlines to spaces — treat paragraph as one
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\sentence_split.py:267:15
+    |
+266 |     # Hard-split anything over max length
+267 |     expanded: List[str] = []
+    |               ^^^^
+268 |     for s in all_sentences:
+269 |         expanded.extend(_hard_split_long(s, MAX_SENTENCE_LEN))
+    |
+help: Replace with `list`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> app\synth_turn.py:37:1
+   |
+35 |   """
+36 |
+37 | / from __future__ import annotations
+38 | |
+39 | | import argparse
+40 | | import concurrent.futures
+41 | | import json
+42 | | import os
+43 | | import re
+44 | | import socket
+45 | | import sys
+46 | | import time
+47 | | from concurrent.futures import ThreadPoolExecutor, Future
+48 | | from datetime import datetime
+49 | | from pathlib import Path
+50 | | from threading import Lock
+51 | | from typing import Iterable, List, Optional
+   | |___________________________________________^
+52 |
+53 |   try:
+   |
+help: Organize imports
+
+F401 [*] `typing.Iterable` imported but unused
+  --> app\synth_turn.py:51:20
+   |
+49 | from pathlib import Path
+50 | from threading import Lock
+51 | from typing import Iterable, List, Optional
+   |                    ^^^^^^^^
+52 |
+53 | try:
+   |
+help: Remove unused import: `typing.Iterable`
+
+UP015 [*] Unnecessary mode argument
+  --> app\synth_turn.py:93:33
+   |
+91 |         return None
+92 |     try:
+93 |         with open(SECRETS_PATH, 'r', encoding='utf-8') as f:
+   |                                 ^^^
+94 |             data = json.load(f)
+95 |         key = data.get('openai_api_key')
+   |
+help: Remove mode argument
+
+UP015 [*] Unnecessary mode argument
+   --> app\synth_turn.py:160:22
+    |
+158 |         return {'turn_boundary': -1, 'synthesized_line_indices': []}
+159 |     try:
+160 |         with open(p, 'r', encoding='utf-8') as f:
+    |                      ^^^
+161 |             data = json.load(f)
+162 |         return {
+    |
+help: Remove mode argument
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:253:53
+    |
+251 | # ---------------------------------------------------------------------------
+252 |
+253 | def read_transcript_lines(transcript_path: Path) -> List[dict]:
+    |                                                     ^^^^
+254 |     """Parse transcript JSONL. Invalid lines are skipped with a log entry."""
+255 |     entries: List[dict] = []
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:255:14
+    |
+253 | def read_transcript_lines(transcript_path: Path) -> List[dict]:
+254 |     """Parse transcript JSONL. Invalid lines are skipped with a log entry."""
+255 |     entries: List[dict] = []
+    |              ^^^^
+256 |     try:
+257 |         with open(transcript_path, 'r', encoding='utf-8') as f:
+    |
+help: Replace with `list`
+
+UP015 [*] Unnecessary mode argument
+   --> app\synth_turn.py:257:36
+    |
+255 |     entries: List[dict] = []
+256 |     try:
+257 |         with open(transcript_path, 'r', encoding='utf-8') as f:
+    |                                    ^^^
+258 |             for i, raw in enumerate(f):
+259 |                 raw = raw.strip()
+    |
+help: Remove mode argument
+
+B007 Loop control variable `i` not used within loop body
+   --> app\synth_turn.py:258:17
+    |
+256 |     try:
+257 |         with open(transcript_path, 'r', encoding='utf-8') as f:
+258 |             for i, raw in enumerate(f):
+    |                 ^
+259 |                 raw = raw.strip()
+260 |                 if not raw:
+    |
+help: Rename unused `i` to `_i`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:274:33
+    |
+274 | def find_last_user_idx(entries: List[dict]) -> int:
+    |                                 ^^^^
+275 |     """Line index (0-based) of most recent user-type entry, or -1."""
+276 |     for i in range(len(entries) - 1, -1, -1):
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:282:43
+    |
+282 | def assistant_text_entries_after(entries: List[dict], start_idx: int) -> List[tuple]:
+    |                                           ^^^^
+283 |     """Return list of (line_idx, text) for assistant-text content after start_idx."""
+284 |     out: List[tuple] = []
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:282:74
+    |
+282 | def assistant_text_entries_after(entries: List[dict], start_idx: int) -> List[tuple]:
+    |                                                                          ^^^^
+283 |     """Return list of (line_idx, text) for assistant-text content after start_idx."""
+284 |     out: List[tuple] = []
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:284:10
+    |
+282 | def assistant_text_entries_after(entries: List[dict], start_idx: int) -> List[tuple]:
+283 |     """Return list of (line_idx, text) for assistant-text content after start_idx."""
+284 |     out: List[tuple] = []
+    |          ^^^^
+285 |     for i in range(start_idx + 1, len(entries)):
+286 |         e = entries[i]
+    |
+help: Replace with `list`
+
+SIM108 Use ternary operator `t = _CODE_FENCE_RE.sub(lambda m: m.group(1), t) if flags.get('code_blocks', False) else _CODE_FENCE_RE.sub('', t)` instead of `if`-`else`-block
+   --> app\synth_turn.py:318:5
+    |
+317 |       # Code blocks
+318 | /     if flags.get('code_blocks', False):
+319 | |         t = _CODE_FENCE_RE.sub(lambda m: m.group(1), t)
+320 | |     else:
+321 | |         t = _CODE_FENCE_RE.sub('', t)
+    | |_____________________________________^
+322 |
+323 |       # Inline code
+    |
+help: Replace `if`-`else`-block with `t = _CODE_FENCE_RE.sub(lambda m: m.group(1), t) if flags.get('code_blocks', False) else _CODE_FENCE_RE.sub('', t)`
+
+SIM108 Use ternary operator `t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t) if flags.get('inline_code', False) else _INLINE_CODE_RE.sub('', t)` instead of `if`-`else`-block
+   --> app\synth_turn.py:324:5
+    |
+323 |       # Inline code
+324 | /     if flags.get('inline_code', False):
+325 | |         t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t)
+326 | |     else:
+327 | |         t = _INLINE_CODE_RE.sub('', t)
+    | |______________________________________^
+328 |
+329 |       # Images: alt text or strip entirely
+    |
+help: Replace `if`-`else`-block with `t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t) if flags.get('inline_code', False) else _INLINE_CODE_RE.sub('', t)`
+
+SIM108 Use ternary operator `t = _IMG_RE.sub(lambda m: m.group(1), t) if flags.get('image_alt', True) else _IMG_RE.sub('', t)` instead of `if`-`else`-block
+   --> app\synth_turn.py:330:5
+    |
+329 |       # Images: alt text or strip entirely
+330 | /     if flags.get('image_alt', True):
+331 | |         t = _IMG_RE.sub(lambda m: m.group(1), t)
+332 | |     else:
+333 | |         t = _IMG_RE.sub('', t)
+    | |______________________________^
+334 |
+335 |       # Markdown emphasis — always strip (keep content)
+    |
+help: Replace `if`-`else`-block with `t = _IMG_RE.sub(lambda m: m.group(1), t) if flags.get('image_alt', True) else _IMG_RE.sub('', t)`
+
+UP015 [*] Unnecessary mode argument
+   --> app\synth_turn.py:385:32
+    |
+383 |         return {}
+384 |     try:
+385 |         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    |                                ^^^
+386 |             return json.load(f)
+387 |     except Exception as e:
+    |
+help: Remove mode argument
+
+UP045 Use `X | None` for type annotations
+   --> app\synth_turn.py:392:83
+    |
+392 | def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict, Optional[str], bool]:
+    |                                                                                   ^^^^^^^^^^^^^
+393 |     """Returns (voice, speech_includes, openai_key_or_none, muted).
+    |
+help: Convert to `X | None`
+
+UP015 [*] Unnecessary mode argument
+   --> app\synth_turn.py:424:38
+    |
+422 |     try:
+423 |         if REGISTRY_PATH.exists():
+424 |             with open(REGISTRY_PATH, 'r', encoding='utf-8') as f:
+    |                                      ^^^
+425 |                 reg_raw = f.read()
+426 |             # Tolerate BOM written by PowerShell paths
+    |
+help: Remove mode argument
+
+SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+   --> app\synth_turn.py:484:13
+    |
+482 |           # from a known-empty path.
+483 |           if out_path.exists():
+484 | /             try: out_path.unlink()
+485 | |             except Exception: pass
+    | |__________________________________^
+486 |           if attempt < attempts:
+487 |               _log(f'edge-tts attempt {attempt}/{attempts} failed ({last_err}); retrying')
+    |
+help: Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`
+
+E701 Multiple statements on one line (colon)
+   --> app\synth_turn.py:484:16
+    |
+482 |         # from a known-empty path.
+483 |         if out_path.exists():
+484 |             try: out_path.unlink()
+    |                ^
+485 |             except Exception: pass
+486 |         if attempt < attempts:
+    |
+
+E701 Multiple statements on one line (colon)
+   --> app\synth_turn.py:485:29
+    |
+483 |         if out_path.exists():
+484 |             try: out_path.unlink()
+485 |             except Exception: pass
+    |                             ^
+486 |         if attempt < attempts:
+487 |             _log(f'edge-tts attempt {attempt}/{attempts} failed ({last_err}); retrying')
+    |
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:516:16
+    |
+515 | def synthesize_parallel(
+516 |     sentences: List[str],
+    |                ^^^^
+517 |     voice: str,
+518 |     session_short: str,
+    |
+help: Replace with `list`
+
+UP045 Use `X | None` for type annotations
+   --> app\synth_turn.py:519:17
+    |
+517 |     voice: str,
+518 |     session_short: str,
+519 |     openai_key: Optional[str],
+    |                 ^^^^^^^^^^^^^
+520 |     prefix: str = '',  # e.g., 'Q-' for questions
+521 | ) -> int:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> app\synth_turn.py:544:24
+    |
+543 |     # seq → tmp_path (set when synth completes, None on failure)
+544 |     results: dict[int, Optional[Path]] = {}
+    |                        ^^^^^^^^^^^^^^
+545 |     next_release = [0]
+546 |     release_lock = Lock()
+    |
+help: Convert to `X | None`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:594:18
+    |
+592 |     _started = time.monotonic()
+593 |     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SYNTH) as ex:
+594 |         futures: List[Future] = []
+    |                  ^^^^
+595 |         for seq, sent in enumerate(sentences):
+596 |             futures.append(ex.submit(_synth_task, seq, sent))
+    |
+help: Replace with `list`
+
+SIM105 Use `contextlib.suppress(OSError)` instead of `try`-`except`-`pass`
+   --> app\synth_turn.py:610:5
+    |
+609 |       # Clean up tmp dir if empty
+610 | /     try:
+611 | |         tmp_dir.rmdir()
+612 | |     except OSError:
+613 | |         pass  # still has files from partial failures; cleanup later
+    | |____________^
+614 |
+615 |       # S2.1: one-line summary with the shape `synth_turn: n=<total> ok=<ok>
+    |
+help: Replace `try`-`except`-`pass` with `with contextlib.suppress(OSError): ...`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:634:37
+    |
+634 | def extract_questions(text: str) -> List[str]:
+    |                                     ^^^^
+635 |     """Pull standalone questions out of response text. Mirrors the existing
+636 |     PowerShell regex exactly to preserve behaviour."""
+    |
+help: Replace with `list`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:708:29
+    |
+707 |         # For on-stop: questions extracted separately and played first
+708 |         question_sentences: List[str] = []
+    |                             ^^^^
+709 |         if mode == 'on-stop':
+710 |             questions = extract_questions(clean)
+    |
+help: Replace with `list`
+
+UP045 Use `X | None` for type annotations
+   --> app\synth_turn.py:736:16
+    |
+736 | def main(argv: Optional[List[str]] = None) -> int:
+    |                ^^^^^^^^^^^^^^^^^^^
+737 |     p = argparse.ArgumentParser(description='Terminal Talk per-turn synthesis')
+738 |     p.add_argument('--session', required=True, help='Claude Code session ID (UUID or similar)')
+    |
+help: Convert to `X | None`
+
+UP006 Use `list` instead of `List` for type annotation
+   --> app\synth_turn.py:736:25
+    |
+736 | def main(argv: Optional[List[str]] = None) -> int:
+    |                         ^^^^
+737 |     p = argparse.ArgumentParser(description='Terminal Talk per-turn synthesis')
+738 |     p.add_argument('--session', required=True, help='Claude Code session ID (UUID or similar)')
+    |
+help: Replace with `list`
+
+C901 `main` is too complex (22 > 15)
+  --> app\wake-word-listener.py:82:5
+   |
+80 |         log.error(f'sendkeys fail: {e}')
+81 |
+82 | def main():
+   |     ^^^^
+83 |     log.info('===== wake-word listener starting (openWakeWord) =====')
+84 |     log.info(f'PID: {os.getpid()}')
+   |
+
+Found 45 errors.
+[*] 7 fixable with the `--fix` option (34 hidden fixes can be enabled with the `--unsafe-fixes` option).
