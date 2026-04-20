@@ -61,7 +61,13 @@ const DEFAULTS = {
     // user re-listening to a fully-played queue had to click every
     // clip individually. OFF preserves the pre-0.3.6 single-clip
     // behaviour for users who want that control.
-    auto_continue_after_click: true
+    auto_continue_after_click: true,
+    // EX5 / H3 Option 2 — colour-blind-friendly palette. 'default' uses
+    // the v0.3.9 palette (purple→magenta already applied for deutan
+    // on slot 5). 'cb' switches to Paul Tol's "muted" palette — proven
+    // distinguishable under deutan / protan / tritan. Users opt in
+    // via Settings > Playback > Colour-blind friendly palette.
+    palette_variant: 'default'
   },
   speech_includes: {
     code_blocks: false,

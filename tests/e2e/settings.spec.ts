@@ -83,6 +83,26 @@ test.describe('Settings panel', () => {
     await expect(rows).toHaveCount(6);
   });
 
+  test('EX5: palette-variant toggle off by default; body attr = "default"', async ({ window }) => {
+    await openSettings(window);
+    const toggle = window.locator('#paletteVariantToggle');
+    await expect(toggle).toBeAttached();
+    await expect(toggle).not.toBeChecked();
+    const variant = await window.evaluate(() => document.body.dataset.paletteVariant);
+    if (variant !== 'default') throw new Error(`expected body[data-palette-variant="default"], got "${variant}"`);
+  });
+
+  test('EX5: toggling palette-variant flips body attr and persists', async ({ window }) => {
+    await openSettings(window);
+    await clickById(window, 'paletteVariantToggle');
+    const variantOn = await window.evaluate(() => document.body.dataset.paletteVariant);
+    if (variantOn !== 'cb') throw new Error(`expected "cb", got "${variantOn}"`);
+    // Toggle back — fast round-trip.
+    await clickById(window, 'paletteVariantToggle');
+    const variantOff = await window.evaluate(() => document.body.dataset.paletteVariant);
+    if (variantOff !== 'default') throw new Error(`expected "default", got "${variantOff}"`);
+  });
+
   test('S6: the strict-CSP requires style-src self (no unsafe-inline)', async ({ window }) => {
     // D2-9 invariant check. Runtime CSP must lack unsafe-inline in style-src.
     // If this fails, the renderer has regressed to inline styles — fix by

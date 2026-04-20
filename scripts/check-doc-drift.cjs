@@ -125,7 +125,11 @@ const CODE_COMMENT_RULES = [
   {
     // Queue dir is ~/.terminal-talk/queue (since v0.1). Early docs
     // referenced clips/ before the rename.
-    pattern: /(~|%USERPROFILE%|\$env:USERPROFILE)[^a-z]*\.terminal-talk[\\/]+clips\b/i,
+    // Bounded quantifier to defuse Sonar S5852 ReDoS concern — input is
+    // single-line source comments, not attacker-controllable, so the
+    // unbounded `[^a-z]*` was cosmetic-only; {0,40} covers the realistic
+    // separators between the prefix and the path segment.
+    pattern: /(~|%USERPROFILE%|\$env:USERPROFILE)[^a-z]{0,40}\.terminal-talk[\\/]+clips\b/i,
     description: 'queue dir is ~/.terminal-talk/queue, not .../clips.',
     skip: []
   },

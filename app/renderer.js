@@ -1498,6 +1498,23 @@ async function loadSettings() {
     });
   }
 
+  // EX5 / H3 Option 2 — palette variant toggle. Writes the chosen
+  // variant onto body[data-palette-variant]; the CSS in
+  // app/lib/palette-classes.css has a higher-specificity rule block
+  // that only applies when the attr === 'cb'. Default users see zero
+  // change.
+  const paletteToggle = document.getElementById('paletteVariantToggle');
+  const paletteVariant = (cfg.playback && cfg.playback.palette_variant) || 'default';
+  document.body.dataset.paletteVariant = paletteVariant;
+  if (paletteToggle) {
+    paletteToggle.checked = paletteVariant === 'cb';
+    paletteToggle.addEventListener('change', async () => {
+      const next = paletteToggle.checked ? 'cb' : 'default';
+      document.body.dataset.paletteVariant = next;
+      await window.api.updateConfig({ playback: { palette_variant: next } });
+    });
+  }
+
   // Global voice / include selects were removed in favour of per-session controls.
   // Guard so the renderer doesn't crash when the elements are absent.
   if (voiceEdgeResponseEl) fillVoiceSelect(voiceEdgeResponseEl, EDGE_VOICES, cfg.voices.edge_response);

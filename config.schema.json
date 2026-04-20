@@ -35,7 +35,8 @@
         "speed":          { "type": "number", "minimum": 0.25, "maximum": 4.0, "default": 1.25 },
         "auto_prune":     { "type": "boolean", "default": true },
         "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 },
-        "auto_continue_after_click": { "type": "boolean", "default": true, "description": "When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. When off, a click plays only the clicked clip." }
+        "auto_continue_after_click": { "type": "boolean", "default": true, "description": "When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. When off, a click plays only the clicked clip." },
+        "palette_variant": { "type": "string", "enum": ["default", "cb"], "default": "default", "description": "Colour palette variant. 'default' = the standard 8-colour palette; 'cb' = colour-blind-friendly (Paul Tol's 'muted' scheme, distinguishable under deutan/protan/tritan). EX5 / H3 Option 2." }
       }
     },
     "speech_includes": {

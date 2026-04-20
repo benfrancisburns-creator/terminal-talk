@@ -255,7 +255,7 @@ Separate Claude session reviewed tag `v0.3.0` (`e542256`) and produced `v0.3.0-a
 |----|---------|-------------|
 | N4 | `session-registry.psm1:91-93` docstring misstates main.js "no auto-prune" policy | ✅ shipped v0.3.8 |
 | N5 | `release.yml:29` uses `actions/checkout@v4` (not SHA-pinned); inconsistent with D2-8 and high-stakes since release.yml has `contents: write` | ✅ shipped v0.3.8 |
-| **H3-palette** | Purple `#c084fc` ↔ Blue `#60a5fa` collapse under deuteranopia (Δ=0.004, ~30× below distinguishability threshold). Affects ~6% of men. Carry-over from v0.2 pass 4 that was never added to this catalog. | ✅ shipped v0.3.9 (Option 1 — hex swap to magenta `#ee2bbd`, Δ=0.124 deutan, ~30× improvement; also renamed `COLOUR_NAMES[5]` "Purple" → "Magenta") |
+| **H3-palette** | Purple `#c084fc` ↔ Blue `#60a5fa` collapse under deuteranopia (Δ=0.004, ~30× below distinguishability threshold). Affects ~6% of men. Carry-over from v0.2 pass 4 that was never added to this catalog. | ✅ shipped v0.3.9 (Option 1 — default palette hex swap to magenta `#ee2bbd`) + ✅ EX5 (Option 2 — CB-friendly palette variant toggle in Settings > Playback; uses Paul Tol's "muted" scheme; users opt in, default palette unchanged). Both options now available. |
 
 Cosmetic observations from the assessment (not tracked, roll along with nearby commits): N1 (renderer-error-dedupe O(n)→O(1) eviction), N2 (config-validate openai key maxLen=200 loose), N3 (stale-session recycled-PID race, negligible window), `statusline.ps1:22` stale function name, README-FOR-ASSESSOR drift.
 

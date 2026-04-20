@@ -2539,6 +2539,39 @@ describe('D2-5 — config.schema.json parity with validator rules', () => {
     if (!rule) throw new Error('validator missing playback.auto_continue_after_click rule');
     assertEqual(rule.type, 'boolean');
   });
+
+  it('EX5 playback.palette_variant present in schema + validator + tokens', () => {
+    // Schema
+    const pv = schema.properties.playback.properties.palette_variant;
+    if (!pv) throw new Error('schema missing playback.palette_variant');
+    assertEqual(pv.type, 'string');
+    assertEqual(pv.default, 'default');
+    if (!Array.isArray(pv.enum) || !pv.enum.includes('default') || !pv.enum.includes('cb')) {
+      throw new Error('schema palette_variant.enum must include "default" and "cb"');
+    }
+    // Validator rule
+    const { RULES } = require('../app/lib/config-validate');
+    const rule = RULES.find(r => r.path === 'playback.palette_variant');
+    if (!rule) throw new Error('validator missing playback.palette_variant rule');
+    assertEqual(rule.type, 'string');
+    // Tokens: CB sibling array must be length 8 and all 7-char hex.
+    const tokensPath = path.join(__dirname, '..', 'app', 'lib', 'tokens.json');
+    const tokens = JSON.parse(fs.readFileSync(tokensPath, 'utf8'));
+    const cb = tokens.palette.BASE_COLOURS_CB;
+    if (!Array.isArray(cb)) throw new Error('tokens.json missing BASE_COLOURS_CB');
+    if (cb.length !== 8) throw new Error(`BASE_COLOURS_CB expected 8 entries, got ${cb.length}`);
+    for (const hex of cb) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+        throw new Error(`BASE_COLOURS_CB entry "${hex}" is not a 7-char hex`);
+      }
+    }
+    // Generated palette-classes.css should contain the CB selector.
+    const paletteCssPath = path.join(__dirname, '..', 'app', 'lib', 'palette-classes.css');
+    const paletteCss = fs.readFileSync(paletteCssPath, 'utf8');
+    if (!/body\[data-palette-variant="cb"\]/.test(paletteCss)) {
+      throw new Error('palette-classes.css missing body[data-palette-variant="cb"] override block — run generate-tokens-css.cjs');
+    }
+  });
 });
 
 describe('AUTO-CONTINUE AFTER CLICK (v0.3.6 renderer guard)', () => {
