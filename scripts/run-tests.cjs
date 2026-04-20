@@ -2111,6 +2111,104 @@ describe('S3.2 — redactForLog regex + key set', () => {
   });
 });
 
+describe('D2 — safeStorage-backed API key store', () => {
+  const { createApiKeyStore } = require('../app/lib/api-key-store');
+
+  // Tiny fake safeStorage so we can exercise the encrypt/decrypt paths
+  // without pulling Electron into the harness. The real safeStorage uses
+  // DPAPI on Windows / Keychain on macOS; our fake just prefixes "enc:"
+  // which is enough to verify that (a) writes happen, (b) reads round-trip.
+  function fakeSafeStorage(available = true) {
+    return {
+      isEncryptionAvailable: () => available,
+      encryptString: (s) => Buffer.from('enc:' + s, 'utf8'),
+      decryptString: (b) => {
+        const s = Buffer.isBuffer(b) ? b.toString('utf8') : String(b);
+        if (!s.startsWith('enc:')) throw new Error('not encrypted');
+        return s.slice(4);
+      },
+    };
+  }
+
+  function freshTmpDir() {
+    const d = path.join(os.tmpdir(), 'tt-apikey-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+    fs.mkdirSync(d, { recursive: true });
+    return d;
+  }
+
+  it('set(key) writes both .enc and .secret when safeStorage available', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    store.set('sk-testabc');
+    assertTruthy(fs.existsSync(store._encPath),    '.enc should exist');
+    assertTruthy(fs.existsSync(store._secretPath), '.secret should exist');
+    const sidecar = JSON.parse(fs.readFileSync(store._secretPath, 'utf8'));
+    assertEqual(sidecar.openai_api_key, 'sk-testabc');
+  });
+
+  it('set(key) writes only .secret when safeStorage unavailable', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(false) });
+    store.set('sk-test');
+    if (fs.existsSync(store._encPath)) {
+      throw new Error('.enc must not exist when safeStorage is unavailable');
+    }
+    assertTruthy(fs.existsSync(store._secretPath), '.secret should exist');
+  });
+
+  it('set(null) clears both files', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    store.set('sk-test');
+    store.set(null);
+    if (fs.existsSync(store._encPath))    throw new Error('.enc not cleared');
+    if (fs.existsSync(store._secretPath)) throw new Error('.secret not cleared');
+  });
+
+  it('get() round-trips via .enc (authoritative store)', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    store.set('sk-roundtrip');
+    assertEqual(store.get(), 'sk-roundtrip');
+  });
+
+  it('get() falls back to .secret when .enc is missing', () => {
+    const dir = freshTmpDir();
+    // Simulate the safeStorage-unavailable branch: set with ss=false leaves
+    // only the sidecar. Then read with ss=true to confirm the fallback.
+    const write = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(false) });
+    write.set('sk-sidecar-only');
+    const read = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    assertEqual(read.get(), 'sk-sidecar-only');
+  });
+
+  it('get() returns null when nothing is stored', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    assertEqual(store.get(), null);
+  });
+
+  it('migrateFromConfig moves a plaintext key into the store and nulls the field', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    const migrated = store.migrateFromConfig({
+      voices: {}, hotkeys: {}, playback: {}, speech_includes: {},
+      openai_api_key: 'sk-plaintext'
+    });
+    assertEqual(migrated.openai_api_key, null);
+    assertEqual(store.get(), 'sk-plaintext');
+  });
+
+  it('migrateFromConfig is a no-op when no key is present', () => {
+    const dir = freshTmpDir();
+    const store = createApiKeyStore({ dir, safeStorage: fakeSafeStorage(true) });
+    const cfg = { voices: {}, hotkeys: {}, playback: {}, speech_includes: {}, openai_api_key: null };
+    const out = store.migrateFromConfig(cfg);
+    assertEqual(out, cfg);        // same object — no migration
+    assertEqual(store.get(), null);
+  });
+});
+
 describe('D2-5 — config.schema.json parity with validator rules', () => {
   // The hand-rolled validator in app/lib/config-validate.js is the runtime
   // authority. config.schema.json is for editor autocomplete + user-facing

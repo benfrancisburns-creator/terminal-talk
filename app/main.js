@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, clipboard, nativeTheme } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, clipboard, nativeTheme, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -97,7 +97,30 @@ function saveConfig(cfg) {
   } catch (e) { diag(`saveConfig fail: ${e.message}`); return false; }
 }
 
+// D2 — safeStorage-backed key store. Replaces the inline openai_api_key
+// in config.json. Kept as a module so the unit harness can exercise the
+// load/save/clear paths with a fake safeStorage without pulling Electron
+// into the test runner. See app/lib/api-key-store.js for the full
+// rationale on why we maintain both an encrypted .enc file (backup
+// protection) and a plaintext .secret sidecar (PS-hook access path).
+const { createApiKeyStore } = require('./lib/api-key-store');
+const apiKeyStore = createApiKeyStore({
+  dir: INSTALL_DIR,
+  safeStorage,
+  logger: diag,
+});
+
 let CFG = loadConfig();
+// First-boot migration: old installs have openai_api_key plaintext in
+// config.json. Copy it into the encrypted store once, then blank the
+// field so subsequent saves don't write it back.
+{
+  const migrated = apiKeyStore.migrateFromConfig(CFG);
+  if (migrated !== CFG) {
+    CFG = migrated;
+    saveConfig(CFG);
+  }
+}
 
 // Cap on the number of clips returned to the renderer by getQueueFiles.
 // Chosen to match the dot-strip's MAX_VISIBLE_DOTS = 40-ish budget while
@@ -602,8 +625,12 @@ function startWatcher() {
 }
 
 function loadApiKey() {
+  // D2 — safeStorage-backed store is the primary. Env + ~/.claude/.env
+  // remain as fallbacks so CI and power-users with pre-existing setups
+  // keep working without any migration.
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY.trim();
-  if (CFG.openai_api_key) return CFG.openai_api_key.trim();
+  const stored = apiKeyStore.get();
+  if (stored) return stored.trim();
   try {
     const claudeEnv = path.join(os.homedir(), '.claude', '.env');
     const content = fs.readFileSync(claudeEnv, 'utf8');
@@ -1268,12 +1295,18 @@ ipcMain.handle('update-config', (_e, partial) => {
   if (!allowMutation('update-config')) return null;
   try {
     diag(`update-config IN: ${JSON.stringify(redactForLog(partial))}`);
+    // D2 — openai_api_key no longer lives in config.json. Route writes
+    // through apiKeyStore so the encrypted .enc + .secret sidecar stay
+    // authoritative; config.json.openai_api_key is always null on disk.
+    if (partial.openai_api_key !== undefined) {
+      apiKeyStore.set(partial.openai_api_key);
+    }
     const merged = {
       voices: { ...CFG.voices, ...(partial.voices || {}) },
       hotkeys: { ...CFG.hotkeys, ...(partial.hotkeys || {}) },
       playback: { ...CFG.playback, ...(partial.playback || {}) },
       speech_includes: { ...CFG.speech_includes, ...(partial.speech_includes || {}) },
-      openai_api_key: partial.openai_api_key !== undefined ? partial.openai_api_key : CFG.openai_api_key
+      openai_api_key: null,
     };
     const ok = saveConfig(merged);
     CFG = merged;
