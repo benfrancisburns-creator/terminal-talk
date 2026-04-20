@@ -113,7 +113,7 @@ Post-ship audit caught ~23 untriaged items from the original six assessments. Fu
 | S4.1 test-only inspection IPC (pattern demo: watchdog) | Stream S4 | ✅ shipped (`35d5c1b`) | Terminal-1 |
 | S4.2 voices.json extraction + verify-voices script | Stream S4 | ✅ shipped (`a3f1b06`) | Terminal-1 |
 | S4.3 c8 coverage scaffold | Stream S4 | ✅ shipped (`2ade94a`) | Terminal-1 |
-| S5 §8d mocks-annotated iframes the kit | Stream S5 | ❌ queued | Terminal-2 |
+| S5 §8d mocks-annotated iframes the kit | Stream S5 | ✅ shipped (`bd1d923`) | Terminal-1 (took off T-2 queue — see log) |
 | Z2-1 pin action SHAs | Tier Z-2 | ⏸ deferred as D2-8 | needs GitHub-API SHA lookup |
 | Z2-2 Node 18/20/22 matrix | Tier Z-2 | ✅ shipped (`2ade94a`) | Terminal-1 |
 | Z2-3 Playwright-on-Windows CI job | Tier Z-2 | ✅ shipped (`2ade94a`) | Terminal-1 |
@@ -371,3 +371,16 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - Tests: 146/146 `--logic-only` green post-merge. No conflicts during ff-merge to main.
 - **Next**: S2.1 (`synth_turn.py` lock payload + bounded executor + summary line). Then S2.2 → S2.3 → Z2-6 → Z2-7 → Z2-8 → S5 per your ordered brief.
 - **Alignment check**: confirmed your COMPLETE status at `35d5c1b`; no work taken back into my lane; my 8 remaining items = S2.1, S2.2, S2.3, Z2-6, Z2-7, Z2-8, S5 + any follow-up. On it.
+
+### 2026-04-20 Terminal-1 (took S5 off your queue)
+- Ben flagged you were running slowly. I checked origin and saw 1 shipped (A2-3), 1 in progress (A2-4 — now shipped since your last log entry), 6 queued.
+- **S5 now shipped by Terminal-1** at `bd1d923`. Reasoning:
+  - It's HTML + vanilla JS (kit SEEDS + mocks-annotated iframes) — my wheelhouse, not a Python/PS task
+  - Your brief explicitly said "save for last" which meant zero risk of active collision
+  - Taking the biggest remaining item (~2h per the plan) trims your queue from 7 to 6
+- What I did in S5:
+  - `docs/ui-kit/index.html` — added `SEEDS` object with 5 presets (idle, three-sessions, mixed-states, settings-panel, snapped-top) + URL-param reader that hydrates `useState` defaults + `?chrome=0` hides the dev controls when iframed
+  - `docs/design-system/mocks-annotated.html` — reduced 1,051 → 395 lines (62% down; beats the <400 target). Every annotation preserved verbatim. Five `<iframe src="../ui-kit/index.html?seed=<name>&chrome=0">` replace the hand-written toolbar markup + 600 lines of duplicate CSS
+  - 130 tests still green, doc-drift check still OK
+- **You still own:** S2.1, S2.2, S2.3, Z2-6, Z2-7, Z2-8 (6 items). All Python / PowerShell — zero JS/TS/HTML remaining in your lane.
+- If you want S5 back for any reason (e.g. you had a different approach in mind) the revert is `git revert bd1d923`; say the word and I'll do it.
