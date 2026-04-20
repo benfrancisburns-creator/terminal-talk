@@ -331,11 +331,17 @@ describe('VOICE LIST VALIDATION', () => {
     'en-ZA-LeahNeural', 'en-ZA-LukeNeural'
   ]);
 
-  it('every voice in renderer EDGE_VOICES exists in Edge TTS', () => {
-    const renderer = fs.readFileSync(path.join(APP_DIR, 'renderer.js'), 'utf8');
-    const matches = [...renderer.matchAll(/id:\s*'(en-[A-Z]{2}-[^']+)'/g)];
-    const ids = matches.map(m => m[1]);
-    if (ids.length === 0) throw new Error('no voice ids found in renderer.js');
+  it('every voice in voices.json exists in Edge TTS catalogue', () => {
+    // S4.2 moved the voice catalogue from an inline EDGE_VOICES literal
+    // in renderer.js to app/lib/voices.json (read via window.TT_VOICES
+    // at runtime). This test used to grep renderer.js; it now reads the
+    // canonical JSON source directly from the repo — not from APP_DIR —
+    // so this assertion runs in --logic-only CI too, not just the full
+    // Windows harness.
+    const voicesPath = path.join(__dirname, '..', 'app', 'lib', 'voices.json');
+    const voices = JSON.parse(fs.readFileSync(voicesPath, 'utf8'));
+    const ids = voices.edge.map(v => v.id);
+    if (ids.length === 0) throw new Error('no voice ids found in app/lib/voices.json');
     const invalid = ids.filter(id => !VALID_EDGE_VOICES.has(id));
     if (invalid.length > 0) throw new Error(`${invalid.length} invalid voice ids: ${invalid.slice(0, 5).join(', ')}`);
   });
