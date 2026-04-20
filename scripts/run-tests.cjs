@@ -114,12 +114,13 @@ function runEdgeTts(voice, text) {
 }
 
 // =============================================================================
-// Inlined logic from app/renderer.js (kept in lock-step with the source).
+// Palette constants now come from the canonical app/lib/tokens.json source,
+// the same JSON that renderer + kit both read. This turns every test in the
+// PALETTE suite into a kit↔product parity check: if either side drifts the
+// test starts failing against the canonical values.
 // =============================================================================
-const PALETTE_SIZE = 24;
-const BASE_COLOURS = ['#ff5e5e','#ffa726','#ffd93d','#4ade80','#60a5fa','#c084fc','#c97b50','#e0e0e0'];
-const HSPLIT_PARTNER = [3, 4, 5, 0, 1, 2, 7, 6];
-const VSPLIT_PARTNER = [4, 5, 6, 7, 0, 1, 2, 3];
+const TOKENS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tokens.json'), 'utf8'));
+const { PALETTE_SIZE, BASE_COLOURS, HSPLIT_PARTNER, VSPLIT_PARTNER, COLOUR_NAMES, NEUTRAL_COLOUR } = TOKENS.palette;
 
 function arrangementForIndex(idx) {
   const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
@@ -541,6 +542,109 @@ describe('SYNTH TURN MUTE', () => {
       else try { fs.unlinkSync(registryPath); } catch {}
       try { fs.unlinkSync(fakeTranscript); } catch {}
       try { fs.unlinkSync(syncPath); } catch {}
+    }
+  });
+});
+
+describe('PALETTE PARITY — kit ↔ product (R1.7)', () => {
+  // Makes real the regression test docs/README.md:58 previously claimed existed.
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+  const kitSrc      = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'palette.js'), 'utf8');
+  const kitHtmlSrc  = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'index.html'), 'utf8');
+  const tokensMjs   = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'tokens.mjs'), 'utf8');
+  const tokensWin   = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tokens-window.js'), 'utf8');
+
+  it('renderer.js reads palette from window.TT_TOKENS (not hand-coded)', () => {
+    if (!/window\.TT_TOKENS\.palette/.test(rendererSrc)) {
+      throw new Error('renderer.js no longer destructures palette from window.TT_TOKENS.palette');
+    }
+    // The old inline BASE_COLOURS literal must be gone.
+    if (/const\s+BASE_COLOURS\s*=\s*\[\s*['"]#ff5e5e['"]/.test(rendererSrc)) {
+      throw new Error('renderer.js still contains an inline BASE_COLOURS hex literal — regression');
+    }
+    if (/const\s+HSPLIT_PARTNER\s*=\s*\[\s*3\s*,\s*4\s*,\s*5/.test(rendererSrc)) {
+      throw new Error('renderer.js still contains an inline HSPLIT_PARTNER array — regression');
+    }
+  });
+
+  it('kit palette.js imports from tokens.mjs (not hand-coded tuple pairs)', () => {
+    if (!/from\s+['"]\.\/tokens\.mjs['"]/.test(kitSrc)) {
+      throw new Error('docs/ui-kit/palette.js no longer imports from ./tokens.mjs');
+    }
+    // The old wrong pair-tuple encoding must be gone. Pass-1 §1a proved this
+    // encoding produced different colours from the renderer on 9 of 16 slots.
+    if (/HSPLIT_PAIRS\s*=\s*\[/.test(kitSrc)) {
+      throw new Error('palette.js still contains HSPLIT_PAIRS tuple array — drift regression');
+    }
+    if (/VSPLIT_PAIRS\s*=\s*\[/.test(kitSrc)) {
+      throw new Error('palette.js still contains VSPLIT_PAIRS tuple array — drift regression');
+    }
+  });
+
+  it('kit index.html inline IIFE no longer contains the pair-tuple encoding', () => {
+    if (/HSPLIT_PAIRS\s*=\s*\[/.test(kitHtmlSrc) || /VSPLIT_PAIRS\s*=\s*\[/.test(kitHtmlSrc)) {
+      throw new Error('docs/ui-kit/index.html still declares the old tuple pairs');
+    }
+    if (!/from\s+['"]\.\/tokens\.mjs['"]/.test(kitHtmlSrc)) {
+      throw new Error('docs/ui-kit/index.html no longer imports tokens.mjs');
+    }
+  });
+
+  it('generated tokens-window.js matches tokens.json palette byte-for-byte', () => {
+    // Run the generator in-memory logic and compare.
+    const expected = `window.TT_TOKENS = Object.freeze(${JSON.stringify(TOKENS, null, 2)});`;
+    if (!tokensWin.includes(expected)) {
+      throw new Error('app/lib/tokens-window.js is out of date — run `node scripts/generate-tokens-css.cjs`');
+    }
+  });
+
+  it('generated tokens.mjs matches tokens.json palette byte-for-byte', () => {
+    const expected = `export const TOKENS = Object.freeze(${JSON.stringify(TOKENS, null, 2)});`;
+    if (!tokensMjs.includes(expected)) {
+      throw new Error('docs/ui-kit/tokens.mjs is out of date — run `node scripts/generate-tokens-css.cjs`');
+    }
+  });
+
+  it('all 24 arrangements match a pinned fixture (drift alarm)', () => {
+    // Pinned fixture of correct arrangements. If this fails, either the
+    // partner arrays in tokens.json changed on purpose (update the fixture)
+    // or someone regressed the encoding (bug — investigate).
+    const expected = [
+      // 0-7: solid
+      { kind: 'solid',  colours: ['#ff5e5e'] },
+      { kind: 'solid',  colours: ['#ffa726'] },
+      { kind: 'solid',  colours: ['#ffd93d'] },
+      { kind: 'solid',  colours: ['#4ade80'] },
+      { kind: 'solid',  colours: ['#60a5fa'] },
+      { kind: 'solid',  colours: ['#c084fc'] },
+      { kind: 'solid',  colours: ['#c97b50'] },
+      { kind: 'solid',  colours: ['#e0e0e0'] },
+      // 8-15: hsplit (red/green, orange/blue, yellow/purple, and reverses, brown/white + reverse)
+      { kind: 'hsplit', colours: ['#ff5e5e', '#4ade80'] },
+      { kind: 'hsplit', colours: ['#ffa726', '#60a5fa'] },
+      { kind: 'hsplit', colours: ['#ffd93d', '#c084fc'] },
+      { kind: 'hsplit', colours: ['#4ade80', '#ff5e5e'] },
+      { kind: 'hsplit', colours: ['#60a5fa', '#ffa726'] },
+      { kind: 'hsplit', colours: ['#c084fc', '#ffd93d'] },
+      { kind: 'hsplit', colours: ['#c97b50', '#e0e0e0'] },
+      { kind: 'hsplit', colours: ['#e0e0e0', '#c97b50'] },
+      // 16-23: vsplit
+      { kind: 'vsplit', colours: ['#ff5e5e', '#60a5fa'] },
+      { kind: 'vsplit', colours: ['#ffa726', '#c084fc'] },
+      { kind: 'vsplit', colours: ['#ffd93d', '#c97b50'] },
+      { kind: 'vsplit', colours: ['#4ade80', '#e0e0e0'] },
+      { kind: 'vsplit', colours: ['#60a5fa', '#ff5e5e'] },
+      { kind: 'vsplit', colours: ['#c084fc', '#ffa726'] },
+      { kind: 'vsplit', colours: ['#c97b50', '#ffd93d'] },
+      { kind: 'vsplit', colours: ['#e0e0e0', '#4ade80'] },
+    ];
+    for (let i = 0; i < PALETTE_SIZE; i++) {
+      const actual = arrangementForIndex(i);
+      assertEqual(actual.kind, expected[i].kind, `arrangement ${i} kind`);
+      assertEqual(actual.colours.length, expected[i].colours.length, `arrangement ${i} colour count`);
+      for (let j = 0; j < actual.colours.length; j++) {
+        assertEqual(actual.colours[j], expected[i].colours[j], `arrangement ${i} colour ${j}`);
+      }
     }
   });
 });
