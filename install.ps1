@@ -5,17 +5,52 @@
 .DESCRIPTION
   Installs Terminal Talk to %USERPROFILE%\.terminal-talk\.
   - Checks prerequisites (Python 3.10+, Node.js 18+).
-  - Installs Python packages (edge-tts, openwakeword, onnxruntime, sounddevice, numpy).
+  - Installs Python packages (pinned via requirements.txt).
   - Runs npm install for Electron.
   - Copies app + hooks + config example.
   - Optionally registers Claude Code hooks in ~/.claude/settings.json.
   - Optionally adds a Startup shortcut so the toolbar auto-launches on login.
+.PARAMETER Unattended
+  Skip ALL interactive prompts and apply sensible defaults
+  (hooks yes, statusline yes, startup no). Use for CI / automation.
+.PARAMETER HooksYes
+  In unattended mode, register Claude Code hooks. Default: $true.
+.PARAMETER StatuslineYes
+  In unattended mode, install the per-terminal statusline. Default: $true.
+.PARAMETER StartupYes
+  In unattended mode, add a Startup shortcut. Default: $false
+  (deliberate — auto-launch is a per-user choice, not something
+  unattended installs should make for you).
 .NOTES
   Run from the terminal-talk/ folder (the one containing install.ps1).
   Re-running is safe: existing install dir is updated in place.
 #>
+param(
+    [switch]$Unattended,
+    [bool]$HooksYes      = $true,
+    [bool]$StatuslineYes = $true,
+    [bool]$StartupYes    = $false
+)
 
 $ErrorActionPreference = 'Stop'
+# Prompt helper honoured by every Read-Host in this script. In attended
+# mode it calls Read-Host and returns the raw input. In -Unattended
+# mode it skips the prompt and returns 'Y' or 'n' based on the
+# pre-set switch — so the same consent logic downstream ($resp -match
+# '^[Yy]') gives the right answer without any stdin piping.
+function Get-Consent {
+    param(
+        [Parameter(Mandatory = $true)] [string]$Prompt,
+        [Parameter(Mandatory = $true)] [bool]$UnattendedDefault
+    )
+    if ($Unattended) {
+        $shown = if ($UnattendedDefault) { 'Y (unattended)' } else { 'n (unattended)' }
+        Write-Host "${Prompt}: $shown"
+        return $(if ($UnattendedDefault) { 'Y' } else { 'n' })
+    }
+    return Read-Host $Prompt
+}
+
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $installDir = Join-Path $env:USERPROFILE '.terminal-talk'
 $appDir = Join-Path $installDir 'app'
@@ -126,7 +161,7 @@ if (Test-Path $electronExe) {
 
 # 6. Claude Code hook registration (opt-in)
 Write-Step "Claude Code integration"
-$hookResp = Read-Host "Register Claude Code hooks so Claude Code responses are spoken aloud? [Y/n]"
+$hookResp = Get-Consent "Register Claude Code hooks so Claude Code responses are spoken aloud? [Y/n]" $HooksYes
 if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
     if (-not (Test-Path $claudeSettings)) {
         Write-Warn2 "~/.claude/settings.json not found (Claude Code not installed?). Skipping."
@@ -198,7 +233,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
 
 # 6b. Statusline (per-terminal coloured emoji that matches the toolbar dot)
 Write-Step "Session statusline"
-$slResp = Read-Host "Show a coloured emoji in each terminal matching its dot colour? [Y/n]"
+$slResp = Get-Consent "Show a coloured emoji in each terminal matching its dot colour? [Y/n]" $StatuslineYes
 if ($slResp -eq '' -or $slResp -match '^[Yy]') {
     if (-not (Test-Path $claudeSettings)) {
         Write-Warn2 "~/.claude/settings.json not found. Skipping."
@@ -217,7 +252,7 @@ if ($slResp -eq '' -or $slResp -match '^[Yy]') {
 
 # 7. Startup shortcut
 Write-Step "Auto-start on login"
-$startupResp = Read-Host "Launch Terminal Talk automatically when Windows starts? [Y/n]"
+$startupResp = Get-Consent "Launch Terminal Talk automatically when Windows starts? [Y/n]" $StartupYes
 if ($startupResp -eq '' -or $startupResp -match '^[Yy]') {
     Copy-Item -Force (Join-Path $repoRoot 'scripts\start-toolbar.vbs') $vbsStartup
     Write-Ok "Startup shortcut installed"
@@ -233,7 +268,7 @@ Write-Host "  Ctrl+Shift+J   toggle wake-word listening on/off"
 Write-Host ""
 Write-Host "Say 'hey jarvis' with text highlighted to trigger speech."
 Write-Host ""
-$launchResp = Read-Host "Launch Terminal Talk now? [Y/n]"
+$launchResp = Get-Consent "Launch Terminal Talk now? [Y/n]" $false
 if ($launchResp -eq '' -or $launchResp -match '^[Yy]') {
     Start-Process wscript.exe -ArgumentList "`"$vbsStartup`"" -ErrorAction SilentlyContinue
     if (-not (Test-Path $vbsStartup)) {

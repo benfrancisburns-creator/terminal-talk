@@ -28,15 +28,12 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
 
-      - name: Install Python deps
-        run: python -m pip install --quiet edge-tts openwakeword onnxruntime sounddevice numpy
+      - name: Install Python deps (pinned)
+        run: python -m pip install --quiet -r requirements.txt
 
       - name: Install Electron + Terminal Talk
         shell: pwsh
-        run: |
-          # Non-interactive install: no hooks, no statusline, no startup shortcut, no launch.
-          $resp = "n`nn`nn`nn`n"
-          $resp | .\install.ps1
+        run: .\install.ps1 -Unattended -HooksYes:$false -StatuslineYes:$false -StartupYes:$false
         continue-on-error: false
 
       - name: Run full test harness
