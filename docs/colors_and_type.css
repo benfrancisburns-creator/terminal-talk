@@ -2,12 +2,13 @@
    Terminal Talk — canonical design tokens
    -------------------------------------------------------------
    Single source of truth for colour + type values used across
-   app/styles.css and docs/ui-kit/kit.css. Imported by kit.css
-   for documentation; the app itself still inlines the same
-   rgba literals so the electron bundle has no extra fetch.
+   app/styles.css and the design-system reference pages. After
+   D2-3 the kit loads app/styles.css directly (it iframes
+   app/renderer.js) so there is no kit-side stylesheet to keep
+   in lockstep — only the app and the reference pages here.
 
    When a magic number here changes, the matching literal in
-   app/styles.css and kit.css should change with it.
+   app/styles.css should change with it.
    ============================================================= */
 
 :root {

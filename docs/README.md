@@ -36,19 +36,12 @@ docs/
 │   ├── type-mono.html              monospace typography (kbd, code)
 │   └── wordmark.html               wordmark presentation
 │
-├── ui-kit/                         React component recreation
+├── ui-kit/                         live demo — iframes app/renderer.js
 │   ├── README.md                   what's in the kit
-│   ├── index.html                  interactive demo
-│   ├── palette.js                  the 24-arrangement palette (mirrors app/renderer.js)
-│   ├── Toolbar.jsx                 the 680 × 44 letterbox bar
-│   ├── Dot.jsx                     coloured dot (solid / hsplit / vsplit + states)
-│   ├── IconButton.jsx              round button
-│   ├── Scrubber.jsx                rail + thumb
-│   ├── SettingsPanel.jsx           the expandable panel
-│   ├── SessionsTable.jsx           per-session rows
-│   ├── AsciiBanner.jsx             About-section ASCII art
-│   ├── icons.jsx                   inline SVG icons
-│   └── kit.css                     component styles
+│   ├── index.html                  interactive demo shell
+│   ├── mock-ipc.js                 in-memory window.api stub + 5 seeds
+│   ├── kit-chrome.css              purple-gradient demo backdrop
+│   └── tokens.mjs                  generated ESM palette (for any hand-rolled consumer)
 │
 └── screenshots/                    rendered product shots (PNG)
     └── ...                         (mock renders from mocks-annotated.html)
@@ -61,11 +54,11 @@ docs/
 - **Favicon** — `favicon-32.svg`, used by the GitHub Pages landing site.
 - **Design-system pages** — open the `.html` files directly in a browser. Each is self-contained.
 - **Annotated mocks** — `design-system/mocks-annotated.html` renders four live HTML/SVG mockups of the toolbar (Idle / Three sessions / Mixed states / Settings panel open) with annotations to the right of each. Rendered PNG versions are embedded in the top-level README. The source HTML trails the shipping UI — newer features (focus mode, auto-prune toggle, pause hotkeys, per-session mute) may not be represented yet.
-- **UI kit** — drop into a React app to recreate the toolbar without rebuilding it from scratch.
+- **UI kit** — open `ui-kit/index.html` in a browser. The page loads the real `app/renderer.js` with an in-memory mock of the Electron IPC surface, so every demo is the shipping behaviour: four-tier playback precedence, real auto-prune timing, real `renderSessionsTable` with focus bail and palette classes, real Constructable Stylesheet for mascot position. Audio playback is the one thing that doesn't work — the mock paths aren't real files — but every visual + interaction is genuine.
 
 ## In lock-step with the source
 
-The palette in `ui-kit/palette.js` is verbatim from `app/renderer.js` (24 arrangements, 8 base colours, complementary split pairings). If you change one, change the other — there's a regression test in `scripts/run-tests.cjs` that fails when they drift.
+After D2-3 the kit IS the source: its `index.html` loads `../../app/renderer.js` verbatim. The generated `tokens.mjs` is retained for any external hand-rolled consumer (e.g. a plugin) — a drift test in `scripts/run-tests.cjs` asserts it stays byte-identical to `app/lib/tokens.json`. Palette class rules consumed via `data-palette` attribute come from the generated `app/lib/palette-classes.css`.
 
 ## Adding screenshots
 
