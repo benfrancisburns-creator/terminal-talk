@@ -187,10 +187,22 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "Python packages installed"
 
-Write-Step "Pre-downloading wake word model (hey_jarvis, ~30 MB)"
-& python -c "from openwakeword.model import Model; Model(wakeword_models=['hey_jarvis'], inference_framework='onnx')" 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { Write-Ok "Wake word model cached" }
-else { Write-Warn2 "Model download deferred to first use (first 'hey jarvis' may take 30-60s)" }
+Write-Step "Installing bundled wake word model (hey_tt, ~30 MB)"
+# Custom-trained hey_tt model lives in the repo at app/models/hey_tt.onnx
+# and was copied into the install dir by the file-copy step at the top.
+# Verify it landed; no network fetch needed (custom models aren't on
+# HuggingFace so the pre-download trick we used for hey_jarvis doesn't
+# apply). If the file is missing this is a hard failure -- without the
+# model the wake-word listener can't start.
+$bundledModel = Join-Path $appDir 'models\hey_tt.onnx'
+if (Test-Path $bundledModel) {
+    $sizeMB = [math]::Round((Get-Item $bundledModel).Length / 1MB, 1)
+    Write-Ok "Wake word model bundled ($sizeMB MB at $bundledModel)"
+} else {
+    Write-Warn2 "Wake word model MISSING at $bundledModel"
+    Write-Host "    The repo's app/models/hey_tt.onnx file is absent; wake-word listener will fail to start."
+    Write-Host "    See scripts/train-hey-tt/README.md for how to produce the model."
+}
 
 # 5. Node / Electron
 Write-Step "Installing Electron"

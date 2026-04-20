@@ -49,7 +49,7 @@ docs/
 
 ## How these are used
 
-- **README hero** — `docs/assets/wallpaper/terminal-talk-wallpaper.png` — the 1280 × 800 wallpaper with coloured ASCII "TERMINAL TALK", pixel mascot and "HEY JARVIS" speech bubble. Regeneration instructions live in `assets/wallpaper/README.md`.
+- **README hero** — `docs/assets/wallpaper/terminal-talk-wallpaper.png` — the 1280 × 800 wallpaper with coloured ASCII "TERMINAL TALK", pixel mascot and "HEY TT" speech bubble. Regeneration instructions live in `assets/wallpaper/README.md`.
 - **Repo social card** — the same wallpaper PNG doubles as the GitHub OG image; set it in repo **Settings → Social preview** to override the default.
 - **Favicon** — `favicon-32.svg`, used by the GitHub Pages landing site.
 - **Design-system pages** — open the `.html` files directly in a browser. Each is self-contained.

@@ -44,7 +44,19 @@ logging.basicConfig(
 )
 log = logging.getLogger('wake')
 
-WAKE_WORDS = ['hey_jarvis']
+# Wake-word model. Custom-trained ONNX bundled in app/models/ (not
+# via HuggingFace auto-download — custom models aren't on HF). See
+# docs/architecture/wake-word-training.md for the why, and
+# scripts/train-hey-tt/README.md for how the model gets produced.
+#
+# WAKE_WORDS is the list of MODEL KEYS (the names openwakeword
+# reports in its `prediction` dict). WAKE_MODEL_PATHS is the actual
+# .onnx files to load, each keyed to the name its filename would
+# produce after openWakeWord's slugify step.
+WAKE_WORDS = ['hey_tt']
+WAKE_MODEL_PATHS = [
+    str(Path(__file__).resolve().parent / 'models' / 'hey_tt.onnx')
+]
 THRESHOLD = 0.5
 COOLDOWN_SEC = 2.0
 
@@ -83,9 +95,22 @@ def main():
     log.info('===== wake-word listener starting (openWakeWord) =====')
     log.info(f'PID: {os.getpid()}')
     log.info(f'wake words: {WAKE_WORDS}')
+    log.info(f'model paths: {WAKE_MODEL_PATHS}')
+
+    for p in WAKE_MODEL_PATHS:
+        if not Path(p).exists():
+            log.error(
+                f'FATAL: wake-word model missing at {p} -- '
+                f'run install.ps1 to copy the bundled hey_tt.onnx into place'
+            )
+            return 1
 
     try:
-        model = Model(wakeword_models=WAKE_WORDS, inference_framework='onnx')
+        # Pass absolute paths to the bundled ONNX files. openWakeWord
+        # treats a path arg as "load this file" rather than "fetch the
+        # stock model with this key from HuggingFace", which is what
+        # lets us ship a custom-trained model.
+        model = Model(wakeword_models=WAKE_MODEL_PATHS, inference_framework='onnx')
         log.info('model loaded')
     except Exception as e:
         log.error(f'FATAL: model load failed: {e}')
@@ -247,8 +272,12 @@ def selftest() -> int:
     the wake word. Exits non-zero on any failure so the caller knows to
     surface an install problem."""
     log.info('===== wake-word listener --selftest =====')
+    for p in WAKE_MODEL_PATHS:
+        if not Path(p).exists():
+            log.error(f'selftest: wake-word model missing at {p}')
+            return 1
     try:
-        Model(wakeword_models=WAKE_WORDS, inference_framework='onnx')
+        Model(wakeword_models=WAKE_MODEL_PATHS, inference_framework='onnx')
     except Exception as e:
         log.error(f'selftest: model load failed: {e}')
         return 1

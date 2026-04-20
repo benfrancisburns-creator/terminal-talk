@@ -17,12 +17,12 @@ Show HN: Terminal Talk – Voice workflow for Claude Code, free, no signup
 ```
 I built this because I was getting RSI from constantly reading Claude Code's
 output. Wanted something that just spoke responses aloud and let me say
-"hey jarvis" to read any highlighted text — without signing up for anything
+"hey TT" to read any highlighted text — without signing up for anything
 or sending audio to a cloud service.
 
 How it works:
 - Auto-speaks every Claude Code response via a Stop hook
-- "Hey jarvis" or Ctrl+Shift+S reads highlighted text from any app
+- "Hey TT" or Ctrl+Shift+S reads highlighted text from any app
 - Each Claude Code terminal gets its own colour (dot on toolbar + emoji in
   statusline) so you can tell which session just spoke. Optional per-session
   voice override too — give different terminals different voices and you can
@@ -46,7 +46,7 @@ Repo: https://github.com/benfrancisburns-creator/terminal-talk
 
 **Title**:
 ```
-[Show] I built Terminal Talk — Claude Code reads its responses aloud + "hey jarvis" reads highlighted text. Free, no signup.
+[Show] I built Terminal Talk — Claude Code reads its responses aloud + "hey TT" reads highlighted text. Free, no signup.
 ```
 
 **Body**:
@@ -54,7 +54,7 @@ Repo: https://github.com/benfrancisburns-creator/terminal-talk
 Got tired of reading every single Claude Code reply, so I built this:
 
 - Every Claude Code response auto-speaks via a Stop hook
-- Say "hey jarvis" with text highlighted (anywhere — browser, PDF, VS Code) and
+- Say "hey TT" with text highlighted (anywhere — browser, PDF, VS Code) and
   it reads it aloud
 - Each Claude Code terminal gets a unique colour dot on a tiny floating toolbar
 - You can give each terminal its own voice too, so two terminals sound different
@@ -92,7 +92,7 @@ Skip unless r/ClaudeAI does well. r/programming is harsh on self-promotion.
 Built Terminal Talk: a free voice workflow for Claude Code.
 
 → Auto-speaks Claude's terminal responses
-→ Say "hey jarvis" to read any highlighted text aloud
+→ Say "hey TT" to read any highlighted text aloud
 → Each terminal gets its own colour + optional voice
 → Edge TTS + openWakeWord = no signup, runs locally
 
@@ -111,7 +111,7 @@ Keep it short, the community values it:
 ```
 Hey 👋 just shipped Terminal Talk — free open-source voice workflow for Claude Code.
 
-The Stop hook speaks responses aloud, "hey jarvis" reads any highlighted text,
+The Stop hook speaks responses aloud, "hey TT" reads any highlighted text,
 each terminal gets a unique colour identifier on a small floating toolbar.
 Pairs nicely with a speech-to-text tool for fully hands-free use.
 
@@ -139,7 +139,7 @@ This is the single most-important thing. People won't read about a voice tool, t
 
 What to record (~30 seconds):
 1. **0–5s**: A Claude Code terminal visible. Send a short message ("Explain rate limiting in two sentences"). Claude responds and you hear it spoken aloud.
-2. **5–15s**: Switch to a browser tab, highlight a paragraph. Say _"hey jarvis"_. Hear it read aloud.
+2. **5–15s**: Switch to a browser tab, highlight a paragraph. Say _"hey TT"_. Hear it read aloud.
 3. **15–25s**: Open a second Claude Code terminal. Send another message. Show the toolbar — two different colour dots. Briefly point out they're different.
 4. **25–30s**: End on the toolbar with both dots visible.
 

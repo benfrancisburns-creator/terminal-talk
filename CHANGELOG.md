@@ -2,6 +2,24 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — `feat/hey-tt`
+
+### Changed — wake phrase is now "hey TT"
+
+The default wake phrase changed from **"hey jarvis"** to **"hey TT"**. Triggered by a real false-positive incident where the stock `hey_jarvis` openWakeWord model fired at score 0.79 on ambient background speech, which then sent Ctrl+C to the foreground window via `captureSelection` → interrupting the user's Claude Code session mid-response. A custom-trained model for a narrower, brand-aligned phrase has a naturally lower false-positive rate.
+
+- `app/wake-word-listener.py` — `WAKE_WORDS = ['hey_tt']`, loads from bundled `app/models/hey_tt.onnx` instead of the HuggingFace-fetched stock model.
+- `install.ps1` — ships the bundled ONNX with the repo instead of pre-downloading `hey_jarvis`.
+- New `app/models/` directory (~30 MB `hey_tt.onnx`).
+- New `docs/architecture/wake-word-training.md` ADR — decision + pipeline + rollback plan.
+- New `scripts/train-hey-tt/` — Colab-notebook link, parameter reference, `verify-model.py`, `install-model.ps1`.
+- New `scripts/check-doc-drift.cjs` rule — flags `HEY JARVIS` in any new doc so copy-paste from v0.2 material gets caught.
+- README, `docs/LAUNCH.md`, `docs/index.html`, `docs/README.md` — all user-facing references say "hey TT".
+- `scripts/wallpaper.html` — speech-bubble text back to `HEY TT`.
+- `docs/v0.2/` — deliberately untouched. The archived v0.2 docs correctly describe the `hey_jarvis` that shipped with that line.
+
+**Upgrade path:** existing installs keep `hey_jarvis` until the user re-runs `install.ps1`, which replaces the listener code and the bundled model in one step. Older CHANGELOG entries on this page still describe the `hey-jarvis` priority path accurately for their release — those are historical, not stale.
+
 ## [0.3.9] — 2026-04-20
 
 Accessibility — the 8-colour palette no longer collapses under red-green colour-blindness.
@@ -231,7 +249,7 @@ Following [Electron's 2026 security checklist](https://www.electronjs.org/docs/l
 - Claude Code's 90 `tengu_spinner_words` (Moonwalking, Flibbertigibbeting, Cerebrating, Honking…) float up from the mascot's head as tiny white pixel-cloud speech bubbles with a stepped wallpaper silhouette + drop-shadow. Random order, jittered 850–1500 ms between emits.
 
 ### Added — branding
-- Full-size **1280 × 800 wallpaper** (`docs/assets/wallpaper/`) of the ASCII TERMINAL TALK wordmark + pixel mascot + HEY JARVIS speech bubble. Used as the README hero + GitHub OG image.
+- Full-size **1280 × 800 wallpaper** (`docs/assets/wallpaper/`) of the ASCII TERMINAL TALK wordmark + pixel mascot + HEY TT speech bubble. Used as the README hero + GitHub OG image.
 - Per-letter 3D cast-shadow via `text-shadow` (each letter's shadow is a darker shade of its face colour, not a bevel line inside the glyph). R + TALK's L both cyan for visual through-line.
 - Six annotated UI mocks in `docs/design-system/mocks-annotated.html` rendered to individual PNGs, embedded in the README's new "UI states" section.
 
@@ -266,7 +284,7 @@ Initial release.
 ### Added
 
 **Voice in / out**
-- Wake-word detection via `openWakeWord` (offline, CPU). Default phrase: "hey jarvis".
+- Wake-word detection via `openWakeWord` (offline, CPU). Default phrase: "hey TT".
 - Highlight-to-speak via wake word or `Ctrl+Shift+S`.
 - Auto-speak Claude Code responses via Stop hook (PowerShell, opt-in at install).
 - Voice notification on Claude Code permission prompts.

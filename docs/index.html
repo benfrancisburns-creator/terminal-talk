@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Terminal Talk — Hands-free voice workflow for Claude Code</title>
-<meta name="description" content="Claude Code reads its responses aloud. Say 'hey jarvis' to read any highlighted text. Free, offline wake-word, no signup. Windows.">
+<meta name="description" content="Claude Code reads its responses aloud. Say 'hey TT' to read any highlighted text. Free, offline wake-word, no signup. Windows.">
 <meta property="og:title" content="Terminal Talk — voice workflow for Claude Code">
-<meta property="og:description" content="Auto-speaks Claude Code responses. 'Hey jarvis' reads any highlighted text. Free, offline, MIT.">
+<meta property="og:description" content="Auto-speaks Claude Code responses. 'Hey TT' reads any highlighted text. Free, offline, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
@@ -383,7 +383,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
           <rect x="12" y="10" width="5"  height="1" fill="white"/>
           <rect x="0"  y="7" width="1" height="1" fill="white"/>
           <rect x="0"  y="8" width="1" height="1" fill="white"/>
-          <text x="15" y="6.6" font-size="2.1" text-anchor="middle">HEY JARVIS</text>
+          <text x="15" y="6.6" font-size="2.1" text-anchor="middle">HEY TT</text>
         </svg>
       </div>
     </div>
@@ -405,7 +405,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 
-  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
+  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey TT"</em>, hear it.</p>
   <p class="sub">Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
@@ -438,7 +438,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </div>
       <div class="feature">
         <div class="icon">👂</div>
-        <h3>"Hey jarvis" read-anything</h3>
+        <h3>"Hey TT" read-anything</h3>
         <p>Highlight text in any app — browser, PDF, VS Code, Slack — say the wake word or press <span class="mono">Ctrl+Shift+S</span>, hear it read. Runs offline on CPU.</p>
       </div>
       <div class="feature">
@@ -489,7 +489,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <ol class="install-steps">
         <li>Install Python 3.10+ and Node.js 18+ if you don't already have them.</li>
         <li>Clone the repo and run <span class="mono">install.ps1</span> — installs deps, pre-downloads the wake-word model, asks which hooks you want registered.</li>
-        <li>Restart Claude Code. Every response will speak aloud. Say <em>"hey jarvis"</em> over highlighted text to read it.</li>
+        <li>Restart Claude Code. Every response will speak aloud. Say <em>"hey TT"</em> over highlighted text to read it.</li>
       </ol>
       <div>
         <div class="code-block">
@@ -549,12 +549,12 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <p>The toolbar and hooks rely on PowerShell + Windows-specific keybindings. Mac and Linux ports are on the roadmap (no ETA yet — the architecture is ready for them but the platform-specific glue isn't written). If you can help with a port, PRs are welcome.</p>
       </details>
       <details>
-        <summary>Can I change the wake word from "hey jarvis"?</summary>
+        <summary>Can I change the wake word from "hey TT"?</summary>
         <p>Yes — the wake model is a drop-in swap from the openWakeWord project. Documented in the README. You can also disable the wake word entirely and just use <span class="mono">Ctrl+Shift+S</span>.</p>
       </details>
       <details>
         <summary>Does it work with tools other than Claude Code?</summary>
-        <p>The "hey jarvis / highlight and speak" part works with any app (browsers, PDFs, editors, Slack). The auto-speak piece is specific to Claude Code's Stop hook.</p>
+        <p>The "hey TT / highlight and speak" part works with any app (browsers, PDFs, editors, Slack). The auto-speak piece is specific to Claude Code's Stop hook.</p>
       </details>
       <details>
         <summary>How do I uninstall?</summary>

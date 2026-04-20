@@ -34,9 +34,14 @@ const RULES = [
     skip: []
   },
   {
-    pattern: /HEY\s*TT/,
-    description: 'wake phrase is HEY JARVIS, not HEY TT. Audit R3.7.',
-    skip: ['CHANGELOG.md']
+    // Post-hey_tt (feat/hey-tt): wake phrase is HEY TT. Flag stale
+    // HEY JARVIS references so any new doc that copy-pastes from old
+    // material gets caught. Archived v0.2 docs legitimately say HEY
+    // JARVIS (correct for that version) so docs/v0.2/ is skipped;
+    // CHANGELOG documents the rename and is also skipped.
+    pattern: /HEY\s*JARVIS/,
+    description: 'wake phrase is HEY TT since feat/hey-tt, not HEY JARVIS. See docs/architecture/wake-word-training.md.',
+    skip: ['CHANGELOG.md', 'docs/v0.2/']
   },
   {
     pattern: /680\s*[×x]\s*64\b/,

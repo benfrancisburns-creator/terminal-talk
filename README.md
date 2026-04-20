@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/wallpaper/terminal-talk-wallpaper.png" alt="Terminal Talk — coloured ASCII wordmark, pixel mascot and HEY JARVIS speech bubble" width="900">
+  <img src="docs/assets/wallpaper/terminal-talk-wallpaper.png" alt="Terminal Talk — coloured ASCII wordmark, pixel mascot and HEY TT speech bubble" width="900">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 > **Status: early beta · solo-maintained.** Actively developed, 177 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Hands-free voice workflow for Claude Code.**
-Claude's replies are read aloud. Highlight any text anywhere, say _"hey jarvis"_, hear it.
+Claude's replies are read aloud. Highlight any text anywhere, say _"hey TT"_, hear it.
 Pair with [Wispr Flow](https://wisprflow.ai/) (or any speech-to-text tool) and you can run entire Claude Code sessions without touching the keyboard.
 
 Free by default — uses Microsoft Edge's neural voices and offline wake-word detection. **Zero accounts required.** Optional OpenAI fallback if you want it.
@@ -30,7 +30,7 @@ Windows-only for now; Mac/Linux planned.
 | | |
 |---|---|
 | **Streaming auto-speak** | Claude's responses are spoken aloud as they're written. Audio starts ~2-3 seconds after Claude begins (not 6-24 seconds after the turn ends) because sentences synthesise in parallel and a `PreToolUse` hook fires mid-response whenever Claude is about to use a tool. Questions are extracted and spoken first so you hear the ask upfront. |
-| **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey jarvis"_ or press `Ctrl+Shift+S`, hear it read. |
+| **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey TT"_ or press `Ctrl+Shift+S`, hear it read. |
 | **Permission-prompt alerts** | When Claude Code asks to use a tool, a voice notification fires so you don't have to watch the screen. |
 | **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag near the top or bottom edge and it snaps flush (horizontal-only — no vertical dock). `Ctrl+Shift+A` toggles display on/off and is the recovery hotkey. After 15 s idle it shrinks to a thin strip and becomes click-through; hover to re-expand. |
 | **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. Sessions persist until you explicitly remove them (× button on each row of the Sessions table). |
@@ -63,10 +63,10 @@ Three terminals queued in arrival order: **3 red** from Terminal A (first one pl
 ### 03 · Mixed states in one queue
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Eight dots on one bar: 3 red (first 2 faded=heard, 3rd playing with ring), gap, 2 yellow queued, gap, 2 green queued, gap, 1 blue J-clip for hey-jarvis highlight-to-speak" width="900">
+  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Eight dots on one bar: 3 red (first 2 faded=heard, 3rd playing with ring), gap, 2 yellow queued, gap, 2 green queued, gap, 1 blue J-clip for hey-TT highlight-to-speak" width="900">
 </p>
 
-A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips — you've **heard** the first two (faded, click to replay, right-click to delete) and the third is **playing** now (pulsing white ring around the same red). Terminal B (yellow) has 2 **queued** flat discs behind it, then Terminal C (green) has 2 more. The blue dot on the far right is a **J-clip** — a highlight-to-speak capture from "hey jarvis" / `Ctrl+Shift+S`; J-clips have the highest priority and jump the whole queue when they arrive. Auto-prune removes heard clips after 3–600 s (default 20 s); muted sessions never produce dots at all.
+A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips — you've **heard** the first two (faded, click to replay, right-click to delete) and the third is **playing** now (pulsing white ring around the same red). Terminal B (yellow) has 2 **queued** flat discs behind it, then Terminal C (green) has 2 more. The blue dot on the far right is a **J-clip** — a highlight-to-speak capture from "hey TT" / `Ctrl+Shift+S`; J-clips have the highest priority and jump the whole queue when they arrive. Auto-prune removes heard clips after 3–600 s (default 20 s); muted sessions never produce dots at all.
 
 ### 04 · Settings panel open
 
@@ -76,7 +76,7 @@ A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips —
 
 The gear reveals three sections. **Playback** — speed 0.5–2.5× + auto-prune toggle (off = clips stack up for review). **Sessions** — every active terminal in a 7-column row: chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · focus ★ · mute 🔊/🔇. The chevron reveals per-session voice (45 Edge voices — pick different voices so you can tell terminals apart by ear) and six tri-state speech-includes toggles. **About** has the ASCII banner + full shortcuts.
 
-**Playback precedence** — (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
+**Playback precedence** — (1) "hey TT" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
 
 ### 05 · Snapped to the top edge
 
@@ -115,7 +115,7 @@ cd terminal-talk
 The installer:
 1. Checks Python and Node versions.
 2. Pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`.
-3. Pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time).
+3. Pre-downloads the `hey_tt` wake-word model (~30 MB, one-time).
 4. `npm install`s Electron.
 5. Copies everything to `%USERPROFILE%\.terminal-talk\`.
 6. Asks if you want to register Claude Code hooks (recommended).
@@ -139,11 +139,11 @@ All hotkeys are **global** — they work from any app. Nothing is captured from 
 | `Ctrl+Shift+J` | Toggle wake-word listening (chime confirms on/off) |
 | `Ctrl+Shift+P` | Pause / resume playback |
 | `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
-| Say "hey jarvis" | Same as `Ctrl+Shift+S` on highlighted text |
+| Say "hey TT" | Same as `Ctrl+Shift+S` on highlighted text |
 
 ### Wake word
 
-Highlight text, say **"hey jarvis"**, hear it. The 30 MB model lives in `~/.terminal-talk/...` and runs entirely on CPU — no audio leaves your machine for wake-word detection.
+Highlight text, say **"hey TT"**, hear it. The 30 MB model lives in `~/.terminal-talk/...` and runs entirely on CPU — no audio leaves your machine for wake-word detection.
 
 Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word-listener.py`. openWakeWord ships `hey_mycroft`, `hey_rhasspy`, `alexa`, `timer`, `weather`.
 
@@ -166,7 +166,7 @@ Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word
 - **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
 - **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
-- Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
+- Clips for "hey TT" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
 - Up to ~30 dots visible; beyond that the oldest drop off.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 
@@ -210,7 +210,7 @@ When a Claude Code terminal first interacts with Terminal Talk, the Stop hook (o
 
 Sessions only release their colour when the Claude Code process actually closes (and a 4-hour grace period elapses to absorb stale-PID windows). You can also pin a colour manually via the Sessions table dropdown — pinned colours never get reassigned.
 
-When a "hey jarvis" / `Ctrl+Shift+S` fires from somewhere outside a Claude Code terminal (browser, PDF), the J dot renders **neutral grey**. From inside a Claude Code terminal, it inherits that terminal's colour.
+When a "hey TT" / `Ctrl+Shift+S` fires from somewhere outside a Claude Code terminal (browser, PDF), the J dot renders **neutral grey**. From inside a Claude Code terminal, it inherits that terminal's colour.
 
 ---
 
@@ -303,7 +303,7 @@ What Terminal Talk does:
 | Audio file storage | `~/.terminal-talk/queue/` | Local mp3/wav files. Auto-deleted 90s after manual play, or capped at 20 clips. |
 | Session registry | `~/.terminal-talk/session-colours.json` + `~/.terminal-talk/sessions/<pid>.json` | Local-only. Tracks colour assignments and a short-lived per-PID file used to map foreground window → session. |
 | Logs | `~/.terminal-talk/queue/_*.log` | Local-only diagnostic logs (toolbar, hook, voice listener). |
-| Clipboard | Read locally during "hey jarvis" capture | Never sent anywhere except as TTS input above. |
+| Clipboard | Read locally during "hey TT" capture | Never sent anywhere except as TTS input above. |
 
 What Terminal Talk does **not** do:
 - No telemetry, analytics, error reporting, or "phone home" — anywhere in the codebase.
@@ -366,7 +366,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding new tests.
 ## How it works
 
 ```
-                 "hey jarvis"                  highlight + Ctrl+Shift+S
+                 "hey TT"                  highlight + Ctrl+Shift+S
                       │                                 │
                       ▼                                 │
          ┌───────────────────────┐                      │
@@ -410,10 +410,10 @@ The hook is the **single source of truth** for session colour assignment. The st
 | Symptom | Fix |
 |---|---|
 | Wake word not detected | Check mic in Windows Sound settings. `tail ~/.terminal-talk/queue/_voice.log` for heartbeat scores (~0 = silence, ≥0.5 = fire). |
-| Nothing plays after "hey jarvis" | `tail ~/.terminal-talk/queue/_toolbar.log`. Common cause: edge-tts network wobble + no OpenAI fallback key. |
+| Nothing plays after "hey TT" | `tail ~/.terminal-talk/queue/_toolbar.log`. Common cause: edge-tts network wobble + no OpenAI fallback key. |
 | Mic locked on, draining battery | `Ctrl+Shift+J` to stop the listener (high chime = on, low chime = off). |
 | Hook not firing in Claude Code | Verify `~/.claude/settings.json` `Stop` hook command points to `$env:USERPROFILE\.terminal-talk\hooks\speak-response.ps1`. |
-| Clipboard stays empty after "hey jarvis" | Some apps (very few) don't respond to programmatic Ctrl+C. Try a different app or `Ctrl+Shift+S` manually. |
+| Clipboard stays empty after "hey TT" | Some apps (very few) don't respond to programmatic Ctrl+C. Try a different app or `Ctrl+Shift+S` manually. |
 | Dropdown text invisible (white-on-white) | Indicates Electron's `nativeTheme.themeSource` didn't apply on your build. Reinstall to update. |
 | Two terminals on the same colour | Run `node terminal-talk/scripts/run-tests.cjs` — if statusline tests fail, edge-tts service is unreachable. If they pass, restart both terminals. |
 
@@ -442,7 +442,7 @@ verbs from that list floating above his head. The mouth is added because,
 unlike the Claude Code spinner, he actually speaks.
 
 **He only appears when Claude Code is the source.** If you're playing a
-highlight-to-speak clip (you said "hey jarvis" or pressed
+highlight-to-speak clip (you said "hey TT" or pressed
 <kbd>Ctrl+Shift+S</kbd>), the scrubber thumb is a plain **J** badge
 instead — the mascot is reserved for audio that originated inside a
 Claude Code session, so the visual identity stays tied to Claude-sourced
@@ -460,7 +460,7 @@ of that should live on the toolbar too.
 - [openWakeWord](https://github.com/dscripka/openWakeWord) — offline wake-word detection (MIT)
 - [edge-tts](https://github.com/rany2/edge-tts) — Microsoft Edge TTS wrapper (LGPL-3.0)
 - [Electron](https://www.electronjs.org/) — the floating toolbar runtime (MIT)
-- Wake-word model `hey_jarvis_v0.1` © openWakeWord contributors
+- Wake-word model `hey_tt_v0.1` © openWakeWord contributors
 - Spinner vocabulary lifted from [levindixon/tengu_spinner_words](https://github.com/levindixon/tengu_spinner_words) — same list Claude Code uses while thinking. No affiliation with Anthropic; see the [About the mascot](#about-the-mascot) section for the why.
 
 ## Docs archives
