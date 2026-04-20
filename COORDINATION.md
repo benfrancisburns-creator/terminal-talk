@@ -568,3 +568,68 @@ E2E (`npm run test:e2e`) is Windows-host only. Run on this machine before mergin
 - Tests: 150/150 `--logic-only` green at every commit. doc-drift: OK (9 rules, 27 files; +1 from components.html).
 - No merge conflicts; each sub-item was a clean rebase + force-push-with-lease on the stream branch before ff-merge.
 - Standing by for safeStorage ping.
+
+### 2026-04-20 Terminal-1 (D2 main side LIVE — safeStorage ready)
+
+**Ping — D2 main side shipped at `bcf6ad5`. You're unblocked.**
+
+What's on disk now (after any user interaction with the key field, or first boot with a pre-D2 plaintext key in config.json triggering migration):
+
+```
+~/.terminal-talk/openai_key.enc       base64 of safeStorage.encryptString(key)
+~/.terminal-talk/config.secrets.json  { "openai_api_key": "<plaintext>" }
+```
+
+`config.json.openai_api_key` is now always `null` on disk — ignore it.
+
+**Note on the filename — I used `config.secrets.json` exactly as my brief specified.** Inside is a single-field JSON object `{"openai_api_key": "sk-..."}` (not a bare string) so future secrets can slot in without a file rename.
+
+**PS hook read pattern suggestion:**
+
+```powershell
+$secretPath = Join-Path $env:USERPROFILE '.terminal-talk\config.secrets.json'
+$apiKey = $null
+if (Test-Path $secretPath) {
+  try {
+    $parsed = Get-Content $secretPath -Raw | ConvertFrom-Json
+    if ($parsed.openai_api_key) { $apiKey = $parsed.openai_api_key }
+  } catch {
+    # silently skip — no OpenAI fallback this run; edge-tts stays primary
+  }
+}
+# fall through to existing null-check logic from here
+```
+
+Same shape for `synth_turn.py`:
+
+```python
+import json, os
+secret_path = os.path.expanduser('~/.terminal-talk/config.secrets.json')
+api_key = None
+if os.path.exists(secret_path):
+    try:
+        with open(secret_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        api_key = data.get('openai_api_key')
+    except Exception:
+        pass  # no-OpenAI fallback is already handled
+```
+
+**If the file doesn't exist, fall back silently to null** — this matches the existing "no OpenAI key → use edge-tts only" code path in all three consumers. That way users who never set a key see no behaviour change; users whose key is in `config.secrets.json` get it; users who had it in `config.json` get auto-migrated on next main.js boot.
+
+**Install.ps1 / uninstall.ps1 scope (your lane):**
+- install.ps1 post-copy: `icacls "$env:USERPROFILE\.terminal-talk\config.secrets.json" /inheritance:r /grant "$env:USERNAME:(R,W)"` once after any file that might create it. Main creates it lazily on first key-set, so install-time can skip if the file doesn't exist yet — just ensure the directory ACL is tight and new files inherit correctly.
+- uninstall.ps1: remove `config.secrets.json` AND `openai_key.enc` alongside the existing `Remove-Item` calls.
+
+**Files you need to touch:**
+- `hooks/speak-response.ps1` — replace the `config.openai_api_key` read with the sidecar read above
+- `hooks/speak-notification.ps1` — same
+- `app/synth_turn.py` — same pattern in Python
+- `install.ps1` — icacls on the sidecar path (or confirm parent dir ACL covers it)
+- `uninstall.ps1` — remove both the .enc and .secret files
+
+**Files I already touched for D2 (don't change):** `app/main.js`, `app/lib/api-key-store.js`, `scripts/run-tests.cjs` (D2 describe block at ~line 2114).
+
+Tests: **158/158 logic-only green.** When you ship your side, append 2-3 tests verifying the hooks + Python read the sidecar correctly (mock the file content, spawn the relevant script, assert it picks up the key). Put them in your usual describe-block location.
+
+Standing by if you hit anything odd.
