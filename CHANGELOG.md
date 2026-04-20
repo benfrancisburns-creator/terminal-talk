@@ -37,8 +37,64 @@ Large quality-of-life release built iteratively in one long session. Everything 
 - Active-dot pulse halo no longer clips against the window edge (window taller, overflow:hidden removed from the inner dots container).
 - `speak-response.ps1` palette size corrected from 32 → 24 (matched the actual palette everywhere else).
 
+### Added — architecture refactor (external-audit follow-up)
+Three shared modules extracted from copy-pasted logic:
+- **`app/lib/text.js`** — canonical `stripForTTS` (markdown → speakable prose). Replaces 4 copies (main.js, tests, synth_turn.py, speak-response.ps1). Python + PowerShell mirrors remain (can't share JS code) and are verified against the canonical on every test run by a new `STRIP-FOR-TTS PARITY` group.
+- **`app/session-registry.psm1`** — shared PowerShell module for session-colour assignment: `Read-Registry`, `Update-SessionAssignment`, `Save-Registry`, `Write-SessionPidFile`. Replaces the ~80-line lowest-free-index + hash-fallback + atomic-write block that used to live copy-pasted in `statusline.ps1`, `speak-response.ps1`, and `speak-on-tool.ps1`.
+- **`app/tts-helper.psm1`** — shared edge-tts + OpenAI fallback chain: `Resolve-OpenAiApiKey`, `Invoke-EdgeTts`, `Invoke-OpenAiTts`, `Invoke-TtsWithFallback`. Replaces the Invoke-TTS function + key-walker duplicated across the response and notification hooks.
+
+Net: ~260 lines of duplication deleted. New regression-guard test groups hard-fail if any caller re-inlines the logic.
+
+### Added — installer hardening
+- `-Unattended` / `-HooksYes` / `-StatuslineYes` / `-StartupYes` flags. CI install step now uses these instead of piping newlines into stdin.
+- **`requirements.txt`** pinning Python deps (edge-tts 7.2.8, openwakeword 0.6.0, onnxruntime 1.24.4, sounddevice 0.5.5, numpy 2.4.4). Dependabot raises weekly PRs; harness gates them.
+- Corrupt `~/.claude/settings.json` is detected and the installer refuses to proceed (prevents mid-edit crash leaving the user with both no hooks AND a broken settings file).
+- Settings.json backups auto-rotate — keep the last 5, prune older.
+- Installer parses clean under strict `[ScriptBlock]::Create()` (em-dashes in UTF-8-no-BOM strings that tripped PS 5.1's ANSI codepage are gone).
+
+### Added — security hardening
+Following [Electron's 2026 security checklist](https://www.electronjs.org/docs/latest/tutorial/security) + CNCF TAG-Security hygiene guide:
+- Strict **CSP** on the renderer: `default-src 'none'`, `connect-src 'none'`, `script-src 'self'`, `media-src 'self' blob: file:`. Renderer has no network fetch surface.
+- **Navigation guards**: `will-navigate` blocks anything off-app, `setWindowOpenHandler` denies by default, `will-attach-webview` prevented.
+- **Single-instance lock** via `app.requestSingleInstanceLock()` — duplicate launches surface the existing window and exit (fixes "5 terminal-talk.exe in Task Manager" bug).
+- **Self-cleanup watchdog** runs every 30 minutes — prunes stale audio, dead-PID session files, orphan wake-word listener processes. Logs to `~/.terminal-talk/queue/_watchdog.log`.
+- Repo meta: `SECURITY.md` (responsible-disclosure policy + hardening summary), `.github/dependabot.yml` (npm + pip + github-actions weekly), `.github/workflows/codeql.yml` (JS + Python + actions SAST), `.github/ISSUE_TEMPLATE/*`, `.github/PULL_REQUEST_TEMPLATE.md`, `CODE_OF_CONDUCT.md`.
+- Workflow default-deny: `permissions: contents: read` at top of `test.yml`.
+- Electron dependency pinned exactly (`32.2.0` — was `^32.2.0`).
+
+### Added — UX (scrubber mascot)
+- Native `<input type="range">` thumb replaced with an SVG overlay of the wallpaper mascot. While audio plays forward his legs bob + body scurries up-down (walk cycle). Drag the scrubber forward → legs sweep right; drag backward → mascot **rotates 180° (angry face)** + legs sweep left. Body bob skips during angry-flip to avoid transform collision.
+- Scrubber now driven by `requestAnimationFrame` (~60 fps) instead of `timeupdate` (~4 fps) — mascot glides instead of stepping.
+- Claude Code's 90 `tengu_spinner_words` (Moonwalking, Flibbertigibbeting, Cerebrating, Honking…) float up from the mascot's head as tiny white pixel-cloud speech bubbles with a stepped wallpaper silhouette + drop-shadow. Random order, jittered 850–1500 ms between emits.
+
+### Added — branding
+- Full-size **1280 × 800 wallpaper** (`docs/assets/wallpaper/`) of the ASCII TERMINAL TALK wordmark + pixel mascot + HEY JARVIS speech bubble. Used as the README hero + GitHub OG image.
+- Per-letter 3D cast-shadow via `text-shadow` (each letter's shadow is a darker shade of its face colour, not a bevel line inside the glyph). R + TALK's L both cyan for visual through-line.
+- Six annotated UI mocks in `docs/design-system/mocks-annotated.html` rendered to individual PNGs, embedded in the README's new "UI states" section.
+
+### Fixed — bugs from external code review
+- **User-visible: wrong voice config keys** in `synth_turn.py`. Read `voices.response_voice` (doesn't exist) and `voices.openai_api_key` (wrong nesting) — so changing the global response voice in the settings panel silently did nothing, and the streaming OpenAI fallback never fired. Now reads `voices.edge_response` and root-level `openai_api_key` to match the JS writer.
+- **Speech-includes defaults drift**: Python had `bullet_markers=True, image_alt=True` while JS had `false, false`. Streaming hook was speaking bullet markers the clipboard-speak flow wasn't. Flipped Python to match JS. Lock-step now enforced by test group `JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP`.
+- **Stale palette bound**: `set-session-index` clamped to 31 but palette is 24 (0–23). Valid IPC input was rejected by the registry sanitiser → silent UI/registry drift. Clamp now 23.
+- **Silent edge-tts sentence drops**: one-shot failures with no retry + no log meant ~1 sentence per turn could vanish. Now retries 3× with 0.4/0.8 s backoff; final failure logs an 80-char preview of the lost sentence to `_hook.log`.
+- **Settings-panel flicker at bottom edge**: the off-screen rescue tested the whole window's centre, which with the panel open was below the work area → rescue yanked the window back mid-drag. Now tests only the 114 px bar region.
+- **`applyDock('bottom')` slammed the panel shut**: hard-coded collapsed height. Now reads current height, preserves whichever state the user was in.
+- **Panel-open while bottom-docked grew off-screen**: `setSize` kept y fixed. Now uses `setBounds` with y-adjust so the panel grows *upward* from a bottom-docked bar.
+- **Space / Arrow keys hijacked typing**: toolbar's renderer listened for `Space` / `ArrowLeft` / `ArrowRight`, which fired when the user had recently clicked the bar and then typed in another app. Removed — pause is `Ctrl+Shift+P` / `Ctrl+Shift+O` globals. Kept Escape with a `document.hasFocus()` guard.
+- **Vertical left/right dock removed entirely**: unrecoverable-state bug on multi-monitor rearrangement (bar stuck vertical mid-screen with no drag path back). Horizontal-only snap (top/bottom) now. Ctrl+Shift+A stays the recovery hotkey.
+- **Off-screen rescue**: if the bar ends up off every connected display (unplugged monitor, swapped laptop), it re-centres on primary-top automatically.
+
+### Changed — docs
+- README hero is the wallpaper, not the retired dots-lettered banner.
+- README has a new "UI states" section with 5 annotated mocks + captions, plus a "Status: early beta · solo-maintained" banner above the marketing copy.
+- CONTRIBUTING source-tree listing updated with `synth_turn.py`, `sentence_split.py`, `lib/text.js`, `session-registry.psm1`, `tts-helper.psm1`, `speak-on-tool.ps1`, `tests/e2e/`, `render-mocks.cjs`.
+- SECURITY.md function name corrected: `redactSecrets()` → `redactForLog()`.
+- Test counts synced across README (121 → 128), SECURITY.md (83 → 128), CONTRIBUTING (75 → 128).
+
 ### Tests
-- 75 total, all passing. +21 new since v0.1.0 covering sentence splitter, sync state, text extraction, mute round-trip, synth-skip-on-mute.
+- **128 unit + 13 Playwright E2E**, all green. **+53 new tests** since the session started.
+- New regression-guard groups: `STRIP-FOR-TTS PARITY`, `PS SESSION-REGISTRY MODULE IS CANONICAL`, `PS TTS-HELPER MODULE IS CANONICAL`, `JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP`, `HARDENING: renderer CSP`, `HARDENING: navigation guards`, `SELF-CLEANUP WATCHDOG`. Each hard-fails if a consolidated module gets re-inlined or a documented default flips.
+- Cross-platform CI: Linux logic-only (58/58) + Windows full harness (128/128) + CodeQL (JS + Python + actions).
 
 ## [0.1.0] — 2026-04-19
 

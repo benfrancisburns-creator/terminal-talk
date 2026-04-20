@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: early beta · solo-maintained.** Actively developed, 121 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: early beta · solo-maintained.** Actively developed, 128 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Hands-free voice workflow for Claude Code.**
 Claude's replies are read aloud. Highlight any text anywhere, say _"hey jarvis"_, hear it.
@@ -335,7 +335,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 121-test harness exercises the actual installed components:
+A 128-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
