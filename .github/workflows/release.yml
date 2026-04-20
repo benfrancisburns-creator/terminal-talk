@@ -41,7 +41,12 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if [ -n "$(git status --porcelain)" ]; then
+          # Only react to changes under docs/. The previous `git status
+          # --porcelain` (no path filter) also matched mode-bit changes
+          # on scripts/archive-docs.sh from the `chmod +x` step above,
+          # which fired the commit branch with nothing staged on patch
+          # releases of an existing minor line.
+          if [ -n "$(git status --porcelain -- docs/)" ]; then
             git add docs/
             git commit -m "docs: archive docs/ snapshot for ${GITHUB_REF_NAME} [skip ci]"
             git push origin main
