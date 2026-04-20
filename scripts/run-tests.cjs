@@ -1487,6 +1487,68 @@ describe('STALE SESSIONS IPC WIRING', () => {
 });
 
 // =============================================================================
+// R6.2 — BOUNDED CONCURRENCY helper. speakClipboard now parallelises
+// edge-tts per-chunk synth. The mapLimit primitive must preserve source
+// order in the output array and bound the in-flight count so the MS
+// Edge TTS service doesn't 429 under unbounded fan-out.
+// =============================================================================
+describe('BOUNDED CONCURRENCY (R6.2 / R22)', () => {
+  const { mapLimit } = require(path.join(__dirname, '..', 'app', 'lib', 'concurrency.js'));
+
+  it('empty input -> empty result', async () => {
+    const r = await mapLimit([], 4, async () => { throw new Error('should not run'); });
+    assertEqual(r, []);
+  });
+
+  it('output preserves source order regardless of task finish order', async () => {
+    // Inverse delays: first task sleeps longest, last sleeps 0.
+    const r = await mapLimit([30, 20, 10, 0], 4, async (ms, i) => {
+      await new Promise(resolve => setTimeout(resolve, ms));
+      return `item-${i}`;
+    });
+    assertEqual(r, ['item-0', 'item-1', 'item-2', 'item-3']);
+  });
+
+  it('caps in-flight tasks at `limit`', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const work = Array.from({ length: 20 }, (_, i) => i);
+    await mapLimit(work, 3, async () => {
+      inFlight++;
+      if (inFlight > peak) peak = inFlight;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      inFlight--;
+    });
+    if (peak > 3) throw new Error(`peak in-flight was ${peak}, expected <= 3`);
+    if (peak < 2) throw new Error(`peak in-flight was ${peak}, expected close to cap`);
+  });
+
+  it('thrown errors become Error entries at the correct index', async () => {
+    const r = await mapLimit([1, 2, 3], 2, async (x, i) => {
+      if (i === 1) throw new Error('boom');
+      return x * 10;
+    });
+    assertEqual(r[0], 10);
+    if (!(r[1] instanceof Error)) throw new Error('r[1] should be an Error');
+    if (r[1].message !== 'boom') throw new Error('Error message lost');
+    assertEqual(r[2], 30);
+  });
+
+  it('speakClipboard wires mapLimit + filters null/Error', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/require\(['"]\.\/lib\/concurrency['"]\)/.test(src)) {
+      throw new Error('main.js must require ./lib/concurrency');
+    }
+    if (!/mapLimit\(chunks,\s*CLIP_CONCURRENCY/.test(src)) {
+      throw new Error('speakClipboard must call mapLimit(chunks, CLIP_CONCURRENCY, ...)');
+    }
+    if (!/positional\.filter\(p\s*=>\s*p\s*&&\s*!\(p\s+instanceof\s+Error\)\)/.test(src)) {
+      throw new Error('speakClipboard must drop null + Error entries before priority-play');
+    }
+  });
+});
+
+// =============================================================================
 // R5.4 — EXPONENTIAL BACKOFF helper. Pure module so we can pin down the
 // curve without spawning Python processes.
 // =============================================================================

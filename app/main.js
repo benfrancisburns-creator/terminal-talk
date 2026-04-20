@@ -584,6 +584,7 @@ function stripForTTS(text) {
 const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
 const { exponentialBackoff } = require('./lib/backoff');
+const { mapLimit } = require('./lib/concurrency');
 
 function chunkText(text, maxLen = 3800) {
   if (text.length <= maxLen) return [text];
@@ -835,29 +836,35 @@ async function speakClipboard() {
     const activeSession = await detectActiveSession();
     const sessionTag = activeSession || 'neutral';
     diag(`speakClipboard: session tag = ${sessionTag}, edge voice = ${CFG.voices.edge_clip}`);
-    const paths = [];
-    for (let i = 0; i < chunks.length; i++) {
+    // Synthesise chunks in parallel (bounded) so a 10-chunk clipboard
+    // paste doesn't serialise 10 × edge-tts round-trips. The MS Edge TTS
+    // service is happy with a handful of concurrent requests; beyond ~6
+    // it starts emitting 429s, so cap at 4. Output paths are returned
+    // positionally (source order) so priority-play still fires in the
+    // order the user highlighted the text.
+    const CLIP_CONCURRENCY = 4;
+    const positional = await mapLimit(chunks, CLIP_CONCURRENCY, async (chunk, i) => {
       const idx = String(i + 1).padStart(2, '0');
       const edgeOut = path.join(QUEUE_DIR, `${ts}-clip-${sessionTag}-${idx}.mp3`);
       const wavOut = path.join(QUEUE_DIR, `${ts}-clip-${sessionTag}-${idx}.wav`);
-      let delivered = null;
       try {
-        await callEdgeTTS(chunks[i], CFG.voices.edge_clip, edgeOut);
-        delivered = edgeOut;
+        await callEdgeTTS(chunk, CFG.voices.edge_clip, edgeOut);
         diag(`speakClipboard: edge-tts chunk ${idx} OK`);
+        return edgeOut;
       } catch (e1) {
         diag(`speakClipboard: edge-tts chunk ${idx} FAIL: ${e1.message}`);
-        if (!apiKey) { diag('speakClipboard: no OpenAI key for fallback'); continue; }
+        if (!apiKey) { diag(`speakClipboard: no OpenAI key for fallback chunk ${idx}`); return null; }
         try {
-          await callOpenAITTS(apiKey, chunks[i], CFG.voices.openai_clip, wavOut);
-          delivered = wavOut;
+          await callOpenAITTS(apiKey, chunk, CFG.voices.openai_clip, wavOut);
           diag(`speakClipboard: OpenAI fallback chunk ${idx} OK`);
+          return wavOut;
         } catch (e2) {
           diag(`speakClipboard: OpenAI fallback chunk ${idx} FAIL: ${e2.message}`);
+          return null;
         }
       }
-      if (delivered) paths.push(delivered);
-    }
+    });
+    const paths = positional.filter(p => p && !(p instanceof Error));
     if (paths.length && win && !win.isDestroyed()) {
       if (!win.isVisible()) win.showInactive();
       setTimeout(() => {
