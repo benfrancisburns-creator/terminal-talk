@@ -2,7 +2,41 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — 0.2.0
+## [0.3.0] — 2026-04-20
+
+Audit-closure release. Every deferral from v0.2.0's shipping audit (11 D-tier items + 3 explicit deferrals) is now resolved. The ULTRAPLAN backlog is closed.
+
+### Added
+
+- **D1 — Electron 32 → 41.2.1.** `app/package.json` pin bumped; 13/13 Playwright E2E green against the new runtime. No code changes needed — Pass-4's static review held (zero relevant breakages across Electron 33-41 migration notes).
+- **D2 — `safeStorage` encryption for `openai_api_key`.** Key no longer lives plaintext in `config.json`. `app/lib/api-key-store.js` writes two files on save: `openai_key.enc` (base64 of DPAPI-encrypted bytes, useless on another machine) and `config.secrets.json` (plaintext sidecar with user-only ACL set by `install.ps1`). PS hooks + `synth_turn.py` read the sidecar; `main.js` and the renderer stay on the encrypted side. First-boot migration moves any existing plaintext key out of `config.json` and blanks the field.
+- **D3 — pixel-diff palette regression rig.** `scripts/palette-pixel-diff.cjs` + 24 baseline PNGs in `tests/baselines/palette/`. `npm run test:palette-diff` compares current renders to baselines at 2% tolerance. `npm run test:palette-diff:update` re-captures. Stand-alone (no Playwright-project hassle); log-only until CI tolerance is characterised.
+- **D2-1 — dynamic `components.html?name=X` router** (T-2). Four per-component design-system pages (`colors-session.html`, `components-dots.html`, `component-sessions-row.html`, `components-forms.html`) replaced by one iframe-kit router with redirect stubs for the three that were pure duplicates.
+- **D2-2 — docs versioning** (T-2). `scripts/archive-docs.sh` + `.github/workflows/release.yml`. On `v*` tag push, `docs/` is snapshotted to `docs/v<N>/`. v0.2 seed committed as `docs/v0.2/`. v0.1 screenshots linked from the top-level README still work.
+- **D2-3 — kit iframes `app/renderer.js`** (this release's big structural move). `docs/ui-kit/` no longer ships 8 hand-rolled JSX components + `palette.js` + `kit.css`. Instead `index.html` loads the real shipping `app/renderer.js` verbatim with a new `mock-ipc.js` impersonating the full Electron IPC surface (16 invoke handlers + 8 event channels + 5 seed states). The kit **is** the product now. When `renderer.js` changes, the kit changes with it — drift is structurally impossible. Only audio playback is absent; every visual, every interaction, every timing is genuine. Pass-1 §8b closed.
+- **D2-4 — PS → synth_turn IPC integrity decision** (T-2). `docs/architecture/ipc-integrity.md` captures the threat-model review of three options (HMAC / named pipe / accept trust boundary) and documents the accept-trust-boundary decision with rationale. Trust-boundary comment added to `app/synth_turn.py`'s argv parser.
+- **D2-5 — `config.schema.json`** (JSON Schema draft-07). Gives VS Code + any editor honouring `json.schemas` autocomplete + validation on save. Zero runtime cost (hand-rolled `app/lib/config-validate.js` stays authoritative). Four parity tests guard schema ↔ validator drift.
+- **D2-8 — action SHA pinning + Node 24 opt-in.** Every `uses:` reference in `.github/workflows/*.yml` pinned to a 40-char commit SHA with matching semver tag comment. Dependabot's github-actions ecosystem rewrites both on upgrade. `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` at workflow env opts action runtimes into Node 24 ahead of GitHub's June 2026 forced rollout.
+- **D2-9 — CSP `'unsafe-inline'` dropped from `style-src`.** Four replacement patterns: `data-palette` attribute + generated `app/lib/palette-classes.css` (48 rules covering all 24 arrangements × non-heard/heard), `.hidden` utility class for play/pause toggle, Constructable Stylesheet (`document.adoptedStyleSheets`) for continuous mascot / Jarvis-arm / spinner-word positions, and CSP meta tag tightened from `style-src 'self' 'unsafe-inline'` to `style-src 'self'`. Three CI regression tests in the `HARDENING: renderer CSP` block catch any regression.
+- **D2-11 — Playwright `globalSetup` pre-flight + `reportSlowTests`.** Fail-fast check that the Electron binary exists before the first test times out; 5 s slow-test detector catches flakiness creep.
+
+### Closed with rationale
+
+- **D2-10 — renderer keyed-reconciliation.** Z11's focus-bail in `renderSessionsTable` (shipped in Tier C) handles the practical 90% of state-loss cases (focus, caret, in-progress label edits, open dropdowns). Full morphdom stays deferred for v0.4+ if the state-loss surface grows.
+
+### Fixed
+
+- Windows full-harness CI regressions from over-greedy regex in D2-9's regression tests — both now tolerate CRLF line endings + HTML comments.
+- Voice-list validation test (`scripts/run-tests.cjs`) re-pointed from `app/renderer.js` (which no longer has inline voice literals) to `app/lib/voices.json`.
+
+### Changed
+
+- Tests: **107 → 162 logic-only + 13 Playwright E2E.** All green on Electron 41.2.1, Node 18/20/22 matrix, Windows full harness, E2E-Windows, doc-drift guard, coverage (c8).
+- `Claude Assesments/AUDIT-FINAL.md` updated with post-v0.3 Tier D-2 closure table.
+
+---
+
+## [0.2.0] — 2026-04-20
 
 Large quality-of-life release built iteratively in one long session. Everything here is on top of v0.1.0.
 
