@@ -2,6 +2,20 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.5] — 2026-04-20
+
+Latent-boot-playback fix surfaced by the kit demo.
+
+### Fixed
+
+- **`renderer.js:initialLoad` populated `pendingQueue` newest-first; `pendingQueue.shift()` then yielded the newest clip as the first play.** `main.js:getQueueFiles` returns newest-first (`b.mtime - a.mtime`), and `onQueueUpdated` (steady-state) explicitly re-sorts new arrivals ascending before pushing to pending so `shift()` yields oldest — `initialLoad` (first-boot path) skipped that sort, inheriting main's newest-first ordering. Effect: if the toolbar booted with 4+ unplayed clips queued, playback started on the newest and swept rightmost-to-leftmost until the pending buffer drained, instead of walking the dot strip left-to-right. Mostly invisible in daily use because recent-cutoff (`STALE_MS`) usually promotes older clips to `playedPaths` and leaves only 1-2 in pending, but glaring on the kit demo (8 pre-seeded clips spanning 30 s). Fix: mirror `onQueueUpdated`'s ascending sort in `initialLoad` before populating pending.
+
+### Added
+
+- Source-grep regression test that asserts `initialLoad` sorts unplayed files ascending before pushing to `pendingQueue`. Tests: **171 → 172 logic-only.**
+
+---
+
 ## [0.3.4] — 2026-04-20
 
 Kit demo hotfix — playback appeared to walk the dot strip right-to-left.
