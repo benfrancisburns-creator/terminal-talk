@@ -259,8 +259,12 @@ describe('EDGE TTS WRAPPER', () => {
 // be kept in lock-step. Previously this file carried its own ~40-line
 // copy that had already drifted (missing the shell-prompt / tool-use
 // rules). Audit CC-1 fix.
+//
+// Require from the REPO copy, not the installed copy, so --logic-only on
+// Linux CI works with no install tree. The install-sanity group at the
+// bottom separately verifies the file is present in the installed location.
 // =============================================================================
-const { stripForTTS } = require(path.join(APP_DIR, 'lib', 'text.js'));
+const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
 
 describe('SPEECH INCLUDES (stripForTTS)', () => {
   it('strips code blocks by default', () => {
