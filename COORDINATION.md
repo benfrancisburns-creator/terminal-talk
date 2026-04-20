@@ -129,8 +129,28 @@ Do these steps in order:
 
 | Stream | Owner | Items | Branch | Status |
 |---|---|---|---|---|
-| **v3-js-ts-ci** | **Terminal-1** | D2-8 SHA pins · D2-11 playwright config · D2-5 ajv · D2-10 reconciliation · D2-9 CSP unsafe-inline · D3 pixel-diff rig · D2-3 §8b kit-as-iframe · D1 Electron 41 · D2 safeStorage main side | `stream-v3-js-ts-ci` (new — created below) | 🚧 starting with D2-8 |
-| **v3-py-docs** | **Terminal-2** | D2-2 docs versioning · D2-1 §8e collapse design-system · D2-4 PS IPC integrity · D2 safeStorage PS side (wait for T-1) | `stream-v3-py-docs` | 🚧 claimed (Terminal-2) — starting D2-2 |
+| **v3-js-ts-ci** | **Terminal-1** | **D2-8 ✅ · D2-11 ✅ · D2-5 ✅** · D2-10 (Z11 handled 90%) · D2-9 (needs Constructable Stylesheets) · D3 · D2-3 · D1 · D2 | `stream-v3-js-ts-ci` | 3/9 shipped; T-1 standing down this session — remaining 6 re-parked as separate-session work |
+| **v3-py-docs** | **Terminal-2** | **D2-2 ✅** · D2-1 · D2-4 · D2 (waits on T-1 design) | `stream-v3-py-docs` | 🚧 D2-1 next |
+
+### T-1 post-execution note (2026-04-20, `cd86460`)
+
+**Shipped this session:**
+- `85296bb` **D2-8** — every CI action SHA-pinned with semver tag comments; Node 24 opt-in via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`. Dependabot rewrites SHA+comment together on upgrade.
+- `bf99eee` **D2-11** — playwright `globalSetup` pre-flight (fails fast on missing Electron binary) + `reportSlowTests` (flakiness creep detector).
+- `cd86460` **D2-5** — `config.schema.json` (JSON Schema draft-07) for editor autocomplete. 4 new parity tests guard schema ↔ validator drift. 150/150 logic-only green.
+
+**Honestly reassessed as separate-session work** (my brief's "~10h one session" estimate was optimistic for these specific items):
+
+| ID | Why separate session |
+|---|---|
+| **D2-9** drop `'unsafe-inline'` from CSP style-src | 3 mascot position sites set continuous `style.left = px`. Can't enumerate as CSS classes. Needs Constructable Stylesheets (`new CSSStyleSheet()`) or partial refactor that leaves unsafe-inline for the mascot only. Neither is a quick fill. |
+| **D2-10** keyed-reconciliation | Z11 (Tier C) already handles the practical 90%: `renderSessionsTable` bails when `activeElement` is an input/select — preserves focus + caret + in-progress edits. Full morphdom for the remaining 10% (dropdown-open state, scroll, animation phase) is marginal UX gain for 60–80 lines. |
+| **D2** safeStorage for `openai_api_key` | Architecture decision ahead of code: **where does the decrypted key live when PS hooks need it?** Plaintext sidecar defeats safeStorage; IPC-from-hook adds ~2s latency per hook fire. The sidecar approach I outlined to T-2 in the brief was wrong in retrospect. Needs a design doc + joint T-1/T-2 session. |
+| **D2-3** §8b kit-as-iframe-wrapper | 5+ h structural — explicit v0.3 material per original ULTRAPLAN Out-of-Scope. |
+| **D3** pixel-diff palette rig | Playwright + baseline image folder + cross-platform hash tolerance infra. Explicit original ULTRAPLAN D3. |
+| **D1** Electron 32 → 41 | Single isolated session per original ULTRAPLAN D1. Pass-4 scoped the breakages (zero relevant); the smoke run is the remaining work. |
+
+**Net:** 3 items shipped, 6 re-parked with explicit rationale. Honest handoff beats half-shipping. Terminal-2 continues D2-1 in parallel — no conflicts.
 
 ---
 
