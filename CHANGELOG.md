@@ -18,12 +18,13 @@ Large quality-of-life release built iteratively in one long session. Everything 
 ### Added — toolbar UX redesign
 - **Two-row layout.** 680 × 114 window: controls on top (play/pause, ±10 s, scrubber, time, clear, settings, close), dots on the bottom strip — ~30 dots fit before any clipping. Dot order flipped to oldest-left, newest-right so the row reads in playback order.
 - **Session-run grouping.** Visual gaps on the dot strip between runs from different terminals, so you see at a glance which terminal said what without reordering playback.
-- **Edge snapping.** Drag the toolbar anywhere; release within 50 px of an edge and it snaps flush. Left / right edges switch to a vertical layout (56 px wide, controls stacked, dots running downward). Position and dock orientation persist across launches.
+- **Edge snapping.** Drag the toolbar anywhere; release within 20 px of the top or bottom edge and it snaps flush. Horizontal-only (no left / right vertical dock — that was shipped then pulled in the pre-release for an unrecoverable-state bug on multi-monitor setups). Position and dock edge persist across launches.
 - **Auto-collapse / hover-expand.** 15 s of no interaction → bar shrinks to a 14 px strip and becomes click-through so clicks pass to apps below. Hover, new clip, or keystroke → expands back. Deferred while audio is playing or unplayed clips remain in the queue, so streaming sessions don't flicker.
 - **Persistent sessions.** Colour registry entries keep their slot indefinitely until removed via a new × button on each Sessions table row. No more "labelled the session, went away for an hour, came back and the label was gone".
 
 ### Added — per-session controls
 - **Mute toggle.** `🔊 / 🔇` button on each Sessions row. Muted sessions skip synthesis entirely (no edge-tts calls), are filtered from the dot strip, any currently-playing clip stops if its session gets muted, and the terminal's statusline shows a `🔇` prefix.
+- **Focus toggle.** `☆ / ★` button on each Sessions row. Marking a session as focus jumps its unplayed clips to the front of the playback queue (but never interrupts a currently-playing clip). Exclusive — only one session can be focused at a time; clicking focus on another clears the prior focus. Persisted to the registry.
 - **Auto-prune controls.** Playback panel has a toggle ("Auto-prune played clips") and a configurable delay (3-600 s, default 20 s). On = self-managing toolbar. Off = clips stack up for review when you return to the desk. Per-clip timers honour the manual-vs-auto-play distinction (20 s manual, 20 s auto by default).
 
 ### Changed — installer / process identity
@@ -32,7 +33,7 @@ Large quality-of-life release built iteratively in one long session. Everything 
 ### Fixed
 - `Ctrl+Shift+J` mic mute actually releases the microphone now. Orphan sweep plus a Python-side state-file poll that tears down the `sd.InputStream` when state flips to "off". Two independent kill paths — either alone is sufficient.
 - Focus-stealing toolbar. `win.show()` on every clip was grabbing focus mid-type; switched to `showInactive()` for queue-driven shows and downgraded `alwaysOnTop` from `screen-saver` to `floating`.
-- Robust auto-play. `playNextPending()` now has a third-tier fallback scanning for any unplayed + unmuted clip. The old `ended` handler gate that blocked this fallback has been removed.
+- Robust auto-play. `playNextPending()` now has a four-tier decision: (1) priority queue (hey-jarvis clips), (2) focused session's oldest unplayed clip, (3) pending queue in arrival order, (4) fallback scan for any unplayed + unmuted clip. The old `ended` handler gate that blocked the fallback has been removed.
 - Monotonic mtime on rolling release. `os.replace()` was preserving source mtime (= synth-finish time, random due to parallelism), causing playback order to skip around; now `os.utime()` stamps a monotonic counter so order matches seq.
 - Active-dot pulse halo no longer clips against the window edge (window taller, overflow:hidden removed from the inner dots container).
 - `speak-response.ps1` palette size corrected from 32 → 24 (matched the actual palette everywhere else).

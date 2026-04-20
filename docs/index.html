@@ -388,10 +388,15 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </div>
     </div>
 
+    <!-- Hero palette = the 8 product dot colours. Cyan (#22d3ee) is a
+         brand-only accent used for the mascot face in the wordmark
+         above — it is NOT one of the dot colours. If you change either
+         the app's BASE_COLOURS or this list, update the other and the
+         ui-kit (docs/ui-kit/palette.js) in the same commit. -->
     <div class="hero-palette">
       <div class="dot" style="background:#ff5e5e"></div>
       <div class="dot" style="background:#ffa726"></div>
-      <div class="dot" style="background:#22d3ee"></div>
+      <div class="dot" style="background:#ffd93d"></div>
       <div class="dot" style="background:#4ade80"></div>
       <div class="dot" style="background:#60a5fa"></div>
       <div class="dot" style="background:#c084fc"></div>
@@ -400,7 +405,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 
-  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey TT"</em>, hear it.</p>
+  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
   <p class="sub">Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
@@ -493,7 +498,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 <span class="prompt">PS&gt;</span> .\install.ps1</pre>
         </div>
         <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows 10/11 · Python 3.10+ · Node 18+ · Microphone</span></div>
-        <div class="req-row">Mac and Linux ports tracked for v0.2. Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
+        <div class="req-row">Mac and Linux ports are on the roadmap (no ETA yet — PRs welcome). Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
       </div>
     </div>
   </div>
@@ -541,7 +546,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </details>
       <details>
         <summary>Why Windows-only at launch?</summary>
-        <p>The toolbar and hooks rely on PowerShell + Windows-specific keybindings. Mac and Linux ports are the priority for v0.2. If you can help with a port, PRs are welcome.</p>
+        <p>The toolbar and hooks rely on PowerShell + Windows-specific keybindings. Mac and Linux ports are on the roadmap (no ETA yet — the architecture is ready for them but the platform-specific glue isn't written). If you can help with a port, PRs are welcome.</p>
       </details>
       <details>
         <summary>Can I change the wake word from "hey jarvis"?</summary>

@@ -36,8 +36,8 @@ Free tier uses Microsoft Edge's neural voices — same endpoint Edge browser
 uses for "Read Aloud", no API key needed. Optional OpenAI TTS fallback if
 you want it. Privacy section in the README documents every network call.
 
-Windows-only at v0.1; Mac/Linux planned. Pairs nicely with Wispr Flow or
-similar for full voice-in + voice-out.
+Windows-only today; Mac/Linux on the roadmap (no ETA). Pairs nicely with
+Wispr Flow or similar for full voice-in + voice-out.
 
 Repo: https://github.com/benfrancisburns-creator/terminal-talk
 ```
@@ -64,7 +64,7 @@ openWakeWord for the wake word (runs entirely offline on CPU). Optional OpenAI
 TTS fallback if you want it.
 
 Stack: Electron toolbar + Python wake listener + PowerShell hooks. MIT licensed.
-Windows-only at v0.1, Mac/Linux planned.
+Windows-only today; Mac/Linux ports on the roadmap (no ETA).
 
 Repo: https://github.com/benfrancisburns-creator/terminal-talk
 
@@ -96,7 +96,7 @@ Built Terminal Talk: a free voice workflow for Claude Code.
 → Each terminal gets its own colour + optional voice
 → Edge TTS + openWakeWord = no signup, runs locally
 
-MIT, Windows. Mac/Linux next.
+MIT, Windows. Mac/Linux on the roadmap.
 github.com/benfrancisburns-creator/terminal-talk
 
 [ATTACH 30-SEC DEMO VIDEO]
@@ -187,7 +187,7 @@ The reason for the order: HN first because timing matters there. Then community 
 ### Step 6 — Iterate based on feedback
 
 The first 50 users will tell you what's wrong. Common asks for tools like this:
-- "Why isn't this on Mac?" → confirm Mac port is the v0.2 priority
+- "Why isn't this on Mac?" → acknowledge it's on the roadmap, no ETA, PRs welcome
 - "Does it work without OpenAI?" → yes, that's the whole point — fix the README if this question keeps coming up
 - "Privacy?" → already in the Privacy & Security section
 - "Can I change the wake word?" → it's documented but maybe not prominent enough
@@ -210,7 +210,7 @@ The first 50 users will tell you what's wrong. Common asks for tools like this:
 If it gains traction:
 - Add a "Stars over time" badge to the README (use https://star-history.com)
 - Pin a "GitHub Discussions" thread for feedback
-- Schedule v0.2 publicly (Mac/Linux ports)
+- Publish a public roadmap for Mac/Linux ports when the first PR lands
 - Consider a `terminaltalk.dev` domain if the project sticks (£10/year)
 
 If it didn't land:
