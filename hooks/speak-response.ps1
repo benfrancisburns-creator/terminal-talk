@@ -230,6 +230,9 @@ if (-not $inc.bullet_markers) {
 }
 $clean = $clean -replace 'Ctrl\+', 'control '
 $clean = $clean -replace 'Cmd\+', 'command '
+# Tilde — edge-tts pronounces as "tilda" which is universally wrong.
+# Drop the character; see app/lib/text.js for full rationale.
+$clean = $clean -replace '~', ''
 # Restore preserved code blocks.
 if ($codeBlocks.Count -gt 0) {
     $clean = [regex]::Replace($clean, "`0CB(\d+)`0", { param($m) $codeBlocks[[int]$m.Groups[1].Value] })

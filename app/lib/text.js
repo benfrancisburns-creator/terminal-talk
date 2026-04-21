@@ -101,6 +101,11 @@ function stripForTTS(text, includes) {
   t = t.replace(/Ctrl\+/g, 'control ');
   t = t.replace(/Cmd\+/g, 'command ');
 
+  // Tilde — edge-tts pronounces as "tilda" which is universally wrong.
+  // Drop the character; ~/path reads as "/path" (awkward but not wrong),
+  // ~N loses "approximately" but context usually makes it clear.
+  t = t.replace(/~/g, '');
+
   // Restore preserved code blocks if any (only when code_blocks=true).
   // NOSONAR: the null-byte delimiters are intentional sentinel tokens
   // written at line 45 above; no real markdown text contains \u0000 so

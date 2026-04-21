@@ -401,6 +401,13 @@ def sanitize(text: str, flags: dict) -> str:
     t = _CTRL_RE.sub('control ', t)
     t = _CMD_RE.sub('command ', t)
 
+    # Tilde — edge-tts pronounces as "tilda" which is universally wrong.
+    # Common contexts are ~/path (home-dir shorthand) and ~N (approximately);
+    # in both cases dropping the character is the cleanest fix. The
+    # "approximately" semantic is rarely essential and context usually
+    # makes it clear. User-reported.
+    t = t.replace('~', '')
+
     # Collapse excessive blank lines
     t = re.sub(r'\n{3,}', '\n\n', t)
 
