@@ -4,9 +4,9 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 3329,
-    "app/main.js": 1709,
+    "scripts/run-tests.cjs": 3529,
     "app/renderer.js": 1704,
+    "app/main.js": 1599,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
     "app/wake-word-listener.py": 289,
@@ -14,6 +14,7 @@
     "hooks/speak-response.ps1": 267,
     "app/key_helper.py": 260,
     "scripts/check-doc-drift.cjs": 235,
+    "app/lib/ipc-handlers.js": 232,
     "app/session-registry.psm1": 221,
     "scripts/check-file-length.cjs": 175,
     "scripts/generate-tokens-css.cjs": 169,
@@ -27,7 +28,6 @@
     "tests/e2e/sessions.spec.ts": 113,
     "app/edge_tts_speak.py": 109,
     "app/lib/text.js": 108,
-    "app/lib/ipc-handlers.js": 107,
     "app/lib/api-key-store.js": 101,
     "tests/e2e/fixtures.ts": 96,
     "app/lib/watchdog.js": 94,

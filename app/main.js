@@ -1162,25 +1162,6 @@ function ensureAssignmentsForFiles(files) {
   return all;
 }
 
-// EX6f-1 — read-only IPC handlers (log-renderer-error, get-queue,
-// get-assignments, get-stale-sessions, get-config) extracted to
-// app/lib/ipc-handlers.js. The factory's register() call below also
-// becomes the sole registration site for later EX6f commits as more
-// handler groups migrate in. CFG is passed via getter because
-// update-config reassigns it.
-const { createIpcHandlers } = require('./lib/ipc-handlers');
-createIpcHandlers({
-  ipcMain,
-  diag,
-  getCFG: () => CFG,
-  loadAssignments,
-  getQueueFiles,
-  ensureAssignmentsForFiles,
-  isPidAlive,
-  computeStaleSessions,
-  SESSIONS_DIR,
-}).register();
-
 // EX3 — Settings-panel "Reload toolbar" button fires this; hits the
 // same reload() as the Ctrl+R keyboard shortcut in before-input-event
 // at window creation. No-op if the window has been destroyed in the
@@ -1280,35 +1261,6 @@ const {
   ALLOWED_INCLUDE_KEYS,
 } = require('./lib/ipc-validate');
 
-ipcMain.handle('set-session-label', (_e, shortId, label) => {
-  if (!allowMutation('set-session-label')) return null;
-  if (!validShort(shortId)) return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  all[shortId].label = sanitiseLabel(label);
-  return saveAssignments(all);
-});
-
-ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
-  if (!allowMutation('set-session-index')) return null;
-  if (!validShort(shortId)) return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  const n = Number(newIndex);
-  if (!Number.isFinite(n)) return false;
-  // Palette is 24 arrangements (0–23). Previously clamped to 31 (a leftover
-  // from when the palette was 32 wide) — that let set-session-index accept
-  // an invalid idx that sanitiseEntry would later reject, causing a
-  // silent mismatch between the UI state and persisted registry.
-  all[shortId].index = Math.max(0, Math.min(23, Math.floor(n)));
-  all[shortId].pinned = true;
-  return saveAssignments(all);
-});
-
-// Per-session mute toggle. Muted sessions' clips are filtered from the
-// playback queue AND their synth_turn.py invocations skip synthesis entirely
-// (see synth_turn.run()). Truly "cut the wire" — no edge-tts calls, no
-// queued audio, no CPU on muted background terminals.
 // When the toolbar collapses to its slim idle state, the window area below
 // the visible strip is transparent but still covered by the BrowserWindow.
 // forward:true lets the renderer keep receiving mousemove events (so it can
@@ -1325,94 +1277,6 @@ ipcMain.handle('set-clickthrough', (_e, on) => {
   if (process.env.TT_TEST_MODE) return true;
   win.setIgnoreMouseEvents(!!on, { forward: true });
   return true;
-});
-
-// Exclusive focus flag — only one session can be focus at a time.
-// Setting focus on a session clears it on all others. Focus-mode
-// playback: when this session has unplayed clips, they jump ahead of
-// other sessions' clips in the playback queue (but never interrupt
-// the currently-playing clip).
-ipcMain.handle('set-session-focus', (_e, shortId, focus) => {
-  if (!allowMutation('set-session-focus')) return null;
-  if (!validShort(shortId)) return false;
-  if (typeof focus !== 'boolean') return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  if (focus) {
-    // Exclusive: clear focus on all other sessions first
-    for (const key of Object.keys(all)) {
-      if (key !== shortId && all[key].focus) all[key].focus = false;
-    }
-  }
-  all[shortId].focus = focus;
-  const ok = saveAssignments(all);
-  if (ok && win && !win.isDestroyed()) notifyQueue();
-  return ok;
-});
-
-// Explicit remove: user clicked the × on a Sessions table row. We drop
-// the assignment from the registry; if the terminal is still alive the
-// session will get re-registered on its next hook fire.
-ipcMain.handle('remove-session', (_e, shortId) => {
-  if (!allowMutation('remove-session')) return null;
-  if (!validShort(shortId)) return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  delete all[shortId];
-  const ok = saveAssignments(all);
-  if (ok) notifyQueue();
-  return ok;
-});
-
-ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
-  if (!allowMutation('set-session-muted')) return null;
-  if (!validShort(shortId)) return false;
-  if (typeof muted !== 'boolean') return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  all[shortId].muted = muted;
-  const ok = saveAssignments(all);
-  // Broadcast so any open settings panel reflects the change instantly.
-  if (ok && win && !win.isDestroyed()) {
-    notifyQueue();
-  }
-  return ok;
-});
-
-// Per-session voice override. voiceId=null/empty clears (follow global).
-ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
-  if (!allowMutation('set-session-voice')) return null;
-  if (!validShort(shortId)) return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  if (!voiceId) {
-    if (all[shortId].voice) delete all[shortId].voice;
-  } else {
-    if (!validVoice(voiceId)) return false;
-    all[shortId].voice = voiceId;
-  }
-  return saveAssignments(all);
-});
-
-// Per-session speech-includes overrides. value true=force on, false=force off,
-// null=clear (follow global default).
-ipcMain.handle('set-session-include', (_e, shortId, key, value) => {
-  if (!allowMutation('set-session-include')) return null;
-  if (!validShort(shortId)) return false;
-  if (!ALLOWED_INCLUDE_KEYS.has(key)) return false;
-  if (value !== true && value !== false && value !== null && value !== undefined) return false;
-  const all = loadAssignments();
-  if (!all[shortId]) return false;
-  if (!all[shortId].speech_includes) all[shortId].speech_includes = {};
-  if (value === null || value === undefined) {
-    delete all[shortId].speech_includes[key];
-  } else {
-    all[shortId].speech_includes[key] = value;
-  }
-  if (Object.keys(all[shortId].speech_includes).length === 0) {
-    delete all[shortId].speech_includes;
-  }
-  return saveAssignments(all);
 });
 
 const WIN_COLLAPSED = { width: 680, height: 114 };
@@ -1477,6 +1341,32 @@ if (process.env.TT_TEST_MODE === '1') {
     };
   });
 }
+
+// EX6f — IPC handlers migrated out of main.js into app/lib/ipc-handlers.js
+// arrive as a single register() call. Placed at the end of the IPC block
+// so every dep (including late-declared ones like validShort / saveAssignments)
+// is resolvable when register() reads them. Live refs (win, CFG) are passed
+// via getters so handler closures see post-boot reassignments.
+const { createIpcHandlers } = require('./lib/ipc-handlers');
+createIpcHandlers({
+  ipcMain,
+  diag,
+  getCFG: () => CFG,
+  getWin: () => win,
+  loadAssignments,
+  saveAssignments,
+  getQueueFiles,
+  ensureAssignmentsForFiles,
+  isPidAlive,
+  computeStaleSessions,
+  SESSIONS_DIR,
+  notifyQueue,
+  allowMutation,
+  validShort,
+  validVoice,
+  sanitiseLabel,
+  ALLOWED_INCLUDE_KEYS,
+}).register();
 
 let voiceProc = null;
 function isListeningEnabled() {

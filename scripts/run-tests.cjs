@@ -2975,6 +2975,206 @@ describe('EX6f-1 — ipc-handlers (read-only group)', () => {
   });
 });
 
+describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+  const {
+    validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+
+  function makeFakeIpcMain() {
+    const handlers = new Map();
+    return {
+      handle(name, fn) { handlers.set(name, fn); },
+      invoke(name, ...args) {
+        const fn = handlers.get(name);
+        if (!fn) throw new Error(`no handler: ${name}`);
+        return fn({}, ...args);
+      },
+    };
+  }
+
+  // Builds a deps bundle backed by an in-memory registry so tests can
+  // assert both return value AND persisted state after each invocation.
+  function mutationDeps(overrides = {}) {
+    const registry = overrides.registry || {};
+    const saveLog = [];
+    const notifyLog = [];
+    const fakeWin = { isDestroyed: () => false };
+    return {
+      ipcMain: makeFakeIpcMain(),
+      diag: () => {},
+      getCFG: () => ({}),
+      getWin: () => fakeWin,
+      loadAssignments: () => JSON.parse(JSON.stringify(registry)),  // deep copy
+      saveAssignments: (all) => {
+        Object.keys(registry).forEach((k) => delete registry[k]);
+        Object.assign(registry, all);
+        saveLog.push(JSON.parse(JSON.stringify(all)));
+        return true;
+      },
+      getQueueFiles: () => [],
+      ensureAssignmentsForFiles: () => ({}),
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: '/nope',
+      notifyQueue: () => notifyLog.push(Date.now()),
+      allowMutation: () => true,
+      validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+      ...overrides,
+      _registry: registry,
+      _saveLog: saveLog,
+      _notifyLog: notifyLog,
+    };
+  }
+
+  it('register() wires all seven session-edit channels', () => {
+    const deps = mutationDeps();
+    createIpcHandlers(deps).register();
+    const required = [
+      'set-session-label', 'set-session-index', 'set-session-focus',
+      'remove-session', 'set-session-muted', 'set-session-voice',
+      'set-session-include',
+    ];
+    for (const name of required) {
+      try { deps.ipcMain.invoke(name, 'aabbccdd', true); }
+      catch (e) { throw new Error(`missing channel: ${name}`, { cause: e }); }
+    }
+  });
+
+  it('every mutation handler returns null when rate-limited', () => {
+    const deps = mutationDeps({
+      allowMutation: () => false,
+      registry: { aabbccdd: { idx: 0 } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'x'), null);
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 5), null);
+    assertEqual(deps.ipcMain.invoke('set-session-focus', 'aabbccdd', true), null);
+    assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), null);
+    assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', true), null);
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'shimmer'), null);
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', true), null);
+    assertEqual(deps._saveLog.length, 0);
+  });
+
+  it('set-session-label sanitises then saves', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'a\nb\tc'), true);
+    assertEqual(deps._registry.aabbccdd.label, 'a b c');
+  });
+
+  it('set-session-label rejects invalid shortId', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'BAD', 'x'), false);
+    assertEqual(deps._saveLog.length, 0);
+  });
+
+  it('set-session-index clamps to [0,23] and pins', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 99), true);
+    assertEqual(deps._registry.aabbccdd.index, 23);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', -5), true);
+    assertEqual(deps._registry.aabbccdd.index, 0);
+  });
+
+  it('set-session-index rejects NaN', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 'nope'), false);
+  });
+
+  it('set-session-focus clears focus on all other sessions when set', () => {
+    const deps = mutationDeps({
+      registry: {
+        aabbccdd: { focus: false },
+        eeff0011: { focus: true },
+        '22334455': { focus: true },
+      },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-focus', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.focus, true);
+    assertEqual(deps._registry.eeff0011.focus, false);
+    assertEqual(deps._registry['22334455'].focus, false);
+    assertEqual(deps._notifyLog.length, 1);
+  });
+
+  it('set-session-focus rejects non-boolean focus', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-focus', 'aabbccdd', 'true'), false);
+  });
+
+  it('remove-session drops entry + notifies queue', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { idx: 0 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), true);
+    assertFalsy(deps._registry.aabbccdd, 'entry should be gone');
+    assertEqual(deps._notifyLog.length, 1);
+  });
+
+  it('set-session-muted stores + broadcasts when window alive', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.muted, true);
+    assertEqual(deps._notifyLog.length, 1);
+  });
+
+  it('set-session-muted rejects non-boolean value', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', 1), false);
+  });
+
+  it('set-session-voice validates + persists; null clears', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { voice: 'old' } } });
+    createIpcHandlers(deps).register();
+    // valid edge-tts id
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'en-GB-RyanNeural'), true);
+    assertEqual(deps._registry.aabbccdd.voice, 'en-GB-RyanNeural');
+    // null clears
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
+    assertFalsy(deps._registry.aabbccdd.voice, 'voice should be deleted');
+    // garbage rejected
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'not-a-voice'), false);
+  });
+
+  it('set-session-include gates on ALLOWED_INCLUDE_KEYS + value type', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    // unknown key rejected
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'nonsense', true), false);
+    // non-boolean/non-null value rejected
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', 'yes'), false);
+    // valid write
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', true), true);
+    assertEqual(deps._registry.aabbccdd.speech_includes.urls, true);
+    // null clears the key, and empty speech_includes bag gets removed
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', null), true);
+    assertFalsy(deps._registry.aabbccdd.speech_includes, 'empty bag should be removed');
+  });
+
+  it('all session-edit handlers return false when shortId entry is absent', () => {
+    const deps = mutationDeps({ registry: {} });
+    createIpcHandlers(deps).register();
+    const missing = 'aabbccdd';
+    assertEqual(deps.ipcMain.invoke('set-session-label', missing, 'x'), false);
+    assertEqual(deps.ipcMain.invoke('set-session-index', missing, 5), false);
+    assertEqual(deps.ipcMain.invoke('set-session-focus', missing, true), false);
+    assertEqual(deps.ipcMain.invoke('remove-session', missing), false);
+    assertEqual(deps.ipcMain.invoke('set-session-muted', missing, true), false);
+    assertEqual(deps.ipcMain.invoke('set-session-voice', missing, 'shimmer'), false);
+    assertEqual(deps.ipcMain.invoke('set-session-include', missing, 'urls', true), false);
+  });
+});
+
 describe('EX6c — queue-watcher', () => {
   const { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE } = require(
     path.join(__dirname, '..', 'app', 'lib', 'queue-watcher.js')

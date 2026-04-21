@@ -32,6 +32,15 @@ function createIpcHandlers(deps) {
     rendererErrorDedupe = createDedupe(),
     fs = require('node:fs'),
     path = require('node:path'),
+    // Session-edit deps (EX6f-2)
+    getWin,
+    saveAssignments,
+    notifyQueue,
+    allowMutation,
+    validShort,
+    validVoice,
+    sanitiseLabel,
+    ALLOWED_INCLUDE_KEYS,
   } = deps;
 
   function register() {
@@ -99,6 +108,122 @@ function createIpcHandlers(deps) {
     // Live-ref getter: CFG is reassigned by update-config, so we can't
     // close over the initial value.
     ipcMain.handle('get-config', () => getCFG());
+
+    // EX6f-2 — session-edit mutation handlers. All follow the same
+    // shape: rate-limit gate -> validate shortId -> load registry ->
+    // mutate entry -> persist. set-session-focus / remove-session /
+    // set-session-muted additionally notify the renderer so other
+    // open views stay in sync.
+    ipcMain.handle('set-session-label', (_e, shortId, label) => {
+      if (!allowMutation('set-session-label')) return null;
+      if (!validShort(shortId)) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      all[shortId].label = sanitiseLabel(label);
+      return saveAssignments(all);
+    });
+
+    ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
+      if (!allowMutation('set-session-index')) return null;
+      if (!validShort(shortId)) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      const n = Number(newIndex);
+      if (!Number.isFinite(n)) return false;
+      // Palette is 24 arrangements (0-23). Previously clamped to 31 (a leftover
+      // from when the palette was 32 wide) — that let set-session-index accept
+      // an invalid idx that sanitiseEntry would later reject, causing a
+      // silent mismatch between the UI state and persisted registry.
+      all[shortId].index = Math.max(0, Math.min(23, Math.floor(n)));
+      all[shortId].pinned = true;
+      return saveAssignments(all);
+    });
+
+    // Exclusive focus flag — only one session can be focus at a time.
+    // Setting focus on a session clears it on all others. Focus-mode
+    // playback: when this session has unplayed clips, they jump ahead
+    // of other sessions' clips in the playback queue (but never
+    // interrupt the currently-playing clip).
+    ipcMain.handle('set-session-focus', (_e, shortId, focus) => {
+      if (!allowMutation('set-session-focus')) return null;
+      if (!validShort(shortId)) return false;
+      if (typeof focus !== 'boolean') return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      if (focus) {
+        for (const key of Object.keys(all)) {
+          if (key !== shortId && all[key].focus) all[key].focus = false;
+        }
+      }
+      all[shortId].focus = focus;
+      const ok = saveAssignments(all);
+      const win = getWin();
+      if (ok && win && !win.isDestroyed()) notifyQueue();
+      return ok;
+    });
+
+    // Explicit remove: user clicked × on a Sessions row. We drop the
+    // assignment from the registry; if the terminal is still alive the
+    // session will get re-registered on its next hook fire.
+    ipcMain.handle('remove-session', (_e, shortId) => {
+      if (!allowMutation('remove-session')) return null;
+      if (!validShort(shortId)) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      delete all[shortId];
+      const ok = saveAssignments(all);
+      if (ok) notifyQueue();
+      return ok;
+    });
+
+    ipcMain.handle('set-session-muted', (_e, shortId, muted) => {
+      if (!allowMutation('set-session-muted')) return null;
+      if (!validShort(shortId)) return false;
+      if (typeof muted !== 'boolean') return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      all[shortId].muted = muted;
+      const ok = saveAssignments(all);
+      const win = getWin();
+      if (ok && win && !win.isDestroyed()) notifyQueue();
+      return ok;
+    });
+
+    // Per-session voice override. voiceId=null/empty clears (follow global).
+    ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
+      if (!allowMutation('set-session-voice')) return null;
+      if (!validShort(shortId)) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      if (!voiceId) {
+        if (all[shortId].voice) delete all[shortId].voice;
+      } else {
+        if (!validVoice(voiceId)) return false;
+        all[shortId].voice = voiceId;
+      }
+      return saveAssignments(all);
+    });
+
+    // Per-session speech-includes override. value=true forces on,
+    // false forces off, null/undefined clears (follow global default).
+    ipcMain.handle('set-session-include', (_e, shortId, key, value) => {
+      if (!allowMutation('set-session-include')) return null;
+      if (!validShort(shortId)) return false;
+      if (!ALLOWED_INCLUDE_KEYS.has(key)) return false;
+      if (value !== true && value !== false && value !== null && value !== undefined) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      if (!all[shortId].speech_includes) all[shortId].speech_includes = {};
+      if (value === null || value === undefined) {
+        delete all[shortId].speech_includes[key];
+      } else {
+        all[shortId].speech_includes[key] = value;
+      }
+      if (Object.keys(all[shortId].speech_includes).length === 0) {
+        delete all[shortId].speech_includes;
+      }
+      return saveAssignments(all);
+    });
   }
 
   return { register };
