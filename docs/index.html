@@ -6,11 +6,40 @@
 <title>Terminal Talk — Hands-free voice workflow for Claude Code</title>
 <meta name="description" content="Claude Code reads its responses aloud. Say 'hey jarvis' to read any highlighted text. Free, offline wake-word, no signup. Windows.">
 <meta property="og:title" content="Terminal Talk — voice workflow for Claude Code">
-<meta property="og:description" content="Auto-speaks Claude Code responses. 'Hey jarvis' reads any highlighted text. Free, offline, MIT.">
+<meta property="og:description" content="Auto-speaks Claude Code responses. 'Hey jarvis' reads any highlighted text. Free, offline wake-word, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/cascadia-mono-latin-400-normal.woff2">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/cascadia-mono-symbols2-400-normal.woff2">
 <style>
+/* Self-hosted Cascadia Mono (OFL, see assets/fonts/LICENSE). Mono variant
+   (not Code) to avoid programming + box-drawing ligatures breaking the
+   block-art hero alignment. Split into latin + symbols2 so the hero's
+   U+2500–U+259F box-drawing glyphs keep exact monospace width. Uses
+   font-display: block — with preload the font is ready before first
+   paint, so 'block' just ensures we never render a Consolas fallback
+   frame that would show the drift. */
+@font-face {
+  font-family: 'Cascadia Mono'; font-style: normal; font-weight: 400; font-display: block;
+  src: url('assets/fonts/cascadia-mono-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Cascadia Mono'; font-style: normal; font-weight: 700; font-display: block;
+  src: url('assets/fonts/cascadia-mono-latin-700-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Cascadia Mono'; font-style: normal; font-weight: 400; font-display: block;
+  src: url('assets/fonts/cascadia-mono-symbols2-400-normal.woff2') format('woff2');
+  unicode-range: U+2000-2001,U+2004-2008,U+200A,U+23B8-23BD,U+2500-259F;
+}
+@font-face {
+  font-family: 'Cascadia Mono'; font-style: normal; font-weight: 700; font-display: block;
+  src: url('assets/fonts/cascadia-mono-symbols2-700-normal.woff2') format('woff2');
+  unicode-range: U+2000-2001,U+2004-2008,U+200A,U+23B8-23BD,U+2500-259F;
+}
 :root {
   --red: #ff5e5e; --orange: #ffa726; --yellow: #ffd93d; --green: #4ade80;
   --blue: #60a5fa; --purple: #c084fc; --copper: #c97b50; --bone: #e0e0e0;
@@ -74,7 +103,7 @@ section { padding: 80px 24px; }
   margin-bottom: 10px;
 }
 .hero-ascii pre.ascii {
-  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Lucida Console', monospace;
+  font-family: 'Cascadia Mono', 'Cascadia Code', 'Consolas', 'Lucida Console', monospace;
   font-size: 20px;
   line-height: 1;
   white-space: pre;
@@ -83,6 +112,11 @@ section { padding: 80px 24px; }
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
   margin: 0;
+  /* text-align: left overrides the inherited `.hero { text-align: center }`.
+     Without this, mismatched row widths (L is 3 chars in rows 1-4 but 8 in
+     rows 5-6) cause per-row centering to drift top rows 2-3 chars right
+     relative to bottom rows, fragmenting the block-art letters. */
+  text-align: left;
 }
 /* Bevel chars (╔╗╚╝═║) sit inside each letter outline — hide them so
    only the solid █ face blocks render, then text-shadow casts a real
@@ -134,7 +168,7 @@ section { padding: 80px 24px; }
     drop-shadow(8px 8px 0 rgba(0,0,0,0.5));
 }
 .cloud-svg text {
-  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+  font-family: 'Cascadia Mono', 'Cascadia Code', 'Consolas', monospace;
   font-weight: 700;
   fill: #0e0f13;
 }
@@ -274,6 +308,11 @@ section { padding: 80px 24px; }
 }
 .privacy-col.good li::before { content: "✓"; color: var(--green); }
 .privacy-col.bad li::before { content: "✗"; color: var(--red); }
+.privacy-col li strong { color: var(--text); font-weight: 600; }
+.privacy-footnote {
+  margin: 24px 0 0; text-align: center; font-size: 13px;
+  color: var(--text-faint); max-width: 640px; margin-left: auto; margin-right: auto;
+}
 
 /* FAQ */
 .faq { max-width: 760px; margin: 0 auto; }
@@ -508,16 +547,14 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="wrap wrap-narrow">
     <div class="sec-head">
       <div class="sec-kicker">Privacy</div>
-      <h2 class="sec-title">What leaves your machine — exactly</h2>
-      <p class="sec-intro">Nothing is sent anywhere without your explicit action. No telemetry. No analytics. No remote logging.</p>
+      <h2 class="sec-title">What leaves your machine</h2>
+      <p class="sec-intro">One outbound call at runtime, only when you trigger it. No telemetry, no analytics, no background traffic.</p>
     </div>
     <div class="privacy-grid">
       <div class="privacy-col good">
-        <h3>What you control</h3>
+        <h3>What goes out — only when you ask</h3>
         <ul>
-          <li>TTS text sent to Edge's neural voice endpoint (same one Edge browser uses)</li>
-          <li>Wake-word model download (one-off, from HuggingFace)</li>
-          <li>Optional: text sent to OpenAI TTS if you configure that fallback</li>
+          <li><strong>TTS text → Microsoft</strong>, to Edge's neural voice endpoint — the same one Edge browser's "Read Aloud" uses. Sent on every reply you hear and every "hey jarvis" highlight. Free, no API key, governed by Microsoft's consumer service terms.</li>
         </ul>
       </div>
       <div class="privacy-col bad">
@@ -530,6 +567,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         </ul>
       </div>
     </div>
+    <p class="privacy-footnote">One-off on install: <span class="mono">install.ps1</span> downloads the ~30 MB wake-word model from HuggingFace, then runs offline forever after. Optional paid swap: configure the OpenAI TTS fallback if you want API terms with no-training guarantees instead of Microsoft's consumer ones.</p>
   </div>
 </section>
 
