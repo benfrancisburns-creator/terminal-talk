@@ -1240,35 +1240,6 @@ function isPathInside(target, base) {
   } catch { return false; }
 }
 
-ipcMain.handle('delete-file', (_e, filePath) => {
-  if (!allowMutation('delete-file')) return null;
-  try {
-    if (typeof filePath !== 'string' || filePath.length > 4096) return false;
-    if (!isPathInside(filePath, QUEUE_DIR)) return false;
-    fs.unlinkSync(path.resolve(filePath));
-    return true;
-  } catch {}
-  return false;
-});
-ipcMain.handle('hide-window', () => { if (win) win.hide(); });
-
-// S4.1 — test-only inspection IPC. Exposes internal state the E2E harness
-// can assert against instead of grepping main.js source. Guarded by
-// TT_TEST_MODE so production builds don't leak internal state to a
-// compromised renderer. Watchdog is the first of many; nav-guard and
-// CSP probes can follow the same pattern in a future commit.
-if (process.env.TT_TEST_MODE === '1') {
-  ipcMain.handle('__test__/watchdog-state', () => {
-    const last = _watchdog.getLastSweepMs();
-    return {
-      armed: _watchdog.isArmed(),
-      lastSweepMs: last,
-      lastSweepAgeMs: last === 0 ? null : Date.now() - last,
-      intervalMs: WATCHDOG_INTERVAL_MS,
-    };
-  });
-}
-
 // EX6f — IPC handlers migrated out of main.js into app/lib/ipc-handlers.js
 // arrive as a single register() call. Placed at the end of the IPC block
 // so every dep (including late-declared ones like validShort / saveAssignments)
@@ -1298,6 +1269,11 @@ createIpcHandlers({
   apiKeyStore,
   redactForLog,
   setApplyingDock: (v) => { isApplyingDock = v; },
+  QUEUE_DIR,
+  isPathInside,
+  getWatchdog: () => _watchdog,
+  getWatchdogIntervalMs: () => WATCHDOG_INTERVAL_MS,
+  testMode: process.env.TT_TEST_MODE === '1',
 }).register();
 
 let voiceProc = null;

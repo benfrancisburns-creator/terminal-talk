@@ -48,6 +48,11 @@ function createIpcHandlers(deps) {
     redactForLog,
     setApplyingDock,
     testMode = !!process.env.TT_TEST_MODE,
+    // File + test-only deps (EX6f-4)
+    QUEUE_DIR,
+    isPathInside,
+    getWatchdog,
+    getWatchdogIntervalMs,
   } = deps;
 
   const WIN_COLLAPSED = { width: 680, height: 114 };
@@ -312,6 +317,46 @@ function createIpcHandlers(deps) {
       }
       return true;
     });
+
+    // EX6f-4 — file + window + test-only handlers.
+
+    // Rate-limited + path-traversal-guarded delete. Both checks matter:
+    // a compromised renderer can forge file paths; isPathInside uses
+    // path.resolve to block ..-segment escapes that startsWith alone
+    // would let through.
+    ipcMain.handle('delete-file', (_e, filePath) => {
+      if (!allowMutation('delete-file')) return null;
+      try {
+        if (typeof filePath !== 'string' || filePath.length > 4096) return false;
+        if (!isPathInside(filePath, QUEUE_DIR)) return false;
+        fs.unlinkSync(path.resolve(filePath));
+        return true;
+      } catch {}
+      return false;
+    });
+
+    ipcMain.handle('hide-window', () => {
+      const win = getWin();
+      if (win) win.hide();
+    });
+
+    // S4.1 — test-only inspection IPC. Exposes internal state the E2E
+    // harness can assert against instead of grepping main.js source.
+    // Guarded by testMode so production builds don't leak internal
+    // state to a compromised renderer. Watchdog is the first of many;
+    // nav-guard and CSP probes can follow the same pattern.
+    if (testMode && typeof getWatchdog === 'function') {
+      ipcMain.handle('__test__/watchdog-state', () => {
+        const wd = getWatchdog();
+        const last = wd.getLastSweepMs();
+        return {
+          armed: wd.isArmed(),
+          lastSweepMs: last,
+          lastSweepAgeMs: last === 0 ? null : Date.now() - last,
+          intervalMs: getWatchdogIntervalMs(),
+        };
+      });
+    }
   }
 
   return { register };

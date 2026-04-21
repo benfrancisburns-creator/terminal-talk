@@ -3378,6 +3378,167 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
   });
 });
 
+describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+  const {
+    validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+
+  function makeFakeIpcMain() {
+    const handlers = new Map();
+    return {
+      handle(name, fn) { handlers.set(name, fn); },
+      invoke(name, ...args) {
+        const fn = handlers.get(name);
+        if (!fn) throw new Error(`no handler: ${name}`);
+        return fn({}, ...args);
+      },
+      has(name) { return handlers.has(name); },
+    };
+  }
+
+  function fileDeps(overrides = {}) {
+    const unlinked = [];
+    const hideCalls = [];
+    const fakeWin = { isDestroyed: () => false, hide: () => hideCalls.push(Date.now()) };
+    return {
+      ipcMain: makeFakeIpcMain(),
+      diag: () => {},
+      getCFG: () => ({}),
+      setCFG: () => {},
+      getWin: () => fakeWin,
+      loadAssignments: () => ({}),
+      saveAssignments: () => true,
+      saveConfig: () => true,
+      getQueueFiles: () => [],
+      ensureAssignmentsForFiles: () => ({}),
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: '/nope',
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+      apiKeyStore: { set: () => {} },
+      redactForLog: (o) => o,
+      setApplyingDock: () => {},
+      QUEUE_DIR: '/safe/queue',
+      isPathInside: (target, base) => target.startsWith(base + '/') || target === base,
+      fs: {
+        unlinkSync: (p) => unlinked.push(p),
+        existsSync: () => false,
+        readdirSync: () => [],
+        readFileSync: () => '',
+      },
+      testMode: false,
+      ...overrides,
+      _unlinked: unlinked,
+      _hideCalls: hideCalls,
+    };
+  }
+
+  it('delete-file unlinks paths inside QUEUE_DIR', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/ok.mp3'), true);
+    assertEqual(deps._unlinked.length, 1);
+  });
+
+  it('delete-file refuses paths outside QUEUE_DIR', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', '/etc/passwd'), false);
+    assertEqual(deps._unlinked.length, 0);
+  });
+
+  it('delete-file refuses non-string paths', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', null), false);
+    assertEqual(deps.ipcMain.invoke('delete-file', { path: 'x' }), false);
+    assertEqual(deps._unlinked.length, 0);
+  });
+
+  it('delete-file refuses paths > 4096 chars', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    const long = '/safe/queue/' + 'a'.repeat(5000) + '.mp3';
+    assertEqual(deps.ipcMain.invoke('delete-file', long), false);
+    assertEqual(deps._unlinked.length, 0);
+  });
+
+  it('delete-file returns null when rate-limited', () => {
+    const deps = fileDeps({ allowMutation: () => false });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/ok.mp3'), null);
+    assertEqual(deps._unlinked.length, 0);
+  });
+
+  it('delete-file swallows unlink errors as false', () => {
+    const deps = fileDeps({
+      fs: {
+        unlinkSync: () => { throw new Error('ENOENT'); },
+        existsSync: () => false,
+        readdirSync: () => [],
+        readFileSync: () => '',
+      },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/missing.mp3'), false);
+  });
+
+  it('hide-window calls win.hide()', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('hide-window');
+    assertEqual(deps._hideCalls.length, 1);
+  });
+
+  it('hide-window is safe when win is null', () => {
+    const deps = fileDeps({ getWin: () => null });
+    createIpcHandlers(deps).register();
+    // must not throw
+    deps.ipcMain.invoke('hide-window');
+  });
+
+  it('__test__/watchdog-state is NOT registered when testMode is false', () => {
+    const deps = fileDeps({ testMode: false, getWatchdog: () => ({ getLastSweepMs: () => 0, isArmed: () => false }) });
+    createIpcHandlers(deps).register();
+    assertFalsy(deps.ipcMain.has('__test__/watchdog-state'),
+      'test handler should stay hidden in production builds');
+  });
+
+  it('__test__/watchdog-state is registered and returns shape when testMode is on', () => {
+    const fakeWatchdog = { getLastSweepMs: () => 0, isArmed: () => true };
+    const deps = fileDeps({
+      testMode: true,
+      getWatchdog: () => fakeWatchdog,
+      getWatchdogIntervalMs: () => 1800000,
+    });
+    createIpcHandlers(deps).register();
+    const out = deps.ipcMain.invoke('__test__/watchdog-state');
+    assertEqual(out.armed, true);
+    assertEqual(out.lastSweepMs, 0);
+    assertEqual(out.lastSweepAgeMs, null);
+    assertEqual(out.intervalMs, 1800000);
+  });
+
+  it('__test__/watchdog-state reports lastSweepAgeMs when a sweep has run', () => {
+    const now = Date.now();
+    const fakeWatchdog = { getLastSweepMs: () => now - 500, isArmed: () => true };
+    const deps = fileDeps({
+      testMode: true,
+      getWatchdog: () => fakeWatchdog,
+      getWatchdogIntervalMs: () => 1800000,
+    });
+    createIpcHandlers(deps).register();
+    const out = deps.ipcMain.invoke('__test__/watchdog-state');
+    assertTruthy(out.lastSweepAgeMs >= 0, 'age should be non-negative');
+    assertTruthy(out.lastSweepAgeMs < 5000, 'age should be small');
+  });
+});
+
 describe('EX6c — queue-watcher', () => {
   const { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE } = require(
     path.join(__dirname, '..', 'app', 'lib', 'queue-watcher.js')

@@ -4,12 +4,12 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 3732,
+    "scripts/run-tests.cjs": 3893,
     "app/renderer.js": 1704,
-    "app/main.js": 1531,
+    "app/main.js": 1507,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
-    "app/lib/ipc-handlers.js": 320,
+    "app/lib/ipc-handlers.js": 365,
     "app/wake-word-listener.py": 289,
     "app/sentence_split.py": 282,
     "hooks/speak-response.ps1": 267,
