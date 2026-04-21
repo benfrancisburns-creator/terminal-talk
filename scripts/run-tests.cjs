@@ -2708,6 +2708,75 @@ describe('S1 — renderer-error dedupe', () => {
 // the ASSESSMENTS/S5-coverage/findings.md gap list.
 // =============================================================================
 
+describe('EX7a — clip-paths helpers', () => {
+  const {
+    paletteKeyForIndex, paletteKeyForShort,
+    extractSessionShort, isClipFile,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+  const PSIZE = 24;
+
+  it('paletteKeyForIndex pads 0..23 to "00".."23"', () => {
+    assertEqual(paletteKeyForIndex(0, PSIZE), '00');
+    assertEqual(paletteKeyForIndex(5, PSIZE), '05');
+    assertEqual(paletteKeyForIndex(23, PSIZE), '23');
+  });
+
+  it('paletteKeyForIndex wraps out-of-range values', () => {
+    assertEqual(paletteKeyForIndex(24, PSIZE), '00');
+    assertEqual(paletteKeyForIndex(25, PSIZE), '01');
+    assertEqual(paletteKeyForIndex(-1, PSIZE), '23');
+  });
+
+  it('paletteKeyForIndex returns "neutral" for non-integers', () => {
+    assertEqual(paletteKeyForIndex('nope', PSIZE), 'neutral');
+    assertEqual(paletteKeyForIndex(null, PSIZE), 'neutral');
+    assertEqual(paletteKeyForIndex(1.5, PSIZE), 'neutral');
+  });
+
+  it('paletteKeyForShort uses assigned index when present', () => {
+    const assignments = { aabbccdd: { index: 7 } };
+    assertEqual(paletteKeyForShort('aabbccdd', assignments, PSIZE), '07');
+  });
+
+  it('paletteKeyForShort hashes when no assignment', () => {
+    // Deterministic char-sum hash — same short always maps to same index.
+    const assignments = {};
+    const k1 = paletteKeyForShort('abcdef01', assignments, PSIZE);
+    const k2 = paletteKeyForShort('abcdef01', assignments, PSIZE);
+    assertEqual(k1, k2);
+    // Result is a valid 2-digit key.
+    if (!/^\d\d$/.test(k1)) throw new Error(`expected /^\\d\\d$/, got ${k1}`);
+  });
+
+  it('paletteKeyForShort returns "neutral" for short/empty IDs', () => {
+    assertEqual(paletteKeyForShort('', {}, PSIZE), 'neutral');
+    assertEqual(paletteKeyForShort(null, {}, PSIZE), 'neutral');
+    assertEqual(paletteKeyForShort('abc', {}, PSIZE), 'neutral');  // <4 chars
+  });
+
+  it('extractSessionShort parses clip filenames (specificity-first)', () => {
+    assertEqual(extractSessionShort('20260420T180500944-clip-aabbccdd-0001.mp3'), 'aabbccdd');
+    // The pathological case from Audit G11: clip filename also
+    // matches the response pattern, but clip-specificity wins.
+    assertEqual(extractSessionShort('anyprefix-clip-aabbccdd-0001.mp3'), 'aabbccdd');
+  });
+
+  it('extractSessionShort parses response filenames', () => {
+    assertEqual(extractSessionShort('20260420T180500944-0000-aabbccdd.mp3'), 'aabbccdd');
+  });
+
+  it('extractSessionShort returns null for neutral clips + non-matches', () => {
+    assertEqual(extractSessionShort('anyprefix-clip-neutral-0001.mp3'), null);
+    assertEqual(extractSessionShort('random-garbage.txt'), null);
+    assertEqual(extractSessionShort(''), null);
+  });
+
+  it('isClipFile detects the -clip- token', () => {
+    assertEqual(isClipFile('20260420T1-clip-aabbccdd-0001.mp3'), true);
+    assertEqual(isClipFile('20260420T1-0000-aabbccdd.mp3'), false);
+  });
+});
+
 describe('EX6e — ipc-validate', () => {
   const {
     validShort, validVoice, sanitiseLabel,

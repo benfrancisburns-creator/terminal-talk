@@ -83,7 +83,7 @@ module.exports = [
   // Electron renderer + kit demo — browser globals, plus window.api
   // bridge exposed by preload.
   {
-    files: ['app/renderer.js', 'docs/ui-kit/**/*.js'],
+    files: ['app/renderer.js', 'app/lib/clip-paths.js', 'docs/ui-kit/**/*.js'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'script',

@@ -1,9 +1,9 @@
 {
   "ceiling": 3500,
   "files": {
-    "scripts/run-tests.cjs": 3114,
+    "scripts/run-tests.cjs": 3183,
     "app/main.js": 1755,
-    "app/renderer.js": 1731,
+    "app/renderer.js": 1704,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
     "app/wake-word-listener.py": 289,
@@ -36,6 +36,7 @@
     "app/lib/palette-alloc.js": 74,
     "app/lib/config-store.js": 73,
     "hooks/speak-notification.ps1": 72,
+    "app/lib/clip-paths.js": 68,
     "app/lib/queue-watcher.js": 66,
     "app/lib/config-validate.js": 63,
     "app/preload.js": 50,

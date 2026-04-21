@@ -301,43 +301,16 @@ function findFocusedSessionShort() {
 }
 
 // Index 0..31 -> one of 4 arrangement kinds:
-// D2-9 — palette key (`'00'` .. `'23'` or `'neutral'`) for CSS attribute
-// selector. Generated rules in app/lib/palette-classes.css match on
-// [data-palette="<key>"] so the renderer can style dots + swatches
-// without setting `element.style.background` (which would require
-// `'unsafe-inline'` in the CSP style-src directive).
-function paletteKeyForIndex(idx) {
-  if (!Number.isInteger(idx)) return 'neutral';
-  const i = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
-  return String(i).padStart(2, '0');
-}
-function paletteKeyForShort(shortId) {
-  if (!shortId || shortId.length < 4) return 'neutral';
-  const entry = sessionAssignments[shortId];
-  if (entry && Number.isInteger(entry.index)) return paletteKeyForIndex(entry.index);
-  let sum = 0;
-  for (let i = 0; i < shortId.length; i++) sum += shortId.charCodeAt(i);
-  return paletteKeyForIndex(sum);
-}
-
-function extractSessionShort(filename) {
-  // Try the MORE SPECIFIC clip pattern first. A pathological filename
-  // like `deadbeef-clip-12345678.mp3` matches both patterns; the clip
-  // pattern's intended parse is `deadbeef`, but the response pattern
-  // would return `12345678`. Specificity-first ordering avoids this
-  // ambiguity even though the canonical filenames today never collide.
-  // Audit G11.
-  let m = filename.match(/-clip-([a-f0-9]{8}|neutral)-\d+\.(wav|mp3)$/i);
-  if (m) return m[1].toLowerCase() === 'neutral' ? null : m[1].toLowerCase();
-  // Response / question / notif: ends with -<8hex>.ext
-  m = filename.match(/-([a-f0-9]{8})\.(wav|mp3)$/i);
-  if (m) return m[1].toLowerCase();
-  return null;
-}
-
-function isClipFile(filename) {
-  return /-clip-/.test(filename);
-}
+// EX7a — extracted to app/lib/clip-paths.js. Loaded via
+// <script src> in index.html before this file; attaches to
+// window.TT_CLIP_PATHS. Thin wrappers here preserve the call-site
+// signature (paletteKeyForShort(short) — 1 arg) so every existing
+// renderer call stays unchanged.
+const _paths = window.TT_CLIP_PATHS;
+const paletteKeyForIndex = (idx) => _paths.paletteKeyForIndex(idx, PALETTE_SIZE);
+const paletteKeyForShort = (shortId) => _paths.paletteKeyForShort(shortId, sessionAssignments, PALETTE_SIZE);
+const extractSessionShort = _paths.extractSessionShort;
+const isClipFile = _paths.isClipFile;
 
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away

@@ -16,7 +16,8 @@
     "tests/e2e/**/*.spec.ts",
     "tests/e2e/**/*.ts",
     "docs/ui-kit/kit-bootstrap.js",
-    "docs/ui-kit/mock-ipc.js"
+    "docs/ui-kit/mock-ipc.js",
+    "app/lib/clip-paths.js"
   ],
   "project": [
     "app/**/*.js",
