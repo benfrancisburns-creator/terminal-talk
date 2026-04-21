@@ -632,6 +632,25 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
     }
   });
 
+  it('kit-bootstrap loads every renderer-consumable lib (EX7b regression guard)', () => {
+    // EX7a shipped clip-paths.js as a window.TT_CLIP_PATHS dependency
+    // without updating kit-bootstrap, silently breaking the kit on
+    // Pages. This test catches that class of drift: any lib that
+    // renderer.js loads via <script src> in app/index.html must also
+    // appear in kit-bootstrap's load chain, OR be explicitly waived
+    // because the kit doesn't exercise the code path that needs it.
+    const productHtml = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'index.html'), 'utf8'
+    );
+    const libScripts = [...productHtml.matchAll(/<script\s+src="lib\/([^"]+)"\s*>/g)].map((m) => m[1]);
+    for (const lib of libScripts) {
+      const re = new RegExp(`\\.\\./app-mirror/lib/${lib.replace(/\./g, '\\.')}`);
+      if (!re.test(kitBootstrapSrc)) {
+        throw new Error(`kit-bootstrap must loadScript ../app-mirror/lib/${lib} (renderer.js depends on it)`);
+      }
+    }
+  });
+
   it('kit fetch-splices app-mirror/index.html at runtime (D2-3c)', () => {
     if (!/fetch\s*\(\s*APP_INDEX\s*\)/.test(kitBootstrapSrc) ||
         !/['"]\.\.\/app-mirror\/index\.html['"]/.test(kitBootstrapSrc)) {
@@ -1912,15 +1931,21 @@ describe('STALE SESSIONS IPC WIRING', () => {
   });
 
   it('renderer.js polls stale sessions and applies .stale class', () => {
+    // EX7b — staleSessionShorts variable became staleSessionPoller
+    // (a StaleSessionPoller component); the IPC call + grey-out
+    // behaviours are still wired. The IPC call now lives in the
+    // poller module, so accept it being reachable from either file.
     const rendererPath = path.join(__dirname, '..', 'app', 'renderer.js');
-    const src = fs.readFileSync(rendererPath, 'utf8');
-    if (!/staleSessionShorts/.test(src)) {
-      throw new Error('renderer.js should track staleSessionShorts');
+    const rendererSrc = fs.readFileSync(rendererPath, 'utf8');
+    const pollerPath = path.join(__dirname, '..', 'app', 'lib', 'stale-session-poller.js');
+    const pollerSrc = fs.readFileSync(pollerPath, 'utf8');
+    if (!/staleSessionPoller/.test(rendererSrc)) {
+      throw new Error('renderer.js should use the staleSessionPoller component');
     }
-    if (!/window\.api\.getStaleSessions/.test(src)) {
-      throw new Error('renderer.js should call window.api.getStaleSessions');
+    if (!/getStaleSessions/.test(pollerSrc)) {
+      throw new Error('stale-session-poller.js should call api.getStaleSessions');
     }
-    if (!/classList\.add\(['"]stale['"]\)/.test(src)) {
+    if (!/classList\.add\(['"]stale['"]\)/.test(rendererSrc)) {
       throw new Error("renderer.js should classList.add('stale') on dot/row");
     }
   });
@@ -3375,6 +3400,236 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     const deps = panelDeps({ winOverrides: { isDestroyed: () => true } });
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), false);
+  });
+});
+
+describe('EX7b — Component base', () => {
+  const { Component } = require(path.join(__dirname, '..', 'app', 'lib', 'component.js'));
+
+  it('mount/unmount fires lifecycle hooks exactly once each', () => {
+    const calls = [];
+    class Foo extends Component {
+      _onMount() { calls.push('mount'); }
+      _onUnmount() { calls.push('unmount'); }
+    }
+    const foo = new Foo();
+    foo.mount();
+    foo.mount();  // should be idempotent
+    foo.unmount();
+    foo.unmount();  // idempotent
+    assertEqual(calls, ['mount', 'unmount']);
+  });
+
+  it('update() stores state and fires _onUpdate', () => {
+    const seen = [];
+    class Foo extends Component {
+      _onUpdate() { seen.push(this.state); }
+    }
+    const foo = new Foo();
+    foo.mount();
+    foo.update({ a: 1 });
+    foo.update({ a: 2 });
+    assertEqual(seen, [{ a: 1 }, { a: 2 }]);
+  });
+
+  it('_setInterval registers a teardown that clears the handle', () => {
+    class Ticker extends Component {
+      _onMount() { this._setInterval(() => {}, 10); }
+    }
+    const t = new Ticker();
+    t.mount();
+    assertEqual(t._teardown.length, 1);
+    t.unmount();
+    assertEqual(t._teardown.length, 0);
+  });
+
+  it('_setTimeout registers a teardown that clears the handle', () => {
+    class Delayed extends Component {
+      _onMount() { this._setTimeout(() => {}, 50); }
+    }
+    const d = new Delayed();
+    d.mount();
+    assertEqual(d._teardown.length, 1);
+    d.unmount();
+    assertEqual(d._teardown.length, 0);
+  });
+
+  it('_on removes event listener on unmount', () => {
+    const fake = {
+      _listeners: new Map(),
+      addEventListener(evt, fn) {
+        if (!this._listeners.has(evt)) this._listeners.set(evt, new Set());
+        this._listeners.get(evt).add(fn);
+      },
+      removeEventListener(evt, fn) {
+        if (this._listeners.has(evt)) this._listeners.get(evt).delete(fn);
+      },
+      count(evt) { return this._listeners.get(evt)?.size || 0; },
+    };
+    class Clickable extends Component {
+      _onMount() { this._on(fake, 'click', () => {}); }
+    }
+    const c = new Clickable();
+    c.mount();
+    assertEqual(fake.count('click'), 1);
+    c.unmount();
+    assertEqual(fake.count('click'), 0);
+  });
+
+  it('_addTeardown runs user-registered cleanup LIFO on unmount', () => {
+    const order = [];
+    class Foo extends Component {
+      _onMount() {
+        this._addTeardown(() => order.push('first'));
+        this._addTeardown(() => order.push('second'));
+      }
+    }
+    const f = new Foo();
+    f.mount();
+    f.unmount();
+    // LIFO so cleanup runs inside-out
+    assertEqual(order, ['second', 'first']);
+  });
+
+  it('one failing teardown does not strand the rest', () => {
+    const order = [];
+    class Foo extends Component {
+      _onMount() {
+        this._addTeardown(() => order.push('before'));
+        this._addTeardown(() => { throw new Error('boom'); });
+        this._addTeardown(() => order.push('after'));
+      }
+    }
+    const f = new Foo();
+    f.mount();
+    f.unmount();
+    // 'after' was registered last so it runs first (LIFO), then the
+    // throw gets swallowed, then 'before' still runs.
+    assertEqual(order, ['after', 'before']);
+  });
+
+  it('isMounted() reflects current state', () => {
+    const f = new Component();
+    assertEqual(f.isMounted(), false);
+    f.mount();
+    assertEqual(f.isMounted(), true);
+    f.unmount();
+    assertEqual(f.isMounted(), false);
+  });
+
+  it('stop() and dispose() alias unmount()', () => {
+    const calls = [];
+    class Foo extends Component {
+      _onUnmount() { calls.push('u'); }
+    }
+    const a = new Foo(); a.mount(); a.stop();
+    const b = new Foo(); b.mount(); b.dispose();
+    assertEqual(calls, ['u', 'u']);
+  });
+});
+
+describe('EX7b — StaleSessionPoller', () => {
+  const { StaleSessionPoller } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'stale-session-poller.js')
+  );
+
+  // Tests drive state updates via _applyResult() so they stay
+  // synchronous — no promise-timing assumptions. The async
+  // _pollOnce() is a thin wrapper around _applyResult(await api...).
+
+  it('has() returns false before any result is applied', () => {
+    const p = new StaleSessionPoller({ api: {} });
+    assertEqual(p.has('aabbccdd'), false);
+  });
+
+  it('_applyResult populates has() from an array', () => {
+    const p = new StaleSessionPoller({ api: {} });
+    p._applyResult(['aabbccdd', 'eeff0011']);
+    assertEqual(p.has('aabbccdd'), true);
+    assertEqual(p.has('eeff0011'), true);
+    assertEqual(p.has('deadbeef'), false);
+  });
+
+  it('onChange fires only when the set actually changes', () => {
+    const fires = [];
+    const p = new StaleSessionPoller({
+      api: {},
+      onChange: (set) => fires.push([...set]),
+    });
+    p._applyResult(['a']);           // [a]      → fire
+    p._applyResult(['a']);           // [a]      → same, no fire
+    p._applyResult(['a', 'b']);      // [a, b]   → fire
+    p._applyResult(['a', 'b']);      // [a, b]   → same, no fire
+    assertEqual(fires.length, 2);
+    assertEqual(fires[0], ['a']);
+    assertEqual(fires[1].sort(), ['a', 'b']);
+  });
+
+  it('onChange fires when set shrinks', () => {
+    const fires = [];
+    const p = new StaleSessionPoller({
+      api: {},
+      onChange: (set) => fires.push(set.size),
+    });
+    p._applyResult(['a', 'b']);
+    p._applyResult(['a']);
+    assertEqual(fires, [2, 1]);
+  });
+
+  it('_applyResult returns true/false matching whether state changed', () => {
+    const p = new StaleSessionPoller({ api: {} });
+    assertEqual(p._applyResult(['a']), true);
+    assertEqual(p._applyResult(['a']), false);
+    assertEqual(p._applyResult(['a', 'b']), true);
+    assertEqual(p._applyResult([]), true);
+    assertEqual(p._applyResult([]), false);
+  });
+
+  it('non-array result treated as empty set, never fires onChange from empty->empty', () => {
+    let fireCount = 0;
+    const p = new StaleSessionPoller({
+      api: {},
+      onChange: () => { fireCount++; },
+    });
+    p._applyResult(null);
+    p._applyResult(undefined);
+    p._applyResult('nope');
+    p._applyResult({ x: 1 });
+    assertEqual(p.has('anything'), false);
+    assertEqual(fireCount, 0);  // state stayed empty the whole time
+  });
+
+  it('getAll() returns a snapshot, not a reference', () => {
+    const p = new StaleSessionPoller({ api: {} });
+    p._applyResult(['x']);
+    const snap = p.getAll();
+    snap.add('leak');
+    assertEqual(p.has('leak'), false);
+  });
+
+  it('onChange errors are swallowed', () => {
+    const p = new StaleSessionPoller({
+      api: {},
+      onChange: () => { throw new Error('consumer broke'); },
+    });
+    // must not throw
+    p._applyResult(['a']);
+    assertEqual(p.has('a'), true);
+  });
+
+  it('start() mounts; stop() unmounts and clears timer teardowns', () => {
+    const p = new StaleSessionPoller({
+      api: {},
+      intervalMs: 1000,
+      initialDelayMs: 100,
+    });
+    p.start();
+    assertEqual(p.isMounted(), true);
+    // start() registers an initial setTimeout + a setInterval
+    assertEqual(p._teardown.length, 2);
+    p.stop();
+    assertEqual(p.isMounted(), false);
+    assertEqual(p._teardown.length, 0);
   });
 });
 

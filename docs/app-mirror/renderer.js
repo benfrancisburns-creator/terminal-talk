@@ -194,28 +194,20 @@ setInterval(() => {
   }
 }, POLL_INTERVAL_MS);
 
-// Poll dead-session state every 10 s. The user's complaint was that
-// closing a terminal didn't visibly update the UI — this ensures the
-// row greys out within 10 s of the PID going away. Cheap IPC; no
-// renders if nothing changed.
-async function pollStaleSessions() {
-  try {
-    const stale = await window.api.getStaleSessions();
-    const next = new Set(Array.isArray(stale) ? stale : []);
-    let changed = next.size !== staleSessionShorts.size;
-    if (!changed) {
-      for (const s of next) if (!staleSessionShorts.has(s)) { changed = true; break; }
-    }
-    if (changed) {
-      staleSessionShorts = next;
-      if (document.body.classList.contains('settings-open')) renderSessionsTable();
-      renderDots();
-    }
-  } catch {}
-}
-setInterval(pollStaleSessions, 10_000);
-// Run once on boot so first paint isn't stuck at "all alive".
-setTimeout(pollStaleSessions, 500);
+// EX7b — stale-session polling extracted into a component. Greys out
+// session rows and their dots within 10 s of a terminal's PID going
+// away. Component-owned setInterval + setTimeout can't orphan across
+// a renderer reload (EX3 Ctrl+R) — unmount() tears them down.
+const staleSessionPoller = new window.TT_STALE_SESSION_POLLER({
+  api: window.api,
+  intervalMs: 10_000,
+  initialDelayMs: 500,
+  onChange: () => {
+    if (document.body.classList.contains('settings-open')) renderSessionsTable();
+    renderDots();
+  },
+});
+staleSessionPoller.start();
 
 let queue = [];
 let currentPath = null;
@@ -256,12 +248,6 @@ const {
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
 
-// Shortlist of sessions whose backing terminal has closed. Populated by a
-// 10 s poll of main's get-stale-sessions IPC. Used ONLY to grey out the
-// session row and its dots — the registry itself isn't touched, so the
-// user's colour pick is preserved if the terminal reopens.
-let staleSessionShorts = new Set();
-
 // True while speakClipboard() is synthesising between wake-word detection
 // and first real clip arriving. Drives a placeholder pulsing dot so the
 // user gets visual confirmation TT heard them -- otherwise the 2-5 s
@@ -282,14 +268,14 @@ function isPathSessionMuted(p) {
   return isClipSessionMuted(name);
 }
 // S1 follow-up — a clip from a session whose terminal is closed
-// (staleSessionShorts set by the 10 s get-stale-sessions poll) should
+// (staleSessionPoller populated by the 10 s get-stale-sessions poll) should
 // not auto-play. The dot is still clickable so the user can hear it
 // manually; auto-play just skips closed-session clips the same way it
 // skips muted ones. Prevents phantom audio from detached late-arriving
 // synth jobs or leaked test fixtures.
 function isPathSessionStale(p) {
   const short = extractSessionShort(p.split(/[\\/]/).pop());
-  return !!(short && staleSessionShorts.has(short));
+  return !!(short && staleSessionPoller.has(short));
 }
 // Returns the shortId of the focused session if any, else null.
 // Only one session can be focused at a time (main.js enforces exclusivity).
@@ -444,13 +430,13 @@ function _renderDotsNow() {
     // Dead-terminal signal: desaturate the dot so the user can tell at a
     // glance which clips originated from a closed session. The clip is
     // still playable and the colour is preserved — just dimmer.
-    if (short && staleSessionShorts.has(short)) {
+    if (short && staleSessionPoller.has(short)) {
       dot.classList.add('stale');
     }
     const entry = short ? sessionAssignments[short] : null;
     const label = entry && entry.label ? ` [${entry.label}]` : '';
     const d = new Date(f.mtime);
-    const staleMark = (short && staleSessionShorts.has(short)) ? ' (closed)' : '';
+    const staleMark = (short && staleSessionPoller.has(short)) ? ' (closed)' : '';
     const titleText = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
     dot.title = titleText;
     dot.setAttribute('aria-label', titleText);
@@ -1287,7 +1273,7 @@ function renderSessionRow(shortId, entry) {
   const wrap = document.createElement('div');
   wrap.className = 'session-block';
   wrap.setAttribute('role', 'row');
-  if (staleSessionShorts.has(shortId)) {
+  if (staleSessionPoller.has(shortId)) {
     wrap.classList.add('stale');
     wrap.title = 'Terminal closed — colour preserved in case you reopen it';
   }

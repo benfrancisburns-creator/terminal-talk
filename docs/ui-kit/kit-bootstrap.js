@@ -69,6 +69,13 @@
   try {
     await loadScript('../app-mirror/lib/tokens-window.js');
     await loadScript('../app-mirror/lib/voices-window.js');
+    // Renderer-consumable libs, UMD-lite. Order matters:
+    // stale-session-poller reads window.TT_COMPONENT so component.js
+    // must land first; clip-paths is independent so its position is
+    // only constrained to be before renderer.js.
+    await loadScript('../app-mirror/lib/clip-paths.js');
+    await loadScript('../app-mirror/lib/component.js');
+    await loadScript('../app-mirror/lib/stale-session-poller.js');
     await loadScript('mock-ipc.js');
     await loadScript('../app-mirror/renderer.js');
   } catch (e) {

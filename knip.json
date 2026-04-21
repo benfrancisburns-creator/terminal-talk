@@ -17,7 +17,9 @@
     "tests/e2e/**/*.ts",
     "docs/ui-kit/kit-bootstrap.js",
     "docs/ui-kit/mock-ipc.js",
-    "app/lib/clip-paths.js"
+    "app/lib/clip-paths.js",
+    "app/lib/component.js",
+    "app/lib/stale-session-poller.js"
   ],
   "project": [
     "app/**/*.js",

@@ -26,6 +26,13 @@ const FILES = [
   'lib/tokens-window.js',
   'lib/voices-window.js',
   'lib/palette-classes.css',
+  // Renderer-consumable libs (UMD-lite — loaded by <script> in the
+  // product and by kit-bootstrap.js in the kit). Missing any of these
+  // from the mirror would strand renderer.js at a ReferenceError when
+  // the kit tries to boot.
+  'lib/clip-paths.js',
+  'lib/component.js',
+  'lib/stale-session-poller.js',
 ];
 
 const check = process.argv.includes('--check');

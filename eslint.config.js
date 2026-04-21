@@ -82,8 +82,22 @@ module.exports = [
 
   // Electron renderer + kit demo — browser globals, plus window.api
   // bridge exposed by preload.
+  //
+  // The UMD-lite lib files (clip-paths, component, stale-session-poller)
+  // live in both worlds: Node (unit tests via require) and browser
+  // (loaded by index.html via <script>). Lint them under the browser
+  // block because their heaviest runtime surface (DOM, timers, RAF) is
+  // browser-side; the `typeof module === 'object'` guard at the top of
+  // each file keeps Node happy without tripping no-undef on `module`
+  // (ESLint special-cases `typeof X` as non-reference).
   {
-    files: ['app/renderer.js', 'app/lib/clip-paths.js', 'docs/ui-kit/**/*.js'],
+    files: [
+      'app/renderer.js',
+      'app/lib/clip-paths.js',
+      'app/lib/component.js',
+      'app/lib/stale-session-poller.js',
+      'docs/ui-kit/**/*.js',
+    ],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'script',
