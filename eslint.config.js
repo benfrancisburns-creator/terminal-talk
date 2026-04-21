@@ -98,6 +98,7 @@ module.exports = [
       'app/lib/stale-session-poller.js',
       'app/lib/dot-strip.js',
       'app/lib/sessions-table.js',
+      'app/lib/settings-form.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

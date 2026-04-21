@@ -78,6 +78,7 @@
     await loadScript('../app-mirror/lib/stale-session-poller.js');
     await loadScript('../app-mirror/lib/dot-strip.js');
     await loadScript('../app-mirror/lib/sessions-table.js');
+    await loadScript('../app-mirror/lib/settings-form.js');
     await loadScript('mock-ipc.js');
     await loadScript('../app-mirror/renderer.js');
   } catch (e) {

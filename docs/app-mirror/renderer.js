@@ -1096,35 +1096,10 @@ let currentPlaybackSpeed = 1.25; // updated from config on load
 const { edge: EDGE_VOICES, openai: OPENAI_VOICES } = window.TT_VOICES;
 
 const settingsBtn = document.getElementById('settingsBtn');
-const speedSlider = document.getElementById('speedSlider');
-const speedValueEl = document.getElementById('speedValue');
 const sessionsTableEl = document.getElementById('sessionsTable');
-const voiceEdgeResponseEl = document.getElementById('voiceEdgeResponse');
-const voiceEdgeClipEl = document.getElementById('voiceEdgeClip');
-const voiceOpenaiResponseEl = document.getElementById('voiceOpenaiResponse');
-const voiceOpenaiClipEl = document.getElementById('voiceOpenaiClip');
-const incBoxes = {
-  code_blocks: document.getElementById('incCode'),
-  inline_code: document.getElementById('incInlineCode'),
-  urls: document.getElementById('incUrls'),
-  headings: document.getElementById('incHeadings'),
-  bullet_markers: document.getElementById('incBullets'),
-  image_alt: document.getElementById('incImages')
-};
-
-function fillVoiceSelect(el, list, selected) {
-  el.innerHTML = '';
-  // Include the selected value even if not in the curated list.
-  const pool = list.slice();
-  if (selected && !pool.find(v => v.id === selected)) pool.unshift({ id: selected, label: selected });
-  for (const v of pool) {
-    const opt = document.createElement('option');
-    opt.value = v.id;
-    opt.textContent = v.label;
-    if (v.id === selected) opt.selected = true;
-    el.appendChild(opt);
-  }
-}
+// EX7d-2 — speedSlider, speedValueEl, voice*El, incBoxes, and
+// fillVoiceSelect all moved into SettingsForm. The SettingsForm
+// component queries these DOM refs internally on mount.
 
 const INCLUDE_LABELS = [
   ['code_blocks',    'Code blocks'],
@@ -1167,118 +1142,32 @@ function renderSessionsTable() {
 }
 
 
+// EX7d-2 — global settings form (speed slider / auto-prune / auto-
+// continue / reload button / palette variant / global voice selects /
+// speech-includes checkboxes) extracted into a SettingsForm component.
+// The component owns all listener wiring (done once at mount) and
+// form population (done whenever cfg changes). Renderer module state
+// that callers consume elsewhere (currentPlaybackSpeed for <audio>,
+// autoPruneSec for the clip delete timer, autoContinueAfterClick for
+// the ended handler) propagates back via the onChange callbacks.
+const settingsForm = new window.TT_SETTINGS_FORM({
+  api: window.api,
+  edgeVoices: EDGE_VOICES,
+  openaiVoices: OPENAI_VOICES,
+  onPlaybackSpeedChange: (v) => {
+    currentPlaybackSpeed = v;
+    if (audio) audio.playbackRate = v;
+  },
+  onAutoPruneEnabledChange: (on) => setAutoPruneEnabled(on),
+  onAutoPruneSecChange: (n) => { autoPruneSec = n; },
+  onAutoContinueChange: (on) => { autoContinueAfterClick = on; },
+});
+settingsForm.mount();
+
 async function loadSettings() {
   const cfg = await window.api.getConfig();
   if (!cfg) return;
-  currentPlaybackSpeed = (cfg.playback && cfg.playback.speed) || 1.25;
-  speedSlider.value = Math.round(currentPlaybackSpeed * 100);
-  speedValueEl.textContent = `${currentPlaybackSpeed.toFixed(2)}x`;
-
-  const pruneToggle = document.getElementById('autoPruneToggle');
-  const pruneSecInput = document.getElementById('autoPruneSec');
-  const pruneInitial = cfg.playback && cfg.playback.auto_prune !== false;
-  const pruneSecInitial = Math.max(3, Math.min(600, Number(cfg.playback && cfg.playback.auto_prune_sec) || 20));
-  autoPruneSec = pruneSecInitial;
-  setAutoPruneEnabled(pruneInitial);
-  if (pruneToggle) {
-    pruneToggle.checked = pruneInitial;
-    pruneToggle.addEventListener('change', async () => {
-      const on = pruneToggle.checked;
-      setAutoPruneEnabled(on);
-      if (pruneSecInput) pruneSecInput.disabled = !on;
-      await window.api.updateConfig({ playback: { auto_prune: on } });
-    });
-  }
-  if (pruneSecInput) {
-    pruneSecInput.value = String(pruneSecInitial);
-    pruneSecInput.disabled = !pruneInitial;
-    pruneSecInput.addEventListener('change', async () => {
-      const n = Math.max(3, Math.min(600, Math.floor(Number(pruneSecInput.value) || 20)));
-      pruneSecInput.value = String(n);  // clamp display too
-      autoPruneSec = n;
-      await window.api.updateConfig({ playback: { auto_prune_sec: n } });
-    });
-  }
-
-  // v0.3.6 — auto_continue_after_click toggle.
-  const continueToggle = document.getElementById('autoContinueToggle');
-  const continueInitial = cfg.playback && cfg.playback.auto_continue_after_click !== false;
-  autoContinueAfterClick = continueInitial;
-  if (continueToggle) {
-    continueToggle.checked = continueInitial;
-    continueToggle.addEventListener('change', async () => {
-      autoContinueAfterClick = continueToggle.checked;
-      await window.api.updateConfig({ playback: { auto_continue_after_click: autoContinueAfterClick } });
-    });
-  }
-
-  // EX3 — reload-toolbar button. Hits main.js's reload-renderer IPC
-  // which calls win.webContents.reload(). Same action as the
-  // Ctrl+R keyboard shortcut main registers via before-input-event.
-  const reloadBtn = document.getElementById('reloadToolbar');
-  if (reloadBtn) {
-    reloadBtn.addEventListener('click', () => {
-      window.api.reloadRenderer();
-    });
-  }
-
-  // EX5 / H3 Option 2 — palette variant toggle. Writes the chosen
-  // variant onto body[data-palette-variant]; the CSS in
-  // app/lib/palette-classes.css has a higher-specificity rule block
-  // that only applies when the attr === 'cb'. Default users see zero
-  // change.
-  const paletteToggle = document.getElementById('paletteVariantToggle');
-  const paletteVariant = (cfg.playback && cfg.playback.palette_variant) || 'default';
-  document.body.dataset.paletteVariant = paletteVariant;
-  if (paletteToggle) {
-    paletteToggle.checked = paletteVariant === 'cb';
-    paletteToggle.addEventListener('change', async () => {
-      const next = paletteToggle.checked ? 'cb' : 'default';
-      document.body.dataset.paletteVariant = next;
-      await window.api.updateConfig({ playback: { palette_variant: next } });
-    });
-  }
-
-  // Global voice / include selects were removed in favour of per-session controls.
-  // Guard so the renderer doesn't crash when the elements are absent.
-  if (voiceEdgeResponseEl) fillVoiceSelect(voiceEdgeResponseEl, EDGE_VOICES, cfg.voices.edge_response);
-  if (voiceEdgeClipEl)     fillVoiceSelect(voiceEdgeClipEl, EDGE_VOICES, cfg.voices.edge_clip);
-  if (voiceOpenaiResponseEl) fillVoiceSelect(voiceOpenaiResponseEl, OPENAI_VOICES, cfg.voices.openai_response);
-  if (voiceOpenaiClipEl)   fillVoiceSelect(voiceOpenaiClipEl, OPENAI_VOICES, cfg.voices.openai_clip);
-
-  const inc = cfg.speech_includes || {};
-  for (const [key, el] of Object.entries(incBoxes)) {
-    if (el) el.checked = !!inc[key];
-  }
-}
-
-speedSlider.addEventListener('input', () => {
-  const v = Math.max(0.5, Math.min(2.5, Number(speedSlider.value) / 100));
-  currentPlaybackSpeed = v;
-  speedValueEl.textContent = `${v.toFixed(2)}x`;
-  if (audio) audio.playbackRate = v;
-});
-speedSlider.addEventListener('change', async () => {
-  const v = Math.max(0.5, Math.min(2.5, Number(speedSlider.value) / 100));
-  await window.api.updateConfig({ playback: { speed: v } });
-});
-
-function wireVoiceSelect(el, key) {
-  if (!el) return;
-  el.addEventListener('change', async () => {
-    await window.api.updateConfig({ voices: { [key]: el.value } });
-  });
-}
-wireVoiceSelect(voiceEdgeResponseEl, 'edge_response');
-wireVoiceSelect(voiceEdgeClipEl, 'edge_clip');
-wireVoiceSelect(voiceOpenaiResponseEl, 'openai_response');
-wireVoiceSelect(voiceOpenaiClipEl, 'openai_clip');
-
-for (const [key, el] of Object.entries(incBoxes)) {
-  if (!el) continue;
-  el.addEventListener('change', async () => {
-    await window.api.updateConfig({ speech_includes: { [key]: el.checked } });
-  });
+  settingsForm.update({ cfg });
 }
 
 settingsBtn.addEventListener('click', async () => {

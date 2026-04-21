@@ -4348,6 +4348,186 @@ describe('EX7d-1 — SessionsTable', () => {
   void origs;
 });
 
+describe('EX7d-2 — SettingsForm', () => {
+  // Reuses the DOM globals set up by the SessionsTable block. Defines
+  // its own id -> element registry that getElementById resolves
+  // against, so each test can assemble a form surface à la carte.
+  const elements = {};
+  const makeFakeEl = global.document.createElement;  // reuse from SessionsTable block
+  const origGetById = global.document.getElementById;
+  global.document.getElementById = (id) => elements[id] || null;
+  // _populatePaletteVariant writes document.body.dataset.paletteVariant;
+  // provide a stand-in body so every test doesn't have to stub one.
+  const origBody = global.document.body;
+  global.document.body = { dataset: {} };
+
+  function seed(ids) {
+    for (const id of ids) {
+      elements[id] = makeFakeEl('input');
+      elements[id].id = id;
+    }
+  }
+
+  function reset() {
+    for (const k of Object.keys(elements)) delete elements[k];
+  }
+
+  const { SettingsForm } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'settings-form.js')
+  );
+
+  function apiMock() {
+    const calls = [];
+    return {
+      updateConfig: async (partial) => { calls.push(partial); return partial; },
+      reloadRenderer: () => { calls.push('reload'); },
+      _calls: calls,
+    };
+  }
+
+  it('mount wires speedSlider input + change handlers', () => {
+    reset();
+    seed(['speedSlider', 'speedValue']);
+    const api = apiMock();
+    const speeds = [];
+    const form = new SettingsForm({
+      api,
+      edgeVoices: [], openaiVoices: [],
+      onPlaybackSpeedChange: (v) => speeds.push(v),
+    });
+    form.mount();
+    elements.speedSlider.value = '150';
+    const input = elements.speedSlider._listeners.find((l) => l.ev === 'input');
+    input.fn();
+    assertEqual(speeds, [1.5]);
+    assertEqual(elements.speedValue.textContent, '1.50x');
+    form.unmount();
+  });
+
+  it('update populates speed slider from cfg and notifies', () => {
+    reset();
+    seed(['speedSlider', 'speedValue']);
+    const api = apiMock();
+    const speeds = [];
+    const form = new SettingsForm({
+      api, edgeVoices: [], openaiVoices: [],
+      onPlaybackSpeedChange: (v) => speeds.push(v),
+    });
+    form.mount();
+    form.update({ cfg: { playback: { speed: 2.0 } } });
+    assertEqual(elements.speedSlider.value, 200);
+    assertEqual(elements.speedValue.textContent, '2.00x');
+    assertEqual(speeds, [2.0]);
+    form.unmount();
+  });
+
+  it('auto-prune toggle updates cfg + disables seconds input when off', () => {
+    // Sync test: handler body does the state updates before its internal
+    // `await api.updateConfig(...)`, so we can fire the listener without
+    // awaiting and all non-IPC effects are visible immediately.
+    reset();
+    seed(['autoPruneToggle', 'autoPruneSec']);
+    const api = apiMock();
+    const pruneStates = [];
+    const form = new SettingsForm({
+      api, edgeVoices: [], openaiVoices: [],
+      onAutoPruneEnabledChange: (on) => pruneStates.push(on),
+    });
+    form.mount();
+    elements.autoPruneToggle.checked = false;
+    const change = elements.autoPruneToggle._listeners.find((l) => l.ev === 'change');
+    change.fn();  // fire-and-forget — sync effects are visible immediately
+    assertEqual(pruneStates, [false]);
+    assertEqual(elements.autoPruneSec.disabled, true);
+    // IPC call is queued synchronously too (api.updateConfig is called
+    // before the await, only its return is awaited).
+    assertTruthy(api._calls.some((c) => c && c.playback && c.playback.auto_prune === false));
+    form.unmount();
+  });
+
+  it('auto-prune seconds clamps to [3, 600]', () => {
+    reset();
+    seed(['autoPruneSec']);
+    const api = apiMock();
+    const secsReceived = [];
+    const form = new SettingsForm({
+      api, edgeVoices: [], openaiVoices: [],
+      onAutoPruneSecChange: (n) => secsReceived.push(n),
+    });
+    form.mount();
+    elements.autoPruneSec.value = '9999';
+    const change = elements.autoPruneSec._listeners.find((l) => l.ev === 'change');
+    change.fn();
+    assertEqual(secsReceived, [600]);
+    assertEqual(elements.autoPruneSec.value, '600');  // display clamped too
+    form.unmount();
+  });
+
+  it('reload button calls api.reloadRenderer', () => {
+    reset();
+    seed(['reloadToolbar']);
+    const api = apiMock();
+    const form = new SettingsForm({ api, edgeVoices: [], openaiVoices: [] });
+    form.mount();
+    const click = elements.reloadToolbar._listeners.find((l) => l.ev === 'click');
+    click.fn();
+    assertTruthy(api._calls.includes('reload'));
+    form.unmount();
+  });
+
+  it('palette toggle sets body[data-palette-variant] + persists', () => {
+    reset();
+    seed(['paletteVariantToggle']);
+    const api = apiMock();
+    const originalBody = global.document.body;
+    global.document.body = { dataset: {} };
+    const form = new SettingsForm({ api, edgeVoices: [], openaiVoices: [] });
+    form.mount();
+    elements.paletteVariantToggle.checked = true;
+    const change = elements.paletteVariantToggle._listeners.find((l) => l.ev === 'change');
+    change.fn();
+    assertEqual(global.document.body.dataset.paletteVariant, 'cb');
+    assertTruthy(api._calls.some((c) => c && c.playback && c.playback.palette_variant === 'cb'));
+    form.unmount();
+    global.document.body = originalBody;
+  });
+
+  it('update handles missing cfg without crashing', () => {
+    reset();
+    seed(['speedSlider']);
+    const api = apiMock();
+    const form = new SettingsForm({ api, edgeVoices: [], openaiVoices: [] });
+    form.mount();
+    // No .playback -> should fall through to defaults.
+    form.update({ cfg: {} });
+    assertEqual(elements.speedSlider.value, 125);  // 1.25 default
+    form.unmount();
+  });
+
+  it('voice select is populated with curated list + includes unknown selected', () => {
+    reset();
+    const sel = makeFakeEl('select');
+    elements.voiceEdgeResponse = sel;
+    const api = apiMock();
+    const form = new SettingsForm({
+      api,
+      edgeVoices: [{ id: 'en-GB-Ryan', label: 'Ryan' }],
+      openaiVoices: [],
+    });
+    form.mount();
+    form.update({ cfg: { voices: { edge_response: 'custom-voice-id' } } });
+    // Expect TWO options: the unknown selected + the curated one.
+    assertEqual(sel._children.length, 2);
+    assertEqual(sel._children[0].value, 'custom-voice-id');
+    assertEqual(sel._children[1].value, 'en-GB-Ryan');
+    form.unmount();
+  });
+
+  // Restore getElementById + body (other tests may rely on their absence).
+  global.document.getElementById = origGetById;
+  global.document.body = origBody;
+});
+
 describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
   const { createIpcHandlers } = require(
     path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')

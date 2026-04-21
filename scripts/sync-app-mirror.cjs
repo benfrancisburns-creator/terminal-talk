@@ -35,6 +35,7 @@ const FILES = [
   'lib/stale-session-poller.js',
   'lib/dot-strip.js',
   'lib/sessions-table.js',
+  'lib/settings-form.js',
 ];
 
 const check = process.argv.includes('--check');
