@@ -1316,17 +1316,15 @@ function saveAssignments(all) {
 }
 
 // --- Input validation helpers (defend against malformed IPC + corrupt registry) ---
-const SHORT_RE = /^[a-f0-9]{8}$/;
-const VOICE_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$|^(alloy|echo|fable|onyx|nova|shimmer)$/;
-const ALLOWED_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt']);
-const MAX_LABEL_LEN = 60;
-
-function validShort(s) { return typeof s === 'string' && SHORT_RE.test(s); }
-function validVoice(s) { return typeof s === 'string' && s.length <= 80 && VOICE_RE.test(s); }
-function sanitiseLabel(s) {
-  if (typeof s !== 'string') return '';
-  return s.replace(/[\r\n\t]/g, ' ').slice(0, MAX_LABEL_LEN).trim();
-}
+// EX6e — input-validation helpers extracted to app/lib/ipc-validate.js.
+// main.js only needs the functions; the raw RE/length constants
+// live behind the module boundary now.
+const {
+  validShort,
+  validVoice,
+  sanitiseLabel,
+  ALLOWED_INCLUDE_KEYS,
+} = require('./lib/ipc-validate');
 
 ipcMain.handle('set-session-label', (_e, shortId, label) => {
   if (!allowMutation('set-session-label')) return null;

@@ -1,8 +1,8 @@
 {
   "ceiling": 3500,
   "files": {
-    "scripts/run-tests.cjs": 3062,
-    "app/main.js": 1757,
+    "scripts/run-tests.cjs": 3114,
+    "app/main.js": 1755,
     "app/renderer.js": 1731,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -42,6 +42,7 @@
     "app/lib/session-stale.js": 47,
     "app/lib/concurrency.js": 46,
     "scripts/verify-voices.cjs": 43,
+    "app/lib/ipc-validate.js": 42,
     "app/lib/rate-limit.js": 40,
     "tests/e2e/helpers.ts": 38,
     "scripts/wrap-ascii-face.cjs": 36,

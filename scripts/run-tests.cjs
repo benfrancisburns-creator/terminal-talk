@@ -2708,6 +2708,58 @@ describe('S1 — renderer-error dedupe', () => {
 // the ASSESSMENTS/S5-coverage/findings.md gap list.
 // =============================================================================
 
+describe('EX6e — ipc-validate', () => {
+  const {
+    validShort, validVoice, sanitiseLabel,
+    ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+  const MAX_LABEL_LEN = 60;  // inline mirror of the module-private constant
+  const MAX_VOICE_LEN = 80;  // same
+
+  it('validShort accepts 8-char lowercase hex, rejects others', () => {
+    assertEqual(validShort('aabbccdd'), true);
+    assertEqual(validShort('01234567'), true);
+    assertEqual(validShort('AABBCCDD'), false);  // uppercase rejected
+    assertEqual(validShort('aabbccd'), false);   // too short
+    assertEqual(validShort('aabbccdde'), false); // too long
+    assertEqual(validShort('ghijklmn'), false);  // non-hex
+    assertEqual(validShort(null), false);
+    assertEqual(validShort(12345678), false);    // non-string
+  });
+
+  it('validVoice accepts edge-tts IDs + openai voices, rejects garbage', () => {
+    assertEqual(validVoice('en-GB-RyanNeural'), true);
+    assertEqual(validVoice('en-US-JennyMultilingualNeural'), true);
+    assertEqual(validVoice('shimmer'), true);
+    assertEqual(validVoice('onyx'), true);
+    assertEqual(validVoice('invalid'), false);
+    assertEqual(validVoice('RyanNeural'), false);  // missing locale prefix
+    assertEqual(validVoice(null), false);
+    // MAX_VOICE_LEN
+    assertEqual(validVoice('a'.repeat(MAX_VOICE_LEN + 1)), false);
+  });
+
+  it('sanitiseLabel strips CR/LF/tab, truncates, and trims', () => {
+    assertEqual(sanitiseLabel('hello'), 'hello');
+    assertEqual(sanitiseLabel('  spaced  '), 'spaced');
+    assertEqual(sanitiseLabel('line1\nline2'), 'line1 line2');
+    assertEqual(sanitiseLabel('tab\there'), 'tab here');
+    // truncate at MAX_LABEL_LEN
+    assertEqual(sanitiseLabel('x'.repeat(100)).length, MAX_LABEL_LEN);
+    // non-strings coerce to empty
+    assertEqual(sanitiseLabel(null), '');
+    assertEqual(sanitiseLabel(42), '');
+  });
+
+  it('ALLOWED_INCLUDE_KEYS matches DEFAULTS.speech_includes shape', () => {
+    const expected = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt'];
+    for (const k of expected) {
+      if (!ALLOWED_INCLUDE_KEYS.has(k)) throw new Error(`ALLOWED_INCLUDE_KEYS missing ${k}`);
+    }
+    assertEqual(ALLOWED_INCLUDE_KEYS.size, expected.length);
+  });
+});
+
 describe('EX6c — queue-watcher', () => {
   const { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE } = require(
     path.join(__dirname, '..', 'app', 'lib', 'queue-watcher.js')
