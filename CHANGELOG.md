@@ -2,7 +2,7 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [unreleased] — 2026-04-21
+## [0.4.0] — 2026-04-21
 
 v0.4 execution-tier work after the assessment passes (S1-S7) + the
 v0.4 quality tier shipped. Follow-ups surfaced during assessment
