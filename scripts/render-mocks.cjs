@@ -71,13 +71,18 @@ function resolveChromePath() {
 const CHROME = resolveChromePath();
 process.stdout.write(`[render-mocks] using browser: ${CHROME}\n`);
 
-// Four mocks in order: [slug, window height tuned to section]
+// Five mocks in order: [slug, window height tuned to section].
+// Heights include ~40 px of bottom breathing room so the last
+// annotation's descender doesn't kiss the frame — previous values
+// were tuned once and went stale as annotation copy grew (shot 03's
+// "Click / Right-click" + "Clear all" rows and shot 05's "Unsnapping"
+// trailing line were both getting clipped).
 const SHOTS = [
-  { n: 1, slug: 'idle',             height: 720 },
-  { n: 2, slug: 'three-sessions',   height: 640 },
-  { n: 3, slug: 'mixed-states',     height: 1160 },
-  { n: 4, slug: 'settings-panel',   height: 1400 },
-  { n: 5, slug: 'snapped-top',      height: 720 },
+  { n: 1, slug: 'idle',             height: 780 },
+  { n: 2, slug: 'three-sessions',   height: 700 },
+  { n: 3, slug: 'mixed-states',     height: 1450 },
+  { n: 4, slug: 'settings-panel',   height: 1450 },
+  { n: 5, slug: 'snapped-top',      height: 900 },
 ];
 
 const src = readFileSync(SRC, 'utf8');
