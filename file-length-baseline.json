@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 3183,
-    "app/main.js": 1755,
+    "scripts/run-tests.cjs": 3329,
+    "app/main.js": 1709,
     "app/renderer.js": 1704,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -27,6 +27,7 @@
     "tests/e2e/sessions.spec.ts": 113,
     "app/edge_tts_speak.py": 109,
     "app/lib/text.js": 108,
+    "app/lib/ipc-handlers.js": 107,
     "app/lib/api-key-store.js": 101,
     "tests/e2e/fixtures.ts": 96,
     "app/lib/watchdog.js": 94,

@@ -1887,13 +1887,18 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
 // silently break the stale-UI signal.
 // =============================================================================
 describe('STALE SESSIONS IPC WIRING', () => {
-  it("main.js registers 'get-stale-sessions' IPC handler", () => {
-    const mainPath = path.join(__dirname, '..', 'app', 'main.js');
-    const src = fs.readFileSync(mainPath, 'utf8');
-    if (!/ipcMain\.handle\(['"]get-stale-sessions['"]/.test(src)) {
-      throw new Error("main.js missing ipcMain.handle('get-stale-sessions', ...)");
+  it("ipc-handlers.js registers 'get-stale-sessions' IPC handler", () => {
+    // EX6f-1 — handler moved from main.js to app/lib/ipc-handlers.js.
+    // main.js still references computeStaleSessions (passes it as a
+    // factory dep) so the delegation check stays on main.js.
+    const ipcPath = path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js');
+    const ipcSrc = fs.readFileSync(ipcPath, 'utf8');
+    if (!/ipcMain\.handle\(['"]get-stale-sessions['"]/.test(ipcSrc)) {
+      throw new Error("ipc-handlers.js missing ipcMain.handle('get-stale-sessions', ...)");
     }
-    if (!/computeStaleSessions/.test(src)) {
+    const mainPath = path.join(__dirname, '..', 'app', 'main.js');
+    const mainSrc = fs.readFileSync(mainPath, 'utf8');
+    if (!/computeStaleSessions/.test(mainSrc)) {
       throw new Error('main.js should delegate to computeStaleSessions');
     }
   });
@@ -2826,6 +2831,147 @@ describe('EX6e — ipc-validate', () => {
       if (!ALLOWED_INCLUDE_KEYS.has(k)) throw new Error(`ALLOWED_INCLUDE_KEYS missing ${k}`);
     }
     assertEqual(ALLOWED_INCLUDE_KEYS.size, expected.length);
+  });
+});
+
+describe('EX6f-1 — ipc-handlers (read-only group)', () => {
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+
+  // A stand-in for electron.ipcMain. Records each handler by channel
+  // name so tests can invoke them directly without the Electron runtime.
+  function makeFakeIpcMain() {
+    const handlers = new Map();
+    return {
+      handle(name, fn) { handlers.set(name, fn); },
+      invoke(name, ...args) {
+        const fn = handlers.get(name);
+        if (!fn) throw new Error(`no handler: ${name}`);
+        return fn({}, ...args);
+      },
+      has(name) { return handlers.has(name); },
+      names() { return [...handlers.keys()]; },
+    };
+  }
+
+  function baseDeps(overrides = {}) {
+    const diagLog = [];
+    return {
+      ipcMain: makeFakeIpcMain(),
+      diag: (m) => diagLog.push(m),
+      getCFG: () => ({ voices: {} }),
+      loadAssignments: () => ({}),
+      getQueueFiles: () => [],
+      ensureAssignmentsForFiles: () => ({}),
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: '/nope',
+      fs: { existsSync: () => false, readdirSync: () => [], readFileSync: () => '' },
+      ...overrides,
+      _diagLog: diagLog,
+    };
+  }
+
+  it('register() wires all five read-only channels', () => {
+    const deps = baseDeps();
+    createIpcHandlers(deps).register();
+    for (const name of ['log-renderer-error', 'get-queue', 'get-assignments', 'get-stale-sessions', 'get-config']) {
+      if (!deps.ipcMain.has(name)) throw new Error(`missing channel: ${name}`);
+    }
+  });
+
+  it('get-config returns the live CFG via the getter', () => {
+    let cfg = { a: 1 };
+    const deps = baseDeps({ getCFG: () => cfg });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-config'), { a: 1 });
+    cfg = { a: 2 };  // simulate update-config reassignment
+    assertEqual(deps.ipcMain.invoke('get-config'), { a: 2 });
+  });
+
+  it('get-queue composes files + assignments', () => {
+    const deps = baseDeps({
+      getQueueFiles: () => ['x.mp3', 'y.mp3'],
+      ensureAssignmentsForFiles: (f) => ({ count: f.length }),
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-queue'), {
+      files: ['x.mp3', 'y.mp3'],
+      assignments: { count: 2 },
+    });
+  });
+
+  it('get-assignments delegates to loadAssignments', () => {
+    const deps = baseDeps({ loadAssignments: () => ({ ab12cd34: { idx: 0 } }) });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-assignments'), { ab12cd34: { idx: 0 } });
+  });
+
+  it('log-renderer-error dedupes repeated payloads', () => {
+    // createDedupe (the default) dedupes same-key within its window;
+    // two identical payloads should produce exactly one diag line.
+    const deps = baseDeps();
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('log-renderer-error', { type: 'error', message: 'boom', stack: 'trace' });
+    deps.ipcMain.invoke('log-renderer-error', { type: 'error', message: 'boom', stack: 'trace' });
+    assertEqual(deps._diagLog.length, 1);
+    assertTruthy(/boom/.test(deps._diagLog[0]), 'diag line should contain the message');
+  });
+
+  it('log-renderer-error rejects non-object payloads silently', () => {
+    const deps = baseDeps();
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('log-renderer-error', null);
+    deps.ipcMain.invoke('log-renderer-error', 'string');
+    deps.ipcMain.invoke('log-renderer-error', 42);
+    assertEqual(deps._diagLog.length, 0);
+  });
+
+  it('log-renderer-error truncates oversized fields', () => {
+    const deps = baseDeps();
+    createIpcHandlers(deps).register();
+    const huge = 'a'.repeat(10000);
+    deps.ipcMain.invoke('log-renderer-error', { type: huge, message: huge, stack: huge, source: huge });
+    const line = deps._diagLog[0];
+    assertTruthy(line.length < 10000, 'diag line should be bounded');
+  });
+
+  it('get-stale-sessions returns [] when SESSIONS_DIR is missing', () => {
+    const deps = baseDeps({ fs: { existsSync: () => false } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-stale-sessions'), []);
+  });
+
+  it('get-stale-sessions passes liveShorts + livePids into computeStaleSessions', () => {
+    let captured = null;
+    const deps = baseDeps({
+      loadAssignments: () => ({ abc12345: { idx: 0 } }),
+      isPidAlive: () => true,
+      computeStaleSessions: (assignments, liveShorts, livePids) => {
+        captured = { liveShorts: [...liveShorts], livePids: [...livePids] };
+        return [];
+      },
+      fs: {
+        existsSync: () => true,
+        readdirSync: () => ['123.json'],
+        readFileSync: () => JSON.stringify({ short: 'ABC12345' }),
+      },
+    });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('get-stale-sessions');
+    assertEqual(captured.liveShorts, ['abc12345']);  // lowercased
+    assertEqual(captured.livePids, [123]);
+  });
+
+  it('get-stale-sessions swallows errors + diags once', () => {
+    const deps = baseDeps({
+      loadAssignments: () => { throw new Error('registry corrupt'); },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-stale-sessions'), []);
+    assertTruthy(deps._diagLog.some((m) => /get-stale-sessions fail/.test(m)),
+      'should diag the failure');
   });
 });
 
