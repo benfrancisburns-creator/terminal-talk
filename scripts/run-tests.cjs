@@ -3175,6 +3175,209 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
   });
 });
 
+describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+  const {
+    validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+
+  function makeFakeIpcMain() {
+    const handlers = new Map();
+    return {
+      handle(name, fn) { handlers.set(name, fn); },
+      invoke(name, ...args) {
+        const fn = handlers.get(name);
+        if (!fn) throw new Error(`no handler: ${name}`);
+        return fn({}, ...args);
+      },
+      has(name) { return handlers.has(name); },
+    };
+  }
+
+  // Fake BrowserWindow that records every method call so tests can
+  // assert both side effects and call ordering.
+  function makeFakeWin(overrides = {}) {
+    const calls = [];
+    const win = {
+      isDestroyed: () => false,
+      getPosition: () => [100, 200],
+      getSize: () => [680, 114],
+      setBounds: (b) => { calls.push(['setBounds', b]); },
+      setSize: (w, h, anim) => { calls.push(['setSize', w, h, anim]); },
+      setIgnoreMouseEvents: (on, opts) => { calls.push(['setIgnoreMouseEvents', on, opts]); },
+      webContents: {
+        reload: () => { calls.push(['reload']); },
+      },
+      ...overrides,
+    };
+    return { win, calls };
+  }
+
+  function panelDeps(overrides = {}) {
+    let cfg = overrides.cfg || {};
+    const savedConfigs = [];
+    const dockCalls = [];
+    const diagLog = [];
+    const { win: fakeWin, calls: winCalls } = makeFakeWin(overrides.winOverrides || {});
+    return {
+      ipcMain: makeFakeIpcMain(),
+      diag: (m) => diagLog.push(m),
+      getCFG: () => cfg,
+      setCFG: (next) => { cfg = next; },
+      getWin: () => fakeWin,
+      loadAssignments: () => ({}),
+      saveAssignments: () => true,
+      saveConfig: (c) => { savedConfigs.push(c); return true; },
+      getQueueFiles: () => [],
+      ensureAssignmentsForFiles: () => ({}),
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: '/nope',
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+      apiKeyStore: { set: (v) => { diagLog.push(`apikey=${v}`); } },
+      redactForLog: (o) => o,
+      setApplyingDock: (v) => dockCalls.push(v),
+      testMode: false,
+      ...overrides,
+      _cfgRef: () => cfg,
+      _savedConfigs: savedConfigs,
+      _dockCalls: dockCalls,
+      _diagLog: diagLog,
+      _winCalls: winCalls,
+    };
+  }
+
+  it('register() wires reload-renderer, update-config, set-clickthrough, set-panel-open', () => {
+    const deps = panelDeps();
+    createIpcHandlers(deps).register();
+    for (const name of ['reload-renderer', 'update-config', 'set-clickthrough', 'set-panel-open']) {
+      if (!deps.ipcMain.has(name)) throw new Error(`missing channel: ${name}`);
+    }
+  });
+
+  it('reload-renderer calls webContents.reload when window is alive', () => {
+    const deps = panelDeps();
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('reload-renderer');
+    assertTruthy(deps._winCalls.some((c) => c[0] === 'reload'), 'should have called reload');
+  });
+
+  it('reload-renderer is no-op when window is destroyed', () => {
+    const deps = panelDeps({ winOverrides: { isDestroyed: () => true } });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('reload-renderer');
+    assertFalsy(deps._winCalls.some((c) => c[0] === 'reload'), 'should NOT have called reload');
+  });
+
+  it('update-config merges sub-objects and calls setCFG with new object', () => {
+    const deps = panelDeps({
+      cfg: {
+        voices: { edge_response: 'old' },
+        hotkeys: { toggle: 'A' },
+        playback: { speed: 1 },
+        speech_includes: { urls: false },
+      },
+    });
+    createIpcHandlers(deps).register();
+    const out = deps.ipcMain.invoke('update-config', {
+      voices: { edge_response: 'new' },
+      playback: { speed: 2 },
+    });
+    assertEqual(out.voices.edge_response, 'new');
+    assertEqual(out.hotkeys.toggle, 'A');          // unchanged
+    assertEqual(out.playback.speed, 2);
+    assertEqual(out.speech_includes.urls, false);   // unchanged
+    assertEqual(out.openai_api_key, null);
+    // setCFG must have received the merged object
+    assertEqual(deps._cfgRef().voices.edge_response, 'new');
+  });
+
+  it('update-config routes openai_api_key through apiKeyStore and nulls the field', () => {
+    const deps = panelDeps({ cfg: { voices: {}, hotkeys: {}, playback: {}, speech_includes: {} } });
+    createIpcHandlers(deps).register();
+    const out = deps.ipcMain.invoke('update-config', { openai_api_key: 'sk-secret' });
+    assertEqual(out.openai_api_key, null);
+    assertTruthy(deps._diagLog.some((m) => /apikey=sk-secret/.test(m)),
+      'apiKeyStore.set should have been called with the secret');
+  });
+
+  it('update-config returns null when rate-limited', () => {
+    const deps = panelDeps({ allowMutation: () => false });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('update-config', { voices: {} }), null);
+  });
+
+  it('update-config catches save failures + logs once', () => {
+    const deps = panelDeps({
+      cfg: { voices: {}, hotkeys: {}, playback: {}, speech_includes: {} },
+      saveConfig: () => { throw new Error('disk full'); },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('update-config', { voices: {} }), null);
+    assertTruthy(deps._diagLog.some((m) => /update-config fail/.test(m)));
+  });
+
+  it('set-clickthrough returns false when window is destroyed', () => {
+    const deps = panelDeps({ winOverrides: { isDestroyed: () => true } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-clickthrough', true), false);
+  });
+
+  it('set-clickthrough is a no-op-return-true in test mode', () => {
+    const deps = panelDeps({ testMode: true });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-clickthrough', true), true);
+    assertFalsy(deps._winCalls.some((c) => c[0] === 'setIgnoreMouseEvents'),
+      'testMode should skip the actual setIgnoreMouseEvents call');
+  });
+
+  it('set-clickthrough forwards to setIgnoreMouseEvents outside test mode', () => {
+    const deps = panelDeps({ testMode: false });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('set-clickthrough', true);
+    const call = deps._winCalls.find((c) => c[0] === 'setIgnoreMouseEvents');
+    assertTruthy(call, 'should call setIgnoreMouseEvents');
+    assertEqual(call[1], true);
+    assertEqual(call[2], { forward: true });
+  });
+
+  it('set-panel-open uses setSize for non-bottom docks', () => {
+    const deps = panelDeps({ cfg: { window: { dock: 'top' } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
+    const call = deps._winCalls.find((c) => c[0] === 'setSize');
+    assertTruthy(call, 'should call setSize');
+    assertEqual(call[1], 680);  // expanded width
+    assertEqual(call[2], 618);  // expanded height
+    // no dock adjustment expected
+    assertEqual(deps._dockCalls, []);
+  });
+
+  it('set-panel-open pins bottom-docked bar via setBounds + setApplyingDock flag', () => {
+    const deps = panelDeps({ cfg: { window: { dock: 'bottom' } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
+    const call = deps._winCalls.find((c) => c[0] === 'setBounds');
+    assertTruthy(call, 'should call setBounds');
+    // curY=200, curH=114, newH=618 -> newY = 200 + (114 - 618) = -304
+    assertEqual(call[1].y, -304);
+    assertEqual(call[1].width, 680);
+    assertEqual(call[1].height, 618);
+    // applying-dock latch must flip true then eventually back to false
+    assertEqual(deps._dockCalls[0], true);
+  });
+
+  it('set-panel-open returns false when window is destroyed', () => {
+    const deps = panelDeps({ winOverrides: { isDestroyed: () => true } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-panel-open', true), false);
+  });
+});
+
 describe('EX6c — queue-watcher', () => {
   const { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE } = require(
     path.join(__dirname, '..', 'app', 'lib', 'queue-watcher.js')

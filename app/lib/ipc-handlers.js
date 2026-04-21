@@ -41,7 +41,17 @@ function createIpcHandlers(deps) {
     validVoice,
     sanitiseLabel,
     ALLOWED_INCLUDE_KEYS,
+    // Panel / config-mutation deps (EX6f-3)
+    setCFG,
+    saveConfig,
+    apiKeyStore,
+    redactForLog,
+    setApplyingDock,
+    testMode = !!process.env.TT_TEST_MODE,
   } = deps;
+
+  const WIN_COLLAPSED = { width: 680, height: 114 };
+  const WIN_EXPANDED = { width: 680, height: 618 };
 
   function register() {
     // S1.2 — renderer-side error sink with dedupe so repeated throws
@@ -223,6 +233,84 @@ function createIpcHandlers(deps) {
         delete all[shortId].speech_includes;
       }
       return saveAssignments(all);
+    });
+
+    // EX6f-3 — panel + config-mutation handlers.
+
+    // EX3 — Settings panel "Reload toolbar" button fires this; hits the
+    // same reload() as the Ctrl+R keyboard shortcut. No-op if the
+    // window has been destroyed mid-quit.
+    ipcMain.handle('reload-renderer', () => {
+      const win = getWin();
+      if (win && !win.isDestroyed()) win.webContents.reload();
+    });
+
+    // Config mutation — merges shallow sub-objects and routes
+    // openai_api_key through the encrypted key store so config.json
+    // never persists the plaintext secret.
+    ipcMain.handle('update-config', (_e, partial) => {
+      if (!allowMutation('update-config')) return null;
+      try {
+        diag(`update-config IN: ${JSON.stringify(redactForLog(partial))}`);
+        if (partial.openai_api_key !== undefined) {
+          apiKeyStore.set(partial.openai_api_key);
+        }
+        const cur = getCFG();
+        const merged = {
+          voices: { ...cur.voices, ...(partial.voices || {}) },
+          hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
+          playback: { ...cur.playback, ...(partial.playback || {}) },
+          speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
+          openai_api_key: null,
+        };
+        const ok = saveConfig(merged);
+        setCFG(merged);
+        diag(`update-config OK: saved=${ok}, edge_response=${merged.voices.edge_response}`);
+        return merged;
+      } catch (e) { diag(`update-config fail: ${e.message}`); return null; }
+    });
+
+    // When the toolbar collapses to its slim idle state, the window area
+    // below the visible strip is transparent but still covered by the
+    // BrowserWindow. forward:true lets the renderer keep receiving
+    // mousemove events (so it can re-expand on hover) while clicks pass
+    // through to whatever's below.
+    //
+    // In TT_TEST_MODE we deliberately no-op this. Playwright's synthetic
+    // mouse events arrive faster than the mousemove->IPC->setIgnoreMouseEvents
+    // round-trip can settle, so the test's click can race with
+    // click-through being on and get passed through to nothing. Keeping
+    // the window fully interactive in tests gives deterministic clicks
+    // without changing any other logic under test.
+    ipcMain.handle('set-clickthrough', (_e, on) => {
+      const win = getWin();
+      if (!win || win.isDestroyed()) return false;
+      if (testMode) return true;
+      win.setIgnoreMouseEvents(!!on, { forward: true });
+      return true;
+    });
+
+    ipcMain.handle('set-panel-open', (_e, open) => {
+      const win = getWin();
+      if (!win || win.isDestroyed()) return false;
+      const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
+      // If the bar is docked to the bottom edge, keep its bottom edge
+      // pinned while the panel opens/closes — otherwise opening the
+      // panel would push it off the bottom (panel grows downward from
+      // the bar's y). setBounds with adjusted y makes it grow upward.
+      const cfg = getCFG();
+      const dock = cfg.window && cfg.window.dock;
+      if (dock === 'bottom') {
+        const [curX, curY] = win.getPosition();
+        const [, curH] = win.getSize();
+        const newY = curY + (curH - dim.height);
+        setApplyingDock(true);
+        win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
+        setTimeout(() => { setApplyingDock(false); }, 300);
+      } else {
+        win.setSize(dim.width, dim.height, true);
+      }
+      return true;
     });
   }
 

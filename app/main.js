@@ -1162,14 +1162,6 @@ function ensureAssignmentsForFiles(files) {
   return all;
 }
 
-// EX3 — Settings-panel "Reload toolbar" button fires this; hits the
-// same reload() as the Ctrl+R keyboard shortcut in before-input-event
-// at window creation. No-op if the window has been destroyed in the
-// meantime (e.g. mid-quit).
-ipcMain.handle('reload-renderer', () => {
-  if (win && !win.isDestroyed()) win.webContents.reload();
-});
-
 // Redact secrets from any value before it reaches a log file.
 // S3.2 — redaction is now keyed off a deny-set + a regex, not a single
 // property check. Any future key whose name says "secret / key / token /
@@ -1215,30 +1207,6 @@ function allowMutation(name) {
   return false;
 }
 
-ipcMain.handle('update-config', (_e, partial) => {
-  if (!allowMutation('update-config')) return null;
-  try {
-    diag(`update-config IN: ${JSON.stringify(redactForLog(partial))}`);
-    // D2 — openai_api_key no longer lives in config.json. Route writes
-    // through apiKeyStore so the encrypted .enc + .secret sidecar stay
-    // authoritative; config.json.openai_api_key is always null on disk.
-    if (partial.openai_api_key !== undefined) {
-      apiKeyStore.set(partial.openai_api_key);
-    }
-    const merged = {
-      voices: { ...CFG.voices, ...(partial.voices || {}) },
-      hotkeys: { ...CFG.hotkeys, ...(partial.hotkeys || {}) },
-      playback: { ...CFG.playback, ...(partial.playback || {}) },
-      speech_includes: { ...CFG.speech_includes, ...(partial.speech_includes || {}) },
-      openai_api_key: null,
-    };
-    const ok = saveConfig(merged);
-    CFG = merged;
-    diag(`update-config OK: saved=${ok}, edge_response=${merged.voices.edge_response}`);
-    return merged;
-  } catch (e) { diag(`update-config fail: ${e.message}`); return null; }
-});
-
 function saveAssignments(all) {
   return withRegistryLock(COLOURS_REGISTRY, () => {
     try {
@@ -1261,47 +1229,6 @@ const {
   ALLOWED_INCLUDE_KEYS,
 } = require('./lib/ipc-validate');
 
-// When the toolbar collapses to its slim idle state, the window area below
-// the visible strip is transparent but still covered by the BrowserWindow.
-// forward:true lets the renderer keep receiving mousemove events (so it can
-// re-expand on hover) while clicks pass through to whatever's below.
-//
-// In TT_TEST_MODE (e2e tests) we deliberately no-op this. Playwright's
-// synthetic mouse events arrive faster than the mousemove→IPC→setIgnoreMouseEvents
-// round-trip can settle, so the test's click can race with click-through
-// being on and get passed through to nothing. Keeping the window fully
-// interactive in tests gives deterministic clicks without changing any
-// other logic under test.
-ipcMain.handle('set-clickthrough', (_e, on) => {
-  if (!win || win.isDestroyed()) return false;
-  if (process.env.TT_TEST_MODE) return true;
-  win.setIgnoreMouseEvents(!!on, { forward: true });
-  return true;
-});
-
-const WIN_COLLAPSED = { width: 680, height: 114 };
-const WIN_EXPANDED = { width: 680, height: 618 };
-ipcMain.handle('set-panel-open', (_e, open) => {
-  if (!win || win.isDestroyed()) return false;
-  const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
-  // If the bar is docked to the bottom edge, keep its bottom edge pinned
-  // while the panel opens/closes — otherwise opening the panel would push
-  // the panel off the bottom of the screen (panel grows downward from the
-  // bar's y). Use setBounds with an adjusted y so the panel visually
-  // grows upward from a bottom-docked bar.
-  const dock = CFG.window && CFG.window.dock;
-  if (dock === 'bottom') {
-    const [curX, curY] = win.getPosition();
-    const [, curH] = win.getSize();
-    const newY = curY + (curH - dim.height);
-    isApplyingDock = true;
-    win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
-    setTimeout(() => { isApplyingDock = false; }, 300);
-  } else {
-    win.setSize(dim.width, dim.height, true);
-  }
-  return true;
-});
 // Verifies a path resolves to a location strictly inside `base`. Defends against
 // `..`-segment path traversal (`startsWith` alone is bypassable).
 function isPathInside(target, base) {
@@ -1352,9 +1279,11 @@ createIpcHandlers({
   ipcMain,
   diag,
   getCFG: () => CFG,
+  setCFG: (next) => { CFG = next; },
   getWin: () => win,
   loadAssignments,
   saveAssignments,
+  saveConfig,
   getQueueFiles,
   ensureAssignmentsForFiles,
   isPidAlive,
@@ -1366,6 +1295,9 @@ createIpcHandlers({
   validVoice,
   sanitiseLabel,
   ALLOWED_INCLUDE_KEYS,
+  apiKeyStore,
+  redactForLog,
+  setApplyingDock: (v) => { isApplyingDock = v; },
 }).register();
 
 let voiceProc = null;
