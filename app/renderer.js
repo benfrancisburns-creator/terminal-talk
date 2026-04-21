@@ -707,12 +707,12 @@ document.addEventListener('keydown', (e) => {
   // the toolbar still has focus even after you've moved on to another app,
   // and a Space/Arrow you typed into the terminal would get caught here.
   if (!document.hasFocus()) return;
-  // Escape hides the window — safe to keep because you'd never press Escape
-  // mid-sentence while typing. Space and Arrow keys were removed: too easy
-  // to fire accidentally while typing in another app that the toolbar had
-  // most-recent focus on. Use the on-screen Play button or configure
-  // Ctrl+Shift+P / Ctrl+Shift+O as global pause hotkeys in config.json.
-  if (e.key === 'Escape') window.api.hideWindow();
+  // Escape-to-hide was removed: users press Escape to dismiss the
+  // Snipping Tool / Screenshot tool selection (crop, copy, Escape to
+  // release), and if the toolbar happens to have OS focus at that
+  // moment it was being hidden unexpectedly. The × close button and
+  // Ctrl+Shift+A are the intended hide paths. Space / Arrow keys
+  // were already removed for similar focus-steal reasons.
 });
 
 // ============================================================================

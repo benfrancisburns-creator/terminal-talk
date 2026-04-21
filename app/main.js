@@ -555,10 +555,21 @@ function createWindow() {
   });
 }
 
+// Sticky "user explicitly hid the toolbar" flag. Set true by the Ctrl+Shift+A
+// toggle-to-hide and by the × close button (hide-window IPC). Cleared by the
+// Ctrl+Shift+A toggle-to-show, by hey-jarvis / speakClipboard (user action),
+// and by second-instance (a fresh launch attempt means the user wants it up).
+// While true, notifyQueue skips its auto-showInactive so Claude-Code-response
+// clip arrivals don't steal the user's explicit hide. Audio still plays.
+let userHiddenToolbar = false;
+
 function toggleWindow() {
   if (!win) return;
-  if (win.isVisible()) win.hide();
-  else {
+  if (win.isVisible()) {
+    win.hide();
+    userHiddenToolbar = true;
+  } else {
+    userHiddenToolbar = false;
     // showInactive + no .focus() — the toolbar appears but doesn't steal
     // keyboard focus from whatever app the user is using. Arrow keys /
     // scroll / typing continue to go to the user's real work. They can
@@ -573,7 +584,10 @@ function notifyQueue() {
     const files = getQueueFiles();
     const assignments = ensureAssignmentsForFiles(files);
     win.webContents.send('queue-updated', { files, assignments });
-    if (files.length > 0 && !win.isVisible()) win.showInactive();
+    // Auto-resurface for passive arrivals, but respect a user-explicit hide —
+    // Ctrl+Shift+A / × close set userHiddenToolbar=true and new Claude Code
+    // response clips shouldn't override that intent. Audio still plays.
+    if (files.length > 0 && !win.isVisible() && !userHiddenToolbar) win.showInactive();
   }
 }
 
@@ -994,7 +1008,14 @@ async function speakClipboard() {
     });
     const paths = positional.filter(p => p && !(p instanceof Error));
     if (paths.length && win && !win.isDestroyed()) {
-      if (!win.isVisible()) win.showInactive();
+      // User action (hey-jarvis / Ctrl+Shift+S) — clear the sticky-hide.
+      // The user is actively engaging with the app so the toolbar should
+      // come back up; resets the userHiddenToolbar latch set by any
+      // earlier Ctrl+Shift+A or × close.
+      if (!win.isVisible()) {
+        userHiddenToolbar = false;
+        win.showInactive();
+      }
       setTimeout(() => {
         diag(`speakClipboard: priority-play to renderer (${paths.length})`);
         win.webContents.send('priority-play', paths);
@@ -1274,6 +1295,7 @@ createIpcHandlers({
   getWatchdog: () => _watchdog,
   getWatchdogIntervalMs: () => WATCHDOG_INTERVAL_MS,
   testMode: process.env.TT_TEST_MODE === '1',
+  setUserHidden: (v) => { userHiddenToolbar = v; },
 }).register();
 
 let voiceProc = null;
@@ -1398,6 +1420,9 @@ if (!process.env.TT_TEST_MODE) {
   }
   app.on('second-instance', () => {
     if (win && !win.isDestroyed()) {
+      // User launched another copy → they clearly want the toolbar up.
+      // Clear the sticky-hide latch so the next arrival doesn't hide again.
+      userHiddenToolbar = false;
       if (win.isMinimized()) win.restore();
       try { win.showInactive(); } catch {}
     }

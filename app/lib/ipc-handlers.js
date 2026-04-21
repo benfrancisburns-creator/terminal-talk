@@ -53,6 +53,9 @@ function createIpcHandlers(deps) {
     isPathInside,
     getWatchdog,
     getWatchdogIntervalMs,
+    // UX latch (post-v0.4): clicking × on the toolbar hides-and-remembers
+    // so passive arrivals don't undo the user's explicit hide.
+    setUserHidden = () => {},
   } = deps;
 
   const WIN_COLLAPSED = { width: 680, height: 114 };
@@ -337,7 +340,13 @@ function createIpcHandlers(deps) {
 
     ipcMain.handle('hide-window', () => {
       const win = getWin();
-      if (win) win.hide();
+      if (win) {
+        // Sticky latch: clicking × is an explicit hide, same as Ctrl+Shift+A.
+        // Passive clip arrivals won't auto-resurface until the user shows
+        // the toolbar again (Ctrl+Shift+A, hey-jarvis, or a fresh launch).
+        setUserHidden(true);
+        win.hide();
+      }
     });
 
     // S4.1 — test-only inspection IPC. Exposes internal state the E2E
