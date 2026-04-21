@@ -179,17 +179,34 @@ jobs:
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
-        run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+        # Pinned version. Latest (>=1.26 as of 2026-04) rejects the
+        # settings-file schema we wrote with a cryptic "parameter
+        # cannot be found that matches parameter name 'Function'"
+        # error. Pinning 1.25 preserves the schema we've validated.
+        run: Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force -SkipPublisherCheck
 
       - name: Analyze
         shell: pwsh
+        # Exclude rules matched inline (same list as
+        # PSScriptAnalyzerSettings.psd1 for parity) so we don't
+        # depend on settings-file schema stability across
+        # PSScriptAnalyzer releases.
         run: |
+          $excluded = @(
+            'PSUseShouldProcessForStateChangingFunctions',
+            'PSAvoidGlobalVars',
+            'PSAvoidUsingWriteHost',
+            'PSAvoidUsingEmptyCatchBlock',
+            'PSUseSingularNouns'
+          )
           $files = @()
           Get-ChildItem -Path hooks,app,scripts -Include *.ps1,*.psm1 -Recurse | ForEach-Object { $files += $_.FullName }
           $files += (Resolve-Path install.ps1).Path
           $files += (Resolve-Path uninstall.ps1).Path
           $results = @()
-          foreach ($f in $files) { $results += Invoke-ScriptAnalyzer -Path $f -Settings PSScriptAnalyzerSettings.psd1 }
+          foreach ($f in $files) {
+            $results += Invoke-ScriptAnalyzer -Path $f -ExcludeRule $excluded -Severity @('Error','Warning')
+          }
           if ($results.Count -gt 0) {
             $results | Format-Table ScriptName, Line, RuleName, Severity, Message -AutoSize -Wrap
             exit 1
