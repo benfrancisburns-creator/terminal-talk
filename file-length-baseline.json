@@ -1,8 +1,8 @@
 {
   "ceiling": 3000,
   "files": {
-    "scripts/run-tests.cjs": 2989,
-    "app/main.js": 1818,
+    "scripts/run-tests.cjs": 3058,
+    "app/main.js": 1786,
     "app/renderer.js": 1731,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -35,6 +35,7 @@
     "app/lib/palette-alloc.js": 74,
     "app/lib/config-store.js": 73,
     "hooks/speak-notification.ps1": 72,
+    "app/lib/queue-watcher.js": 66,
     "app/lib/config-validate.js": 63,
     "app/preload.js": 50,
     "app/lib/session-stale.js": 47,

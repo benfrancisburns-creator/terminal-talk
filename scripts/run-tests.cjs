@@ -2704,6 +2704,75 @@ describe('S1 — renderer-error dedupe', () => {
 // the ASSESSMENTS/S5-coverage/findings.md gap list.
 // =============================================================================
 
+describe('EX6c — queue-watcher', () => {
+  const { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'queue-watcher.js')
+  );
+
+  it('isAudioFile accepts mp3/wav, rejects .partial', () => {
+    assertEqual(isAudioFile('foo.mp3'), true);
+    assertEqual(isAudioFile('foo.wav'), true);
+    assertEqual(isAudioFile('foo.MP3'), true);   // case-insensitive
+    assertEqual(isAudioFile('foo.mp3.partial'), false);
+    assertEqual(isAudioFile('foo.txt'), false);
+    assertEqual(isAudioFile(''), false);
+  });
+
+  it('AUDIO_OR_PARTIAL_RE matches all three suffixes', () => {
+    assertEqual(AUDIO_OR_PARTIAL_RE.test('foo.mp3'), true);
+    assertEqual(AUDIO_OR_PARTIAL_RE.test('foo.wav'), true);
+    assertEqual(AUDIO_OR_PARTIAL_RE.test('foo.partial'), true);
+    assertEqual(AUDIO_OR_PARTIAL_RE.test('foo.txt'), false);
+  });
+
+  it('createQueueWatcher.list() filters non-audio + sorts newest-first', () => {
+    const fakeFs = {
+      readdirSync: () => ['old.mp3', 'new.wav', 'junk.txt', 'part.partial'],
+      statSync: (full) => {
+        if (full.endsWith('old.mp3')) return { mtimeMs: 100, size: 1 };
+        if (full.endsWith('new.wav')) return { mtimeMs: 500, size: 1 };
+        throw new Error('unexpected stat: ' + full);
+      },
+    };
+    const watcher = createQueueWatcher({ queueDir: '/fake', maxFiles: 10, fs: fakeFs });
+    const files = watcher.list();
+    assertEqual(files.length, 2);
+    assertEqual(files[0].name, 'new.wav');  // newest first
+    assertEqual(files[1].name, 'old.mp3');
+  });
+
+  it('createQueueWatcher.list() respects maxFiles cap', () => {
+    const fakeFs = {
+      readdirSync: () => ['a.mp3', 'b.mp3', 'c.mp3', 'd.mp3', 'e.mp3'],
+      statSync: (full) => ({ mtimeMs: full.charCodeAt(full.length - 5), size: 1 }),
+    };
+    const watcher = createQueueWatcher({ queueDir: '/fake', maxFiles: 2, fs: fakeFs });
+    const files = watcher.list();
+    assertEqual(files.length, 2);
+  });
+
+  it('createQueueWatcher.list() returns [] if readdir throws', () => {
+    const fakeFs = {
+      readdirSync: () => { throw new Error('ENOENT'); },
+      statSync: () => { throw new Error('unused'); },
+    };
+    const watcher = createQueueWatcher({ queueDir: '/fake', maxFiles: 10, fs: fakeFs });
+    assertEqual(watcher.list(), []);
+  });
+
+  it('factory rejects missing queueDir', () => {
+    let caught = false;
+    try { createQueueWatcher({ maxFiles: 10 }); } catch { caught = true; }
+    assertEqual(caught, true);
+  });
+
+  it('factory rejects non-positive maxFiles', () => {
+    let caught = false;
+    try { createQueueWatcher({ queueDir: '/x', maxFiles: 0 }); } catch { caught = true; }
+    assertEqual(caught, true);
+  });
+});
+
 describe('EX6b — window-dock geometry', () => {
   const { findDockedEdge, clampToVisibleDisplay } = require(
     path.join(__dirname, '..', 'app', 'lib', 'window-dock.js')

@@ -185,49 +185,17 @@ let win = null;
 let watcher = null;
 let watchDebounce = null;
 
-// Canonical audio-file matcher. `isAudioFile` is the "file is ready to play"
-// test (excludes .partial); `AUDIO_OR_PARTIAL_RE` is the "file counts toward
-// our on-disk footprint" test (used by the watchdog for before/after counts
-// so an in-flight .partial still contributes). Full-review §7 caught the old
-// implementation drifting between the two — one site used
-// /\.(mp3|wav|partial)$/i, the other walked the lowercase suffix manually.
-// Both now route through these constants.
-const AUDIO_OR_PARTIAL_RE = /\.(mp3|wav|partial)$/i;
-function isAudioFile(name) {
-  const lower = name.toLowerCase();
-  return (lower.endsWith('.wav') || lower.endsWith('.mp3')) && !lower.endsWith('.partial');
-}
-
-function getQueueFiles() {
-  try {
-    // Queue filenames lead with a zero-padded timestamp (synth_turn + main
-    // agree on that shape), so a descending lexical sort is effectively a
-    // descending mtime sort. Stat only the newest 2× MAX_FILES candidates
-    // so we don't pay syscall cost for hundreds of lingering files when
-    // a user has been running TT for days -- but keep enough slack that
-    // a file touched out-of-band still has a chance of ranking in.
-    const STAT_BUDGET = MAX_FILES * 2;
-    const names = fs.readdirSync(QUEUE_DIR)
-      .filter((f) => isAudioFile(f))
-      // Explicit localeCompare so Sonar's S2871 gate passes. Our
-      // filenames lead with a zero-padded ISO-ish timestamp, so
-      // locale-aware compare gives the same ordering as the default
-      // lexical sort would — just safer for future non-ASCII names.
-      .sort((a, b) => b.localeCompare(a))  // descending -> newest first
-      .slice(0, STAT_BUDGET);
-    return names
-      .map(f => {
-        const full = path.join(QUEUE_DIR, f);
-        try {
-          const stat = fs.statSync(full);
-          return { name: f, path: full, mtime: stat.mtimeMs, size: stat.size };
-        } catch { return null; }
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, MAX_FILES);
-  } catch { return []; }
-}
+// EX6c — extracted to app/lib/queue-watcher.js. isAudioFile +
+// AUDIO_OR_PARTIAL_RE re-exported from main's module scope since
+// other call sites (watchdog's countFiles, clip classifiers)
+// import them by destructuring here.
+const {
+  createQueueWatcher,
+  isAudioFile,
+  AUDIO_OR_PARTIAL_RE,
+} = require('./lib/queue-watcher');
+const _queueWatcher = createQueueWatcher({ queueDir: QUEUE_DIR, maxFiles: MAX_FILES });
+const getQueueFiles = _queueWatcher.list;
 
 function pruneOldFiles() {
   try {
