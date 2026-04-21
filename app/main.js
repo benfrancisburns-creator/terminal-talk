@@ -563,20 +563,46 @@ function createWindow() {
 // clip arrivals don't steal the user's explicit hide. Audio still plays.
 let userHiddenToolbar = false;
 
+// Re-apply always-on-top whenever we show or raise the toolbar. Windows can
+// silently drop the flag during certain transitions — lock screen, another
+// app taking exclusive fullscreen focus, a UAC prompt, some dictation tool
+// overlays — and once dropped the toolbar stays behind normal windows. The
+// 'floating' level keeps it above ordinary app windows without competing
+// with system-level overlays (taskbar auto-hide etc).
+function forceOnTop() {
+  if (!win || win.isDestroyed()) return;
+  try { win.setAlwaysOnTop(true, 'floating'); } catch {}
+  try { win.moveTop(); } catch {}
+}
+
 function toggleWindow() {
   if (!win) return;
-  if (win.isVisible()) {
-    win.hide();
-    userHiddenToolbar = true;
-  } else {
+  if (!win.isVisible()) {
+    // HIDDEN → show + raise. Clear the sticky-hide latch and force
+    // always-on-top back on (see forceOnTop rationale above).
     userHiddenToolbar = false;
+    forceOnTop();
     // showInactive + no .focus() — the toolbar appears but doesn't steal
     // keyboard focus from whatever app the user is using. Arrow keys /
     // scroll / typing continue to go to the user's real work. They can
     // click the toolbar to interact with it.
     win.showInactive();
     try { win.webContents.send('force-expand'); } catch {}
+    return;
   }
+  // VISIBLE + FOCUSED → user wants to dismiss. Respect that.
+  if (win.isFocused()) {
+    win.hide();
+    userHiddenToolbar = true;
+    return;
+  }
+  // VISIBLE + NOT FOCUSED → toolbar is buried behind another window (common
+  // after Windows drops the always-on-top flag). Raise it back to the front
+  // rather than hiding it. This is the fix for "I can see the toolbar but
+  // it fell to the back and Ctrl+Shift+A doesn't bring it forward".
+  userHiddenToolbar = false;
+  forceOnTop();
+  try { win.webContents.send('force-expand'); } catch {}
 }
 
 function notifyQueue() {
@@ -587,7 +613,10 @@ function notifyQueue() {
     // Auto-resurface for passive arrivals, but respect a user-explicit hide —
     // Ctrl+Shift+A / × close set userHiddenToolbar=true and new Claude Code
     // response clips shouldn't override that intent. Audio still plays.
-    if (files.length > 0 && !win.isVisible() && !userHiddenToolbar) win.showInactive();
+    if (files.length > 0 && !win.isVisible() && !userHiddenToolbar) {
+      forceOnTop();
+      win.showInactive();
+    }
   }
 }
 
@@ -1011,10 +1040,14 @@ async function speakClipboard() {
       // User action (hey-jarvis / Ctrl+Shift+S) — clear the sticky-hide.
       // The user is actively engaging with the app so the toolbar should
       // come back up; resets the userHiddenToolbar latch set by any
-      // earlier Ctrl+Shift+A or × close.
+      // earlier Ctrl+Shift+A or × close. Force always-on-top back so the
+      // toolbar doesn't surface behind whatever app the selection came from.
       if (!win.isVisible()) {
         userHiddenToolbar = false;
+        forceOnTop();
         win.showInactive();
+      } else {
+        forceOnTop();
       }
       setTimeout(() => {
         diag(`speakClipboard: priority-play to renderer (${paths.length})`);
@@ -1424,6 +1457,7 @@ if (!process.env.TT_TEST_MODE) {
       // Clear the sticky-hide latch so the next arrival doesn't hide again.
       userHiddenToolbar = false;
       if (win.isMinimized()) win.restore();
+      forceOnTop();
       try { win.showInactive(); } catch {}
     }
   });
