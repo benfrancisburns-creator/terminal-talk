@@ -474,13 +474,22 @@ html, body {
 .panel {
   display: none;
   margin: 0 6px 6px;
-  padding: 0;
+  padding: 0 0 12px;
   background: rgba(24, 26, 32, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(24px) saturate(140%);
-  max-height: calc(100vh - 72px);
+  /* Bar chrome above the panel measures ~110 px in expanded mode:
+     margin 6 + padding 6 + bar-top 36 + gap 4 + dots-row 44 + padding 8
+     + margin 6. Previous 72-px offset was under-sized by ~38 px, so the
+     panel's internal scroll region extended past the window's visible
+     bottom edge — users could see a scrollbar but couldn't reach the
+     last ~40 px of content (mascot paragraph looked truncated mid-word).
+     120 px leaves a small safety margin for sub-pixel rounding. The
+     extra padding-bottom above makes content settle on a clean break
+     instead of flush against the rounded corner.                       */
+  max-height: calc(100vh - 120px);
   overflow-y: auto;
 }
 body.settings-open .panel { display: block; }
