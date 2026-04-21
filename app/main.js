@@ -577,6 +577,7 @@ function forceOnTop() {
 
 function toggleWindow() {
   if (!win) return;
+  diag(`toggleWindow: visible=${win.isVisible()} focused=${win.isFocused()} alwaysOnTop=${win.isAlwaysOnTop()}`);
   if (!win.isVisible()) {
     // HIDDEN → show + raise. Clear the sticky-hide latch and force
     // always-on-top back on (see forceOnTop rationale above).
@@ -1534,22 +1535,32 @@ app.whenReady().then(() => {
   }]);
   Menu.setApplicationMenu(menu);
 
-  globalShortcut.register(CFG.hotkeys.toggle_window, toggleWindow);
-  globalShortcut.register(CFG.hotkeys.speak_clipboard, speakClipboard);
-  globalShortcut.register(CFG.hotkeys.toggle_listening, toggleListening);
+  // Register + log whether each global shortcut was actually claimed.
+  // globalShortcut.register() returns false silently when another app
+  // has already reserved the combo. Without this diag line a user who
+  // has (say) Wispr Flow binding Ctrl+Shift+A would see the toolbar's
+  // Ctrl+Shift+A doing nothing with zero signal about why.
+  function registerAndLog(accel, fn, name) {
+    if (!accel) return;
+    const ok = globalShortcut.register(accel, fn);
+    diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
+  }
+  registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
+  registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
+  registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
   if (CFG.hotkeys.pause_resume) {
-    globalShortcut.register(CFG.hotkeys.pause_resume, () => {
+    registerAndLog(CFG.hotkeys.pause_resume, () => {
       if (win && !win.isDestroyed()) {
         try { win.webContents.send('toggle-pause-playback'); } catch {}
       }
-    });
+    }, 'pause_resume');
   }
   if (CFG.hotkeys.pause_only) {
-    globalShortcut.register(CFG.hotkeys.pause_only, () => {
+    registerAndLog(CFG.hotkeys.pause_only, () => {
       if (win && !win.isDestroyed()) {
         try { win.webContents.send('pause-playback-only'); } catch {}
       }
-    });
+    }, 'pause_only');
   }
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
