@@ -11,34 +11,47 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: early beta · solo-maintained.** Actively developed, 177 unit + 13 E2E tests green, but you may well be an early adopter on your machine. File bugs generously via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (224 unit + 25 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
-**Hands-free voice workflow for Claude Code.**
-Claude's replies are read aloud. Highlight any text anywhere, say _"hey jarvis"_, hear it.
-Pair with [Wispr Flow](https://wisprflow.ai/) (or any speech-to-text tool) and you can run entire Claude Code sessions without touching the keyboard.
+**Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
-Free by default — uses Microsoft Edge's neural voices and offline wake-word detection. **Zero accounts required.** Optional OpenAI fallback if you want it.
+Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signup, no accounts. Microsoft Edge TTS (cloud) for voices, openWakeWord (local) for wake-word detection. Colour-blind friendly palette available in Settings › Playback.
 
-Windows-only for now; Mac/Linux planned.
-
-[Install](#install-windows) · [Usage](#usage) · [Per-session controls](#per-session-overrides) · [Privacy](#privacy--security) · [Tests](#tests) · [Contributing](CONTRIBUTING.md)
+[Install](#install-windows) · [What it does](#what-it-does) · [What's offline](#whats-offline-and-what-isnt) · [UI states](#ui-states) · [Privacy](#privacy--security) · [Contributing](CONTRIBUTING.md)
 
 ---
 
-## What you get
+## Install (Windows)
 
-| | |
-|---|---|
-| **Streaming auto-speak** | Claude's responses are spoken aloud as they're written. Audio starts ~2-3 seconds after Claude begins (not 6-24 seconds after the turn ends) because sentences synthesise in parallel and a `PreToolUse` hook fires mid-response whenever Claude is about to use a tool. Questions are extracted and spoken first so you hear the ask upfront. |
-| **Highlight-to-speak, anywhere** | Select text in any app (browser, PDF, VS Code, Slack), say _"hey jarvis"_ or press `Ctrl+Shift+S`, hear it read. |
-| **Permission-prompt alerts** | When Claude Code asks to use a tool, a voice notification fires so you don't have to watch the screen. |
-| **Floating audio toolbar** | Always-on-top two-row letterbox: controls on top (play/pause, scrubber, time, clear, settings), dots on the bottom strip (~30 visible). Drag near the top or bottom edge and it snaps flush (horizontal-only — no vertical dock). `Ctrl+Shift+A` toggles display on/off and is the recovery hotkey. After 15 s idle it shrinks to a thin strip and becomes click-through; hover to re-expand. |
-| **Per-terminal identity (3 axes)** | Each Claude Code terminal gets a unique **dot colour** on the toolbar, **emoji in its statusline**, and optionally its **own voice**. Open 5+ terminals and you can tell them apart at a glance — or by ear if you set distinct voices. Sessions persist until you explicitly remove them (× button on each row of the Sessions table). |
-| **Per-session mute** | `🔊/🔇` button on each Sessions table row. Muted sessions skip edge-tts entirely (no synthesis, no clips, no audio) and show a `🔇` prefix in the terminal's statusline. Perfect for backgrounding chatty terminals. |
-| **Focus mode (priority)** | Star `☆ → ★` button on each Sessions row. When Terminal 2 is the one that matters and Terminal 3 is rambling 15 clips deep, starring T2 makes its clips jump the queue — they play before any other session's pending clip (no interruption of the clip currently playing). Only one session can be focused at a time; clicking another star swaps focus. Highlight-to-speak clips still win over everything. |
-| **Per-session speech-includes** | Override what gets spoken on a per-terminal basis: code blocks, inline code, URLs, headings, bullet markers, image alt-text. |
-| **Auto-prune** | Played clips disappear after a configurable delay (default 20 s, range 3-600 s, toggle on/off). Walking away? Flip it off and let clips stack up for when you're back. |
-| **Tap to mute the mic** | `Ctrl+Shift+J` toggles the wake-word listener (chime confirms). Mic is truly released when off — orphan-swept + state-file-driven stream teardown. |
+```powershell
+git clone https://github.com/benfrancisburns-creator/terminal-talk
+cd terminal-talk
+.\install.ps1
+```
+
+Requires Windows 10/11, Python 3.10+, Node.js 18+, a working microphone. Takes ~3 minutes.
+
+The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, the per-terminal coloured emoji statusline, and auto-launch at login.
+
+Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
+
+---
+
+## What's offline and what isn't
+
+- ✅ **Wake-word detection** — openWakeWord runs on CPU, no network. Audio never leaves your machine for wake detection.
+- ❌ **TTS synthesis** — Microsoft Edge TTS is a cloud service. The text being spoken goes to `speech.platform.bing.com`. Same endpoint Edge browser uses for "Read Aloud." Full detail in [Privacy & Security](#privacy--security).
+- ✅ **Everything else** — session tracking, the toolbar UI, audio playback, file management, colour registry, statusline — all run locally.
+
+---
+
+## What it does
+
+- **Auto-speak Claude Code responses.** Starts speaking as Claude generates, not after it finishes — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice).
+- **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
+- **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
+- **Per-session controls.** Mute individual terminals (no synthesis, no clips — truly "cut the wire"), focus one to prioritise its clips in the queue, give each a custom voice, override speech-include behaviour per session (code blocks, URLs, headings, etc.).
+- **Runs in the background.** Small always-on-top toolbar snaps to the top or bottom edge, auto-collapses after 15 s of idle, becomes click-through when hidden. `Ctrl+Shift+A` is the universal show/hide recovery hotkey.
 
 ## UI states
 
@@ -90,39 +103,7 @@ Drag within ~20 px of the top or bottom edge and the bar snaps flush on release.
 
 - **Claude Code users** working in the terminal who want responses read aloud (primary).
 - **Anyone** who wants a fast "select text, hear it" keystroke — no agent required.
-- **Voice-first workflows** — combine with a speech-to-text tool and you barely touch the keyboard.
-
-### Speech-to-text pairings (not bundled)
-
-| Tool | Platform | Cost | Notes |
-|---|---|---|---|
-| [Wispr Flow](https://wisprflow.ai/) | Win/Mac | Paid | Best quality. |
-| [Talon Voice](https://talonvoice.com/) | Win/Mac/Linux | Free | Powerful, steeper learning curve. |
-| Windows Voice Access | Windows 11 | Free, built-in | Settings → Accessibility → Voice access. |
-
----
-
-## Install (Windows)
-
-**Requirements:** Python 3.10+, Node.js 18+, a working microphone.
-
-```powershell
-git clone https://github.com/benfrancisburns-creator/terminal-talk
-cd terminal-talk
-.\install.ps1
-```
-
-The installer:
-1. Checks Python and Node versions.
-2. Pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`.
-3. Pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time).
-4. `npm install`s Electron.
-5. Copies everything to `%USERPROFILE%\.terminal-talk\`.
-6. Asks if you want to register Claude Code hooks (recommended).
-7. Asks if you want the per-terminal coloured emoji statusline.
-8. Asks if you want Terminal Talk to auto-launch at login.
-
-Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
+- **Voice-first workflows** — combine with a speech-to-text tool and you barely touch the keyboard. See [Companion dictation tools](#companion-dictation-tools-optional) near the bottom.
 
 ---
 
@@ -139,6 +120,7 @@ All hotkeys are **global** — they work from any app. Nothing is captured from 
 | `Ctrl+Shift+J` | Toggle wake-word listening (chime confirms on/off) |
 | `Ctrl+Shift+P` | Pause / resume playback |
 | `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
+| `Ctrl+R` | Reload toolbar (same as Settings › Reload button) — use if the UI ever looks stuck |
 | Say "hey jarvis" | Same as `Ctrl+Shift+S` on highlighted text |
 
 ### Wake word
@@ -169,12 +151,18 @@ Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word
 - Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
 - Up to ~30 dots visible; beyond that the oldest drop off.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
+- **🗑 Clear played** — one-click removal of every heard clip (currently-playing clip is kept). A toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive. The `X` on the toast dismisses without restoring.
 
 ### Settings panel (gear icon)
 
 Click the gear to expand the toolbar into a panel with:
 
-- **Playback** — speed slider (0.5×–2.5×).
+- **Playback** —
+  - **Speed slider** (0.5×–2.5×).
+  - **Auto-prune** on/off + seconds input (3–600 s). Off = clips stack up until you clear them manually.
+  - **Auto-continue after clicking** — when a clip you clicked ends, chain forward through the remaining clips in time order. Default on. Turn off if you want one-clip-at-a-time click-to-replay.
+  - **Colour-blind friendly palette** — swap the default 8-colour palette for Paul Tol's "muted" scheme, proven distinguishable under deutan / protan / tritan colour-blindness. Default palette stays for everyone else.
+  - **Reload toolbar** button — rebuilds the UI from disk without restarting the Electron process. Same thing `Ctrl+R` does.
 - **Sessions** — one row per active Claude Code session:
   - Coloured swatch + 8-character session ID.
   - Editable label (shows next to the emoji in that terminal's statusline).
@@ -335,7 +323,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 177-test harness exercises the actual installed components:
+A 224-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -429,6 +417,24 @@ Stops running processes (only those in `~/.terminal-talk/`), removes the Startup
 
 ---
 
+## Companion dictation tools (optional)
+
+Terminal Talk is text-to-speech — Claude → audio. For the reverse
+(your voice → Claude Code input) and fully hands-free use, pair it with a
+dictation tool. A few options, ranked by free-tier generosity:
+
+| Tool | Free tier | Paid | Platform | Notes |
+|---|---|---|---|---|
+| **[Wispr Flow](https://wisprflow.ai/)** | 2,000 words/wk | $12/mo | Mac, Win, iOS, Android | Best polish. Cloud only. |
+| **Windows Speech Recognition** | Unlimited | Free | Windows | Built-in, no signup. Basic quality. |
+| **Apple Dictation** | Unlimited | Free | Mac, iOS | Built-in. Decent on M1+. |
+
+For light use (a few prompts/day) any free tier works. For heavy daily use you'll want one of the paid options or the OS built-ins.
+
+Not affiliated with any of these.
+
+---
+
 ## About the mascot
 
 The orange four-legged character on the scrubber is a small homage to
@@ -436,10 +442,10 @@ The orange four-legged character on the scrubber is a small homage to
 thinking, Claude Code shows a spinner line with a tongue-in-cheek verb —
 "Moonwalking", "Finagling", "Pontificating", "Flibbertigibbeting" and
 [~90 others](https://github.com/levindixon/tengu_spinner_words). Terminal
-Talk pinches that vocabulary (with credit) and attaches it to a little
-character who walks along the scrubber while audio plays, leaving random
-verbs from that list floating above his head. The mouth is added because,
-unlike the Claude Code spinner, he actually speaks.
+Talk uses a similar whimsical vocabulary (with credit) and attaches it to
+a little character who walks along the scrubber while audio plays,
+leaving random verbs from that list floating above his head. The mouth
+is added because, unlike the Claude Code spinner, he actually speaks.
 
 **He only appears when Claude Code is the source.** If you're playing a
 highlight-to-speak clip (you said "hey jarvis" or pressed
@@ -452,6 +458,10 @@ No affiliation with Anthropic; this is a solo open-source project by an
 enthusiastic Claude Code user. It's here because Claude Code's own sense
 of humour is half the reason the tool is a joy to work with, and a bit
 of that should live on the toolbar too.
+
+**Trademark note:** "Claude" and "Claude Code" are trademarks of
+Anthropic. This project uses neither name as its own and is not
+affiliated with Anthropic.
 
 ---
 
