@@ -2704,6 +2704,59 @@ describe('S1 — renderer-error dedupe', () => {
 // the ASSESSMENTS/S5-coverage/findings.md gap list.
 // =============================================================================
 
+describe('EX6b — window-dock geometry', () => {
+  const { findDockedEdge, clampToVisibleDisplay } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'window-dock.js')
+  );
+
+  it('findDockedEdge returns null when bar is mid-screen', () => {
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 500, 114, 50);
+    if (edge !== null) throw new Error(`expected null, got ${edge}`);
+  });
+
+  it('findDockedEdge returns "top" when bar is near top edge', () => {
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 10, 114, 50);
+    if (edge !== 'top') throw new Error(`expected "top", got ${edge}`);
+  });
+
+  it('findDockedEdge returns "bottom" when bar is near bottom edge', () => {
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 1080 - 114 - 10, 114, 50);
+    if (edge !== 'bottom') throw new Error(`expected "bottom", got ${edge}`);
+  });
+
+  it('findDockedEdge prefers the nearer edge when both within threshold', () => {
+    // tiny display; 114-high bar at y=20 is 20px from top, only 30px from bottom.
+    // threshold 100 ensures both candidates; nearer edge wins.
+    const edge = findDockedEdge({ y: 0, height: 164 }, 20, 114, 100);
+    if (edge !== 'top') throw new Error(`expected "top" (20 < 30), got ${edge}`);
+  });
+
+  it('clampToVisibleDisplay preserves position when bar centre is on-screen', () => {
+    const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
+    const primary = displays[0];
+    const r = clampToVisibleDisplay(500, 200, 680, 114, displays, primary);
+    assertEqual(r, { x: 500, y: 200 });
+  });
+
+  it('clampToVisibleDisplay rescues off-screen bar to primary centre', () => {
+    const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
+    const primary = displays[0];
+    const r = clampToVisibleDisplay(-5000, -5000, 680, 114, displays, primary);
+    assertEqual(r.x, Math.floor((1920 - 680) / 2));
+    assertEqual(r.y, 12);
+  });
+
+  it('clampToVisibleDisplay tests bar centre only, not full window', () => {
+    // Expanded panel makes window 680×618 but the BAR is the top 114.
+    // If the bar centre (y=350+57=407) is on-screen, don't rescue even
+    // though the bottom of the window (968) might be.
+    const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
+    const primary = displays[0];
+    const r = clampToVisibleDisplay(500, 350, 680, 114, displays, primary);
+    assertEqual(r, { x: 500, y: 350 });
+  });
+});
+
 describe('S5 — registry-lock contention', () => {
   const { withRegistryLock, _internals } = require(
     path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')

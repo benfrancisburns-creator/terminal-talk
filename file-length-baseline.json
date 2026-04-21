@@ -1,8 +1,8 @@
 {
   "ceiling": 3000,
   "files": {
-    "scripts/run-tests.cjs": 2936,
-    "app/main.js": 1850,
+    "scripts/run-tests.cjs": 2989,
+    "app/main.js": 1818,
     "app/renderer.js": 1731,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -28,10 +28,12 @@
     "tests/e2e/fixtures.ts": 96,
     "hooks/speak-on-tool.ps1": 93,
     "scripts/resolve-sonar-hotspots.cjs": 92,
+    "app/lib/window-dock.js": 79,
     "tests/e2e/launch.spec.ts": 79,
     "app/lib/registry-lock.js": 78,
     "docs/ui-kit/kit-bootstrap.js": 77,
     "app/lib/palette-alloc.js": 74,
+    "app/lib/config-store.js": 73,
     "hooks/speak-notification.ps1": 72,
     "app/lib/config-validate.js": 63,
     "app/preload.js": 50,

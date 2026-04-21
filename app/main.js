@@ -301,26 +301,26 @@ let isApplyingDock = false;    // suppresses our own setBounds from re-triggerin
 // events setBounds emits don't run a stale snapAfterDrag).
 const moveSettleTimerRef = { current: null };
 
+// EX6b — pure-geometry helpers extracted to app/lib/window-dock.js.
+// main.js supplies the Electron-side state (win position + workArea +
+// display list) and lets the pure fn decide the snap/rescue answer.
+// Destructured (not namespace) import so Knip can trace every symbol
+// we actually reach for.
+const {
+  findDockedEdge: _findDockedEdgeFromLib,
+  clampToVisibleDisplay: _clampToVisibleDisplayFromLib,
+} = require('./lib/window-dock');
+
 // Horizontal-only snap. Left/right-edge vertical docking was removed after
 // it created unrecoverable states on multi-monitor rearrangement (bar stuck
 // vertical mid-screen with no drag path back). Ctrl+Shift+A remains the
 // recovery hotkey if the window ever ends up somewhere weird.
 function findDockedEdge() {
   if (!win || win.isDestroyed()) return null;
-  const { y: dispY, height: dispH } = screen.getPrimaryDisplay().workArea;
+  const workArea = screen.getPrimaryDisplay().workArea;
   const [, y] = win.getPosition();
   const [, h] = win.getSize();
-  const topDist = y - dispY;
-  const bottomDist = (dispY + dispH) - (y + h);
-  // Only horizontal snap: top or bottom. Negative overshoot = past the edge
-  // and always counts; positive only counts under the threshold.
-  const candidates = [];
-  if (topDist < SNAP_THRESHOLD_PX) candidates.push({ name: 'top', dist: topDist });
-  if (bottomDist < SNAP_THRESHOLD_PX) candidates.push({ name: 'bottom', dist: bottomDist });
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0].name;
-  const sortKey = (d) => Math.max(0, d);
-  return candidates.sort((a, b) => sortKey(a.dist) - sortKey(b.dist))[0].name;
+  return _findDockedEdgeFromLib(workArea, y, h, SNAP_THRESHOLD_PX);
 }
 
 function applyDock(edge) {
@@ -359,30 +359,20 @@ function applyDock(edge) {
   diag(`dock: ${edge} -> ${JSON.stringify(bounds)}`);
 }
 
-// If the BAR portion of the window (top DIM_HORIZONTAL.height px, the part
-// the user can click and drag) ends up off every connected display — user
-// unplugged a monitor, swapped laptops, RDP session ended — re-centre on
-// primary. We deliberately test only the BAR's centre, not the whole
-// window, so an open settings panel overflowing the bottom of the screen
-// doesn't trip the rescue (that was causing a flicker when you dragged
-// the bar toward the bottom with the panel open: the panel's centre went
-// off-screen and we yanked the window back mid-drag).
+// EX6b — thin wrapper around app/lib/window-dock.js::clampToVisibleDisplay.
+// Responsibilities:
+//   - pull the live display list + primary display from the Electron
+//     `screen` API (main.js has electron access; lib code doesn't).
+//   - pass the bar-height invariant (DIM_HORIZONTAL.height) so the
+//     rescue tests only the BAR's centre, not a panel-expanded tall
+//     window. See rationale in lib/window-dock.js::clampToVisibleDisplay
+//     docstring.
 function clampToVisibleDisplay(x, y, w, _h) {
-  const barH = DIM_HORIZONTAL.height;
-  const cx = x + w / 2;
-  const cy = y + barH / 2;
-  const displays = screen.getAllDisplays();
-  const onAnyDisplay = displays.some(d => {
-    const wa = d.workArea;
-    return cx >= wa.x && cx <= wa.x + wa.width &&
-           cy >= wa.y && cy <= wa.y + wa.height;
-  });
-  if (onAnyDisplay) return { x, y };
-  const primary = screen.getPrimaryDisplay().workArea;
-  return {
-    x: primary.x + Math.floor((primary.width - w) / 2),
-    y: primary.y + 12,
-  };
+  return _clampToVisibleDisplayFromLib(
+    x, y, w, DIM_HORIZONTAL.height,
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+  );
 }
 
 function snapAfterDrag() {
