@@ -201,7 +201,14 @@ if ($inc.inline_code) {
     # Keep content, drop the surrounding backticks.
     $clean = [regex]::Replace($clean, '`([^`]+)`', '$1')
 } else {
-    $clean = [regex]::Replace($clean, '`[^`]+`', ' ')
+    # Preserve keyboard shortcuts (`Ctrl+R`) even when inline_code=false —
+    # they're UI instructions, not code noise. See app/lib/text.js for
+    # full rationale.
+    $clean = [regex]::Replace($clean, '`([^`]+)`', {
+        param($m)
+        $content = $m.Groups[1].Value
+        if ($content -match '^\s*(Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+') { $content } else { ' ' }
+    })
 }
 if (-not $inc.image_alt) {
     $clean = [regex]::Replace($clean, '!\[[^\]]*\]\([^)]+\)', ' ')
@@ -228,8 +235,25 @@ if (-not $inc.bullet_markers) {
     $clean = [regex]::Replace($clean, '(?m)^\s*[-*+]\s+', '')
     $clean = [regex]::Replace($clean, '(?m)^\s*\d+\.\s+', '')
 }
-$clean = $clean -replace 'Ctrl\+', 'control '
-$clean = $clean -replace 'Cmd\+', 'command '
+# Keyboard modifiers: cover all common modifiers in one sweep so
+# `Ctrl+Shift+A` reads as "control shift A", not "control Shift+A".
+# See app/lib/text.js for full rationale.
+$clean = [regex]::Replace(
+    $clean,
+    '\b(Ctrl|Control|Cmd|Command|Shift|Alt|Option|Win|Windows|Super|Meta)\+',
+    {
+        param($m)
+        $modMap = @{
+            'ctrl'='control'; 'control'='control'
+            'cmd'='command'; 'command'='command'
+            'shift'='shift'; 'alt'='alt'; 'option'='option'
+            'win'='windows'; 'windows'='windows'
+            'super'='super'; 'meta'='meta'
+        }
+        $modMap[$m.Groups[1].Value.ToLower()] + ' '
+    },
+    'IgnoreCase'
+)
 # Tilde — edge-tts pronounces as "tilda" which is universally wrong.
 # Drop the character; see app/lib/text.js for full rationale.
 $clean = $clean -replace '~', ''

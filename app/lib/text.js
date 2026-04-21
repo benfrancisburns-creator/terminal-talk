@@ -56,7 +56,16 @@ function stripForTTS(text, includes) {
   if (inc.inline_code) {
     t = t.replace(/`([^`]+)`/g, '$1');
   } else {
-    t = t.replace(/`[^`]+`/g, ' ');
+    // Keyboard shortcuts (`Ctrl+R`) survive the strip — they're UI
+    // instructions, not code noise. Silently dropping them turns
+    // "press `Ctrl+R` to reload" into "press to reload" which is worse
+    // than speaking the content. Later Ctrl+/Cmd+ translation reads
+    // them as "control R" / "command R".
+    t = t.replace(/`([^`]+)`/g, (_m, content) => (
+      /^\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+/i.test(content)
+        ? content
+        : ' '
+    ));
   }
 
   // Images: ![alt](url). Alt text optional per-toggle; URL always dropped.
@@ -97,9 +106,21 @@ function stripForTTS(text, includes) {
   t = t.replace(/Ran \d+ .{0,40}hooks?.*/gi, '');
 
   // Pronunciation niceties for keyboard modifiers: "Ctrl+Shift+A" reads as
-  // "control shift A", not "c-t-r-l plus s-h-i-f-t".
-  t = t.replace(/Ctrl\+/g, 'control ');
-  t = t.replace(/Cmd\+/g, 'command ');
+  // "control shift A", not "c-t-r-l plus s-h-i-f-t plus A". Covers every
+  // common modifier in one sweep so multi-key chords don't partially
+  // translate.
+  const MODIFIER_WORD = {
+    ctrl: 'control', control: 'control',
+    cmd: 'command', command: 'command',
+    shift: 'shift',
+    alt: 'alt', option: 'option',
+    win: 'windows', windows: 'windows',
+    super: 'super', meta: 'meta',
+  };
+  t = t.replace(
+    /\b(Ctrl|Control|Cmd|Command|Shift|Alt|Option|Win|Windows|Super|Meta)\+/gi,
+    (_m, mod) => `${MODIFIER_WORD[mod.toLowerCase()]} `,
+  );
 
   // Tilde — edge-tts pronounces as "tilda" which is universally wrong.
   // Drop the character; ~/path reads as "/path" (awkward but not wrong),

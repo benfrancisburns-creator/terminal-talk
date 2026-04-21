@@ -337,6 +337,12 @@ def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
 
 _CODE_FENCE_RE = re.compile(r'```[a-zA-Z0-9_+-]*\n?([\s\S]*?)```')
 _INLINE_CODE_RE = re.compile(r'`([^`]+)`')
+# Keyboard shortcuts inside inline code (e.g. `Ctrl+R`) are user-facing UI
+# instructions, not code noise. They must survive the inline_code=False
+# strip so the listener actually hears "control R" — otherwise the prose
+# "hit `Ctrl+R` on the toolbar" silently collapses to "hit on the toolbar".
+# Matches common modifier names at content start.
+_KBD_SHORTCUT_RE = re.compile(r'^\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+', re.IGNORECASE)
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 _BULLET_MARKER_RE = re.compile(r'^\s*([-*+]|\d+\.)\s+', re.MULTILINE)
@@ -350,6 +356,22 @@ _EMPHASIS_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_')
 _IMG_RE = re.compile(r'!\[([^\]]*)\]\([^\)]+\)')
 _CTRL_RE = re.compile(r'\bCtrl\+', re.IGNORECASE)
 _CMD_RE = re.compile(r'\bCmd\+', re.IGNORECASE)
+# All common keyboard modifiers in one regex — used to rewrite
+# `Modifier+Key` into spoken words. Without this, `Ctrl+Shift+A` only
+# translates the first segment and TTS reads the rest as "shift plus A".
+_KBD_MODIFIER_RE = re.compile(
+    r'\b(Ctrl|Control|Cmd|Command|Shift|Alt|Option|Win|Windows|Super|Meta)\+',
+    re.IGNORECASE,
+)
+_MODIFIER_SPOKEN = {
+    'ctrl': 'control', 'control': 'control',
+    'cmd': 'command', 'command': 'command',
+    'shift': 'shift',
+    'alt': 'alt', 'option': 'option',
+    'win': 'windows', 'windows': 'windows',
+    'super': 'super',
+    'meta': 'meta',
+}
 
 
 def sanitize(text: str, flags: dict) -> str:
@@ -365,11 +387,19 @@ def sanitize(text: str, flags: dict) -> str:
     else:
         t = _CODE_FENCE_RE.sub('', t)
 
-    # Inline code
-    if flags.get('inline_code', False):  # noqa: SIM108
+    # Inline code. When inline_code=False we normally drop the whole
+    # backticked span, but keyboard shortcuts get preserved regardless —
+    # they're UI instructions, not code content, and silently dropping
+    # them turns "press `Ctrl+R` to reload" into "press to reload".
+    if flags.get('inline_code', False):
         t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t)
     else:
-        t = _INLINE_CODE_RE.sub('', t)
+        def _inline_code_repl(m: re.Match) -> str:
+            content = m.group(1)
+            if _KBD_SHORTCUT_RE.match(content):
+                return content
+            return ''
+        t = _INLINE_CODE_RE.sub(_inline_code_repl, t)
 
     # Images: alt text or strip entirely
     if flags.get('image_alt', True):  # noqa: SIM108
@@ -397,9 +427,14 @@ def sanitize(text: str, flags: dict) -> str:
     if not flags.get('bullet_markers', True):
         t = _BULLET_MARKER_RE.sub('', t)
 
-    # Keyboard modifiers → words so TTS pronounces naturally
-    t = _CTRL_RE.sub('control ', t)
-    t = _CMD_RE.sub('command ', t)
+    # Keyboard modifiers → words so TTS pronounces naturally. Covers
+    # every common modifier in one sweep so `Ctrl+Shift+A` reads as
+    # "control shift A" not "control Shift+A" (which TTS reads as
+    # "control shift plus A").
+    t = _KBD_MODIFIER_RE.sub(
+        lambda m: _MODIFIER_SPOKEN[m.group(1).lower()] + ' ',
+        t,
+    )
 
     # Tilde — edge-tts pronounces as "tilda" which is universally wrong.
     # Common contexts are ~/path (home-dir shorthand) and ~N (approximately);
