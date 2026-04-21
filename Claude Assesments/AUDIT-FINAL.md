@@ -269,23 +269,37 @@ v0.4 suggestion from the assessment: extend `scripts/check-doc-drift.cjs` to sca
 
 ---
 
-## Verdict (post-v0.3.8)
+## Verdict (post-v0.4.0)
 
-**All 114 prior-audit items closed** (across v0.2.0 Tier A–C, Streams R1–R6, and v0.3 Tier D-2). **N4, N5 shipped in v0.3.8. H3-palette deferred with explicit two-option tracking row.**
+**All 114 prior-audit items closed** (across v0.2.0 Tier A–C, Streams R1–R6, v0.3 Tier D-2, and v0.3.0 assessment items N4/N5/H3). **v0.4 quality tier (S1-S7) + execution tier (EX1-9) both shipped.** Plans: `Claude Assesments/v0.4-QUALITY-ULTRAPLAN.md` + `Claude Assesments/v0.4-EXECUTION-ULTRAPLAN.md`.
 
-**Shipping state at tag `v0.3.9`:**
-- 177 `--logic-only` tests green (was 107 at plan kickoff, 162 at v0.3.0)
-- 13 Playwright E2E green on Electron 41.2.1
+**Shipping state at tag `v0.4.0`:**
+- 224 `--logic-only` tests green (177 at v0.3.9, 107 at plan kickoff, 162 at v0.3.0)
+- 25 Playwright E2E green on Electron 41.2.1 (13 at v0.3.9)
 - Windows full harness green on CI
-- Doc-drift CI guard green
+- 9 blocking CI gates: ESLint 9.39 (--max-warnings=0), Knip, ruff, PSScriptAnalyzer (pinned 1.25.0 + inline ExcludeRule), c8 coverage floor (76/67/89), npm-audit, pip-audit (Windows), file-length gate (ceiling 2000 + exclusions), doc-drift (9 doc rules + 5 code-comment rules)
+- SonarQube local: 0 bugs, 0 vulnerabilities, 0 hotspots, A·A·A
 - Palette pixel-diff rig: 24 baselines within 2% tolerance
-- v0.2.0, v0.3.0 through v0.3.8 all tagged and pushed
-- D2-3 kit-as-iframe landed in v0.3.0 and polished across v0.3.1–v0.3.7 (see `terminal-talk-v3-patches.md` in memory)
+- v0.2.0, v0.3.0 through v0.3.9, v0.4.0 all tagged and pushed
+- `docs/v0.4/` auto-archived by release.yml on the v0.4.0 push
+- D2-3 kit-as-iframe landed in v0.3.0 and polished across v0.3.1–v0.3.7
 
-**Post-v0.3 real product bugs surfaced by the kit demo running on GitHub Pages:**
+**Post-v0.3.0 real product bugs (caught by kit demo on GitHub Pages):**
 - v0.3.3 phantom-audio race (test harness + live Electron concurrent `saveAssignments`) — three-part hardening (TT_HOME env, stale-guard, registry lock)
 - v0.3.5 `initialLoad` never sorted `pendingQueue` (invisible in daily use, glaring on kit)
 - v0.3.6 "click exercise" for re-listening to played queues (new `auto_continue_after_click` setting, default on)
+
+**v0.4 execution-tier highlights (post-assessment follow-ups):**
+- EX5 — H3 Option 2 CB-friendly palette toggle in Settings (Paul Tol "muted" scheme)
+- EX4 — undo-clear toast (soft-delete with 10 s window)
+- EX6a-e — 5 main.js extractions (config-store, window-dock, queue-watcher, watchdog, ipc-validate); all factory-pattern-injectable + unit-tested without Electron
+- EX7a — clip-paths helpers extracted via UMD-lite pattern (Node + sandboxed Electron renderer share the same file)
+- EX8 — file-length ceiling ratcheted 3000 → 2000, exclusions mechanism for the test harness
+- EX9 — doc-drift now also scans code comments (5 rules catch N4-class false-premise docstrings)
+
+**Deferred (explicit) post-v0.4.0:**
+- EX6 full IPC-handler factory (18 handlers × closure-captured state) — own-session work
+- EX7b-e renderer DOM chunks — needs component-abstraction design first
 
 **Out-of-scope decisions** (never intended for audit-driven shipping):
 - Mac/Linux port — on the roadmap, no ETA
