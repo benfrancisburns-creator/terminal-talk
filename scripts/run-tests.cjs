@@ -1945,8 +1945,18 @@ describe('STALE SESSIONS IPC WIRING', () => {
     if (!/getStaleSessions/.test(pollerSrc)) {
       throw new Error('stale-session-poller.js should call api.getStaleSessions');
     }
-    if (!/classList\.add\(['"]stale['"]\)/.test(rendererSrc)) {
-      throw new Error("renderer.js should classList.add('stale') on dot/row");
+    // EX7c + EX7d-1 — .stale class application moved into DotStrip
+    // (per-dot) and SessionsTable (per-row). Accept either source.
+    const dotStripSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8'
+    );
+    const sessionsTableSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'sessions-table.js'), 'utf8'
+    );
+    const anyStaleAdd = /classList\.add\(['"]stale['"]\)/.test(dotStripSrc)
+      || /classList\.add\(['"]stale['"]\)/.test(sessionsTableSrc);
+    if (!anyStaleAdd) {
+      throw new Error("dot-strip.js or sessions-table.js should classList.add('stale') on dot/row");
     }
   });
 });
@@ -2214,13 +2224,17 @@ describe('R4 ACCESSIBILITY BASELINE', () => {
   });
 
   it('R4.3: renderer gives each session-block role="row" and dot role="listitem"', () => {
-    if (!/wrap\.setAttribute\(['"]role['"],\s*['"]row['"]\)/.test(rend)) {
-      throw new Error('renderSessionRow should set role="row" on wrap');
-    }
     // EX7c — per-dot role wiring moved into DotStrip._buildDot.
+    // EX7d-1 — per-row role wiring moved into SessionsTable._renderRow.
     const dotStripSrc = fs.readFileSync(
       path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8'
     );
+    const sessionsTableSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'sessions-table.js'), 'utf8'
+    );
+    if (!/wrap\.setAttribute\(['"]role['"],\s*['"]row['"]\)/.test(sessionsTableSrc)) {
+      throw new Error('sessions-table.js should set role="row" on wrap');
+    }
     if (!/dot\.setAttribute\(['"]role['"],\s*['"]listitem['"]\)/.test(dotStripSrc)) {
       throw new Error('dot-strip.js should set role="listitem" on each dot');
     }
@@ -3996,6 +4010,342 @@ describe('EX7c — DotStrip', () => {
   global.requestAnimationFrame = origs.raf;
   global.cancelAnimationFrame = origs.caf;
   global.document = origs.doc;
+});
+
+describe('EX7d-1 — SessionsTable', () => {
+  // Same DOM + rAF shim pattern as DotStrip, plus we fake
+  // document.activeElement + document.createDocumentFragment for the
+  // focus-bail guard and the palette-option cache.
+  const origs = {
+    raf: global.requestAnimationFrame,
+    caf: global.cancelAnimationFrame,
+    doc: global.document,
+  };
+  global.requestAnimationFrame = (fn) => { fn(); return 1; };
+  global.cancelAnimationFrame = () => {};
+
+  function makeFakeEl(tag = 'div') {
+    const el = {
+      _tag: tag,
+      _children: [],
+      _listeners: [],
+      parent: null,
+      tagName: tag.toUpperCase(),
+      _className: '',
+      textContent: '',
+      type: '',
+      value: '',
+      title: '',
+      placeholder: '',
+      checked: false,
+      selected: false,
+      disabled: false,
+      dataset: {},
+      _attrs: {},
+      _classes: new Set(),
+      classList: null,
+    };
+    el.classList = {
+      add: (c) => el._classes.add(c),
+      remove: (c) => el._classes.delete(c),
+      contains: (c) => el._classes.has(c),
+    };
+    // className setter splits on whitespace and populates _classes so
+    // tests that query via classList.has() work against code that
+    // assigns className = 'x y'. Matches real DOM semantics.
+    Object.defineProperty(el, 'className', {
+      get() { return el._className; },
+      set(v) {
+        el._className = v || '';
+        el._classes = new Set(String(v || '').split(/\s+/).filter(Boolean));
+      },
+    });
+    el.setAttribute = (k, v) => { el._attrs[k] = v; };
+    el.getAttribute = (k) => el._attrs[k];
+    el.appendChild = (c) => {
+      if (c._children !== undefined) {
+        // DocumentFragment: move its children into us, empty the fragment.
+        if (c._isFragment) {
+          for (const k of c._children) { el._children.push(k); k.parent = el; }
+          c._children = [];
+          return c;
+        }
+      }
+      el._children.push(c);
+      c.parent = el;
+      return c;
+    };
+    el.addEventListener = (ev, fn) => { el._listeners.push({ ev, fn }); };
+    el.removeEventListener = (ev, fn) => {
+      el._listeners = el._listeners.filter((l) => !(l.ev === ev && l.fn === fn));
+    };
+    el.contains = (other) => {
+      if (!other) return false;
+      if (other === el) return true;
+      for (const c of el._children) {
+        if (c === other) return true;
+        if (c.contains && c.contains(other)) return true;
+      }
+      return false;
+    };
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return ''; },
+      set(v) { if (v === '') { el._children = []; } },
+    });
+    el.cloneNode = () => {
+      // Shallow clone good enough for DocumentFragment clone use.
+      const c = makeFakeEl(tag);
+      c._isFragment = el._isFragment;
+      for (const kid of el._children) {
+        const k = makeFakeEl(kid._tag);
+        k.value = kid.value;
+        k.textContent = kid.textContent;
+        c._children.push(k);
+        k.parent = c;
+      }
+      return c;
+    };
+    return el;
+  }
+  global.document = {
+    createElement: (tag) => makeFakeEl(tag),
+    createDocumentFragment: () => {
+      const f = makeFakeEl('#fragment');
+      f._isFragment = true;
+      return f;
+    },
+    // Focus-bail guard reads this; tests flip it to simulate an
+    // in-progress input edit.
+    activeElement: null,
+  };
+
+  const { SessionsTable } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'sessions-table.js')
+  );
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  function makePoller(staleShorts = []) {
+    const set = new Set(staleShorts);
+    return { has: (s) => set.has(s) };
+  }
+
+  function makeTable(opts = {}) {
+    const calls = {
+      label: [], index: [], focus: [], muted: [], remove: [], voice: [], include: [],
+      afterMutation: 0,
+    };
+    const deps = {
+      clipPaths,
+      staleSessionPoller: makePoller(opts.staleShorts || []),
+      paletteSize: 24,
+      colourNames: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'brown'],
+      hsplitPartner: [1, 0, 3, 2, 5, 4, 7, 6],
+      vsplitPartner: [2, 3, 0, 1, 6, 7, 4, 5],
+      edgeVoices: [{ id: 'en-GB-RyanNeural', label: 'Ryan (GB)' }],
+      includeLabels: [['urls', 'URLs'], ['code_blocks', 'Code blocks']],
+      onSetLabel:   async (s, v) => { calls.label.push([s, v]); return true; },
+      onSetIndex:   async (s, v) => { calls.index.push([s, v]); return true; },
+      onSetFocus:   async (s, v) => { calls.focus.push([s, v]); return true; },
+      onSetMuted:   async (s, v) => { calls.muted.push([s, v]); return opts.muteOk !== false; },
+      onRemove:     async (s)    => { calls.remove.push(s); return opts.removeOk !== false; },
+      onSetVoice:   async (s, v) => { calls.voice.push([s, v]); return true; },
+      onSetInclude: async (s, k, v) => { calls.include.push([s, k, v]); return true; },
+      onAfterMutation: () => { calls.afterMutation++; },
+    };
+    const table = new SessionsTable(deps);
+    return { table, calls };
+  }
+
+  it('empty state renders the "No active" message', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: {} });
+    assertEqual(root._children.length, 1);
+    assertEqual(root._children[0].className, 'sessions-empty');
+    assertTruthy(/No active Claude Code sessions/.test(root._children[0].textContent));
+    table.unmount();
+  });
+
+  it('renders one session-block per assignment, sorted by index', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({
+      sessionAssignments: {
+        bb: { index: 2, label: 'B' },
+        aa: { index: 0, label: 'A' },
+        cc: { index: 1, label: 'C' },
+      },
+    });
+    const blocks = root._children.filter((c) => c._classes.has('session-block'));
+    assertEqual(blocks.length, 3);
+    // Sort by index: aa(0), cc(1), bb(2)
+    const shortEls = blocks.map((b) => {
+      const row = b._children[0];
+      return row._children.find((c) => c._classes.has('short')).textContent;
+    });
+    assertEqual(shortEls, ['aa', 'cc', 'bb']);
+    table.unmount();
+  });
+
+  it('focus-bail skips paint when an input inside the table is focused', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0 } } });
+    assertEqual(root._children.length, 1);
+
+    // Simulate an input child of the table being focused.
+    const fakeInput = { tagName: 'INPUT' };
+    // Make root.contains return true for this input.
+    const origContains = root.contains;
+    root.contains = (el) => el === fakeInput || origContains(el);
+    global.document.activeElement = fakeInput;
+
+    // Attempt a re-render with different state — should bail.
+    table.update({ sessionAssignments: {} });
+    // Children didn't clear because render bailed.
+    assertEqual(root._children.length, 1);
+
+    global.document.activeElement = null;
+    root.contains = origContains;
+    table.unmount();
+  });
+
+  it('stale sessions mark the block with .stale', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable({ staleShorts: ['aa'] });
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0 } } });
+    const block = root._children[0];
+    assertTruthy(block._classes.has('stale'));
+    table.unmount();
+  });
+
+  it('label change fires onSetLabel with trimmed value', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0 } } });
+    const block = root._children[0];
+    const row = block._children[0];
+    const labelInput = row._children.find((c) => c._tag === 'input');
+    labelInput.value = '  Trimmed  ';
+    // Trigger the change handler.
+    const change = labelInput._listeners.find((l) => l.ev === 'change');
+    change.fn();
+    assertEqual(calls.label, [['aa', 'Trimmed']]);
+    table.unmount();
+  });
+
+  it('focus toggle fires onSetFocus with the inverted value', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0, focus: false } } });
+    const block = root._children[0];
+    const row = block._children[0];
+    const focusBtn = row._children.find((c) => c._classes.has('focus-btn'));
+    const click = focusBtn._listeners.find((l) => l.ev === 'click');
+    await click.fn({ stopPropagation: () => {} });
+    assertEqual(calls.focus, [['aa', true]]);
+    table.unmount();
+  });
+
+  it('mute toggle updates local state + fires onAfterMutation when IPC confirms', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable();
+    table.mount(root);
+    const assignments = { aa: { index: 0, muted: false } };
+    table.update({ sessionAssignments: assignments });
+    const block = root._children[0];
+    const row = block._children[0];
+    const muteBtn = row._children.find((c) => c._classes.has('mute-btn'));
+    const click = muteBtn._listeners.find((l) => l.ev === 'click');
+    await click.fn({ stopPropagation: () => {} });
+    assertEqual(calls.muted, [['aa', true]]);
+    assertEqual(assignments.aa.muted, true);
+    assertEqual(calls.afterMutation, 1);
+    table.unmount();
+  });
+
+  it('mute toggle does NOT mutate state when IPC returns false', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable({ muteOk: false });
+    table.mount(root);
+    const assignments = { aa: { index: 0, muted: false } };
+    table.update({ sessionAssignments: assignments });
+    const block = root._children[0];
+    const row = block._children[0];
+    const muteBtn = row._children.find((c) => c._classes.has('mute-btn'));
+    const click = muteBtn._listeners.find((l) => l.ev === 'click');
+    await click.fn({ stopPropagation: () => {} });
+    assertEqual(assignments.aa.muted, false);  // unchanged
+    assertEqual(calls.afterMutation, 0);
+    table.unmount();
+  });
+
+  it('remove fires onRemove and drops entry from state', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable();
+    table.mount(root);
+    const assignments = { aa: { index: 0 } };
+    table.update({ sessionAssignments: assignments });
+    const block = root._children[0];
+    const row = block._children[0];
+    const removeBtn = row._children.find((c) => c._classes.has('session-remove'));
+    const click = removeBtn._listeners.find((l) => l.ev === 'click');
+    await click.fn({ stopPropagation: () => {} });
+    assertEqual(calls.remove, ['aa']);
+    assertFalsy(assignments.aa, 'entry should be deleted');
+    assertEqual(calls.afterMutation, 1);
+    table.unmount();
+  });
+
+  it('chevron click toggles expanded state + re-renders', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0 } } });
+    const block1 = root._children[0];
+    // Not expanded yet: block has only the row.
+    assertEqual(block1._children.length, 1);
+    const chevron1 = block1._children[0]._children.find((c) => c._classes.has('chevron'));
+    const click1 = chevron1._listeners.find((l) => l.ev === 'click');
+    click1.fn();
+    // After expand, block has row + expanded section.
+    const block2 = root._children[0];
+    assertEqual(block2._children.length, 2);
+    assertTruthy(block2._children[1]._classes.has('session-expanded'));
+    table.unmount();
+  });
+
+  it('muted entry adds session-muted class to block', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0, muted: true } } });
+    assertTruthy(root._children[0]._classes.has('session-muted'));
+    table.unmount();
+  });
+
+  it('focused entry adds session-focused class to block', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({ sessionAssignments: { aa: { index: 0, focus: true } } });
+    assertTruthy(root._children[0]._classes.has('session-focused'));
+    table.unmount();
+  });
+
+  // NOTE: globals deliberately NOT restored here. Some tests above use
+  // `await click.fn(...)` which triggers async IPC-callback continuations
+  // that re-enter _renderNow() via microtask drains AFTER the it() body
+  // has returned. Restoring document to undefined mid-drain crashes the
+  // microtask. Leaking the fake globals is safe — subsequent test blocks
+  // in this file don't read document / RAF.
+  void origs;
 });
 
 describe('EX6f-4 — ipc-handlers (file + test-only)', () => {

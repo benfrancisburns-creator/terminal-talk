@@ -292,10 +292,12 @@ function findFocusedSessionShort() {
 // window.TT_CLIP_PATHS. Thin wrappers here preserve the call-site
 // signature so every existing renderer call stays unchanged.
 // EX7c — paletteKeyForShort wrapper removed: its sole caller moved
-// into the DotStrip component, which accepts sessionAssignments as
-// an explicit state field rather than closing over a module global.
+// into the DotStrip component.
+// EX7d-1 — paletteKeyForIndex wrapper removed: its sole caller moved
+// into the SessionsTable component. Both components now receive
+// clipPaths + the palette size via deps rather than closing over a
+// renderer-module global.
 const _paths = window.TT_CLIP_PATHS;
-const paletteKeyForIndex = (idx) => _paths.paletteKeyForIndex(idx, PALETTE_SIZE);
 const extractSessionShort = _paths.extractSessionShort;
 const isClipFile = _paths.isClipFile;
 
@@ -1124,20 +1126,6 @@ function fillVoiceSelect(el, list, selected) {
   }
 }
 
-// COLOUR_NAMES is supplied by window.TT_TOKENS.palette (destructured at the top of this file).
-function arrangementLabel(i) {
-  if (i < 8) return `${COLOUR_NAMES[i]}`;
-  if (i < 16) {
-    const p = i - 8;
-    return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[HSPLIT_PARTNER[p]]} — top/bottom`;
-  }
-  const p = i - 16;
-  return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[VSPLIT_PARTNER[p]]} — left/right`;
-}
-
-// Tracks which session rows the user has expanded (open across re-renders).
-const expandedSessions = new Set();
-
 const INCLUDE_LABELS = [
   ['code_blocks',    'Code blocks'],
   ['inline_code',    'Inline code'],
@@ -1147,290 +1135,37 @@ const INCLUDE_LABELS = [
   ['image_alt',      'Image alt-text']
 ];
 
-// Cached <option> template for the per-session palette selector. The
-// palette is immutable at runtime (24 arrangements) and the label text
-// for each index is pure, so we can build the option list once and
-// clone it into every rerender instead of doing 24 createElement +
-// appendChild calls per row every time a queue event fires. Audit Z11.
-let _paletteOptionsFragment = null;
-function paletteOptionsClone() {
-  if (!_paletteOptionsFragment) {
-    _paletteOptionsFragment = document.createDocumentFragment();
-    for (let i = 0; i < PALETTE_SIZE; i++) {
-      const opt = document.createElement('option');
-      opt.value = String(i);
-      opt.textContent = arrangementLabel(i);
-      _paletteOptionsFragment.appendChild(opt);
-    }
-  }
-  return _paletteOptionsFragment.cloneNode(true);
-}
+// EX7d-1 — sessions table (per-session rows with label/palette/focus/
+// mute/remove + expandable voice + tri-state includes) extracted into
+// a SessionsTable component. The component owns expandedSessions,
+// paletteOptionsClone caching, arrangementLabel text, and the
+// focus-bail guard. renderer.js keeps a renderSessionsTable() wrapper
+// so existing call sites that repaint after local state mutation keep
+// working.
+const sessionsTable = new window.TT_SESSIONS_TABLE({
+  clipPaths: window.TT_CLIP_PATHS,
+  staleSessionPoller,
+  paletteSize: PALETTE_SIZE,
+  colourNames: COLOUR_NAMES,
+  hsplitPartner: HSPLIT_PARTNER,
+  vsplitPartner: VSPLIT_PARTNER,
+  edgeVoices: EDGE_VOICES,
+  includeLabels: INCLUDE_LABELS,
+  onSetLabel:   (shortId, label) => window.api.setSessionLabel(shortId, label),
+  onSetIndex:   (shortId, idx)   => window.api.setSessionIndex(shortId, idx),
+  onSetFocus:   (shortId, focus) => window.api.setSessionFocus(shortId, focus),
+  onSetMuted:   (shortId, muted) => window.api.setSessionMuted(shortId, muted),
+  onRemove:     (shortId)        => window.api.removeSession(shortId),
+  onSetVoice:   (shortId, voice) => window.api.setSessionVoice(shortId, voice),
+  onSetInclude: (shortId, k, v)  => window.api.setSessionInclude(shortId, k, v),
+  onAfterMutation: () => renderDots(),
+});
+sessionsTable.mount(sessionsTableEl);
 
 function renderSessionsTable() {
-  // Guard against yanking focus out from under the user. If any control
-  // inside the sessions table currently has keyboard / dropdown focus,
-  // a full innerHTML clear here would destroy it mid-interaction:
-  //   - typing in the label input would suddenly lose its caret,
-  //   - the palette <select> dropdown would snap shut before the user
-  //     picked an option.
-  // A background queue-updated event can land at any moment, so we
-  // simply skip the paint and defer to the next one. Nothing depends
-  // on immediacy here: the next event (or explicit re-render after a
-  // user action) will repaint. Audit Z11.
-  //
-  // D2-10 closure note. This focus-bail pattern is the intentional
-  // alternative to full keyed-reconciliation (morphdom-lite) against
-  // a 10-row table. The remaining rebuild-cost state that reconciliation
-  // would preserve (scroll position, active-dot pulse phase) isn't
-  // user-actionable at this scale; the bail covers every interactive
-  // case (focus + caret + in-progress label + open dropdown). Full
-  // morphdom remains a v0.4+ option if the state-loss surface grows.
-  const focused = document.activeElement;
-  if (focused && sessionsTableEl.contains(focused)
-      && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT')) {
-    return;
-  }
-  sessionsTableEl.innerHTML = '';
-  const entries = Object.entries(sessionAssignments);
-  if (entries.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'sessions-empty';
-    empty.textContent = 'No active Claude Code sessions. Open a Claude Code terminal to see one here.';
-    sessionsTableEl.appendChild(empty);
-    return;
-  }
-  entries.sort((a, b) => (a[1].index || 0) - (b[1].index || 0));
-  for (const [shortId, entry] of entries) {
-    sessionsTableEl.appendChild(renderSessionRow(shortId, entry));
-  }
+  sessionsTable.update({ sessionAssignments });
 }
 
-function renderSessionRow(shortId, entry) {
-  const wrap = document.createElement('div');
-  wrap.className = 'session-block';
-  wrap.setAttribute('role', 'row');
-  if (staleSessionPoller.has(shortId)) {
-    wrap.classList.add('stale');
-    wrap.title = 'Terminal closed — colour preserved in case you reopen it';
-  }
-
-  // Top row: chevron, swatch, short, label, colour
-  const row = document.createElement('div');
-  row.className = 'session-row';
-
-  const chevron = document.createElement('button');
-  chevron.type = 'button';
-  chevron.className = 'chevron icon-btn';
-  const expanded = expandedSessions.has(shortId);
-  chevron.innerHTML = expanded
-    ? '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>'
-    : '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>';
-  chevron.title = 'Per-session settings';
-  chevron.setAttribute('aria-label', expanded ? 'Collapse session settings' : 'Expand session settings');
-  chevron.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-  row.appendChild(chevron);
-
-  const swatch = document.createElement('div');
-  swatch.className = 'swatch';
-  swatch.setAttribute('role', 'img');
-  swatch.setAttribute('aria-label', `Colour swatch for session ${shortId}`);
-  swatch.dataset.palette = paletteKeyForIndex(entry.index || 0);
-  row.appendChild(swatch);
-
-  const shortEl = document.createElement('div');
-  shortEl.className = 'short';
-  shortEl.textContent = shortId;
-  row.appendChild(shortEl);
-
-  const labelInput = document.createElement('input');
-  labelInput.type = 'text';
-  labelInput.placeholder = 'Label (e.g. "Tax module")';
-  // Set BOTH the attribute and the property. The attribute is what HTML
-  // selectors like input[value="Primary"] match against (Playwright tests
-  // rely on it); the property is what the input actually displays. Keep
-  // them in sync at construction time.
-  const labelValue = entry.label || '';
-  labelInput.value = labelValue;
-  labelInput.setAttribute('value', labelValue);
-  labelInput.addEventListener('change', () => {
-    window.api.setSessionLabel(shortId, labelInput.value.trim());
-  });
-  row.appendChild(labelInput);
-
-  const select = document.createElement('select');
-  select.appendChild(paletteOptionsClone());
-  select.value = String(entry.index || 0);
-  select.addEventListener('change', async () => {
-    const newIdx = Number(select.value);
-    await window.api.setSessionIndex(shortId, newIdx);
-    sessionAssignments[shortId].index = newIdx;
-    sessionAssignments[shortId].pinned = true;
-    renderSessionsTable();
-    // Also repaint the dot strip — any currently-queued clips from this
-    // session should recolour to the new arrangement. Previously only
-    // the session row rerendered; the dots stayed the old colour until
-    // the next unrelated queue event. Matches the focus/mute handlers.
-    renderDots();
-  });
-  row.appendChild(select);
-
-  // Focus toggle. Star button — clicking marks this session as priority;
-  // its unplayed clips jump ahead of other sessions' clips in the playback
-  // queue (but never interrupt a currently-playing clip). Main.js enforces
-  // exclusivity: only one session can be focused at a time, so clicking
-  // here clears focus on every other row.
-  const focusBtn = document.createElement('button');
-  focusBtn.type = 'button';
-  focusBtn.className = 'focus-btn' + (entry.focus ? ' focused' : '');
-  focusBtn.textContent = entry.focus ? '\u2605' : '\u2606';  // ★ / ☆
-  focusBtn.title = entry.focus
-    ? 'Unfocus this session (its clips lose priority)'
-    : 'Focus this session — its clips play before other sessions\' clips';
-  focusBtn.setAttribute('aria-label', focusBtn.title);
-  focusBtn.setAttribute('aria-pressed', entry.focus ? 'true' : 'false');
-  focusBtn.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    // main.js updates the registry and fires notifyQueue() synchronously
-    // after save, which delivers authoritative assignments back to us via
-    // the queue-updated listener. Any local mutation here would just be a
-    // second source of truth -- and a subtly wrong one, since `entry` was
-    // captured at render time and may be stale if the user clicked twice
-    // in quick succession.
-    await window.api.setSessionFocus(shortId, !entry.focus);
-  });
-  row.appendChild(focusBtn);
-
-  // Mute toggle. Always visible in the top row so users can one-click mute
-  // background terminals. Uses 🔇 / 🔊 to make the state obvious at a glance;
-  // the row also gets a muted class for a subtle fade.
-  const muteBtn = document.createElement('button');
-  muteBtn.type = 'button';
-  muteBtn.className = 'mute-btn' + (entry.muted ? ' muted' : '');
-  muteBtn.textContent = entry.muted ? '\uD83D\uDD07' : '\uD83D\uDD0A';  // 🔇 / 🔊
-  muteBtn.title = entry.muted ? 'Unmute this session' : 'Mute this session (no audio, no synthesis)';
-  muteBtn.setAttribute('aria-label', muteBtn.title);
-  muteBtn.setAttribute('aria-pressed', entry.muted ? 'true' : 'false');
-  muteBtn.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    const next = !entry.muted;
-    const ok = await window.api.setSessionMuted(shortId, next);
-    if (ok) {
-      sessionAssignments[shortId].muted = next;
-      renderSessionsTable();
-      renderDots();
-    }
-  });
-  row.appendChild(muteBtn);
-
-  if (entry.muted) wrap.classList.add('session-muted');
-  if (entry.focus) wrap.classList.add('session-focused');
-
-  // Remove session button. Sessions no longer auto-prune on inactivity;
-  // this is the only way to drop one short of reinstalling.
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button';
-  removeBtn.className = 'session-remove';
-  removeBtn.textContent = '\u00D7';  // ×
-  removeBtn.title = 'Remove this session (colour slot freed)';
-  removeBtn.setAttribute('aria-label', `Remove session ${shortId} — colour slot freed`);
-  removeBtn.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    const ok = await window.api.removeSession(shortId);
-    if (ok) {
-      delete sessionAssignments[shortId];
-      renderSessionsTable();
-      renderDots();
-    }
-  });
-  row.appendChild(removeBtn);
-
-  wrap.appendChild(row);
-
-  // Expanded section: per-session voice + tri-state speech includes
-  if (expandedSessions.has(shortId)) {
-    const expanded = document.createElement('div');
-    expanded.className = 'session-expanded';
-
-    // Voice override
-    const voiceRow = document.createElement('div');
-    voiceRow.className = 'expanded-row';
-    const voiceLabel = document.createElement('label');
-    voiceLabel.textContent = 'Voice for this session';
-    voiceRow.appendChild(voiceLabel);
-    const voiceSel = document.createElement('select');
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = '— follow global default —';
-    voiceSel.appendChild(defaultOpt);
-    for (const v of EDGE_VOICES) {
-      const o = document.createElement('option');
-      o.value = v.id;
-      o.textContent = v.label;
-      if (entry.voice === v.id) o.selected = true;
-      voiceSel.appendChild(o);
-    }
-    voiceSel.addEventListener('change', async () => {
-      const v = voiceSel.value || null;
-      await window.api.setSessionVoice(shortId, v);
-      if (v) sessionAssignments[shortId].voice = v;
-      else delete sessionAssignments[shortId].voice;
-    });
-    voiceRow.appendChild(voiceSel);
-    expanded.appendChild(voiceRow);
-
-    // Speech includes per-session toggles (tri-state: default / on / off)
-    const incHeader = document.createElement('div');
-    incHeader.className = 'expanded-subheader';
-    incHeader.textContent = 'Speech includes (overrides for this session)';
-    expanded.appendChild(incHeader);
-
-    const incGrid = document.createElement('div');
-    incGrid.className = 'tri-grid';
-    const sessionInc = entry.speech_includes || {};
-    for (const [key, label] of INCLUDE_LABELS) {
-      const cell = document.createElement('div');
-      cell.className = 'tri-cell';
-      const labEl = document.createElement('span');
-      labEl.className = 'tri-label';
-      labEl.textContent = label;
-      cell.appendChild(labEl);
-
-      const ctrl = document.createElement('div');
-      ctrl.className = 'tri-ctrl';
-      const states = [
-        { val: null, label: 'Default', cls: 'def' },
-        { val: true, label: 'On',      cls: 'on' },
-        { val: false, label: 'Off',    cls: 'off' }
-      ];
-      const current = key in sessionInc ? sessionInc[key] : null;
-      for (const s of states) {
-        const btn = document.createElement('button');
-        btn.className = `tri-btn ${s.cls}` + (current === s.val ? ' active' : '');
-        btn.textContent = s.label;
-        btn.addEventListener('click', async () => {
-          await window.api.setSessionInclude(shortId, key, s.val);
-          if (!sessionAssignments[shortId].speech_includes) sessionAssignments[shortId].speech_includes = {};
-          if (s.val === null) delete sessionAssignments[shortId].speech_includes[key];
-          else                sessionAssignments[shortId].speech_includes[key] = s.val;
-          renderSessionsTable();
-        });
-        ctrl.appendChild(btn);
-      }
-      cell.appendChild(ctrl);
-      incGrid.appendChild(cell);
-    }
-    expanded.appendChild(incGrid);
-    wrap.appendChild(expanded);
-  }
-
-  chevron.addEventListener('click', () => {
-    if (expandedSessions.has(shortId)) expandedSessions.delete(shortId);
-    else expandedSessions.add(shortId);
-    renderSessionsTable();
-  });
-
-  return wrap;
-}
 
 async function loadSettings() {
   const cfg = await window.api.getConfig();

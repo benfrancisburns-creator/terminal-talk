@@ -4,10 +4,11 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 4513,
-    "app/renderer.js": 1626,
+    "scripts/run-tests.cjs": 4864,
     "app/main.js": 1507,
+    "app/renderer.js": 1361,
     "app/synth_turn.py": 754,
+    "app/lib/sessions-table.js": 425,
     "docs/ui-kit/mock-ipc.js": 419,
     "app/lib/ipc-handlers.js": 365,
     "app/wake-word-listener.py": 289,
@@ -36,7 +37,7 @@
     "app/lib/watchdog.js": 94,
     "hooks/speak-on-tool.ps1": 93,
     "scripts/resolve-sonar-hotspots.cjs": 92,
-    "docs/ui-kit/kit-bootstrap.js": 85,
+    "docs/ui-kit/kit-bootstrap.js": 86,
     "app/lib/window-dock.js": 79,
     "tests/e2e/launch.spec.ts": 79,
     "app/lib/registry-lock.js": 78,
