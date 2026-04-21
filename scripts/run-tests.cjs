@@ -1524,8 +1524,15 @@ describe('STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)', () => {
     { name: 'heading hash #',               needle: '#' },
     { name: 'bold/italic \\*\\*',           needle: '\\*\\*' },
     { name: 'underscore emphasis __',       needle: '__' },
-    { name: 'Ctrl\\+ keyboard modifier',    needle: 'Ctrl\\+' },
-    { name: 'Cmd\\+ keyboard modifier',     needle: 'Cmd\\+' },
+    // Modifier rules use a substring from the alternation, not a literal
+    // `Ctrl\+` — the canonical implementation in app/lib/text.js uses a
+    // single regex `(Ctrl|Control|Cmd|Command|Shift|...)\+` and both the
+    // Python and PowerShell mirrors mirror that shape rather than keeping
+    // a separate `\bCtrl\+` regex per modifier. The substring `Ctrl|Control`
+    // is unique enough to confirm the modifier-handling rule is present
+    // without enforcing a particular regex decomposition.
+    { name: 'Ctrl keyboard modifier',       needle: 'Ctrl|Control' },
+    { name: 'Cmd keyboard modifier',        needle: 'Cmd|Command' },
   ];
 
   for (const rule of RULES) {

@@ -51,12 +51,10 @@ from pathlib import Path
 from threading import Lock
 
 try:
-    from sentence_split import split_sentences
     from sentence_group import group_sentences_for_tts
     from tool_narration import narrate_tool_use
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from sentence_split import split_sentences
     from sentence_group import group_sentences_for_tts
     from tool_narration import narrate_tool_use
 
@@ -366,8 +364,6 @@ _BULLET_MARKER_RE = re.compile(r'^\s*([-*+]|\d+\.)\s+', re.MULTILINE)
 _TRIPLE_EMPHASIS_RE = re.compile(r'\*\*\*([^*\n]+)\*\*\*|___([^_\n]+)___')
 _EMPHASIS_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_')
 _IMG_RE = re.compile(r'!\[([^\]]*)\]\([^\)]+\)')
-_CTRL_RE = re.compile(r'\bCtrl\+', re.IGNORECASE)
-_CMD_RE = re.compile(r'\bCmd\+', re.IGNORECASE)
 # All common keyboard modifiers in one regex — used to rewrite
 # `Modifier+Key` into spoken words. Without this, `Ctrl+Shift+A` only
 # translates the first segment and TTS reads the rest as "shift plus A".
