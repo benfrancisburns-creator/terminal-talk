@@ -1,5 +1,8 @@
 {
-  "ceiling": 3500,
+  "ceiling": 2000,
+  "exclusions": [
+    "scripts/run-tests.cjs"
+  ],
   "files": {
     "scripts/run-tests.cjs": 3183,
     "app/main.js": 1755,
@@ -12,11 +15,11 @@
     "app/key_helper.py": 260,
     "scripts/check-doc-drift.cjs": 235,
     "app/session-registry.psm1": 221,
+    "scripts/check-file-length.cjs": 175,
     "scripts/generate-tokens-css.cjs": 169,
     "app/statusline.ps1": 164,
     "scripts/fetch-sonar-findings.cjs": 163,
     "app/tts-helper.psm1": 162,
-    "scripts/check-file-length.cjs": 159,
     "scripts/palette-pixel-diff.cjs": 147,
     "scripts/render-mocks.cjs": 132,
     "tests/e2e/settings.spec.ts": 121,

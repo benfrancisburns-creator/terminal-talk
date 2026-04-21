@@ -2,6 +2,86 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [unreleased] — 2026-04-21
+
+v0.4 execution-tier work after the assessment passes (S1-S7) + the
+v0.4 quality tier shipped. Follow-ups surfaced during assessment
+triage. All but the full IPC-handler factory in main.js and the
+DOM-heavy renderer chunks landed.
+
+### Added
+
+- **EX2 — kit demo reset button.** `↺ Reset demo` in the kit chrome
+  bar re-seeds the queue without a page reload. Used while
+  iterating on playback states.
+- **EX3 — renderer reload.** `Ctrl+R` (window-scoped, not global)
+  and a "Reload toolbar" button in Settings > Playback > Troubleshooting
+  both trigger `win.webContents.reload()`. Cheap recovery when the
+  toolbar gets into a weird visual state.
+- **EX4 — undo-clear toast.** Clicking the trash icon now soft-
+  deletes: clips disappear from the UI immediately, actual
+  `deleteFile()` deferred 10 s while a "N clips cleared — Undo"
+  toast is visible. Click Undo to restore; timer expiry commits
+  the deletion.
+- **EX5 — colour-blind-friendly palette toggle.** Settings >
+  Playback adds a toggle that switches the 8-colour session
+  palette to Paul Tol's "muted" scheme (proven distinguishable
+  under deutan / protan / tritan). Default palette stays for
+  everyone else. Closes the H3 carry-over from the v0.3.0
+  assessment — both Option 1 (default hex swap in v0.3.9) and
+  Option 2 now available.
+- **EX9 — doc-drift scans code comments too.** `check-doc-drift.cjs`
+  now sweeps `.js/.cjs/.py/.ps1/.psm1` under `app/`, `hooks/`,
+  `scripts/` with 5 rules guarding against false-premise
+  docstrings like the N4 "main.js has no auto-prune" claim that
+  the v0.3.0 assessment caught.
+
+### Changed
+
+- **EX1 — absolute-path spawns for Windows system binaries.**
+  `app/main.js` now spawns `C:\Windows\System32\taskkill.exe` and
+  the full `WindowsPowerShell\v1.0\powershell.exe` path (via
+  `SystemRoot` env) instead of short names. Closes three Sonar
+  `S4036` hotspots deferred at S4 triage; Python absolute-path
+  resolution stays parked because it's installed in user-space.
+- **EX6a-e — main.js big-file refactor (partial).** Five
+  extractions into `app/lib/`: `config-store.js`, `window-dock.js`,
+  `queue-watcher.js`, `watchdog.js`, `ipc-validate.js`. Every
+  module is factory-pattern-injectable so unit tests bypass
+  Electron. main.js shrank 1850 → 1755 (-95 lines). 41 new unit
+  tests across the five extractions; all `app/lib/` modules
+  factory-style now.
+- **EX7a — clip-paths helpers extracted from renderer.js.** Pure
+  filename/session helpers (`extractSessionShort`,
+  `paletteKeyForIndex/Short`, `isClipFile`) moved to
+  `app/lib/clip-paths.js` with a UMD-lite wrapper so the same file
+  works in both Node (tests) and sandboxed Electron renderer (via
+  `<script src>` tag attaching `window.TT_CLIP_PATHS`). renderer.js
+  shrank ~30 lines. 10 new unit tests.
+- **EX8 — file-length ceiling ratcheted 3000 → 2000.**
+  `file-length-baseline.json` gains an `exclusions` list;
+  `scripts/run-tests.cjs` opted in (3188-line harness is big by
+  design). main.js (1755) and renderer.js (1704) now both sit
+  under the new ceiling.
+
+### Tests
+
+- **177 → 224 logic tests.** +47 covering: window-dock geometry
+  (7), queue-watcher fs mocking (7), registry-lock contention
+  (already landed), ipc-validate (4), clip-paths (10), EX5
+  schema parity, EX6 extraction assertions.
+
+### CI
+
+- `pip-audit` moved to `windows-latest`. Inherent Linux
+  dependency conflict (onnxruntime 1.24.x requires Py ≥3.13,
+  openwakeword → tflite-runtime requires Py <3.13) made
+  Ubuntu unresolvable. Windows is the actual target platform.
+- `PSScriptAnalyzer` pinned to 1.25.0 + inline `-ExcludeRule`.
+  1.26+ broke the `.psd1` settings-file schema.
+
+---
+
 ## [0.3.9] — 2026-04-20
 
 Accessibility — the 8-colour palette no longer collapses under red-green colour-blindness.

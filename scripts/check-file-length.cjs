@@ -37,10 +37,12 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const BASELINE_FILE = path.join(ROOT, 'file-length-baseline.json');
 
-// Absolute ceiling. v0.4 initial floor set generously so main.js
-// (1802) and renderer.js (1620) + run-tests.cjs (2899) all fit.
-// Future quarters: drop to 2000 after big-file refactor, then 1000.
-const DEFAULT_CEILING = 3000;
+// Absolute ceiling. EX8 ratcheted from 3500 -> 2000 post-EX6
+// (main.js ~1757) + EX7a (renderer.js shrinking). run-tests.cjs
+// legitimately exceeds the ceiling — it's the test harness and
+// stays big by design; listed in baseline.exclusions to bypass the
+// absolute check while its baseline-growth ratchet still applies.
+const DEFAULT_CEILING = 2000;
 
 // Walk these dirs, skip these.
 const INCLUDE_DIRS = ['app', 'scripts', 'hooks', 'tests/e2e', 'docs/ui-kit'];
@@ -93,9 +95,14 @@ function gatherSizes() {
 }
 
 function loadBaseline() {
-  if (!fs.existsSync(BASELINE_FILE)) return { ceiling: DEFAULT_CEILING, files: {} };
+  if (!fs.existsSync(BASELINE_FILE)) {
+    return { ceiling: DEFAULT_CEILING, exclusions: [], files: {} };
+  }
   try {
-    return JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
+    // Forward-compat with old baselines that lack an exclusions key.
+    if (!Array.isArray(parsed.exclusions)) parsed.exclusions = [];
+    return parsed;
   } catch (e) {
     console.error(`[check-file-length] baseline file is invalid JSON: ${e.message}`);
     process.exit(2);
@@ -108,7 +115,11 @@ function writeBaseline(data) {
   const sorted = Object.fromEntries(
     Object.entries(data.files).sort((a, b) => b[1] - a[1])
   );
-  const out = { ceiling: data.ceiling, files: sorted };
+  const out = {
+    ceiling: data.ceiling,
+    exclusions: data.exclusions || [],
+    files: sorted,
+  };
   fs.writeFileSync(BASELINE_FILE, JSON.stringify(out, null, 2) + '\n', 'utf8');
 }
 
@@ -117,16 +128,21 @@ function main() {
   const sizes = gatherSizes();
   const baseline = loadBaseline();
   const ceiling = baseline.ceiling || DEFAULT_CEILING;
+  const exclusions = new Set(baseline.exclusions || []);
 
   if (update) {
-    writeBaseline({ ceiling, files: sizes });
-    console.log(`[check-file-length] baseline updated: ${Object.keys(sizes).length} files tracked`);
+    writeBaseline({ ceiling, exclusions: baseline.exclusions, files: sizes });
+    console.log(`[check-file-length] baseline updated: ${Object.keys(sizes).length} files tracked, ${exclusions.size} excluded from ceiling`);
     return;
   }
 
   const violations = [];
   for (const [file, lines] of Object.entries(sizes)) {
-    if (lines > ceiling) {
+    // Excluded files skip the absolute ceiling check but STILL get
+    // their baseline enforced — catches silent growth even in files
+    // we've agreed are "big by design".
+    const isExcluded = exclusions.has(file);
+    if (!isExcluded && lines > ceiling) {
       violations.push({ file, lines, limit: ceiling, kind: 'ceiling' });
       continue;
     }
