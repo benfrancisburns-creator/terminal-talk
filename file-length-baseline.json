@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 4148,
-    "app/renderer.js": 1690,
+    "scripts/run-tests.cjs": 4513,
+    "app/renderer.js": 1626,
     "app/main.js": 1507,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -16,6 +16,7 @@
     "app/key_helper.py": 260,
     "scripts/check-doc-drift.cjs": 235,
     "app/session-registry.psm1": 221,
+    "app/lib/dot-strip.js": 185,
     "scripts/check-file-length.cjs": 175,
     "scripts/generate-tokens-css.cjs": 169,
     "app/statusline.ps1": 164,
@@ -35,7 +36,7 @@
     "app/lib/watchdog.js": 94,
     "hooks/speak-on-tool.ps1": 93,
     "scripts/resolve-sonar-hotspots.cjs": 92,
-    "docs/ui-kit/kit-bootstrap.js": 84,
+    "docs/ui-kit/kit-bootstrap.js": 85,
     "app/lib/window-dock.js": 79,
     "tests/e2e/launch.spec.ts": 79,
     "app/lib/registry-lock.js": 78,

@@ -290,11 +290,12 @@ function findFocusedSessionShort() {
 // EX7a — extracted to app/lib/clip-paths.js. Loaded via
 // <script src> in index.html before this file; attaches to
 // window.TT_CLIP_PATHS. Thin wrappers here preserve the call-site
-// signature (paletteKeyForShort(short) — 1 arg) so every existing
-// renderer call stays unchanged.
+// signature so every existing renderer call stays unchanged.
+// EX7c — paletteKeyForShort wrapper removed: its sole caller moved
+// into the DotStrip component, which accepts sessionAssignments as
+// an explicit state field rather than closing over a module global.
 const _paths = window.TT_CLIP_PATHS;
 const paletteKeyForIndex = (idx) => _paths.paletteKeyForIndex(idx, PALETTE_SIZE);
-const paletteKeyForShort = (shortId) => _paths.paletteKeyForShort(shortId, sessionAssignments, PALETTE_SIZE);
 const extractSessionShort = _paths.extractSessionShort;
 const isClipFile = _paths.isClipFile;
 
@@ -370,94 +371,29 @@ function isAudioIdle() {
 // frame so the work matches the display refresh rate, not the event
 // rate. Visible effect on 150-clip pastes: dot strip updates smoothly
 // instead of flickering.
-let _renderDotsQueued = false;
+// EX7c — dot-strip rendering extracted into a DotStrip component. The
+// component owns the rAF-debounce, the mute-filter, the run-gap
+// clustering, and per-dot event wiring. renderDots() stays as a thin
+// state-collecting wrapper so existing call sites (there are many) keep
+// working without change.
+const dotStrip = new window.TT_DOT_STRIP({
+  clipPaths: window.TT_CLIP_PATHS,
+  staleSessionPoller,
+  paletteSize: PALETTE_SIZE,
+  maxVisibleDots: MAX_VISIBLE_DOTS,
+  onPlay: (path) => userPlay(path),
+  onDelete: (path) => deleteDot(path),
+});
+dotStrip.mount(dotsEl);
+
 function renderDots() {
-  if (_renderDotsQueued) return;
-  _renderDotsQueued = true;
-  requestAnimationFrame(() => {
-    _renderDotsQueued = false;
-    _renderDotsNow();
+  dotStrip.update({
+    queue,
+    currentPath,
+    heardPaths,
+    sessionAssignments,
+    synthInProgress,
   });
-}
-function _renderDotsNow() {
-  dotsEl.innerHTML = '';
-  // Muted sessions' clips are hidden entirely — no dot, no trace. "Cut the
-  // wire" per Ben: the user should not be aware a background muted terminal
-  // is even producing audio.
-  //
-  // Order: oldest-left → newest-right so the row reads left-to-right in the
-  // same direction playback flows. queue comes in from main.js sorted newest
-  // first, so reverse and then take the freshest MAX_VISIBLE_DOTS.
-  const unmuted = queue.filter(f => {
-    const name = f.path.split(/[\\/]/).pop();
-    return !isClipSessionMuted(name);
-  });
-  // Keep the N newest, then reverse so oldest is leftmost in the displayed row.
-  const visible = unmuted.slice(0, MAX_VISIBLE_DOTS).slice().reverse();
-  // Session run grouping: insert a small gap whenever the session shortId
-  // changes between consecutive clips. Renders as visual clusters —
-  // [T1][T1][T1] | [T2] | [T1][T1] — so the user can see at a glance which
-  // terminal said what, while playback order stays strictly chronological
-  // (oldest first) so real-time urgency isn't lost behind a chatty session.
-  let prevShort = undefined;
-  visible.forEach((f) => {
-    const fname = f.path.split(/[\\/]/).pop();
-    const thisShort = extractSessionShort(fname);
-    if (prevShort !== undefined && thisShort !== prevShort) {
-      const gap = document.createElement('span');
-      gap.className = 'dots-run-gap';
-      dotsEl.appendChild(gap);
-    }
-    prevShort = thisShort;
-    const dot = document.createElement('button');
-    dot.className = 'dot';
-    dot.setAttribute('role', 'listitem');
-    dot.type = 'button';
-    if (f.path === currentPath) dot.classList.add('active');
-    const name = f.path.split(/[\\/]/).pop();
-    const short = extractSessionShort(name);
-    if (isClipFile(name)) {
-      dot.classList.add('clip');
-      dot.textContent = 'J';
-    }
-    if (heardPaths.has(f.path)) dot.classList.add('heard');
-    // D2-9 — data-palette attribute drives both the non-heard background
-    // and the heard ring colour via rules in app/lib/palette-classes.css.
-    // Replaces the previous `dot.style.background = ...` /
-    // `dot.style.boxShadow = ...` writes so the CSP style-src directive
-    // no longer needs 'unsafe-inline'.
-    dot.dataset.palette = paletteKeyForShort(short);
-    // Dead-terminal signal: desaturate the dot so the user can tell at a
-    // glance which clips originated from a closed session. The clip is
-    // still playable and the colour is preserved — just dimmer.
-    if (short && staleSessionPoller.has(short)) {
-      dot.classList.add('stale');
-    }
-    const entry = short ? sessionAssignments[short] : null;
-    const label = entry && entry.label ? ` [${entry.label}]` : '';
-    const d = new Date(f.mtime);
-    const staleMark = (short && staleSessionPoller.has(short)) ? ' (closed)' : '';
-    const titleText = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
-    dot.title = titleText;
-    dot.setAttribute('aria-label', titleText);
-    if (f.path === currentPath) dot.setAttribute('aria-current', 'true');
-    dot.addEventListener('click', () => userPlay(f.path));
-    dot.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      deleteDot(f.path);
-    });
-    dotsEl.appendChild(dot);
-  });
-  // R6.3: placeholder dot while edge-tts is synthesising from a wake-word
-  // or Ctrl+Shift+S trigger. Removed the moment a priority-play arrives
-  // (onPriorityPlay flips the flag) or main fires state=idle in finally.
-  if (synthInProgress) {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'dot pending-synth';
-    placeholder.title = 'Listening -- synth in progress';
-    placeholder.setAttribute('aria-label', 'Synthesis in progress');
-    dotsEl.appendChild(placeholder);
-  }
 }
 
 function playPath(p, manual = false, userClick = false) {

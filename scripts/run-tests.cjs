@@ -2121,8 +2121,15 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     if (!/synthInProgress/.test(rendSrc)) {
       throw new Error('renderer.js should track synthInProgress');
     }
-    if (!/pending-synth/.test(rendSrc)) {
-      throw new Error('renderer.js should append a .dot.pending-synth placeholder');
+    // EX7c — placeholder DOM build moved into DotStrip component. The
+    // synthInProgress flag still originates in renderer.js and is
+    // passed through dotStrip.update(); the DOM node creation lives
+    // in dot-strip.js.
+    const dotStripSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8'
+    );
+    if (!/pending-synth/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should append a .dot.pending-synth placeholder');
     }
     const styles = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
     if (!/\.dot\.pending-synth\b/.test(styles)) {
@@ -2134,16 +2141,21 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
   });
 
   it('R6.1 R12: renderDots is rAF-throttled to one paint per frame', () => {
-    const src = fs.readFileSync(rendererPath, 'utf8');
-    // The top-level renderDots() must enqueue; the hot body is _renderDotsNow.
-    if (!/_renderDotsQueued/.test(src)) {
-      throw new Error('renderDots should coalesce via a _renderDotsQueued flag');
+    // EX7c — rAF debounce moved into DotStrip._onUpdate. renderer.js
+    // still has a renderDots() wrapper that fans out to
+    // dotStrip.update(); the component coalesces via _pendingRaf.
+    const rendSrc = fs.readFileSync(rendererPath, 'utf8');
+    const dotStripSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8'
+    );
+    if (!/function renderDots/.test(rendSrc) || !/dotStrip\.update/.test(rendSrc)) {
+      throw new Error('renderer.js should wrap renderDots() around dotStrip.update()');
     }
-    if (!/requestAnimationFrame\(/.test(src)) {
-      throw new Error('renderDots should use requestAnimationFrame to coalesce paints');
+    if (!/_pendingRaf/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should coalesce renders via a _pendingRaf latch');
     }
-    if (!/function _renderDotsNow/.test(src)) {
-      throw new Error('hot body should live in _renderDotsNow so renderDots can no-op when queued');
+    if (!/requestAnimationFrame\(/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should use requestAnimationFrame to coalesce paints');
     }
   });
 
@@ -2205,8 +2217,12 @@ describe('R4 ACCESSIBILITY BASELINE', () => {
     if (!/wrap\.setAttribute\(['"]role['"],\s*['"]row['"]\)/.test(rend)) {
       throw new Error('renderSessionRow should set role="row" on wrap');
     }
-    if (!/dot\.setAttribute\(['"]role['"],\s*['"]listitem['"]\)/.test(rend)) {
-      throw new Error('renderDots should set role="listitem" on each dot');
+    // EX7c — per-dot role wiring moved into DotStrip._buildDot.
+    const dotStripSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8'
+    );
+    if (!/dot\.setAttribute\(['"]role['"],\s*['"]listitem['"]\)/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should set role="listitem" on each dot');
     }
   });
 
@@ -3631,6 +3647,355 @@ describe('EX7b — StaleSessionPoller', () => {
     assertEqual(p.isMounted(), false);
     assertEqual(p._teardown.length, 0);
   });
+});
+
+describe('EX7c — DotStrip', () => {
+  // Tiny DOM + rAF shim so the component can be exercised in plain
+  // Node without jsdom. We fake just enough of the browser surface
+  // for _buildDot + _renderNow: createElement, appendChild,
+  // classList, dataset, setAttribute, addEventListener, innerHTML.
+  const _rafQueue = [];
+  const origs = {
+    raf: global.requestAnimationFrame,
+    caf: global.cancelAnimationFrame,
+    doc: global.document,
+  };
+  global.requestAnimationFrame = (fn) => {
+    _rafQueue.push(fn);
+    return _rafQueue.length;
+  };
+  global.cancelAnimationFrame = (id) => { _rafQueue[id - 1] = null; };
+
+  function makeFakeEl(tag = 'div') {
+    const el = {
+      _tag: tag,
+      _children: [],
+      _listeners: [],
+      parent: null,
+      className: '',
+      textContent: '',
+      title: '',
+      type: '',
+      dataset: {},
+      _attrs: {},
+      _classes: new Set(),
+      classList: null,
+    };
+    el.classList = {
+      add: (c) => el._classes.add(c),
+      remove: (c) => el._classes.delete(c),
+      contains: (c) => el._classes.has(c),
+    };
+    el.setAttribute = (k, v) => { el._attrs[k] = v; };
+    el.getAttribute = (k) => el._attrs[k];
+    el.appendChild = (c) => {
+      el._children.push(c);
+      c.parent = el;
+      return c;
+    };
+    el.addEventListener = (ev, fn) => { el._listeners.push({ ev, fn }); };
+    el.removeEventListener = (ev, fn) => {
+      el._listeners = el._listeners.filter((l) => !(l.ev === ev && l.fn === fn));
+    };
+    // innerHTML = '' used as "clear" — implemented as child removal.
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return ''; },
+      set(v) { if (v === '') { el._children = []; } },
+    });
+    return el;
+  }
+  global.document = {
+    createElement: (tag) => makeFakeEl(tag),
+  };
+
+  const { DotStrip } = require(path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'));
+
+  // Real clip-paths logic (UMD-lite loads fine in Node) is used, so
+  // tests exercise the same extractSessionShort / isClipFile /
+  // paletteKeyForShort the renderer uses.
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  function makePoller(staleShorts = []) {
+    const set = new Set(staleShorts);
+    return { has: (s) => set.has(s) };
+  }
+
+  function makeClip(short, idx, opts = {}) {
+    const tag = opts.isClip ? 'clip-' : '';
+    const name = opts.isClip
+      ? `2026-04-21T00-00-00-${tag}${short}-${idx}.mp3`
+      : `2026-04-21T00-00-00-${idx}-${short}.mp3`;
+    return {
+      path: `/queue/${name}`,
+      mtime: Date.UTC(2026, 0, 1) + idx * 1000,
+    };
+  }
+
+  it('renderNow produces one dot per unmuted queue entry', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [makeClip('aabbccdd', 1), makeClip('eeff0011', 2), makeClip('aabbccdd', 3)],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    // 3 dots + gaps between session-short changes.
+    // Reversed so queue entry 3 (aabbccdd) is first, then 2 (eeff0011, gap), then 1 (aabbccdd, gap).
+    const dots = root._children.filter((c) => c._tag === 'button');
+    const gaps = root._children.filter((c) => c._tag === 'span' && c.className === 'dots-run-gap');
+    assertEqual(dots.length, 3);
+    assertEqual(gaps.length, 2);
+    ds.unmount();
+  });
+
+  it('muted sessions are filtered out entirely', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [
+        makeClip('aabbccdd', 1, { isClip: true }),
+        makeClip('eeff0011', 2, { isClip: true }),
+      ],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: { aabbccdd: { muted: true } },
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dots = root._children.filter((c) => c._tag === 'button');
+    // aabbccdd muted -> only the eeff0011 dot renders.
+    assertEqual(dots.length, 1);
+    ds.unmount();
+  });
+
+  it('currentPath dot gets .active + aria-current', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: clip.path,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    assertTruthy(dot._classes.has('active'), 'dot should have .active class');
+    assertEqual(dot.getAttribute('aria-current'), 'true');
+    ds.unmount();
+  });
+
+  it('heardPaths dots get .heard class', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: null,
+      heardPaths: new Set([clip.path]),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    assertTruthy(dot._classes.has('heard'));
+    ds.unmount();
+  });
+
+  it('stale sessions get .stale class + "(closed)" in title', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(['aabbccdd']),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [makeClip('aabbccdd', 1)],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    assertTruthy(dot._classes.has('stale'));
+    assertTruthy(/\(closed\)/.test(dot.title), 'title should include "(closed)"');
+    ds.unmount();
+  });
+
+  it('isClipFile filenames get .clip class + "J" text', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [makeClip('aabbccdd', 1, { isClip: true })],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    assertTruthy(dot._classes.has('clip'));
+    assertEqual(dot.textContent, 'J');
+    ds.unmount();
+  });
+
+  it('synthInProgress appends a .pending-synth placeholder', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: true,
+    });
+    ds.renderNow();
+    assertEqual(root._children.length, 1);
+    const ph = root._children[0];
+    assertEqual(ph._tag, 'span');
+    assertTruthy(/pending-synth/.test(ph.className));
+    ds.unmount();
+  });
+
+  it('click calls onPlay with the clip path', () => {
+    const plays = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onPlay: (p) => plays.push(p),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    const click = dot._listeners.find((l) => l.ev === 'click');
+    click.fn();
+    assertEqual(plays, [clip.path]);
+    ds.unmount();
+  });
+
+  it('contextmenu calls onDelete with the clip path and preventDefault', () => {
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    const ctx = dot._listeners.find((l) => l.ev === 'contextmenu');
+    let prevented = false;
+    ctx.fn({ preventDefault: () => { prevented = true; } });
+    assertEqual(deletes, [clip.path]);
+    assertEqual(prevented, true);
+    ds.unmount();
+  });
+
+  it('update() schedules a single rAF regardless of call count', () => {
+    _rafQueue.length = 0;
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({ queue: [], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.update({ queue: [], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.update({ queue: [], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    // 3 update() calls inside one frame -> exactly 1 rAF scheduled.
+    assertEqual(_rafQueue.filter(Boolean).length, 1);
+    ds.unmount();
+  });
+
+  it('unmount cancels a pending rAF so it never paints', () => {
+    _rafQueue.length = 0;
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({ queue: [], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    const queued = _rafQueue.filter(Boolean).length;
+    assertEqual(queued, 1);
+    ds.unmount();
+    assertEqual(_rafQueue.filter(Boolean).length, 0);  // cancelled
+  });
+
+  it('unmount clears root DOM', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    ds.update({
+      queue: [makeClip('aabbccdd', 1)],
+      currentPath: null,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    assertEqual(root._children.length, 1);
+    ds.unmount();
+    assertEqual(root._children.length, 0);
+  });
+
+  // Clean up globals AFTER the describe block runs. Not perfect — any
+  // test group added later that runs in the same process inherits
+  // these — but safe in practice because run-tests.cjs is a single
+  // sequential pass.
+  global.requestAnimationFrame = origs.raf;
+  global.cancelAnimationFrame = origs.caf;
+  global.document = origs.doc;
 });
 
 describe('EX6f-4 — ipc-handlers (file + test-only)', () => {

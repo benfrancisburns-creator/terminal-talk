@@ -96,6 +96,7 @@ module.exports = [
       'app/lib/clip-paths.js',
       'app/lib/component.js',
       'app/lib/stale-session-poller.js',
+      'app/lib/dot-strip.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

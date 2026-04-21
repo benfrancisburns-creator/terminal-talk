@@ -19,7 +19,8 @@
     "docs/ui-kit/mock-ipc.js",
     "app/lib/clip-paths.js",
     "app/lib/component.js",
-    "app/lib/stale-session-poller.js"
+    "app/lib/stale-session-poller.js",
+    "app/lib/dot-strip.js"
   ],
   "project": [
     "app/**/*.js",

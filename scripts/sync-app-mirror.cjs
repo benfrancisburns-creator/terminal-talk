@@ -33,6 +33,7 @@ const FILES = [
   'lib/clip-paths.js',
   'lib/component.js',
   'lib/stale-session-poller.js',
+  'lib/dot-strip.js',
 ];
 
 const check = process.argv.includes('--check');
