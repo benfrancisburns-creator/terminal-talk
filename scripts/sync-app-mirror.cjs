@@ -36,6 +36,7 @@ const FILES = [
   'lib/dot-strip.js',
   'lib/sessions-table.js',
   'lib/settings-form.js',
+  'lib/audio-player.js',
 ];
 
 const check = process.argv.includes('--check');

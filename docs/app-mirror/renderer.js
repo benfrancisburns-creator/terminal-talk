@@ -39,7 +39,7 @@ window.addEventListener('unhandledrejection', (e) => {
 const dynSheet = new CSSStyleSheet();
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, dynSheet];
 const dynRules = new Map();
-let spinnerWordCounter = 0;
+// EX7e — spinnerWordCounter for scrubber verb-cloud moved inside AudioPlayer.
 function setDynamicStyle(selector, cssText) {
   if (cssText) dynRules.set(selector, cssText);
   else dynRules.delete(selector);
@@ -210,19 +210,11 @@ const staleSessionPoller = new window.TT_STALE_SESSION_POLLER({
 staleSessionPoller.start();
 
 let queue = [];
-let currentPath = null;
-let currentIsManual = false;
-// v0.3.6 — currentIsManual was overloaded to mean both "priority
-// (hey-jarvis) clip" and "user clicked a dot". Only the latter should
-// trigger auto-continue-after-click, so track it separately. Set only
-// by userPlay(); reset on ended/error/next play.
-let currentIsUserClick = false;
 const playedPaths = new Set();
 const heardPaths = new Set();
 const priorityPaths = new Set();
 const priorityQueue = [];
 let pendingQueue = [];
-let userScrubbing = false;
 const deleteTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
 // Auto-prune delay is user-configurable via the Playback settings panel.
@@ -297,9 +289,10 @@ function findFocusedSessionShort() {
 // into the SessionsTable component. Both components now receive
 // clipPaths + the palette size via deps rather than closing over a
 // renderer-module global.
+// EX7e — isClipFile wrapper removed: sole caller (updateScrubberMode)
+// moved into AudioPlayer; component reads clipPaths.isClipFile directly.
 const _paths = window.TT_CLIP_PATHS;
 const extractSessionShort = _paths.extractSessionShort;
-const isClipFile = _paths.isClipFile;
 
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away
@@ -312,7 +305,7 @@ function scheduleAutoDelete(p, _wasManual = false) {
   const delay = Math.max(3, Math.min(600, autoPruneSec)) * 1000;
   const t = setTimeout(async () => {
     deleteTimers.delete(p);
-    if (currentPath === p) return;
+    if (audioPlayer.getCurrentPath() === p) return;
     playedPaths.delete(p);
     heardPaths.delete(p);
     queue = queue.filter(f => f.path !== p);
@@ -321,7 +314,7 @@ function scheduleAutoDelete(p, _wasManual = false) {
     // the user could have re-played the clip (priority re-queue, manual
     // click landing on a queue-updated event). Re-verify the path really
     // isn't the current one before the file is unlinked on disk.
-    if (currentPath === p) return;
+    if (audioPlayer.getCurrentPath() === p) return;
     try { await window.api.deleteFile(p); } catch {}
   }, delay);
   deleteTimers.set(p, t);
@@ -336,7 +329,7 @@ function setAutoPruneEnabled(on) {
   } else {
     // Schedule deletes for any already-played clips (not currently playing).
     for (const f of queue) {
-      if (f.path !== currentPath && playedPaths.has(f.path)) {
+      if (f.path !== audioPlayer.getCurrentPath() && playedPaths.has(f.path)) {
         scheduleAutoDelete(f.path, heardPaths.has(f.path));
       }
     }
@@ -361,9 +354,6 @@ function fileUrl(p) {
   return 'file:///' + p.replace(/\\/g, '/');
 }
 
-function isAudioIdle() {
-  return !audio.src || audio.ended || (audio.paused && audio.currentTime === 0);
-}
 
 // renderDots is called from ~15 sites -- queue-updated events, every
 // play/delete/mute/focus/index change, manual click, priority shift,
@@ -388,10 +378,43 @@ const dotStrip = new window.TT_DOT_STRIP({
 });
 dotStrip.mount(dotsEl);
 
+// EX7e — all audio-surface code (playPath, play/pause/ended/error/
+// stalled/waiting/playing/canplay/seeking/timeupdate/loadedmetadata
+// handlers, scrubber rAF + mascot + verb cloud, scrub direction,
+// stall recovery, device-change rebinding, pause tone, play/back10/
+// fwd10 button handlers) extracted into app/lib/audio-player.js.
+// currentPath / currentIsManual / currentIsUserClick / userScrubbing
+// that used to live as renderer module globals are now instance state
+// inside the component. External readers go through getCurrentPath()
+// / isIdle() / isUserScrubbing() accessors.
+const audioPlayer = new window.TT_AUDIO_PLAYER({
+  audio, playPauseBtn, playIcon, pauseIcon, back10Btn, fwd10Btn,
+  scrubber, scrubberWrap, scrubberMascot, scrubberJarvis, timeEl,
+  getPlaybackSpeed: () => currentPlaybackSpeed,
+  getAutoContinueAfterClick: () => autoContinueAfterClick,
+  getQueue: () => queue,
+  getHeardPaths: () => heardPaths,
+  markPlayed: (p) => { playedPaths.add(p); },
+  markHeard: (p) => { heardPaths.add(p); },
+  removePending: (p) => { pendingQueue = pendingQueue.filter((x) => x !== p); },
+  fmt,
+  fileUrl,
+  isPathSessionMuted,
+  isPathSessionStale,
+  clipPaths: window.TT_CLIP_PATHS,
+  randomVerb,
+  setDynamicStyle,
+  onPlayStart: (p) => cancelAutoDelete(p),
+  onClipEnded: (p, { manual }) => scheduleAutoDelete(p, manual),
+  onPlayNextPending: () => playNextPending(),
+  onRenderDots: () => renderDots(),
+});
+audioPlayer.mount();
+
 function renderDots() {
   dotStrip.update({
     queue,
-    currentPath,
+    currentPath: audioPlayer.getCurrentPath(),
     heardPaths,
     sessionAssignments,
     synthInProgress,
@@ -399,34 +422,17 @@ function renderDots() {
 }
 
 function playPath(p, manual = false, userClick = false) {
-  const idx = queue.findIndex(f => f.path === p);
-  if (idx < 0) return false;
-  cancelAutoDelete(p);
-  currentPath = p;
-  currentIsManual = manual;
-  currentIsUserClick = userClick;
-  audio.src = fileUrl(p);
-  audio.currentTime = 0;
-  audio.playbackRate = currentPlaybackSpeed;
-  audio.play().catch(() => {});
-  playedPaths.add(p);
-  if (manual) heardPaths.add(p);
-  pendingQueue = pendingQueue.filter(x => x !== p);
-  renderDots();
-  updateScrubberMode();
-  return true;
+  return audioPlayer.playPath(p, manual, userClick);
 }
 
 function userPlay(p) {
-  playPath(p, true, true);
+  audioPlayer.playPath(p, true, true);
 }
 
 async function deleteDot(p) {
   cancelAutoDelete(p);
-  if (currentPath === p) {
-    audio.pause();
-    audio.src = '';
-    currentPath = null;
+  if (audioPlayer.getCurrentPath() === p) {
+    audioPlayer.abort();
   }
   pendingQueue = pendingQueue.filter(x => x !== p);
   playedPaths.delete(p);
@@ -503,7 +509,7 @@ async function clearAllPlayed() {
     _finaliseClear();
   }
 
-  const toDelete = queue.filter((f) => heardPaths.has(f.path) && f.path !== currentPath);
+  const toDelete = queue.filter((f) => heardPaths.has(f.path) && f.path !== audioPlayer.getCurrentPath());
   if (toDelete.length === 0) return;
 
   const entries = toDelete.map((f) => ({
@@ -614,7 +620,7 @@ async function initialLoad() {
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
   }
   renderDots();
-  if (isAudioIdle()) {
+  if (audioPlayer.isIdle()) {
     playNextPending();
   }
 }
@@ -645,17 +651,14 @@ window.api.onQueueUpdated((payload) => {
   if (hasVisibleArrival) bumpActivity();
   // If the user just muted the session of the currently-playing clip, stop.
   // Let the normal resume/ended flow pick up the next unmuted one.
-  if (currentPath && isPathSessionMuted(currentPath)) {
-    audio.pause();
-    audio.src = '';
-    const wasPlaying = currentPath;
-    currentPath = null;
-    currentIsManual = false;
-    playedPaths.delete(wasPlaying);
+  const cur = audioPlayer.getCurrentPath();
+  if (cur && isPathSessionMuted(cur)) {
+    audioPlayer.abort();
+    playedPaths.delete(cur);
   }
   renderDots();
 
-  if (isAudioIdle()) {
+  if (audioPlayer.isIdle()) {
     playNextPending();
   }
 });
@@ -677,383 +680,14 @@ window.api.onPriorityPlay((paths) => {
     pendingQueue = pendingQueue.filter(x => x !== p);
     if (!priorityQueue.includes(p)) priorityQueue.push(p);
   }
-  if (currentPath && !currentIsManual) {
-    audio.pause();
-    audio.src = '';
-    const wasPlaying = currentPath;
-    currentPath = null;
-    currentIsManual = false;
-    playedPaths.delete(wasPlaying);
-  }
+  const aborted = audioPlayer.abortIfAutoPlayed();
+  if (aborted) playedPaths.delete(aborted);
   renderDots();
-  if (isAudioIdle()) playNextPending();
+  if (audioPlayer.isIdle()) playNextPending();
 });
 
-playPauseBtn.addEventListener('click', () => {
-  if (!audio.src) {
-    const unheard = queue.filter(f => !heardPaths.has(f.path)).sort((a, b) => a.mtime - b.mtime);
-    const next = unheard[0] || queue[0];
-    if (next) playPath(next.path, true);
-    return;
-  }
-  if (audio.paused) audio.play().catch(() => {});
-  else audio.pause();
-});
 
-back10Btn.addEventListener('click', () => {
-  audio.currentTime = Math.max(0, audio.currentTime - 10);
-});
-
-fwd10Btn.addEventListener('click', () => {
-  if (isFinite(audio.duration)) {
-    audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
-  }
-});
-
-// D2-9 — `.hidden` class toggle replaces the inline `style.display = 'none'`
-// writes so the CSP style-src directive doesn't need 'unsafe-inline'.
-function setPlayPauseIcons(isPlaying) {
-  playIcon.classList.toggle('hidden', isPlaying);
-  pauseIcon.classList.toggle('hidden', !isPlaying);
-}
-audio.addEventListener('play',  () => setPlayPauseIcons(true));
-audio.addEventListener('pause', () => setPlayPauseIcons(false));
-audio.addEventListener('ended', () => {
-  setPlayPauseIcons(false);
-  const justPlayed = currentPath;
-  const wasManual = currentIsManual;
-  const wasUserClick = currentIsUserClick;
-  currentPath = null;
-  currentIsManual = false;
-  currentIsUserClick = false;
-  renderDots();
-  updateScrubberMode();
-  // Both auto-played and manually-played clips get auto-deleted now — only
-  // the delay differs (30 s auto vs 90 s manual). Previously auto-played
-  // clips accumulated indefinitely, flooding the toolbar.
-  if (justPlayed) scheduleAutoDelete(justPlayed, wasManual);
-
-  // v0.3.6 — user-click continuation. When a clip started by a user
-  // click ends, and the `auto_continue_after_click` setting is on
-  // (default), play the next clip strictly forward in time (mtime >
-  // justPlayed's) regardless of played state. Chains with userClick=true
-  // so the continuation keeps honouring the setting for the whole run.
-  //
-  // Why not go through playNextPending's fallback branch? Fallback
-  // filters out played clips — so after a full queue has been heard
-  // once, fallback finds nothing and the continuation dies on the
-  // first clip. Users then face a "click exercise" to re-listen.
-  // This branch reads "forward in time" instead of "any unplayed",
-  // so State C (everything already heard, click one to replay) works.
-  //
-  // State B (interrupt during auto-play by clicking mid-queue) also
-  // routes here: click #3 mid-#1 → #3 plays → ended fires with
-  // wasUserClick=true → next forward is #4 → plays → ...→ #N. Clips
-  // #1/#2 stay unplayed; the user explicitly chose to start from #3.
-  // Cleaner than the pre-v0.3.6 1→3→2→4 reshuffle.
-  //
-  // Priority (hey-jarvis) clips set currentIsManual=true but
-  // userClick=false, so they always fall through to playNextPending
-  // to preserve the existing priority-drain-then-resume behaviour.
-  if (wasUserClick && autoContinueAfterClick) {
-    const justPlayedClip = queue.find(f => f.path === justPlayed);
-    if (justPlayedClip) {
-      const next = queue
-        .filter(f =>
-          f.mtime > justPlayedClip.mtime &&
-          !isPathSessionMuted(f.path) &&
-          !isPathSessionStale(f.path)
-        )
-        .sort((a, b) => a.mtime - b.mtime)[0];
-      if (next) {
-        playPath(next.path, true, true);
-        return;
-      }
-      // No more forward clips — chain complete, stop cleanly.
-      return;
-    }
-  }
-
-  // Always call playNextPending: it picks from priority → pending → fallback
-  // scan of unplayed clips still sitting in queue. The old gate skipped the
-  // fallback entirely when both explicit queues were empty, leaving unplayed
-  // arrivals stranded after a manually-started clip ended.
-  playNextPending();
-});
-
-audio.addEventListener('error', () => {
-  setPlayPauseIcons(false);
-  currentPath = null;
-  currentIsManual = false;
-  renderDots();
-  updateScrubberMode();
-  playNextPending();
-});
-
-// Audit R21: the browser fires `stalled` when the media element hasn't
-// received data for a while, and `waiting` when readyState drops below
-// HAVE_FUTURE_DATA. Under normal desktop conditions (local .mp3 files)
-// these are rare -- but they DO happen when the clip file is being
-// written on a slow disk, or when a USB audio device is reconnecting,
-// or when antivirus software briefly blocks reads. Without these
-// handlers the toolbar just stops mid-clip with no visible recovery.
-//
-// Strategy: wait ~3s for stall to resolve on its own (file might be
-// mid-flush); if we're still stuck, skip to the next clip so the user
-// isn't stranded.
-let _stallRecoveryTimer = null;
-function armStallRecovery(_reason) {
-  if (_stallRecoveryTimer) return;  // already armed; one recovery per hang
-  _stallRecoveryTimer = setTimeout(() => {
-    _stallRecoveryTimer = null;
-    // Only act if we're still playing the same clip and haven't made
-    // forward progress (currentTime hasn't advanced since we armed).
-    if (audio.src && audio.paused === false && audio.readyState < 3) {
-      const p = currentPath;
-      try { audio.pause(); } catch {}
-      audio.src = '';
-      currentPath = null;
-      currentIsManual = false;
-      if (p) playedPaths.add(p);      // don't loop on the same broken clip
-      renderDots();
-      playNextPending();
-    }
-  }, 3000);
-}
-function cancelStallRecovery() {
-  if (_stallRecoveryTimer) { clearTimeout(_stallRecoveryTimer); _stallRecoveryTimer = null; }
-}
-audio.addEventListener('stalled', () => armStallRecovery('stalled'));
-audio.addEventListener('waiting', () => armStallRecovery('waiting'));
-audio.addEventListener('playing', cancelStallRecovery);
-audio.addEventListener('canplay', cancelStallRecovery);
-audio.addEventListener('ended', cancelStallRecovery);
-
-// Audit R30: devicechange fires when the user plugs / unplugs headphones,
-// switches default audio device, starts a Bluetooth session, etc. The
-// <audio> element binds to whatever output was default at play() time --
-// so if we're mid-clip when the device changes, the audio can either keep
-// playing out of a now-hidden endpoint OR go silent. Re-bind by nudging
-// currentTime; Chromium re-picks the default output on the next frame.
-try {
-  if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
-    navigator.mediaDevices.addEventListener('devicechange', () => {
-      if (!audio.src || audio.ended) return;
-      const wasPaused = audio.paused;
-      const ct = audio.currentTime;
-      try {
-        audio.currentTime = Math.max(0, ct - 0.001);
-        if (!wasPaused) audio.play().catch(() => {});
-      } catch {}
-    });
-  }
-} catch {}
-
-// Scrubber mascot positioning + state. The native <input type="range">
-// thumb is transparent; the visible mascot is an <svg> overlay we
-// position by setting its .style.left based on scrubber.value. Native
-// slider thumbs are positioned so their CENTRE travels from
-// (rail_left + thumb_half_width) to (rail_right - thumb_half_width), so
-// we match that math or the mascot drifts off the rail at the ends.
-const MASCOT_W = 20;
-function positionScrubberMascot() {
-  if (!scrubberMascot) return;
-  const pct = Number(scrubber.value) / Number(scrubber.max || 1000);
-  const rail = scrubber.getBoundingClientRect();
-  const wrap = scrubberWrap.getBoundingClientRect();
-  const usable = Math.max(0, rail.width - MASCOT_W);
-  const xInRail = (MASCOT_W / 2) + pct * usable;
-  const leftPx = (rail.left - wrap.left) + xInRail;
-  setDynamicStyle('#scrubberMascot', `left: ${leftPx}px;`);
-  // Keep the Jarvis badge on the same rail position -- one of the two is
-  // always hidden by the .jarvis-mode class, so positioning both is cheap.
-  if (scrubberJarvis) setDynamicStyle('#scrubberJarvis', `left: ${leftPx}px;`);
-}
-
-// The mascot is intentionally reserved for Claude Code responses. When the
-// currently-playing audio originated from a highlight-to-speak trigger
-// ("hey jarvis" or Ctrl+Shift+S) -- identified by the `-clip-` filename
-// segment -- swap the mascot for a plain "J" badge so the mascot's visual
-// identity stays tied to Claude-sourced content. Called whenever currentPath
-// changes (playPath, onPriorityPlay, clip-end, error).
-function updateScrubberMode() {
-  if (!scrubberWrap) return;
-  const name = currentPath ? currentPath.split(/[\\/]/).pop() : '';
-  const jarvis = !!name && isClipFile(name);
-  scrubberWrap.classList.toggle('jarvis-mode', jarvis);
-}
-
-// Scrubber + time-readout smooth updater. Built-in `timeupdate` only
-// fires ~4×/sec → the mascot visibly jumped in 250ms chunks. Drive it
-// from requestAnimationFrame for buttery motion. rAF auto-pauses on
-// hidden windows (no CPU wasted when the bar isn't visible).
-let scrubberRafId = null;
-function syncScrubberFromAudio() {
-  if (!userScrubbing && isFinite(audio.duration) && audio.duration > 0) {
-    scrubber.value = Math.round((audio.currentTime / audio.duration) * 1000);
-    timeEl.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
-  } else if (!userScrubbing) {
-    timeEl.textContent = `${fmt(audio.currentTime)} / 0:00`;
-  }
-  positionScrubberMascot();
-}
-// Trail emission — every 850–1500 ms (jittered) while audio is playing
-// forward, drop a random spinner verb just behind the mascot. The word
-// is absolutely positioned inside scrubberWrap; once placed, it stays
-// put while the mascot continues walking forward, so the words look like
-// a trail he's leaving behind. Auto-removed on animationend.
-let nextVerbEmitAt = 0;
-function emitSpinnerVerbCloud(now) {
-  if (!scrubberWrap || !scrubberMascot) return;
-  if (audio.paused || audio.ended || userScrubbing) return;
-  if (now < nextVerbEmitAt) return;
-  // Compute mascot's current x relative to the wrap (same math as
-  // positionScrubberMascot) so the cloud spawns directly above his head.
-  const rail = scrubber.getBoundingClientRect();
-  const wrap = scrubberWrap.getBoundingClientRect();
-  if (wrap.width <= 0) return;
-  const pct = Number(scrubber.value) / Number(scrubber.max || 1000);
-  const usable = Math.max(0, rail.width - MASCOT_W);
-  const mascotX = (rail.left - wrap.left) + (MASCOT_W / 2) + pct * usable;
-
-  const word = document.createElement('span');
-  word.className = 'scrubber-trail-word';
-  word.textContent = randomVerb();
-  // Anchor the cloud's x at the mascot's centre. The CSS animation's
-  // translate(-50%, …) centres the text on that point, then drifts it
-  // upward with a gentle left-right sway so it reads as a thought-
-  // cloud floating off his head, not a speech bubble pinned behind him.
-  // D2-9 — each word gets a unique id + a rule in the Constructable
-  // Stylesheet; the animationend handler removes both the element and
-  // the rule so the adopted sheet stays bounded.
-  const wordId = 'sp-w-' + (++spinnerWordCounter);
-  word.id = wordId;
-  setDynamicStyle(`#${wordId}`, `left: ${mascotX}px;`);
-  scrubberWrap.appendChild(word);
-  word.addEventListener('animationend', () => {
-    word.remove();
-    setDynamicStyle(`#${wordId}`, null);
-  }, { once: true });
-
-  nextVerbEmitAt = now + 850 + Math.random() * 650;
-}
-
-function scrubberTick() {
-  syncScrubberFromAudio();
-  emitSpinnerVerbCloud(performance.now());
-  if (!audio.paused && !audio.ended) {
-    scrubberRafId = requestAnimationFrame(scrubberTick);
-  } else {
-    scrubberRafId = null;
-  }
-}
-function startScrubberRaf() {
-  if (scrubberRafId === null) scrubberRafId = requestAnimationFrame(scrubberTick);
-}
-audio.addEventListener('play', () => {
-  scrubberWrap && scrubberWrap.classList.add('walking');
-  startScrubberRaf();
-});
-audio.addEventListener('playing', () => {
-  scrubberWrap && scrubberWrap.classList.add('walking');
-  startScrubberRaf();
-});
-audio.addEventListener('pause', () => {
-  scrubberWrap && scrubberWrap.classList.remove('walking');
-  syncScrubberFromAudio();
-});
-audio.addEventListener('ended', () => {
-  scrubberWrap && scrubberWrap.classList.remove('walking');
-  syncScrubberFromAudio();
-});
-audio.addEventListener('seeking', syncScrubberFromAudio);
-audio.addEventListener('timeupdate', () => {
-  if (scrubberRafId === null) syncScrubberFromAudio();
-});
-audio.addEventListener('loadedmetadata', () => {
-  timeEl.textContent = `0:00 / ${fmt(audio.duration)}`;
-});
-// Re-position on window resize (bar resizes when settings panel opens).
-window.addEventListener('resize', positionScrubberMascot);
-// Initial position on load.
-positionScrubberMascot();
-
-// ----- Drag-direction detection ------------------------------------------
-// While userScrubbing, track whether .value is increasing or decreasing.
-// Set .scrubbing-forward / .scrubbing-backward on the wrap so CSS can
-// sweep the legs left/right (and 180°-flip the whole mascot when going
-// backward, smile → frown = angry). Classes clear on mouseup or after a
-// 160 ms idle with no further input, so he doesn't get stuck frowning.
-let lastScrubberValue = 0;
-let scrubDirTimer = null;
-function clearScrubDir() {
-  scrubberWrap && scrubberWrap.classList.remove('scrubbing', 'scrubbing-forward', 'scrubbing-backward');
-  scrubDirTimer = null;
-}
-function setScrubDir(dir) {
-  if (!scrubberWrap) return;
-  scrubberWrap.classList.add('scrubbing');
-  if (dir > 0) {
-    scrubberWrap.classList.add('scrubbing-forward');
-    scrubberWrap.classList.remove('scrubbing-backward');
-  } else if (dir < 0) {
-    scrubberWrap.classList.add('scrubbing-backward');
-    scrubberWrap.classList.remove('scrubbing-forward');
-  }
-  if (scrubDirTimer) clearTimeout(scrubDirTimer);
-  scrubDirTimer = setTimeout(clearScrubDir, 160);
-}
-
-scrubber.addEventListener('mousedown', () => {
-  userScrubbing = true;
-  lastScrubberValue = Number(scrubber.value);
-});
-scrubber.addEventListener('mouseup', () => {
-  if (isFinite(audio.duration)) {
-    audio.currentTime = (scrubber.value / 1000) * audio.duration;
-  }
-  userScrubbing = false;
-  clearScrubDir();
-  positionScrubberMascot();
-});
-scrubber.addEventListener('input', () => {
-  const newVal = Number(scrubber.value);
-  const dir = newVal - lastScrubberValue;
-  if (dir !== 0) setScrubDir(dir);
-  lastScrubberValue = newVal;
-  if (isFinite(audio.duration)) {
-    const t = (scrubber.value / 1000) * audio.duration;
-    timeEl.textContent = `${fmt(t)} / ${fmt(audio.duration)}`;
-  }
-  positionScrubberMascot();
-});
-// Keyboard arrows fire 'change' not 'input' on some Chromium builds —
-// catch both so keyboard seeking also flips the mascot correctly.
-scrubber.addEventListener('change', () => {
-  positionScrubberMascot();
-});
-
-function playToggleTone(on) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const play = (freq, start, duration) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime + start);
-      gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + start + 0.01);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + duration);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + start);
-      osc.stop(ctx.currentTime + start + duration);
-    };
-    if (on) { play(660, 0, 0.12); play(880, 0.1, 0.14); }
-    else { play(880, 0, 0.12); play(440, 0.1, 0.16); }
-    setTimeout(() => ctx.close(), 500);
-  } catch {}
-}
-window.api.onListeningState((on) => playToggleTone(on));
+window.api.onListeningState((on) => audioPlayer.playToggleTone(on));
 
 closeBtn.addEventListener('click', () => window.api.hideWindow());
 clearPlayedBtn.addEventListener('click', () => clearAllPlayed());

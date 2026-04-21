@@ -99,6 +99,7 @@ module.exports = [
       'app/lib/dot-strip.js',
       'app/lib/sessions-table.js',
       'app/lib/settings-form.js',
+      'app/lib/audio-player.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

@@ -2089,13 +2089,15 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
   });
 
   it('R5.2 G13: scheduleAutoDelete re-checks currentPath before deleteFile', () => {
+    // EX7e — currentPath now lives inside AudioPlayer; readers call
+    // audioPlayer.getCurrentPath(). Still need TWO guards: one before
+    // renderDots, one before the IPC unlink.
     const src = fs.readFileSync(rendererPath, 'utf8');
     const block = src.match(/function scheduleAutoDelete[\s\S]{0,900}\n\}/);
     if (!block) throw new Error('scheduleAutoDelete block not found');
-    // Need TWO currentPath guards: one before renderDots, one before IPC.
-    const count = (block[0].match(/if\s*\(\s*currentPath\s*===\s*p\s*\)\s*return/g) || []).length;
+    const count = (block[0].match(/audioPlayer\.getCurrentPath\(\)\s*===\s*p/g) || []).length;
     if (count < 2) {
-      throw new Error(`scheduleAutoDelete should re-check currentPath after renderDots; found ${count} guard(s)`);
+      throw new Error(`scheduleAutoDelete should re-check audioPlayer.getCurrentPath() after renderDots; found ${count} guard(s)`);
     }
   });
 
@@ -2666,17 +2668,30 @@ describe('AUTO-CONTINUE AFTER CLICK (v0.3.6 renderer guard)', () => {
   });
 
   it('playPath signature carries a userClick parameter', () => {
-    if (!/function\s+playPath\s*\([^)]*userClick[^)]*\)/.test(rendererSrc)) {
+    // EX7e — playPath is a thin wrapper in renderer.js that delegates
+    // to audioPlayer.playPath(p, manual, userClick); the real signature
+    // also lives in audio-player.js. Accept either source.
+    const audioPlayerSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'), 'utf8'
+    );
+    if (!/function\s+playPath\s*\([^)]*userClick[^)]*\)/.test(rendererSrc)
+        && !/playPath\s*\([^)]*userClick[^)]*\)/.test(audioPlayerSrc)) {
       throw new Error('playPath must accept a userClick parameter');
     }
   });
 
   it('audio.ended branches on wasUserClick && autoContinueAfterClick', () => {
-    if (!/wasUserClick\s*&&\s*autoContinueAfterClick/.test(rendererSrc)) {
-      throw new Error('audio.ended handler must gate the continuation branch on both wasUserClick and autoContinueAfterClick');
+    // EX7e — audio.ended handler moved into AudioPlayer. The component
+    // gates via this._getAutoContinueAfterClick() (renderer passes
+    // `() => autoContinueAfterClick` as a dep). Inside the handler the
+    // local vars are `wasUserClick` and the getter call.
+    const audioPlayerSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'), 'utf8'
+    );
+    if (!/wasUserClick\s*&&\s*this\._getAutoContinueAfterClick\(\)/.test(audioPlayerSrc)) {
+      throw new Error('audio-player.js ended handler must gate continuation on wasUserClick && autoContinueAfterClick getter');
     }
-    // Continuation must select next clip by mtime strictly greater than justPlayed's
-    if (!/f\.mtime\s*>\s*justPlayedClip\.mtime/.test(rendererSrc)) {
+    if (!/f\.mtime\s*>\s*justPlayedClip\.mtime/.test(audioPlayerSrc)) {
       throw new Error('continuation branch must pick the next clip with mtime > justPlayed (strictly forward in time)');
     }
   });
@@ -3699,6 +3714,12 @@ describe('EX7c — DotStrip', () => {
       add: (c) => el._classes.add(c),
       remove: (c) => el._classes.delete(c),
       contains: (c) => el._classes.has(c),
+      toggle: (c, force) => {
+        const want = force === undefined ? !el._classes.has(c) : !!force;
+        if (want) el._classes.add(c);
+        else el._classes.delete(c);
+        return want;
+      },
     };
     el.setAttribute = (k, v) => { el._attrs[k] = v; };
     el.getAttribute = (k) => el._attrs[k];
@@ -4049,6 +4070,12 @@ describe('EX7d-1 — SessionsTable', () => {
       add: (c) => el._classes.add(c),
       remove: (c) => el._classes.delete(c),
       contains: (c) => el._classes.has(c),
+      toggle: (c, force) => {
+        const want = force === undefined ? !el._classes.has(c) : !!force;
+        if (want) el._classes.add(c);
+        else el._classes.delete(c);
+        return want;
+      },
     };
     // className setter splits on whitespace and populates _classes so
     // tests that query via classList.has() work against code that
@@ -4526,6 +4553,301 @@ describe('EX7d-2 — SettingsForm', () => {
   // Restore getElementById + body (other tests may rely on their absence).
   global.document.getElementById = origGetById;
   global.document.body = origBody;
+});
+
+describe('EX7e — AudioPlayer', () => {
+  // Fake <audio> that implements just enough for AudioPlayer: src/play/
+  // pause/currentTime/playbackRate/ended/duration/readyState/
+  // addEventListener/removeEventListener. Event listeners record so
+  // tests can fire specific events by name.
+  function makeFakeAudio() {
+    const a = {
+      src: '',
+      currentTime: 0,
+      duration: NaN,
+      playbackRate: 1,
+      paused: true,
+      ended: false,
+      readyState: 0,
+      _listeners: new Map(),
+      play: () => Promise.resolve().then(() => { a.paused = false; }),
+      pause: () => { a.paused = true; },
+      addEventListener(ev, fn) {
+        if (!a._listeners.has(ev)) a._listeners.set(ev, new Set());
+        a._listeners.get(ev).add(fn);
+      },
+      removeEventListener(ev, fn) {
+        if (a._listeners.has(ev)) a._listeners.get(ev).delete(fn);
+      },
+      fire(ev) { if (a._listeners.has(ev)) for (const fn of a._listeners.get(ev)) fn({}); },
+    };
+    return a;
+  }
+
+  // Fake scrubber range-input with getBoundingClientRect.
+  function makeFakeRange(max = 1000) {
+    const r = global.document.createElement('input');
+    r.max = String(max);
+    r.value = '0';
+    r.getBoundingClientRect = () => ({ left: 0, width: 200, top: 0, bottom: 10, right: 200 });
+    return r;
+  }
+
+  function makeFakeWrap() {
+    const w = global.document.createElement('div');
+    w.getBoundingClientRect = () => ({ left: 0, width: 200, top: 0, bottom: 10, right: 200 });
+    return w;
+  }
+
+  const { AudioPlayer } = require(path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'));
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  function makePlayer(overrides = {}) {
+    const audio = overrides.audio || makeFakeAudio();
+    const calls = {
+      played: [], heard: [], removedPending: [],
+      playStart: [], clipEnded: [], playNext: 0, renderDots: 0,
+    };
+    const queue = overrides.queue || [];
+    const player = new AudioPlayer({
+      audio,
+      playPauseBtn: global.document.createElement('button'),
+      playIcon: global.document.createElement('span'),
+      pauseIcon: global.document.createElement('span'),
+      back10Btn: global.document.createElement('button'),
+      fwd10Btn: global.document.createElement('button'),
+      scrubber: makeFakeRange(),
+      scrubberWrap: makeFakeWrap(),
+      scrubberMascot: global.document.createElement('div'),
+      scrubberJarvis: global.document.createElement('div'),
+      timeEl: global.document.createElement('span'),
+      getPlaybackSpeed: () => overrides.playbackSpeed || 1.25,
+      getAutoContinueAfterClick: () => overrides.autoContinue !== false,
+      getQueue: () => queue,
+      getHeardPaths: () => overrides.heardPaths || new Set(),
+      markPlayed: (p) => calls.played.push(p),
+      markHeard: (p) => calls.heard.push(p),
+      removePending: (p) => calls.removedPending.push(p),
+      fmt: (s) => `${Math.floor(s || 0)}s`,
+      fileUrl: (p) => `file://${p}`,
+      isPathSessionMuted: overrides.isPathSessionMuted || (() => false),
+      isPathSessionStale: overrides.isPathSessionStale || (() => false),
+      clipPaths,
+      randomVerb: () => 'testing',
+      setDynamicStyle: () => {},
+      onPlayStart: (p, m) => calls.playStart.push([p, m]),
+      onClipEnded: (p, m) => calls.clipEnded.push([p, m]),
+      onPlayNextPending: () => { calls.playNext++; },
+      onRenderDots: () => { calls.renderDots++; },
+      audioContextFactory: overrides.audioContextFactory,
+    });
+    return { player, audio, calls, queue };
+  }
+
+  it('isIdle() is true when src is empty', () => {
+    const { player } = makePlayer();
+    player.mount();
+    assertEqual(player.isIdle(), true);
+    player.unmount();
+  });
+
+  it('isIdle() is false when audio is playing', () => {
+    const audio = makeFakeAudio();
+    audio.src = 'x';
+    audio.paused = false;
+    const { player } = makePlayer({ audio });
+    player.mount();
+    assertEqual(player.isIdle(), false);
+    player.unmount();
+  });
+
+  it('playPath returns false when path not in queue', () => {
+    const { player } = makePlayer({ queue: [] });
+    player.mount();
+    assertEqual(player.playPath('/missing.mp3'), false);
+    player.unmount();
+  });
+
+  it('playPath(p, manual=true, userClick=true) sets state + fires callbacks', () => {
+    const { player, audio, calls } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    assertEqual(player.playPath('/a.mp3', true, true), true);
+    assertEqual(player.getCurrentPath(), '/a.mp3');
+    assertEqual(audio.src, 'file:///a.mp3');
+    assertEqual(audio.playbackRate, 1.25);
+    assertEqual(calls.played, ['/a.mp3']);
+    assertEqual(calls.heard, ['/a.mp3']);        // manual=true → heard
+    assertEqual(calls.removedPending, ['/a.mp3']);
+    assertEqual(calls.playStart.length, 1);      // cancelAutoDelete hook
+    assertEqual(calls.renderDots, 1);
+    player.unmount();
+  });
+
+  it('playPath(p) with manual=false does not mark heard', () => {
+    const { player, calls } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3');
+    assertEqual(calls.played, ['/a.mp3']);
+    assertEqual(calls.heard, []);                // not marked heard
+    player.unmount();
+  });
+
+  it('abort() clears currentPath + pauses + empties src', () => {
+    const { player, audio } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3', true);
+    player.abort();
+    assertEqual(player.getCurrentPath(), null);
+    assertEqual(audio.src, '');
+    player.unmount();
+  });
+
+  it('abortIfAutoPlayed returns path when auto-played, null when manual', () => {
+    const { player } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    // auto-played: manual=false
+    player.playPath('/a.mp3', false);
+    const aborted = player.abortIfAutoPlayed();
+    assertEqual(aborted, '/a.mp3');
+    assertEqual(player.getCurrentPath(), null);
+
+    // manual-played: abortIfAutoPlayed should leave it alone.
+    player.playPath('/a.mp3', true);
+    const aborted2 = player.abortIfAutoPlayed();
+    assertEqual(aborted2, null);
+    assertEqual(player.getCurrentPath(), '/a.mp3');
+    player.unmount();
+  });
+
+  it('ended handler clears state, schedules auto-delete, calls playNextPending', () => {
+    const { player, audio, calls } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3', false, false);   // auto-played, not user-click
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), null);
+    assertEqual(calls.clipEnded.length, 1);
+    assertEqual(calls.clipEnded[0][0], '/a.mp3');
+    assertEqual(calls.clipEnded[0][1].manual, false);
+    assertEqual(calls.playNext, 1);
+    player.unmount();
+  });
+
+  it('ended handler with user-click + auto-continue chains to next forward clip', () => {
+    const queue = [
+      { path: '/a.mp3', mtime: 1 },
+      { path: '/b.mp3', mtime: 2 },
+      { path: '/c.mp3', mtime: 3 },
+    ];
+    const { player, audio, calls } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', true, true);  // user-clicked
+    calls.playNext = 0;                      // reset counter
+    audio.fire('ended');
+    // Should chain to /b.mp3 (next mtime-greater clip), NOT call playNextPending.
+    assertEqual(player.getCurrentPath(), '/b.mp3');
+    assertEqual(calls.playNext, 0);
+    player.unmount();
+  });
+
+  it('ended handler with user-click but autoContinue=false falls through', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }, { path: '/b.mp3', mtime: 2 }];
+    const { player, audio, calls } = makePlayer({ queue, autoContinue: false });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    calls.playNext = 0;
+    audio.fire('ended');
+    // autoContinue off → falls through to playNextPending, does not chain.
+    assertEqual(calls.playNext, 1);
+    player.unmount();
+  });
+
+  it('error handler clears state + calls playNextPending', () => {
+    const { player, audio, calls } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3', false);
+    calls.playNext = 0;
+    audio.fire('error');
+    assertEqual(player.getCurrentPath(), null);
+    assertEqual(calls.playNext, 1);
+    player.unmount();
+  });
+
+  it('stalled fires arm; playing/canplay/ended each cancel', () => {
+    const { player, audio } = makePlayer();
+    player.mount();
+    audio.fire('stalled');
+    assertTruthy(player._stallRecoveryTimer, 'stall timer should be armed');
+    audio.fire('canplay');
+    assertFalsy(player._stallRecoveryTimer, 'stall timer should be cancelled');
+    player.unmount();
+  });
+
+  it('play/pause listeners flip icon visibility', () => {
+    const { player, audio } = makePlayer();
+    player.mount();
+    audio.fire('play');
+    assertEqual(player._playIcon._classes.has('hidden'), true);
+    assertEqual(player._pauseIcon._classes.has('hidden'), false);
+    audio.fire('pause');
+    assertEqual(player._playIcon._classes.has('hidden'), false);
+    assertEqual(player._pauseIcon._classes.has('hidden'), true);
+    player.unmount();
+  });
+
+  it('playToggleTone creates + closes an AudioContext', () => {
+    const created = [];
+    const closed = [];
+    const mockCtx = () => {
+      const ctx = {
+        currentTime: 0,
+        destination: {},
+        createOscillator: () => ({
+          type: '', frequency: { value: 0 },
+          connect(g) { return g; },
+          start() {}, stop() {},
+        }),
+        createGain: () => ({
+          gain: {
+            setValueAtTime: () => {},
+            linearRampToValueAtTime: () => {},
+          },
+          connect(d) { return d; },
+        }),
+        close: () => closed.push(1),
+      };
+      created.push(ctx);
+      return ctx;
+    };
+    const { player } = makePlayer({ audioContextFactory: mockCtx });
+    player.mount();
+    player.playToggleTone(true);
+    assertEqual(created.length, 1);
+    player.playToggleTone(false);
+    assertEqual(created.length, 2);
+    player.unmount();
+  });
+
+  it('unmount cancels the scrubber rAF + stall timer + scrub-dir timer', () => {
+    const { player, audio } = makePlayer();
+    player.mount();
+    audio.fire('stalled');
+    assertTruthy(player._stallRecoveryTimer);
+    player.unmount();
+    assertFalsy(player._stallRecoveryTimer, 'stall timer cleared on unmount');
+    assertFalsy(player._scrubDirTimer, 'scrub-dir timer cleared on unmount');
+  });
 });
 
 describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
