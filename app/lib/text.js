@@ -53,20 +53,26 @@ function stripForTTS(text, includes) {
     t = t.replace(/```[\s\S]*?```/g, ' ');
   }
 
+  // GFM-balanced inline code: same number of backticks on each side.
+  // `(backticks+)(content)\1` handles both single `foo` and double
+  // `` `foo` `` correctly. Naive `([^\`]+)` mis-paired adjacent unmatched
+  // backticks from different spans, swallowing prose between them.
+  // Newline exclusion prevents cross-line runaway.
+  const SHORTCUT_RE = /^\s*`?\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+/i;
   if (inc.inline_code) {
-    t = t.replace(/`([^`]+)`/g, '$1');
+    t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => content);
   } else {
-    // Keyboard shortcuts (`Ctrl+R`) survive the strip — they're UI
-    // instructions, not code noise. Silently dropping them turns
-    // "press `Ctrl+R` to reload" into "press to reload" which is worse
-    // than speaking the content. Later Ctrl+/Cmd+ translation reads
-    // them as "control R" / "command R".
-    t = t.replace(/`([^`]+)`/g, (_m, content) => (
-      /^\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+/i.test(content)
-        ? content
-        : ' '
+    // Keyboard shortcuts survive the strip regardless (UI instructions,
+    // not code noise). The optional `?` in SHORTCUT_RE tolerates the
+    // GFM double-backtick form where captured content includes inner
+    // backticks like " `Ctrl+R` " — still recognised as a shortcut.
+    t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => (
+      SHORTCUT_RE.test(content) ? content : ' '
     ));
   }
+  // Safety net: strip any surviving backtick characters (unmatched /
+  // unclosed / weird edge cases). They have no speakable meaning.
+  t = t.replace(/`/g, '');
 
   // Images: ![alt](url). Alt text optional per-toggle; URL always dropped.
   if (!inc.image_alt) t = t.replace(/!\[[^\]]*\]\([^)]+\)/g, ' ');
@@ -95,8 +101,14 @@ function stripForTTS(text, includes) {
   if (!inc.bullet_markers) {
     // Common UI bullet glyphs: "●⎿▶▸►○·◦▪■□▫"
     t = t.replace(/^\s*[\u25cf\u23bf\u25b6\u25b8\u25ba\u25cb\u00b7\u25e6\u25aa\u25a0\u25a1\u25ab]\s*/gm, '');
-    t = t.replace(/^\s*[-*+]\s+/gm, '');
-    t = t.replace(/^\s*\d+\.\s+/gm, '');
+    // Strip "- ", "* ", "+ ", "1. " markers AND add implicit period so
+    // each bullet reads as its own sentence. Without the period each
+    // multi-line bullet list flattens to one run-on sentence downstream.
+    t = t.replace(/^[ \t]*(?:[-*+]|\d+\.)[ \t]+(.+?)[ \t]*$/gm, (_m, content) => {
+      const c = content.trimEnd();
+      if (!c) return '';
+      return /[.!?:;]$/.test(c) ? c : c + '.';
+    });
   }
 
   // Always drop shell prompts ($  …), quote prefixes ( >  … ), and Claude

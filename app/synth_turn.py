@@ -336,13 +336,25 @@ def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
 # ---------------------------------------------------------------------------
 
 _CODE_FENCE_RE = re.compile(r'```[a-zA-Z0-9_+-]*\n?([\s\S]*?)```')
-_INLINE_CODE_RE = re.compile(r'`([^`]+)`')
+# Inline code: GFM-style balanced backtick runs. `(backticks+)(content)\1`
+# requires the closing run to have the same number of backticks as the
+# opening. This correctly parses both single `foo` and double `` `foo` ``
+# forms without the naive `\`([^\`]+)\`` regex's failure mode, where
+# adjacent unmatched backticks from different code spans got mis-paired
+# and content between them silently vanished. Newlines are excluded so
+# cross-line runaway matches can't eat whole bullet-list paragraphs.
+_INLINE_CODE_RE = re.compile(r'(`+)([^\n]+?)\1')
 # Keyboard shortcuts inside inline code (e.g. `Ctrl+R`) are user-facing UI
 # instructions, not code noise. They must survive the inline_code=False
 # strip so the listener actually hears "control R" — otherwise the prose
 # "hit `Ctrl+R` on the toolbar" silently collapses to "hit on the toolbar".
-# Matches common modifier names at content start.
-_KBD_SHORTCUT_RE = re.compile(r'^\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+', re.IGNORECASE)
+# The optional leading `\s*`?\s*` tolerates GFM double-backtick wrapping
+# (`` `Ctrl+R` ``) where the captured content starts with " `Ctrl+R` "
+# — we still want to recognise that as a shortcut.
+_KBD_SHORTCUT_RE = re.compile(
+    r'^\s*`?\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+',
+    re.IGNORECASE,
+)
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 _BULLET_MARKER_RE = re.compile(r'^\s*([-*+]|\d+\.)\s+', re.MULTILINE)
@@ -391,15 +403,23 @@ def sanitize(text: str, flags: dict) -> str:
     # backticked span, but keyboard shortcuts get preserved regardless —
     # they're UI instructions, not code content, and silently dropping
     # them turns "press `Ctrl+R` to reload" into "press to reload".
+    # With the GFM-balanced regex, group(2) is the content (group(1) is
+    # the backtick run count used as the backreference).
     if flags.get('inline_code', False):
-        t = _INLINE_CODE_RE.sub(lambda m: m.group(1), t)
+        t = _INLINE_CODE_RE.sub(lambda m: m.group(2), t)
     else:
         def _inline_code_repl(m: re.Match) -> str:
-            content = m.group(1)
+            content = m.group(2)
             if _KBD_SHORTCUT_RE.match(content):
                 return content
             return ''
         t = _INLINE_CODE_RE.sub(_inline_code_repl, t)
+
+    # Safety net: strip any surviving backtick characters. Unmatched
+    # backticks (GFM double-backtick edge cases, unclosed inline code,
+    # stray ticks in prose) have no speakable meaning and were
+    # otherwise read as literals or just sat as garbage in the output.
+    t = t.replace('`', '')
 
     # Images: alt text or strip entirely
     if flags.get('image_alt', True):  # noqa: SIM108
@@ -423,9 +443,27 @@ def sanitize(text: str, flags: dict) -> str:
         # Keep heading text but drop the # marks
         t = re.sub(r'^\s*#{1,6}\s*', '', t, flags=re.MULTILINE)
 
-    # Bullet markers
+    # Bullet markers. Stripping just the "- " prefix leaves each bullet's
+    # content on its own line but without sentence-ending punctuation —
+    # sentence_split treats single newlines as spaces, so a 5-bullet list
+    # flattens into one 500-char run-on sentence. Instead, capture the
+    # whole bullet line and emit "content." (adding an implicit period if
+    # the author didn't end the bullet with terminator punctuation) so
+    # sentence_split splits each bullet as its own sentence.
     if not flags.get('bullet_markers', True):
-        t = _BULLET_MARKER_RE.sub('', t)
+        def _bullet_line_repl(m: re.Match) -> str:
+            content = m.group(1).rstrip()
+            if not content:
+                return ''
+            if content[-1] not in '.!?:;':
+                content = content + '.'
+            return content
+        t = re.sub(
+            r'^[ \t]*(?:[-*+]|\d+\.)[ \t]+(.+?)[ \t]*$',
+            _bullet_line_repl,
+            t,
+            flags=re.MULTILINE,
+        )
 
     # Keyboard modifiers → words so TTS pronounces naturally. Covers
     # every common modifier in one sweep so `Ctrl+Shift+A` reads as

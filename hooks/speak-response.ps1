@@ -198,18 +198,20 @@ if ($inc.code_blocks) {
     $clean = [regex]::Replace($clean, '(?s)```.*?```', ' ')
 }
 if ($inc.inline_code) {
-    # Keep content, drop the surrounding backticks.
-    $clean = [regex]::Replace($clean, '`([^`]+)`', '$1')
+    # GFM-balanced inline code. See app/lib/text.js for rationale.
+    $clean = [regex]::Replace($clean, '(`+)([^\n]+?)\1', '$2')
 } else {
     # Preserve keyboard shortcuts (`Ctrl+R`) even when inline_code=false —
-    # they're UI instructions, not code noise. See app/lib/text.js for
-    # full rationale.
-    $clean = [regex]::Replace($clean, '`([^`]+)`', {
+    # they're UI instructions, not code noise. Optional leading `?` in
+    # the shortcut regex tolerates GFM double-backtick wrapping.
+    $clean = [regex]::Replace($clean, '(`+)([^\n]+?)\1', {
         param($m)
-        $content = $m.Groups[1].Value
-        if ($content -match '^\s*(Ctrl|Cmd|Shift|Alt|Win|Super|Meta)\s*\+') { $content } else { ' ' }
+        $content = $m.Groups[2].Value
+        if ($content -match '^\s*`?\s*(Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+') { $content } else { ' ' }
     })
 }
+# Safety net: strip any surviving backticks.
+$clean = $clean -replace '`', ''
 if (-not $inc.image_alt) {
     $clean = [regex]::Replace($clean, '!\[[^\]]*\]\([^)]+\)', ' ')
 } else {
@@ -232,8 +234,15 @@ $clean = $clean -replace '__([^_]+)__', '$1'
 $clean = $clean -replace '\*([^*\n]+)\*', '$1'
 if (-not $inc.bullet_markers) {
     $clean = [regex]::Replace($clean, '(?m)^\s*[\u25cf\u23bf\u25b6\u25b8\u25ba\u25cb\u00b7\u25e6\u25aa\u25a0\u25a1\u25ab]\s*', '')
-    $clean = [regex]::Replace($clean, '(?m)^\s*[-*+]\s+', '')
-    $clean = [regex]::Replace($clean, '(?m)^\s*\d+\.\s+', '')
+    # Strip "- " / "* " / "+ " / "N. " markers AND add implicit period so
+    # each bullet reads as its own sentence. Without this each multi-line
+    # bullet list flattens to one run-on sentence downstream.
+    $clean = [regex]::Replace($clean, '(?m)^[ \t]*([-*+]|\d+\.)[ \t]+(.+?)[ \t]*$', {
+        param($m)
+        $content = $m.Groups[2].Value.TrimEnd()
+        if (-not $content) { return '' }
+        if ($content -match '[.!?:;]$') { $content } else { $content + '.' }
+    })
 }
 # Keyboard modifiers: cover all common modifiers in one sweep so
 # `Ctrl+Shift+A` reads as "control shift A", not "control Shift+A".
