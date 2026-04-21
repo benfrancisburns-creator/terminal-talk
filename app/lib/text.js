@@ -70,6 +70,10 @@ function stripForTTS(text, includes) {
   else               t = t.replace(/^#+\s*/gm, '');
 
   // Markdown emphasis — marks gone, inner text kept, every time.
+  // Triple *** / ___ first so a naive double-strip doesn't leave stray
+  // asterisks on each side (which TTS reads as "asterisk asterisk").
+  t = t.replace(/\*\*\*([^*\n]+)\*\*\*/g, '$1');
+  t = t.replace(/___([^_\n]+)___/g, '$1');
   t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
   t = t.replace(/__([^_]+)__/g, '$1');
   t = t.replace(/\*([^*\n]+)\*/g, '$1');

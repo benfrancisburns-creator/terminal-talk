@@ -215,6 +215,11 @@ if (-not $inc.headings) {
 } else {
     $clean = [regex]::Replace($clean, '(?m)^#+\s*', '')
 }
+# Triple *** / ___ before double — see app/lib/text.js for full rationale.
+# Without this, ***bold-italic*** strips to *bold-italic* and TTS reads
+# the stray asterisks aloud.
+$clean = $clean -replace '\*\*\*([^*\n]+)\*\*\*', '$1'
+$clean = $clean -replace '___([^_\n]+)___', '$1'
 $clean = $clean -replace '\*\*([^*]+)\*\*', '$1'
 $clean = $clean -replace '__([^_]+)__', '$1'
 $clean = $clean -replace '\*([^*\n]+)\*', '$1'

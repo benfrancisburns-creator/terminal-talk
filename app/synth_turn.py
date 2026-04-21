@@ -305,6 +305,12 @@ _INLINE_CODE_RE = re.compile(r'`([^`]+)`')
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 _BULLET_MARKER_RE = re.compile(r'^\s*([-*+]|\d+\.)\s+', re.MULTILINE)
+# Triple-asterisk emphasis (bold-italic ***x***) must be stripped BEFORE
+# the double-asterisk rule, because a naive `\*\*(...)\*\*` on `***x***`
+# matches the inner `**x**` and leaves a stray `*` on each side — which
+# TTS dutifully reads as "asterisk". Bug reported by user hearing
+# "asterisk asterisk foo asterisk asterisk" on bold-italic headings.
+_TRIPLE_EMPHASIS_RE = re.compile(r'\*\*\*([^*\n]+)\*\*\*|___([^_\n]+)___')
 _EMPHASIS_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_')
 _IMG_RE = re.compile(r'!\[([^\]]*)\]\([^\)]+\)')
 _CTRL_RE = re.compile(r'\bCtrl\+', re.IGNORECASE)
@@ -336,7 +342,9 @@ def sanitize(text: str, flags: dict) -> str:
     else:
         t = _IMG_RE.sub('', t)
 
-    # Markdown emphasis — always strip (keep content)
+    # Markdown emphasis — always strip (keep content). Triple form first
+    # so the double-form regex below doesn't fragment it.
+    t = _TRIPLE_EMPHASIS_RE.sub(lambda m: next((g for g in m.groups() if g), ''), t)
     t = _EMPHASIS_RE.sub(lambda m: next((g for g in m.groups() if g), ''), t)
 
     # URLs
