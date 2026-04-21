@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:#0f1014;font-family:var(--tt-font-ui);color:var(--tt-fg-2)}
+  .stage{padding:20px 24px;display:flex;flex-direction:column;gap:12px}
+  .cap{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5)}
+  .row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .spec{display:flex;align-items:center;gap:8px}
+  .spec .sw{border:1px dashed rgba(255,255,255,0.2)}
+  .tok{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tt-fg-5)}
+  .name{font-size:11px;color:var(--tt-fg-3)}
+
+  .rad{background:rgba(255,255,255,0.08);width:44px;height:44px}
+  .pill{background:rgba(255,255,255,0.08);width:88px;height:28px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--tt-fg-4)}
+
+  .sp{height:20px;background:linear-gradient(90deg,#ffd93d 0%,#ffd93d 100%);position:relative}
+  .sp.s4{width:4px}.sp.s6{width:6px}.sp.s8{width:8px}.sp.s12{width:12px}.sp.s14{width:14px}.sp.s16{width:16px}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cap">Radii — pill for the bar, card for the panel, block for inner, dot for buttons</div>
+  <div class="row">
+    <div class="spec"><div class="rad" style="border-radius:50%"></div><div><div class="name">Dot</div><div class="tok">50%</div></div></div>
+    <div class="spec"><div class="rad" style="border-radius:4px"></div><div><div class="name">Chip</div><div class="tok">4px</div></div></div>
+    <div class="spec"><div class="rad" style="border-radius:6px"></div><div><div class="name">Input</div><div class="tok">6px</div></div></div>
+    <div class="spec"><div class="rad" style="border-radius:8px"></div><div><div class="name">Block</div><div class="tok">8px</div></div></div>
+    <div class="spec"><div class="rad" style="border-radius:16px;width:72px"></div><div><div class="name">Card</div><div class="tok">16px</div></div></div>
+    <div class="spec"><div class="pill" style="border-radius:22px"></div><div><div class="name">Pill</div><div class="tok">22px</div></div></div>
+  </div>
+  <div class="cap" style="margin-top:6px">Spacing — 4px base grid</div>
+  <div class="row">
+    <div class="spec"><div class="sp s4"></div><div class="tok">4</div></div>
+    <div class="spec"><div class="sp s6"></div><div class="tok">6</div></div>
+    <div class="spec"><div class="sp s8"></div><div class="tok">8</div></div>
+    <div class="spec"><div class="sp s12"></div><div class="tok">12</div></div>
+    <div class="spec"><div class="sp s14"></div><div class="tok">14</div></div>
+    <div class="spec"><div class="sp s16"></div><div class="tok">16</div></div>
+  </div>
+</div>
+</body>
+</html>

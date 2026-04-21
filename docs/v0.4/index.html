@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal Talk — Hands-free voice workflow for Claude Code</title>
+<meta name="description" content="Claude Code reads its responses aloud. Say 'hey jarvis' to read any highlighted text. Free, offline wake-word, no signup. Windows.">
+<meta property="og:title" content="Terminal Talk — voice workflow for Claude Code">
+<meta property="og:description" content="Auto-speaks Claude Code responses. 'Hey jarvis' reads any highlighted text. Free, offline, MIT.">
+<meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
+<style>
+:root {
+  --red: #ff5e5e; --orange: #ffa726; --yellow: #ffd93d; --green: #4ade80;
+  --blue: #60a5fa; --purple: #c084fc; --copper: #c97b50; --bone: #e0e0e0;
+  --bg: #0e0f13; --panel: rgba(24,26,32,0.88); --panel-2: rgba(24,26,32,0.92);
+  --border: rgba(255,255,255,0.08); --border-strong: rgba(255,255,255,0.14);
+  --text: #fff; --text-dim: rgba(255,255,255,0.7); --text-faint: rgba(255,255,255,0.45);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 22%, #26324a 0%, transparent 55%),
+    radial-gradient(circle at 75% 80%, #30203e 0%, transparent 55%),
+    var(--bg);
+  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--text); color-scheme: dark;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--copper); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono { font-family: 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace; }
+
+/* Nav */
+.nav {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(14,15,19,0.82); backdrop-filter: blur(16px) saturate(140%);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  max-width: 1120px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.nav-dots { display: flex; gap: 4px; }
+.nav-dot { width: 10px; height: 10px; border-radius: 50%; }
+.nav-dot.d1 { background: var(--red); } .nav-dot.d2 { background: var(--orange); }
+.nav-dot.d3 { background: var(--green); } .nav-dot.d4 { background: var(--blue); }
+.nav-links { display: flex; gap: 22px; font-size: 14px; }
+.nav-links a { color: var(--text-dim); }
+.nav-links a:hover { color: var(--text); text-decoration: none; }
+@media (max-width: 640px) { .nav-links { display: none; } }
+
+/* Section shells */
+section { padding: 80px 24px; }
+.wrap { max-width: 1120px; margin: 0 auto; }
+.wrap-narrow { max-width: 760px; margin: 0 auto; }
+
+/* Hero */
+.hero { padding: 96px 24px 56px; text-align: center; }
+.hero img.banner { max-width: 720px; width: 100%; height: auto; }
+
+/* ASCII hero — per-letter coloured block-art TERMINAL TALK, mascot, cloud.
+   Mirrors the desktop wallpaper composition (docs/assets/wallpaper/). */
+.hero-ascii {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 10px;
+}
+.hero-ascii pre.ascii {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Lucida Console', monospace;
+  font-size: 20px;
+  line-height: 1;
+  white-space: pre;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  margin: 0;
+}
+/* Bevel chars (╔╗╚╝═║) sit inside each letter outline — hide them so
+   only the solid █ face blocks render, then text-shadow casts a real
+   drop shadow behind each face in a darker shade of its face color. */
+.hero-ascii .t,
+.hero-ascii .e,
+.hero-ascii .r,
+.hero-ascii .m,
+.hero-ascii .i,
+.hero-ascii .n,
+.hero-ascii .a,
+.hero-ascii .l,
+.hero-ascii .tlk-t,
+.hero-ascii .tlk-a,
+.hero-ascii .tlk-l,
+.hero-ascii .tlk-k { color: transparent; }
+
+.hero-ascii .t .face  { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+.hero-ascii .e .face  { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+.hero-ascii .r .face  { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+.hero-ascii .m .face  { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+.hero-ascii .i .face  { color: #60a5fa; text-shadow: 3px 3px 0 #3b6fc5, 6px 6px 0 #1e3a8a; }
+.hero-ascii .n .face  { color: #c084fc; text-shadow: 3px 3px 0 #8a54b8, 6px 6px 0 #581c87; }
+.hero-ascii .a .face  { color: #c97b50; text-shadow: 3px 3px 0 #8a5338, 6px 6px 0 #5a3621; }
+.hero-ascii .l .face  { color: #e0e0e0; text-shadow: 3px 3px 0 #8a8a8a, 6px 6px 0 #4b5563; }
+.hero-ascii .tlk-t .face { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+.hero-ascii .tlk-a .face { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+.hero-ascii .tlk-l .face { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+.hero-ascii .tlk-k .face { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+.talk-row { display: flex; align-items: center; gap: 44px; flex-wrap: wrap; justify-content: center; }
+.mascot-pair { display: flex; align-items: center; gap: 20px; }
+.mascot-svg {
+  /* Sized to match TALK row height (6 × 20px = 120). Hard two-step
+     shadow only — the previous ambient glow pushed the visible bottom
+     past TALK's baseline. Margin reserves the 6px shadow offset so
+     the layout box is exactly 120, aligning with TALK. */
+  filter:
+    drop-shadow(3px 3px 0 #b36620)
+    drop-shadow(6px 6px 0 #7a3f0f);
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+.cloud-svg {
+  display: block;
+  /* Pixel-chunky drop shadow behind the speech bubble, matching the
+     mascot's hard-shadow style for visual consistency. */
+  filter:
+    drop-shadow(4px 4px 0 rgba(10,15,25,0.85))
+    drop-shadow(8px 8px 0 rgba(0,0,0,0.5));
+}
+.cloud-svg text {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+  font-weight: 700;
+  fill: #0e0f13;
+}
+.hero-palette { display: flex; gap: 14px; }
+.hero-palette .dot { width: 11px; height: 11px; border-radius: 50%; opacity: 0.55; }
+@media (max-width: 900px) {
+  .hero-ascii pre.ascii { font-size: 13px; }
+}
+.hero h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 700; margin: 32px 0 12px; letter-spacing: -0.02em; }
+.hero p.lede { font-size: clamp(16px, 2vw, 20px); color: var(--text-dim); max-width: 640px; margin: 0 auto 14px; }
+.hero p.sub { color: var(--text-faint); max-width: 580px; margin: 0 auto 32px; font-size: 15px; }
+.hero .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 999px; font-size: 15px; font-weight: 600;
+  border: 1px solid transparent; cursor: pointer; font-family: inherit;
+  transition: transform .08s ease, background .15s ease, border-color .15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--copper); color: #1a0c04; border-color: var(--copper); }
+.btn-primary:hover { background: #d98a5f; text-decoration: none; }
+.btn-ghost { background: rgba(255,255,255,0.05); color: var(--text); border-color: var(--border-strong); }
+.btn-ghost:hover { background: rgba(255,255,255,0.1); text-decoration: none; }
+.hero .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.hero .badges img { height: 22px; }
+
+/* Section titles */
+.sec-kicker { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--copper); font-weight: 600; margin-bottom: 8px; }
+.sec-title { font-size: clamp(24px, 3vw, 32px); font-weight: 700; margin: 0 0 14px; letter-spacing: -0.015em; }
+.sec-intro { color: var(--text-dim); margin: 0 0 40px; max-width: 600px; }
+.sec-head { text-align: center; margin-bottom: 48px; }
+.sec-head .sec-intro { margin: 0 auto; }
+
+/* Features */
+.features { background: linear-gradient(to bottom, transparent 0%, rgba(201,123,80,0.04) 50%, transparent 100%); }
+.feature-grid {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.feature {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 24px; backdrop-filter: blur(12px) saturate(140%);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.feature:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+.feature .icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+  font-size: 20px;
+}
+.feature:nth-child(1) .icon { background: rgba(255,94,94,0.14); color: var(--red); }
+.feature:nth-child(2) .icon { background: rgba(74,222,128,0.14); color: var(--green); }
+.feature:nth-child(3) .icon { background: rgba(96,165,250,0.14); color: var(--blue); }
+.feature:nth-child(4) .icon { background: rgba(201,123,80,0.16); color: var(--copper); }
+.feature h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.feature p { margin: 0; color: var(--text-dim); font-size: 14px; }
+
+/* Demo slot */
+.demo { text-align: center; }
+.demo-frame {
+  max-width: 820px; margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; color: var(--text-faint);
+  position: relative; overflow: hidden;
+}
+.demo-frame::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255,94,94,0.06), transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(96,165,250,0.06), transparent 50%);
+  pointer-events: none;
+}
+.demo-frame .play-dot {
+  width: 64px; height: 64px; border-radius: 50%; background: rgba(201,123,80,0.18);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; color: var(--copper);
+  border: 2px solid rgba(201,123,80,0.32);
+}
+.demo-caption { font-size: 13px; color: var(--text-faint); margin-top: 16px; }
+
+/* Install */
+.install-grid { display: grid; gap: 32px; grid-template-columns: 1fr 1fr; align-items: start; }
+@media (max-width: 760px) { .install-grid { grid-template-columns: 1fr; } }
+.install-steps { counter-reset: step; padding-left: 0; list-style: none; }
+.install-steps li {
+  position: relative; padding: 10px 0 10px 44px; counter-increment: step;
+  color: var(--text-dim); font-size: 15px; border-bottom: 1px solid var(--border);
+}
+.install-steps li:last-child { border-bottom: none; }
+.install-steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 10px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(201,123,80,0.16); color: var(--copper);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 13px;
+  border: 1px solid rgba(201,123,80,0.28);
+}
+.code-block {
+  background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 22px;
+  font-size: 13px; line-height: 1.7; overflow-x: auto;
+  position: relative; color: var(--bone);
+}
+.code-block .comment { color: var(--text-faint); }
+.code-block .prompt { color: var(--green); user-select: none; }
+.copy-btn {
+  position: absolute; top: 10px; right: 10px;
+  padding: 4px 10px; font-size: 11px; border-radius: 6px;
+  background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+  color: var(--text-dim); cursor: pointer; font-family: inherit;
+}
+.copy-btn:hover { background: rgba(255,255,255,0.14); color: var(--text); }
+.req-row { font-size: 13px; color: var(--text-faint); margin-top: 14px; }
+
+/* Privacy */
+.privacy-grid { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .privacy-grid { grid-template-columns: 1fr; } }
+.privacy-col {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px;
+}
+.privacy-col.good { border-color: rgba(74,222,128,0.18); }
+.privacy-col.bad { border-color: rgba(255,94,94,0.18); }
+.privacy-col h3 {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 14px; font-size: 15px; font-weight: 600;
+}
+.privacy-col ul { list-style: none; padding: 0; margin: 0; }
+.privacy-col li { padding: 6px 0; color: var(--text-dim); font-size: 14px; }
+.privacy-col li::before {
+  display: inline-block; width: 20px; font-weight: 700;
+}
+.privacy-col.good li::before { content: "✓"; color: var(--green); }
+.privacy-col.bad li::before { content: "✗"; color: var(--red); }
+
+/* FAQ */
+.faq { max-width: 760px; margin: 0 auto; }
+.faq details {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 20px; margin-bottom: 10px;
+  transition: border-color .15s ease;
+}
+.faq details[open] { border-color: var(--border-strong); }
+.faq summary {
+  cursor: pointer; font-weight: 600; font-size: 15px;
+  list-style: none;
+  padding-right: 32px;
+  position: relative;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: 22px; color: var(--text-faint); line-height: 1;
+  transition: color .15s ease;
+}
+.faq summary:hover::after { color: var(--text); }
+.faq details[open] summary::after { content: "–"; color: var(--copper); }
+.faq details p { margin: 12px 0 0; color: var(--text-dim); font-size: 14px; line-height: 1.65; }
+
+/* Footer */
+footer {
+  padding: 48px 24px 64px; border-top: 1px solid var(--border); margin-top: 40px;
+  text-align: center; color: var(--text-faint); font-size: 13px;
+}
+footer .foot-dots { display: flex; gap: 5px; justify-content: center; margin-bottom: 16px; }
+footer .foot-dots span { width: 8px; height: 8px; border-radius: 50%; }
+footer a { color: var(--text-dim); margin: 0 12px; }
+
+/* Utility: copy-chip */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px;
+  background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.chip .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-brand">
+      <span class="nav-dots">
+        <span class="nav-dot d1"></span><span class="nav-dot d2"></span>
+        <span class="nav-dot d3"></span><span class="nav-dot d4"></span>
+      </span>
+      Terminal Talk
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/benfrancisburns-creator/terminal-talk">GitHub →</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-ascii">
+    <pre class="ascii"><span class="t"><span class="face">████████</span>╗</span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██████</span>╗ </span><span class="m"><span class="face">███</span>╗   <span class="face">███</span>╗</span><span class="i"><span class="face">██</span>╗</span><span class="n"><span class="face">███</span>╗   <span class="face">██</span>╗</span><span class="a"> <span class="face">█████</span>╗ </span><span class="l"><span class="face">██</span>╗</span>
+<span class="t">╚══<span class="face">██</span>╔══╝</span><span class="e"><span class="face">██</span>╔════╝</span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">████</span>╗ <span class="face">████</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">████</span>╗  <span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">█████</span>╗  </span><span class="r"><span class="face">██████</span>╔╝</span><span class="m"><span class="face">██</span>╔<span class="face">████</span>╔<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>╔<span class="face">██</span>╗ <span class="face">██</span>║</span><span class="a"><span class="face">███████</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">██</span>╔══╝  </span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">██</span>║╚<span class="face">██</span>╔╝<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║╚<span class="face">██</span>╗<span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="m"><span class="face">██</span>║ ╚═╝ <span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║ ╚<span class="face">████</span>║</span><span class="a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="l"><span class="face">███████</span>╗</span>
+<span class="t">   ╚═╝   </span><span class="e">╚══════╝</span><span class="r">╚═╝  ╚═╝</span><span class="m">╚═╝     ╚═╝</span><span class="i">╚═╝</span><span class="n">╚═╝  ╚═══╝</span><span class="a">╚═╝  ╚═╝</span><span class="l">╚══════╝</span></pre>
+
+    <div class="talk-row">
+      <pre class="ascii"><span class="tlk-t"><span class="face">████████</span>╗</span><span class="tlk-a"> <span class="face">█████</span>╗ </span><span class="tlk-l"><span class="face">██</span>╗     </span><span class="tlk-k"><span class="face">██</span>╗  <span class="face">██</span>╗</span>
+<span class="tlk-t">╚══<span class="face">██</span>╔══╝</span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>║ <span class="face">██</span>╔╝</span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">███████</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">█████</span>╔╝ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>╔═<span class="face">██</span>╗ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="tlk-l"><span class="face">███████</span>╗</span><span class="tlk-k"><span class="face">██</span>║  <span class="face">██</span>╗</span>
+<span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
+
+      <div class="mascot-pair">
+        <svg class="mascot-svg" width="134" height="114" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+          <rect x="44" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="88" y="58" width="8"  height="6" fill="#3a3a3a"/>
+          <rect x="44" y="64" width="52" height="6" fill="#3a3a3a"/>
+        </svg>
+        <svg class="cloud-svg" width="260" height="96" viewBox="0 0 30 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="4"  y="0" width="4" height="1" fill="white"/>
+          <rect x="11" y="0" width="5" height="1" fill="white"/>
+          <rect x="19" y="0" width="4" height="1" fill="white"/>
+          <rect x="2"  y="1" width="26" height="1" fill="white"/>
+          <rect x="1"  y="2" width="28" height="7" fill="white"/>
+          <rect x="2"  y="9"  width="26" height="1" fill="white"/>
+          <rect x="4"  y="10" width="4"  height="1" fill="white"/>
+          <rect x="12" y="10" width="5"  height="1" fill="white"/>
+          <rect x="0"  y="7" width="1" height="1" fill="white"/>
+          <rect x="0"  y="8" width="1" height="1" fill="white"/>
+          <text x="15" y="6.6" font-size="2.1" text-anchor="middle">HEY JARVIS</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Hero palette = the 8 product dot colours. Cyan (#22d3ee) is a
+         brand-only accent used for the mascot face in the wordmark
+         above — it is NOT one of the dot colours. If you change either
+         the app's BASE_COLOURS or this list, update the other and the
+         ui-kit (docs/ui-kit/palette.js) in the same commit. -->
+    <div class="hero-palette">
+      <div class="dot" style="background:#ff5e5e"></div>
+      <div class="dot" style="background:#ffa726"></div>
+      <div class="dot" style="background:#ffd93d"></div>
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="dot" style="background:#60a5fa"></div>
+      <div class="dot" style="background:#c084fc"></div>
+      <div class="dot" style="background:#c97b50"></div>
+      <div class="dot" style="background:#e0e0e0"></div>
+    </div>
+  </div>
+
+  <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
+  <p class="sub">Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
+      ⬇ Download for Windows
+    </a>
+    <a class="btn btn-ghost" href="https://github.com/benfrancisburns-creator/terminal-talk">
+      View on GitHub
+    </a>
+  </div>
+  <div class="badges">
+    <img src="https://img.shields.io/github/v/release/benfrancisburns-creator/terminal-talk?color=c97b50&label=release" alt="Latest release">
+    <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
+    <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Windows">
+    <img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests">
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">What you get</div>
+      <h2 class="sec-title">Six things that make Claude Code a hands-free tool</h2>
+      <p class="sec-intro">Every feature is opt-in at install. No telemetry anywhere.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="icon">🔊</div>
+        <h3>Streaming auto-speak</h3>
+        <p>Claude's responses are spoken as they're written. Audio starts ~2-3 s after Claude begins, not 6-24 s after the turn ends — sentences synthesise in parallel and a PreToolUse hook fires mid-response. Questions spoken first.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">👂</div>
+        <h3>"Hey jarvis" read-anything</h3>
+        <p>Highlight text in any app — browser, PDF, VS Code, Slack — say the wake word or press <span class="mono">Ctrl+Shift+S</span>, hear it read. Runs offline on CPU.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🎨</div>
+        <h3>Per-terminal identity + mute</h3>
+        <p>Each Claude Code terminal gets a unique colour dot, statusline emoji, and optional voice. Mute any terminal with one click — its synthesis skips entirely, no audio, no queued clips.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">📌</div>
+        <h3>Dockable toolbar</h3>
+        <p>Drag near the top or bottom edge and it snaps flush (horizontal-only — no vertical dock). Press <kbd>Ctrl+Shift+A</kbd> to toggle display on/off; if it ever goes off-screen, that hotkey recovers it and the bar re-centres to your primary display automatically. Idle 15 s → shrinks to a slim strip and becomes click-through; hover to expand. Per-session colour assignments persist until you remove them.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🧹</div>
+        <h3>Self-managing queue</h3>
+        <p>Played clips auto-prune 20 s after they finish (configurable 3-600 s). Walking away? Toggle off and clips stack up for review on return. No manual housekeeping.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🔒</div>
+        <h3>Free + private by default</h3>
+        <p>Uses Microsoft Edge's neural voices (no API key needed). Offline wake word. Optional OpenAI TTS fallback if you want it. Zero accounts required.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="demo">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">See it in action</div>
+      <h2 class="sec-title">30 seconds to understand the workflow</h2>
+    </div>
+    <div class="demo-frame">
+      <div class="play-dot">▶</div>
+      <div>Demo video coming soon</div>
+    </div>
+    <p class="demo-caption">In the meantime, the <a href="https://github.com/benfrancisburns-creator/terminal-talk#what-you-get">README</a> has the full feature breakdown with tables and shortcuts.</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Install</div>
+      <h2 class="sec-title">Three commands, under two minutes</h2>
+    </div>
+    <div class="install-grid">
+      <ol class="install-steps">
+        <li>Install Python 3.10+ and Node.js 18+ if you don't already have them.</li>
+        <li>Clone the repo and run <span class="mono">install.ps1</span> — installs deps, pre-downloads the wake-word model, asks which hooks you want registered.</li>
+        <li>Restart Claude Code. Every response will speak aloud. Say <em>"hey jarvis"</em> over highlighted text to read it.</li>
+      </ol>
+      <div>
+        <div class="code-block">
+<button class="copy-btn" onclick="navigator.clipboard.writeText('git clone https://github.com/benfrancisburns-creator/terminal-talk\ncd terminal-talk\n.\\install.ps1').then(() => { this.textContent = 'Copied'; setTimeout(() => this.textContent = 'Copy', 1600); })">Copy</button><pre style="margin:0"><span class="prompt">PS&gt;</span> git clone https://github.com/benfrancisburns-creator/terminal-talk
+<span class="prompt">PS&gt;</span> cd terminal-talk
+<span class="prompt">PS&gt;</span> .\install.ps1</pre>
+        </div>
+        <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows 10/11 · Python 3.10+ · Node 18+ · Microphone</span></div>
+        <div class="req-row">Mac and Linux ports are on the roadmap (no ETA yet — PRs welcome). Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="wrap wrap-narrow">
+    <div class="sec-head">
+      <div class="sec-kicker">Privacy</div>
+      <h2 class="sec-title">What leaves your machine — exactly</h2>
+      <p class="sec-intro">Nothing is sent anywhere without your explicit action. No telemetry. No analytics. No remote logging.</p>
+    </div>
+    <div class="privacy-grid">
+      <div class="privacy-col good">
+        <h3>What you control</h3>
+        <ul>
+          <li>TTS text sent to Edge's neural voice endpoint (same one Edge browser uses)</li>
+          <li>Wake-word model download (one-off, from HuggingFace)</li>
+          <li>Optional: text sent to OpenAI TTS if you configure that fallback</li>
+        </ul>
+      </div>
+      <div class="privacy-col bad">
+        <h3>What never happens</h3>
+        <ul>
+          <li>No audio is uploaded; wake-word runs offline on your CPU</li>
+          <li>No usage telemetry or analytics of any kind</li>
+          <li>No background network calls when idle</li>
+          <li>No account, no sign-up, no email required</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap-narrow">
+    <div class="sec-head">
+      <div class="sec-kicker">FAQ</div>
+      <h2 class="sec-title">Likely questions</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Is it really free, with no sign-up?</summary>
+        <p>Yes. It uses Microsoft Edge's built-in neural voice endpoint (the same one Edge browser uses for "Read Aloud" — no API key required) and openWakeWord for offline wake-word detection. An OpenAI TTS fallback is optional if you'd rather pay for premium voices.</p>
+      </details>
+      <details>
+        <summary>Why Windows-only at launch?</summary>
+        <p>The toolbar and hooks rely on PowerShell + Windows-specific keybindings. Mac and Linux ports are on the roadmap (no ETA yet — the architecture is ready for them but the platform-specific glue isn't written). If you can help with a port, PRs are welcome.</p>
+      </details>
+      <details>
+        <summary>Can I change the wake word from "hey jarvis"?</summary>
+        <p>Yes — the wake model is a drop-in swap from the openWakeWord project. Documented in the README. You can also disable the wake word entirely and just use <span class="mono">Ctrl+Shift+S</span>.</p>
+      </details>
+      <details>
+        <summary>Does it work with tools other than Claude Code?</summary>
+        <p>The "hey jarvis / highlight and speak" part works with any app (browsers, PDFs, editors, Slack). The auto-speak piece is specific to Claude Code's Stop hook.</p>
+      </details>
+      <details>
+        <summary>How do I uninstall?</summary>
+        <p>Run <span class="mono">.\uninstall.ps1</span>. It reverses every change, restores your Claude Code settings from the backup created at install time, and removes the Startup shortcut.</p>
+      </details>
+      <details>
+        <summary>What's with the coloured dots?</summary>
+        <p>Each Claude Code terminal gets a unique dot colour on the toolbar and a matching emoji in its statusline, so when you've got five terminals open you can tell which one just spoke. You can also give each terminal its own voice and identify them by ear.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-dots">
+    <span style="background: var(--red)"></span>
+    <span style="background: var(--orange)"></span>
+    <span style="background: var(--yellow)"></span>
+    <span style="background: var(--green)"></span>
+    <span style="background: var(--blue)"></span>
+    <span style="background: var(--purple)"></span>
+    <span style="background: var(--copper)"></span>
+    <span style="background: var(--bone)"></span>
+  </div>
+  <div>
+    <a href="https://github.com/benfrancisburns-creator/terminal-talk">GitHub</a>
+    <a href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">Releases</a>
+    <a href="https://github.com/benfrancisburns-creator/terminal-talk/blob/main/LICENSE">MIT License</a>
+    <a href="https://github.com/benfrancisburns-creator/terminal-talk/blob/main/CONTRIBUTING.md">Contributing</a>
+  </div>
+  <div style="margin-top: 16px;">Terminal Talk is open source. Built by <a href="https://github.com/benfrancisburns-creator">Ben Burns</a>.</div>
+</footer>
+
+</body>
+</html>
