@@ -28,6 +28,11 @@ const DEFAULTS = {
   headings: true,
   bullet_markers: false,
   image_alt: false,
+  // Tool-call narration (Python-side only — JS stripForTTS doesn't act
+  // on it, but the key exists here for config-shape parity with
+  // synth_turn.py's DEFAULT_SPEECH_INCLUDES so the lock-step test
+  // doesn't flag drift).
+  tool_calls: true,
 };
 
 function stripForTTS(text, includes) {

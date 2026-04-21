@@ -1270,6 +1270,120 @@ describe('SENTENCE GROUP (v0.5 smart grouping)', () => {
   });
 });
 
+describe('TOOL NARRATION (v0.5 ephemeral tool-call phrases)', () => {
+  // narrate_tool_use() maps (tool_name, tool_input) to a short spoken
+  // status phrase, or None to skip. Emitted as T- prefixed ephemeral
+  // clips that the renderer auto-deletes on playback-end.
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from tool_narration import narrate_tool_use; `;
+
+  function narrate(name, inp) {
+    const code = `${pyPrelude}import json; r = narrate_tool_use(${JSON.stringify(name)}, ${JSON.stringify(inp)}); print(json.dumps(r))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return JSON.parse(r.stdout.trim());
+  }
+
+  it('Read uses basename not full path', () => {
+    assertEqual(narrate('Read', { file_path: 'C:/Users/Ben/Desktop/foo/bar.py' }), 'Reading bar.py');
+  });
+  it('Read with missing path falls back to generic phrase', () => {
+    assertEqual(narrate('Read', {}), 'Reading a file');
+  });
+  it('Edit uses basename', () => {
+    assertEqual(narrate('Edit', { file_path: '/tmp/foo.js' }), 'Editing foo.js');
+  });
+  it('Write uses basename', () => {
+    assertEqual(narrate('Write', { file_path: 'app/sentence_group.py' }), 'Writing sentence_group.py');
+  });
+  it('Bash uses first word of command, skipping env assignments', () => {
+    assertEqual(narrate('Bash', { command: 'npm test --verbose' }), 'Running npm');
+    assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm run build' }), 'Running npm');
+    assertEqual(narrate('Bash', {}), 'Running a command');
+  });
+  it('Grep pattern truncates at word boundary', () => {
+    const out = narrate('Grep', { pattern: 'class Communicate' });
+    assertEqual(out, 'Searching for class Communicate');
+    const long = narrate('Grep', { pattern: 'x'.repeat(200) });
+    if (long.length > 55) throw new Error(`not truncated: ${long.length} chars`);
+  });
+  it('Glob returns pattern phrase', () => {
+    assertEqual(narrate('Glob', { pattern: '**/*.test.ts' }), 'Finding files matching **/*.test.ts');
+  });
+  it('WebFetch extracts bare domain (no www)', () => {
+    assertEqual(narrate('WebFetch', { url: 'https://www.example.com/path?q=1' }), 'Fetching example.com');
+  });
+  it('WebSearch returns query phrase', () => {
+    assertEqual(narrate('WebSearch', { query: 'edge tts streaming' }), 'Searching the web for edge tts streaming');
+  });
+  it('meta tools return null (no narration)', () => {
+    for (const meta of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'ExitPlanMode']) {
+      assertEqual(narrate(meta, {}), null);
+    }
+  });
+  it('MCP tools return null by default (varied + verbose)', () => {
+    assertEqual(narrate('mcp__figma__authenticate', {}), null);
+    assertEqual(narrate('mcp__slack__send_message', {}), null);
+  });
+  it('unknown tool returns null (conservative silence)', () => {
+    assertEqual(narrate('SomeNewToolNameWeDontKnow', {}), null);
+  });
+  it('empty tool_name returns null', () => {
+    assertEqual(narrate('', {}), null);
+  });
+  it('Task/Agent alias both work for sub-agents', () => {
+    const a = narrate('Agent', { description: 'refactor queue' });
+    const b = narrate('Task', { description: 'refactor queue' });
+    assertEqual(a, b);
+    if (!a.includes('refactor queue')) throw new Error(`bad sub-agent phrase: ${a}`);
+  });
+  it('all phrases stay under ~50 chars', () => {
+    const samples = [
+      ['Read', { file_path: 'some/longish/path/to/a/source_file.py' }],
+      ['Bash', { command: 'echo hello world' }],
+      ['Grep', { pattern: 'reasonable-length search pattern here' }],
+      ['WebSearch', { query: 'how do I chunk tts audio for streaming' }],
+    ];
+    for (const [n, inp] of samples) {
+      const phrase = narrate(n, inp);
+      if (phrase && phrase.length > 55) {
+        throw new Error(`phrase too long for ${n}: ${phrase.length}ch "${phrase}"`);
+      }
+    }
+  });
+});
+
+describe('EPHEMERAL CLIP DETECTION (T- prefix)', () => {
+  // isEphemeralClip from lib/clip-paths.js. Matches the filename shape
+  // `<turn>-T-<seq>-<sessionshort>.(wav|mp3)` exactly — does not
+  // false-match on regular body clips or on strings that happen to
+  // contain the literal "T-" inside content.
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths'));
+
+  it('recognises T-prefixed clip filenames', () => {
+    assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-T-0001-294c5d60.mp3'));
+    assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-T-0042-abcdef01.wav'));
+  });
+  it('rejects regular body clip filenames', () => {
+    assertFalsy(clipPaths.isEphemeralClip('20260421T233815497-0001-294c5d60.mp3'));
+  });
+  it('rejects Q-prefixed question clip filenames', () => {
+    assertFalsy(clipPaths.isEphemeralClip('20260421T233815497-Q-0001-294c5d60.mp3'));
+  });
+  it('rejects filenames with T- inside but not at the prefix slot', () => {
+    // A malicious / unexpected filename shouldn't trigger ephemeral mode
+    assertFalsy(clipPaths.isEphemeralClip('T-somefile-0001-294c5d60.mp3'));
+    assertFalsy(clipPaths.isEphemeralClip('foo-T-bar-0001-294c5d60.mp3'));
+  });
+  it('still returns session short via extractSessionShort', () => {
+    // T- prefix doesn't interfere with session identification
+    assertEqual(
+      clipPaths.extractSessionShort('20260421T233815497-T-0001-294c5d60.mp3'),
+      '294c5d60'
+    );
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
@@ -1359,7 +1473,7 @@ describe('INSTALL SANITY', () => {
       'app/main.js', 'app/preload.js', 'app/renderer.js', 'app/index.html',
       'app/styles.css', 'app/package.json', 'app/wake-word-listener.py',
       'app/key_helper.py', 'app/edge_tts_speak.py', 'app/statusline.ps1',
-      'app/sentence_split.py', 'app/sentence_group.py', 'app/synth_turn.py',
+      'app/sentence_split.py', 'app/sentence_group.py', 'app/tool_narration.py', 'app/synth_turn.py',
       'app/lib/text.js',
       'app/session-registry.psm1',
       'app/tts-helper.psm1',
@@ -2200,8 +2314,10 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     // EX7e — currentPath now lives inside AudioPlayer; readers call
     // audioPlayer.getCurrentPath(). Still need TWO guards: one before
     // renderDots, one before the IPC unlink.
+    // v0.5 — body grew past 900 chars when ephemeral-clip (T- prefix)
+    // branching + comments were added; bump capture window to 2000.
     const src = fs.readFileSync(rendererPath, 'utf8');
-    const block = src.match(/function scheduleAutoDelete[\s\S]{0,900}\n\}/);
+    const block = src.match(/function scheduleAutoDelete[\s\S]{0,2000}\n\}/);
     if (!block) throw new Error('scheduleAutoDelete block not found');
     const count = (block[0].match(/audioPlayer\.getCurrentPath\(\)\s*===\s*p/g) || []).length;
     if (count < 2) {

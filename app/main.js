@@ -75,7 +75,11 @@ const DEFAULTS = {
     urls: false,
     headings: true,
     bullet_markers: false,
-    image_alt: false
+    image_alt: false,
+    // Python-side only: tool-call narration ("Reading foo.py" etc.) as
+    // ephemeral clips during on-tool hook. See DEFAULT_SPEECH_INCLUDES
+    // in app/synth_turn.py for the authoritative default.
+    tool_calls: true
   },
   openai_api_key: null
 };
@@ -1063,7 +1067,7 @@ async function speakClipboard() {
 const COLOURS_REGISTRY = path.join(INSTALL_DIR, 'session-colours.json');
 const SHORT_KEY_RE = /^[a-f0-9]{8}$/;
 const VOICE_KEY_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$|^(alloy|echo|fable|onyx|nova|shimmer)$/;
-const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt']);
+const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt','tool_calls']);
 
 // Validate + sanitise one registry entry. Returns null if malformed enough to drop.
 function sanitiseEntry(e) {

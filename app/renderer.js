@@ -293,16 +293,32 @@ function findFocusedSessionShort() {
 // moved into AudioPlayer; component reads clipPaths.isClipFile directly.
 const _paths = window.TT_CLIP_PATHS;
 const extractSessionShort = _paths.extractSessionShort;
+const isEphemeralClip = _paths.isEphemeralClip;
 
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away
 // from the machine and wanting to review on return).
 let autoPruneEnabled = true;
 
+// Ephemeral clips (T- prefix, tool-call narrations) vanish immediately
+// after playback — ~200 ms is enough for the audio element to finalise
+// its `ended` event and for the dot to briefly flash as "played" before
+// disappearing. Giving this a tiny but non-zero value also avoids a
+// subtle race where the delete fires before the audio element has
+// released the file handle.
+const EPHEMERAL_DELETE_DELAY_MS = 200;
+
 function scheduleAutoDelete(p, _wasManual = false) {
-  if (!autoPruneEnabled) return;  // respect the user's toggle
+  const ephemeral = isEphemeralClip(p);
+  // Ephemeral clips bypass the autoprune-disabled toggle: even when the
+  // user has disabled auto-prune to let clips stack up for review, tool
+  // narrations should still vanish because their entire purpose is
+  // ambient noise for the current moment, not reviewable content.
+  if (!ephemeral && !autoPruneEnabled) return;
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
-  const delay = Math.max(3, Math.min(600, autoPruneSec)) * 1000;
+  const delay = ephemeral
+    ? EPHEMERAL_DELETE_DELAY_MS
+    : Math.max(3, Math.min(600, autoPruneSec)) * 1000;
   const t = setTimeout(async () => {
     deleteTimers.delete(p);
     if (audioPlayer.getCurrentPath() === p) return;

@@ -53,10 +53,12 @@ from threading import Lock
 try:
     from sentence_split import split_sentences
     from sentence_group import group_sentences_for_tts
+    from tool_narration import narrate_tool_use
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from sentence_split import split_sentences
     from sentence_group import group_sentences_for_tts
+    from tool_narration import narrate_tool_use
 
 
 # ---------------------------------------------------------------------------
@@ -157,17 +159,28 @@ def _lock_path(session_id: str) -> Path:
 def load_sync_state(session_id: str) -> dict:
     p = _sync_path(session_id)
     if not p.exists():
-        return {'turn_boundary': -1, 'synthesized_line_indices': []}
+        return {
+            'turn_boundary': -1,
+            'synthesized_line_indices': [],
+            'announced_tool_line_indices': [],
+        }
     try:
         with open(p, encoding='utf-8') as f:
             data = json.load(f)
         return {
             'turn_boundary': int(data.get('turn_boundary', -1)),
             'synthesized_line_indices': list(data.get('synthesized_line_indices', [])),
+            # Back-compat: older sync files from v0.4 / pre-tool-narration
+            # won't have this key; default to empty so we never blow up.
+            'announced_tool_line_indices': list(data.get('announced_tool_line_indices', [])),
         }
     except Exception as e:
         _log(f'sync state read fail ({session_id[:8]}): {e}; resetting')
-        return {'turn_boundary': -1, 'synthesized_line_indices': []}
+        return {
+            'turn_boundary': -1,
+            'synthesized_line_indices': [],
+            'announced_tool_line_indices': [],
+        }
 
 
 def save_sync_state(session_id: str, state: dict) -> None:
@@ -296,6 +309,28 @@ def assistant_text_entries_after(entries: list[dict], start_idx: int) -> list[tu
     return out
 
 
+def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
+    """Return list of (line_idx, tool_name, tool_input) for assistant tool_use
+    content after start_idx. One tuple per tool_use block; a single assistant
+    entry can contain multiple parallel tool calls, each emitted separately."""
+    out: list[tuple] = []
+    for i in range(start_idx + 1, len(entries)):
+        e = entries[i]
+        if e.get('type') != 'assistant':
+            continue
+        content = e.get('message', {}).get('content', [])
+        if not isinstance(content, list):
+            continue
+        for c in content:
+            if c.get('type') != 'tool_use':
+                continue
+            tool_name = str(c.get('name', '')).strip()
+            tool_input = c.get('input') if isinstance(c.get('input'), dict) else {}
+            if tool_name:
+                out.append((i, tool_name, tool_input))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Sanitisation  (mirrors speak-response.ps1 lines 260-306)
 # ---------------------------------------------------------------------------
@@ -387,6 +422,12 @@ DEFAULT_SPEECH_INCLUDES = {
     'headings': True,
     'bullet_markers': False,
     'image_alt': False,
+    # Tool-call narration. When True, on-tool mode emits short ephemeral
+    # clips ("Reading foo.py", "Running npm test", etc.) as Claude
+    # invokes tools, so the user hears ambient status during long tool
+    # chains. Default on — turn off per-session if you want silence during
+    # agentic work.
+    'tool_calls': True,
 }
 
 
@@ -681,9 +722,13 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         user_idx = find_last_user_idx(entries)
         state = load_sync_state(session_id)
 
-        # Turn boundary changed? Reset synthesized list.
+        # Turn boundary changed? Reset synthesized + announced lists.
         if state['turn_boundary'] != user_idx:
-            state = {'turn_boundary': user_idx, 'synthesized_line_indices': []}
+            state = {
+                'turn_boundary': user_idx,
+                'synthesized_line_indices': [],
+                'announced_tool_line_indices': [],
+            }
 
         pending = [
             (i, txt) for (i, txt) in assistant_text_entries_after(entries, user_idx)
@@ -722,6 +767,27 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             if questions:
                 question_sentences = [f'Question. {q}' for q in questions]
 
+        # For on-tool: also narrate the tool_use entries that Claude is
+        # about to call. PreToolUse fires before the tool runs, so the
+        # tool_use blocks are already in the transcript by now. Each
+        # narration synthesised as an ephemeral clip (T- prefix) that
+        # the renderer auto-deletes immediately after playback, so the
+        # dot strip doesn't fill up with "Reading foo.py" / "Running npm"
+        # / etc. across a long tool chain.
+        tool_narrations: list[str] = []
+        tool_indices_done: list[int] = []
+        if mode == 'on-tool' and flags.get('tool_calls', True):
+            announced_set = set(state.get('announced_tool_line_indices', []))
+            for tool_idx, tname, tinput in tool_use_entries_after(entries, user_idx):
+                if tool_idx in announced_set:
+                    continue
+                phrase = narrate_tool_use(tname, tinput)
+                if phrase:
+                    tool_narrations.append(phrase)
+                # Always mark as "handled" even if narration was None so we
+                # don't re-consider the same entry on the next hook fire.
+                tool_indices_done.append(tool_idx)
+
         # Body: group sentences into TTS-ready clips. Without grouping,
         # every full stop becomes its own clip, which shreds connected
         # prose into staccato delivery. group_sentences_for_tts glues
@@ -736,7 +802,8 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             return 0
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
-             f'{len(body_clips)} body clips, {len(question_sentences)} questions')
+             f'{len(body_clips)} body clips, {len(question_sentences)} questions, '
+             f'{len(tool_narrations)} tool narrations')
 
         # Write questions first (play first due to mtime ordering from
         # release order: questions are synthesised + released before body,
@@ -744,11 +811,25 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         # marker on the filename, not the ordering mechanism.)
         if question_sentences:
             synthesize_parallel(question_sentences, voice, session_short, openai_key, prefix='Q-')
+        # Tool narrations are ephemeral: synthesised with T- prefix so the
+        # renderer auto-deletes them immediately after playback rather than
+        # waiting for the normal auto-prune timer. They announce "what
+        # Claude is doing right now" during long tool chains and would
+        # otherwise flood the dot strip.
+        if tool_narrations:
+            synthesize_parallel(tool_narrations, voice, session_short, openai_key, prefix='T-')
         synthesize_parallel(body_clips, voice, session_short, openai_key)
 
         # Mark pending entries as synthesized regardless of individual clip
         # outcomes (partial failures don't cause replay attempts)
         state['synthesized_line_indices'].extend(i for i, _ in pending)
+        # Same policy for tool narrations: once we've considered a tool_use
+        # entry for narration (whether we actually emitted a phrase or not),
+        # never reconsider it. Prevents double-announcing on the next hook fire.
+        if tool_indices_done:
+            announced = list(state.get('announced_tool_line_indices', []))
+            announced.extend(tool_indices_done)
+            state['announced_tool_line_indices'] = announced
         save_sync_state(session_id, state)
         return 0
 
