@@ -52,9 +52,11 @@ from threading import Lock
 
 try:
     from sentence_split import split_sentences
+    from sentence_group import group_sentences_for_tts
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from sentence_split import split_sentences
+    from sentence_group import group_sentences_for_tts
 
 
 # ---------------------------------------------------------------------------
@@ -712,20 +714,29 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             if questions:
                 question_sentences = [f'Question. {q}' for q in questions]
 
-        body_sentences = split_sentences(clean)
-        if not body_sentences:
+        # Body: group sentences into TTS-ready clips. Without grouping,
+        # every full stop becomes its own clip, which shreds connected
+        # prose into staccato delivery. group_sentences_for_tts glues
+        # adjacent short sentences up to ~300 chars per clip while
+        # respecting paragraph boundaries. Questions stay ungrouped
+        # (they're the "hear the ask first" primitive and are meant to
+        # land as short standalone clips ahead of the body).
+        body_clips = group_sentences_for_tts(clean)
+        if not body_clips:
             state['synthesized_line_indices'].extend(i for i, _ in pending)
             save_sync_state(session_id, state)
             return 0
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
-             f'{len(body_sentences)} body sentences, {len(question_sentences)} questions')
+             f'{len(body_clips)} body clips, {len(question_sentences)} questions')
 
-        # Write questions first (play first due to lexicographic filename ordering:
-        # prefix 'Q' sorts before empty, so questions go out ahead)
+        # Write questions first (play first due to mtime ordering from
+        # release order: questions are synthesised + released before body,
+        # so their mtimes are earlier. The 'Q-' prefix is a human-readable
+        # marker on the filename, not the ordering mechanism.)
         if question_sentences:
             synthesize_parallel(question_sentences, voice, session_short, openai_key, prefix='Q-')
-        synthesize_parallel(body_sentences, voice, session_short, openai_key)
+        synthesize_parallel(body_clips, voice, session_short, openai_key)
 
         # Mark pending entries as synthesized regardless of individual clip
         # outcomes (partial failures don't cause replay attempts)

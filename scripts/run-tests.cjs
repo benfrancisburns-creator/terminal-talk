@@ -1162,6 +1162,114 @@ describe('SENTENCE SPLIT', () => {
   });
 });
 
+describe('SENTENCE GROUP (v0.5 smart grouping)', () => {
+  // Groups adjacent short sentences into TTS-ready clips up to ~300 chars,
+  // respecting paragraph boundaries. Without this, every full stop becomes
+  // its own clip — staccato delivery for connected prose.
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from sentence_group import group_sentences_for_tts; `;
+
+  function group(text, opts) {
+    const kwargs = opts
+      ? `, target=${opts.target ?? 'None'}, hard_max=${opts.hard_max ?? 'None'}`
+      : '';
+    const code = `${pyPrelude}import json; print(json.dumps(group_sentences_for_tts(${JSON.stringify(text)}${kwargs})))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return JSON.parse(r.stdout.trim());
+  }
+
+  it('returns empty list for empty/whitespace input', () => {
+    assertEqual(group(''), []);
+    assertEqual(group('   \n  '), []);
+  });
+  it('single short sentence emits as one clip', () => {
+    assertEqual(group('Hello there.'), ['Hello there.']);
+  });
+  it('goodnight fixture: 2 paragraphs → 2 clips (was 3 pre-grouping)', () => {
+    // The real case Ben reported: splitting every full stop fragments
+    // a short connected goodnight message into 3 clips. After grouping
+    // the two-sentence first paragraph merges into one clip.
+    const text = 'Good night Ben, everything saved: memory files, project docs, '
+      + 'and the ten commits are on the main with CI green. '
+      + 'Next session will boot straight into context.\n\nSleep well.';
+    const r = group(text);
+    assertEqual(r.length, 2, 'expected 2 clips (one per paragraph)');
+    if (!r[0].includes('Good night Ben') || !r[0].includes('Next session')) {
+      throw new Error(`p1 sentences not glued: ${r[0]}`);
+    }
+    assertEqual(r[1], 'Sleep well.');
+  });
+  it('paragraph boundaries are never crossed', () => {
+    const text = 'First para sentence one enough chars. Second sentence also enough chars.'
+      + '\n\nSecond para sentence one long enough. Another sentence here too.';
+    const r = group(text);
+    // Two paragraphs must never merge even if their combined total fits target.
+    assertEqual(r.length, 2, 'paragraphs must flush separately');
+    if (r[0].includes('Second para')) throw new Error(`paragraph bleed: ${r[0]}`);
+    if (r[1].includes('First para')) throw new Error(`paragraph bleed: ${r[1]}`);
+  });
+  it('flushes when adding a sentence would exceed target', () => {
+    // 5 sentences of ~100 chars each in one paragraph → should flush
+    // when projected > target (300 default), producing ~2 clips not 5.
+    const sent = 'This is a medium-length sentence with enough chars to be over fifteen characters and continue naturally well past that point.';
+    const text = Array(5).fill(sent).join(' ');
+    const r = group(text);
+    if (r.length < 2) throw new Error(`expected >=2 clips from 5 medium sentences, got ${r.length}`);
+    for (const c of r) if (c.length > 500) throw new Error(`clip over hard_max: ${c.length}`);
+  });
+  it('respects custom target and hard_max', () => {
+    const text = 'Short one here. Short two here. Short three here. Short four here.';
+    const tight = group(text, { target: 40 });
+    const loose = group(text, { target: 500 });
+    if (tight.length <= loose.length) {
+      throw new Error(`tight target should yield more clips: ${tight.length} vs ${loose.length}`);
+    }
+  });
+  it('sentence longer than hard_max emits alone without crashing', () => {
+    // Build a sentence that's over hard_max even after upstream hard-split.
+    // split_sentences hard-splits at MAX_SENTENCE_LEN (400), so we test at 450.
+    const text = ('word '.repeat(90)).trim() + '.';  // ~450 chars, no full stops inside
+    const r = group(text, { hard_max: 400 });
+    assertTruthy(r.length >= 1, 'must emit something');
+    for (const c of r) if (c.length > 500) throw new Error(`overflow: ${c.length}`);
+  });
+  it('double-take fixture: compresses 8-clip response to ~4 clips', () => {
+    // The response Ben actually heard as 8 clips. Sanitised-form fixture.
+    const text = 'Double-take done. Memory set now covers the following items. '
+      + 'Overnight v0.4 EX6f plus EX7 refactor. '
+      + 'Afternoon QA and UX fixes with ten commits on main. '
+      + 'Ben environment, TT config and verify commands. '
+      + 'Repo-side open-threads list updated. '
+      + 'MEMORY index with pointers updated.\n\n'
+      + 'What I went back and added on the double-take. '
+      + 'The verification command block, how to check if installed app matches current main. '
+      + 'Ben current TT config with hotkeys, playback speed 1.15, auto_prune 15s, CB palette off. '
+      + 'Ben machine inventory: Win 11, Python 3.14.3, Node 24.14.0, pwsh 7.5.5. '
+      + 'Preferences learned: build-first-not-ask, concrete-beats-abstract.\n\n'
+      + 'A fresh session opening either the memory file or POST-V4-OPEN-THREADS gets a complete picture '
+      + 'without replaying this conversation. Nothing else important is floating in chat-only memory.';
+    const r = group(text);
+    if (r.length > 6) throw new Error(`too many clips (${r.length}); grouping not helping`);
+    if (r.length < 3) throw new Error(`too few clips (${r.length}); paragraph flushing broken`);
+  });
+  it('preserves original sentence content (no loss, no duplication)', () => {
+    // Concatenation round-trip: joining the groups back should contain
+    // every sentence's core content from the input.
+    const text = 'First sentence has enough characters here. Second one also long enough to pass. '
+      + 'Third follows with plenty of length.\n\nFourth in a new paragraph now. Fifth rounds us out.';
+    const r = group(text);
+    const joined = r.join(' ');
+    for (const needle of ['First sentence', 'Second one', 'Third follows', 'Fourth in', 'Fifth rounds']) {
+      if (!joined.includes(needle)) throw new Error(`lost content: "${needle}"`);
+    }
+    // No duplication: count occurrences of a unique marker
+    if ((joined.match(/First sentence/g) || []).length !== 1) {
+      throw new Error('duplicated content');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
@@ -1251,7 +1359,7 @@ describe('INSTALL SANITY', () => {
       'app/main.js', 'app/preload.js', 'app/renderer.js', 'app/index.html',
       'app/styles.css', 'app/package.json', 'app/wake-word-listener.py',
       'app/key_helper.py', 'app/edge_tts_speak.py', 'app/statusline.ps1',
-      'app/sentence_split.py', 'app/synth_turn.py',
+      'app/sentence_split.py', 'app/sentence_group.py', 'app/synth_turn.py',
       'app/lib/text.js',
       'app/session-registry.psm1',
       'app/tts-helper.psm1',

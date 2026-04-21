@@ -4,10 +4,10 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 5365,
-    "app/main.js": 1532,
+    "scripts/run-tests.cjs": 5473,
+    "app/main.js": 1577,
     "app/renderer.js": 884,
-    "app/synth_turn.py": 754,
+    "app/synth_turn.py": 765,
     "app/lib/audio-player.js": 660,
     "app/lib/sessions-table.js": 425,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -29,6 +29,7 @@
     "scripts/render-mocks.cjs": 137,
     "tests/e2e/settings.spec.ts": 121,
     "app/lib/component.js": 119,
+    "app/sentence_group.py": 118,
     "scripts/verify-install.ps1": 117,
     "tests/e2e/sessions.spec.ts": 113,
     "app/edge_tts_speak.py": 109,
