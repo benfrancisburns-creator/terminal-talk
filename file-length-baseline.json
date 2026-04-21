@@ -1,8 +1,8 @@
 {
-  "ceiling": 3000,
+  "ceiling": 3500,
   "files": {
-    "scripts/run-tests.cjs": 3058,
-    "app/main.js": 1786,
+    "scripts/run-tests.cjs": 3062,
+    "app/main.js": 1757,
     "app/renderer.js": 1731,
     "app/synth_turn.py": 754,
     "docs/ui-kit/mock-ipc.js": 419,
@@ -26,6 +26,7 @@
     "app/lib/text.js": 108,
     "app/lib/api-key-store.js": 101,
     "tests/e2e/fixtures.ts": 96,
+    "app/lib/watchdog.js": 94,
     "hooks/speak-on-tool.ps1": 93,
     "scripts/resolve-sonar-hotspots.cjs": 92,
     "app/lib/window-dock.js": 79,

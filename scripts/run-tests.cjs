@@ -1517,14 +1517,18 @@ describe('SELF-CLEANUP WATCHDOG', () => {
     }
   });
 
-  it('watchdog sweep runs pruneOldFiles + pruneSessionsDir + killOrphanVoiceListeners', () => {
-    const sweepIdx = main.indexOf('function runWatchdogSweep');
-    if (sweepIdx < 0) throw new Error('runWatchdogSweep() missing');
-    // Slice from the function header to the next `function ` declaration.
-    const nextFnIdx = main.indexOf('\nfunction ', sweepIdx + 1);
-    const sweep = main.slice(sweepIdx, nextFnIdx > 0 ? nextFnIdx : main.length);
+  it('watchdog sweep wires pruneOldFiles + pruneSessionsDir + killOrphanVoiceListeners', () => {
+    // EX6d — watchdog is now a factory (createWatchdog from
+    // app/lib/watchdog.js); main.js passes the sweep functions via
+    // the `sweeps` + `postSweepFns` options. Grep the createWatchdog
+    // call site for the expected wire-up.
+    const createIdx = main.indexOf('createWatchdog({');
+    if (createIdx < 0) throw new Error('createWatchdog({ ... }) call site missing');
+    // Slice from the call to its closing `});` — a reasonable bound.
+    const endIdx = main.indexOf('\n});', createIdx);
+    const sweep = main.slice(createIdx, endIdx > 0 ? endIdx : createIdx + 2000);
     for (const fn of ['pruneOldFiles', 'pruneSessionsDir', 'killOrphanVoiceListeners']) {
-      if (!sweep.includes(fn)) throw new Error(`runWatchdogSweep must call ${fn}`);
+      if (!sweep.includes(fn)) throw new Error(`createWatchdog must wire ${fn}`);
     }
   });
 

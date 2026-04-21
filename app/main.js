@@ -1515,12 +1515,15 @@ ipcMain.handle('hide-window', () => { if (win) win.hide(); });
 // compromised renderer. Watchdog is the first of many; nav-guard and
 // CSP probes can follow the same pattern in a future commit.
 if (process.env.TT_TEST_MODE === '1') {
-  ipcMain.handle('__test__/watchdog-state', () => ({
-    armed: watchdogTimer !== null,
-    lastSweepMs: watchdogLastSweepMs,
-    lastSweepAgeMs: watchdogLastSweepMs === 0 ? null : Date.now() - watchdogLastSweepMs,
-    intervalMs: WATCHDOG_INTERVAL_MS,
-  }));
+  ipcMain.handle('__test__/watchdog-state', () => {
+    const last = _watchdog.getLastSweepMs();
+    return {
+      armed: _watchdog.isArmed(),
+      lastSweepMs: last,
+      lastSweepAgeMs: last === 0 ? null : Date.now() - last,
+      intervalMs: WATCHDOG_INTERVAL_MS,
+    };
+  });
 }
 
 let voiceProc = null;
@@ -1664,58 +1667,26 @@ if (!process.env.TT_TEST_MODE) {
 // Each sweep writes a single line to queue/_watchdog.log so you can see
 // that it's doing its job even when the UI shows nothing happened.
 // ===========================================================================
+// EX6d — watchdog scheduler + stats logging extracted to
+// app/lib/watchdog.js. The sweep functions themselves (pruneOldFiles,
+// pruneSessionsDir, killOrphanVoiceListeners) stay in main.js because
+// they touch main's state; the watchdog factory just orchestrates them.
 const WATCHDOG_INTERVAL_MS = 30 * 60 * 1000;  // 30 minutes
 const WATCHDOG_LOG = path.join(QUEUE_DIR, '_watchdog.log');
-let watchdogTimer = null;
-let watchdogLastSweepMs = 0;
-
-function countFiles(dir, predicate) {
-  try {
-    // Wrap predicate so filter doesn't pass it (element, index, array).
-    // Sonar S7727: direct-pass predicates may intercept the unused args
-    // and change behaviour. Explicit single-arg wrap is the safe shape.
-    return fs.readdirSync(dir).filter((f) => predicate(f)).length;
-  } catch { return 0; }
-}
-
-function runWatchdogSweep() {
-  const t0 = Date.now();
-  const stats = { audio_removed: 0, sessions_removed: 0, errors: [] };
-
-  const beforeAudio = countFiles(QUEUE_DIR, f => AUDIO_OR_PARTIAL_RE.test(f));
-  try { pruneOldFiles(); } catch (e) { stats.errors.push(`pruneOldFiles: ${e.message}`); }
-  const afterAudio = countFiles(QUEUE_DIR, f => AUDIO_OR_PARTIAL_RE.test(f));
-  stats.audio_removed = Math.max(0, beforeAudio - afterAudio);
-
-  const beforeSessions = countFiles(SESSIONS_DIR, () => true);
-  try { pruneSessionsDir(); } catch (e) { stats.errors.push(`pruneSessionsDir: ${e.message}`); }
-  const afterSessions = countFiles(SESSIONS_DIR, () => true);
-  stats.sessions_removed = Math.max(0, beforeSessions - afterSessions);
-
-  try { killOrphanVoiceListeners(); } catch (e) { stats.errors.push(`killOrphanVoiceListeners: ${e.message}`); }
-
-  const ts = new Date().toISOString();
-  watchdogLastSweepMs = Date.now();
-  const line = `${ts} sweep ok · pruned ${stats.audio_removed} audio · ${stats.sessions_removed} session files · ${Date.now() - t0}ms` +
-    (stats.errors.length ? ` · errors: ${stats.errors.join('; ')}` : '') + '\n';
-  try { fs.appendFileSync(WATCHDOG_LOG, line); } catch {}
-}
-
-function startWatchdog() {
-  if (watchdogTimer) clearInterval(watchdogTimer);
-  // Don't fire immediately — startup already ran the sweep functions. Wait
-  // a full interval so we only clean loose ends that accumulate over time.
-  watchdogTimer = setInterval(runWatchdogSweep, WATCHDOG_INTERVAL_MS);
-  // Write a start line so you know the watchdog actually armed.
-  try {
-    fs.appendFileSync(WATCHDOG_LOG,
-      `${new Date().toISOString()} watchdog armed · interval ${WATCHDOG_INTERVAL_MS / 60000}min · pid ${process.pid}\n`);
-  } catch {}
-}
-
-function stopWatchdog() {
-  if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
-}
+const { createWatchdog } = require('./lib/watchdog');
+const _watchdog = createWatchdog({
+  intervalMs: WATCHDOG_INTERVAL_MS,
+  logPath: WATCHDOG_LOG,
+  sweeps: [
+    { name: 'audio', statKey: 'audio_removed', dir: QUEUE_DIR, predicate: (f) => AUDIO_OR_PARTIAL_RE.test(f), fn: () => pruneOldFiles() },
+    { name: 'session files', statKey: 'sessions_removed', dir: SESSIONS_DIR, predicate: () => true, fn: () => pruneSessionsDir() },
+  ],
+  postSweepFns: [
+    { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
+  ],
+});
+const startWatchdog = _watchdog.start;
+const stopWatchdog = _watchdog.stop;
 
 // Z2-4 — boot-time SHA-256 of spawned Python helpers. Forensic only —
 // we don't block on mismatch because the install itself is trusted and
