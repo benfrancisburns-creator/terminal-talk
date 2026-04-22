@@ -859,6 +859,20 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             save_sync_state(session_id, state)
             return 0
 
+        # Questions-first extraction was removed 2026-04-22. Rationale:
+        # extracting every `?`-ending sentence and playing it BEFORE the
+        # body caused three problems the user hit in practice:
+        #   1. Order mismatch — a question heard in isolation often needs
+        #      the preceding prose to make sense; "was Ben in Firefox?"
+        #      means nothing without the diagnostic setup that led to it.
+        #   2. False positives — the regex caught `?` inside inline code
+        #      spans (e.g. "`?`-sentences") as "questions".
+        #   3. Duplication — a question was spoken once as a Q-clip and
+        #      again in natural body flow, adding audible clutter.
+        # Audio now tracks terminal order 1:1. extract_questions() stays
+        # in this module for the test harness and any future re-enable.
+        question_sentences: list[str] = []
+
         # Tool narrations (ephemeral T- clips). Emit regardless of
         # whether text is also pending — "Reading foo.py" during a
         # long tool chain is the whole point of TN1.
@@ -876,23 +890,16 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             # tool_calls disabled: still mark as handled.
             tool_indices_done.extend(i for i, _, _ in new_tool_entries)
 
-        # Body + questions: only runs when we have new prose to synth.
-        # When pending is empty (pure tool chain), we skip straight to
-        # the narration emit below.
+        # Body: only runs when we have new prose to synth. When pending
+        # is empty (pure tool chain), we skip straight to the narration
+        # emit below. group_sentences_for_tts glues adjacent short
+        # sentences up to ~300 chars while respecting paragraph
+        # boundaries (NG1).
         body_clips: list[str] = []
-        question_sentences: list[str] = []
         if pending:
             combined = '\n'.join(t for _, t in pending)
             clean = sanitize(combined, flags)
             if clean:
-                if mode == 'on-stop':
-                    questions = extract_questions(clean)
-                    if questions:
-                        question_sentences = [f'Question. {q}' for q in questions]
-                # group_sentences_for_tts glues adjacent short sentences
-                # up to ~300 chars while respecting paragraph boundaries
-                # (NG1). Questions stay ungrouped — they're the
-                # "hear the ask first" primitive.
                 body_clips = group_sentences_for_tts(clean)
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '

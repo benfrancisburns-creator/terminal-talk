@@ -306,22 +306,13 @@ $sessionId = ([IO.Path]::GetFileNameWithoutExtension($transcript))
 $sessionShort = if ($sessionId.Length -ge 8) { $sessionId.Substring(0, 8) } else { $sessionId }
 $timestamp = Get-Date -Format 'yyyyMMddTHHmmssfff'
 
-# Priority clip: questions extracted from response (plays before main body)
-$questionMatches = [regex]::Matches($clean, '[^.!?\n]{5,}\?')
-$questions = @()
-foreach ($m in $questionMatches) {
-    $q = $m.Value.Trim()
-    if ($q.Length -gt 5 -and $q -match '\w') { $questions += $q }
-}
-if ($questions.Count -gt 0) {
-    $qText = 'Question. ' + ($questions -join ' ')
-    if ($qText.Length -gt 1500) { $qText = $qText.Substring(0, 1500) }
-    $qBase = Join-Path $queueDir ($timestamp + '-Q-' + $sessionShort)
-    $qOut = Invoke-TTS -text $qText -edgeVoice $edgeClipVoice -openAiVoice $openaiClipVoice `
-        -openAiInstructions 'Speak with warm attentiveness, as if asking a friend. Natural pace.' `
-        -basePath $qBase
-    if ($qOut) { Log "QUESTION clip saved: $qOut" }
-}
+# Questions-first extraction removed 2026-04-22 — extracting every
+# `?`-ending sentence and playing it before the body caused three
+# problems in practice: (1) order mismatch with the terminal, (2)
+# false positives from `?` inside inline code, (3) duplication of
+# questions in both Q-clip and body-clip form. Audio tracks terminal
+# order 1:1 now. This fallback path (non-streaming Stop) rarely runs
+# — synth_turn.py is the primary — but keeping parity across mirrors.
 
 # Main response clip
 $baseFile = Join-Path $queueDir ($timestamp + '-' + $sessionShort)
