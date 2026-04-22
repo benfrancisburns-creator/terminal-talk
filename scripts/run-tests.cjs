@@ -1297,10 +1297,17 @@ describe('TOOL NARRATION (v0.5 ephemeral tool-call phrases)', () => {
   it('Write uses basename', () => {
     assertEqual(narrate('Write', { file_path: 'app/sentence_group.py' }), 'Writing sentence_group.py');
   });
-  it('Bash uses first word of command, skipping env assignments', () => {
-    assertEqual(narrate('Bash', { command: 'npm test --verbose' }), 'Running npm');
-    assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm run build' }), 'Running npm');
+  it('Bash speaks the command with env assignments stripped, truncated ~50ch', () => {
+    // 2026-04-22 — widened from first-word-only ("Running npm") after
+    // user feedback that single-word narration told them nothing about
+    // what was actually running. Now speaks up to 50 chars with sensible
+    // truncation + leading FOO=bar env assignments stripped.
+    assertEqual(narrate('Bash', { command: 'npm test --verbose' }), 'Running npm test --verbose');
+    assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm run build' }), 'Running npm run build');
     assertEqual(narrate('Bash', {}), 'Running a command');
+    const long = narrate('Bash', { command: 'grep -rn some_long_pattern_here ' + 'x'.repeat(200) });
+    if (long.length > 65) throw new Error(`bash phrase too long: ${long.length}ch`);
+    if (!long.startsWith('Running grep')) throw new Error(`bash phrase should start with command: ${long}`);
   });
   it('Grep pattern truncates at word boundary', () => {
     const out = narrate('Grep', { pattern: 'class Communicate' });

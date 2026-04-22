@@ -83,7 +83,36 @@ const SPINNER_VERBS = [
   'Tinkering','Transmuting','Unfurling','Unravelling','Vibing','Wandering',
   'Whirring','Wibbling','Wizarding','Working','Wrangling'
 ];
+// Longer thinking phrases — mixed with single SPINNER_VERBS so the
+// heartbeat audio alternates between the short Claude-Code homage
+// words ("Moonwalking") and richer context phrases that actually
+// tell the listener what's going on. User feedback: a single word
+// felt too terse; a full phrase like "Thinking this through"
+// conveys the intent better while still being a short clip.
+const THINKING_PHRASES = [
+  'Thinking this through',
+  'Working through it',
+  'Let me think about this',
+  'Considering your message',
+  'Processing your request',
+  'Composing a response',
+  'Still working on it',
+  'Getting my head around this',
+  'Piecing it together',
+  'Just a moment',
+  'Nearly there',
+  'Just crunching the details',
+  'Sussing this out',
+  'Giving it a proper think',
+];
 function randomVerb() {
+  // 40% chance of a longer phrase, 60% chance of a single spinner
+  // verb. Keeps the Claude-Code-homage vocabulary front and centre
+  // but introduces enough context that a long silent gap doesn't
+  // just play five random single-word verbs in a row.
+  if (Math.random() < 0.4) {
+    return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)];
+  }
   return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
 }
 const timeEl = document.getElementById('time');
@@ -224,8 +253,13 @@ setInterval(() => {
 //   - last heartbeat was > HEARTBEAT_INTERVAL_MS ago (cool-down)
 //   - audio has been silent for at least HEARTBEAT_INITIAL_MS (don't
 //     start heartbeating the instant a response ends)
-const HEARTBEAT_INITIAL_MS = 15_000;
-const HEARTBEAT_INTERVAL_MS = 12_000;
+// Heartbeat starts firing 5 s into a silent stretch (was 15 s) so
+// short "just thinking" phases — Claude considering your message
+// before any tool call lands — get at least one verb before the first
+// tool narration kicks in. Subsequent heartbeats every 8 s (was 12 s)
+// so a long silent stretch gets 2-3 verbs, not just one.
+const HEARTBEAT_INITIAL_MS = 5_000;
+const HEARTBEAT_INTERVAL_MS = 8_000;
 // A session counts as "actively working" if its registry entry has
 // been touched within this tight window. Originally 180 s (matched
 // statusline fresh-session), but that made heartbeat fire for minutes

@@ -387,7 +387,12 @@ function createIpcHandlers(deps) {
     let heartbeatInFlight = false;
     ipcMain.handle('speak-heartbeat', async (_e, verb, sessionShort) => {
       if (heartbeatInFlight) return false;
-      if (typeof verb !== 'string' || !/^[A-Za-z]{2,30}$/.test(verb)) return false;
+      // Accept single verbs ("Moonwalking") or short multi-word phrases
+      // ("Thinking this through"). Letters and single-spaces only —
+      // still strict enough that a compromised renderer can't pipe
+      // shell metachars or SSML through the edge-tts stdin.
+      if (typeof verb !== 'string' || !/^[A-Za-z][A-Za-z ]{1,59}$/.test(verb)) return false;
+      if (/\s\s/.test(verb)) return false;  // no double-spaces
       if (typeof sessionShort !== 'string' || !/^[a-f0-9]{8}$/.test(sessionShort)) return false;
       if (typeof callEdgeTTS !== 'function') return false;
       const cfg = getCFG();

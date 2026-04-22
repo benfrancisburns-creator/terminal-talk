@@ -147,13 +147,32 @@ def narrate_tool_use(tool_name: str, tool_input: dict | None) -> str | None:
         pat = _truncate(str(inp.get('pattern', '')))
         return f'Searching for {pat}' if pat else 'Searching'
 
-    if name == 'bash':
-        first = _first_word(str(inp.get('command', '')))
-        return f'Running {first}' if first else 'Running a command'
-
-    if name == 'powershell':
-        first = _first_word(str(inp.get('command', '')))
-        return f'Running {first}' if first else 'Running a command'
+    if name in ('bash', 'powershell'):
+        # Speak enough of the command that the listener can tell what
+        # Claude is actually doing. `Running npm` (first-word only) was
+        # too terse — "Running cd" told the user nothing about the
+        # target path or any chained commands. Take the full command,
+        # skip leading env assignments, truncate at a sensible word
+        # boundary.
+        cmd = str(inp.get('command', '')).strip()
+        if not cmd:
+            return 'Running a command'
+        # Skip leading env assignments (FOO=bar baz ...) so the spoken
+        # phrase starts with the real command.
+        tokens = cmd.split()
+        started = False
+        kept: list[str] = []
+        for tok in tokens:
+            if not started and '=' in tok:
+                continue
+            started = True
+            kept.append(tok)
+        stripped = ' '.join(kept) if kept else cmd
+        # 50-char truncate (a bit longer than other args — commands
+        # carry more payload). Still stays under the ~60ch phrase ceiling
+        # with the "Running " prefix.
+        snippet = _truncate(stripped, 50)
+        return f'Running {snippet}'
 
     if name == 'webfetch':
         dom = _domain(str(inp.get('url', '')))
