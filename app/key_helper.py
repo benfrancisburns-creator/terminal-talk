@@ -24,10 +24,10 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import ctypes.wintypes as wintypes
 import json
 import sys
 import time
-from ctypes import wintypes
 from pathlib import Path
 
 _u32 = ctypes.windll.user32
@@ -225,7 +225,7 @@ def _log_cmd(cmd: str) -> None:
         with open(_LOG_PATH, 'a', encoding='utf-8') as fh:
             fh.write(f'{ts} {cmd}\n')
     except Exception:
-        pass
+        pass  # diagnostic log is best-effort — missing log must never crash helper
 
 
 def main() -> int:

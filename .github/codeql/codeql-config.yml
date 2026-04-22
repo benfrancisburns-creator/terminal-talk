@@ -1,0 +1,16 @@
+name: Terminal Talk CodeQL config
+
+# Custom CodeQL config. Paired with the default +security-and-quality
+# query pack in .github/workflows/codeql.yml.
+#
+# paths-ignore
+#   docs/v*/ — per-release archived snapshots (see scripts/archive-docs.sh).
+#             They freeze old UI-kit + mirror code for link-rot resistance.
+#             Scanning them adds nothing: any finding is either already
+#             fixed on main or an intentional feature of that version.
+
+paths-ignore:
+  - docs/v0.1/**
+  - docs/v0.2/**
+  - docs/v0.3/**
+  - docs/v0.4/**

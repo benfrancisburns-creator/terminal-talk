@@ -56,7 +56,7 @@ async def synth(text: str, voice: str, out_path: str) -> int:
                 if os.path.exists(out_path + '.partial'):
                     os.remove(out_path + '.partial')
             except Exception:
-                pass
+                pass  # cleanup best-effort — leftover .partial is handled by startup sweep
             await asyncio.sleep(0.3 + 0.2 * attempt)
         except Exception as e:
             last_err = e
@@ -66,7 +66,7 @@ async def synth(text: str, voice: str, out_path: str) -> int:
         if os.path.exists(tmp):
             os.remove(tmp)
     except Exception:
-        pass
+        pass  # cleanup best-effort — leftover .partial is handled by startup sweep
     print(
         f'edge-tts failed after {EDGE_TTS_RETRIES} attempts: '
         f'{type(last_err).__name__}: {last_err}',

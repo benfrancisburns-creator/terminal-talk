@@ -37,7 +37,6 @@ Trust boundary (D2-4):
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import contextlib
 import json
 import os
@@ -46,6 +45,7 @@ import socket
 import sys
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_futures
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -355,7 +355,6 @@ _KBD_SHORTCUT_RE = re.compile(
 )
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
-_BULLET_MARKER_RE = re.compile(r'^\s*([-*+]|\d+\.)\s+', re.MULTILINE)
 # Triple-asterisk emphasis (bold-italic ***x***) must be stripped BEFORE
 # the double-asterisk rule, because a naive `\*\*(...)\*\*` on `***x***`
 # matches the inner `**x**` and leaves a stray `*` on each side — which
@@ -723,7 +722,7 @@ def synthesize_parallel(
         futures: list[Future] = []
         for seq, sent in enumerate(sentences):
             futures.append(ex.submit(_synth_task, seq, sent))
-        done, not_done = concurrent.futures.wait(
+        done, not_done = wait_futures(
             futures,
             timeout=SYNTH_TIMEOUT_SEC * 2,
         )

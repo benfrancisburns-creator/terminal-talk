@@ -644,7 +644,8 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
     );
     const libScripts = [...productHtml.matchAll(/<script\s+src="lib\/([^"]+)"\s*>/g)].map((m) => m[1]);
     for (const lib of libScripts) {
-      const re = new RegExp(`\\.\\./app-mirror/lib/${lib.replace(/\./g, '\\.')}`);
+      const escaped = lib.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`\\.\\./app-mirror/lib/${escaped}`);
       if (!re.test(kitBootstrapSrc)) {
         throw new Error(`kit-bootstrap must loadScript ../app-mirror/lib/${lib} (renderer.js depends on it)`);
       }
