@@ -974,6 +974,25 @@ if (window.api.onPausePlaybackOnly) {
     bumpActivity();
   });
 }
+// Mic-watcher auto-pause / auto-resume. The mic-watcher PS sidecar in
+// main.js detects when any other app (Wispr Flow, Windows Voice Access,
+// VoIP, etc.) starts or stops using the microphone. We pause TTS while
+// they're recording and resume from the exact same point when they let
+// go — user never plays over their dictation, never misses content
+// while they talk. The _systemAutoPaused flag on AudioPlayer is the
+// gate for auto-resume: a user-initiated pause sets it false, so we
+// don't undo it just because the mic was released.
+if (window.api.onMicCapturedElsewhere) {
+  window.api.onMicCapturedElsewhere(() => {
+    if (!audio.src || audio.ended || audio.paused) return;
+    audioPlayer.systemAutoPause();
+  });
+}
+if (window.api.onMicReleased) {
+  window.api.onMicReleased(() => {
+    audioPlayer.systemAutoResume();
+  });
+}
 // Dock-edge class. Main.js sends { kind: 'horizontal', edge: 'top'|'bottom' }
 // after a snap — vertical mode was removed so we just track which horizontal
 // edge we're glued to (for the dock-bottom rule in styles.css that flattens

@@ -108,6 +108,17 @@ function primaryForArrangement(i, baseColours) {
   return baseColours[i - 16];
 }
 
+// Mascot-pair: secondary colour is the partner in split arrangements,
+// same as primary for solids (so one variable covers both cases from
+// the SVG's point of view). Drives the bottom half of the mascot body
+// and the legs via var(--mascot-secondary, currentColor).
+function secondaryForArrangement(i, baseColours) {
+  const { HSPLIT_PARTNER, VSPLIT_PARTNER } = palette;
+  if (i < 8)  return baseColours[i];
+  if (i < 16) return baseColours[HSPLIT_PARTNER[i - 8]];
+  return baseColours[VSPLIT_PARTNER[i - 16]];
+}
+
 // EX5 — arrangementBg now takes the colour set as a param so we can
 // emit both default and CB rule blocks from the same helper.
 function arrangementBgFor(i, baseColours) {
@@ -129,15 +140,19 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     const primary = primaryForArrangement(i, baseColours);
     lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; }`);
     lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { border-color: ${primary}; box-shadow: 0 0 0 2px ${primary}; }`);
-    // Mascot: SVG body/legs/ears use fill: currentColor — this rule drives
-    // that colour per-palette so the mascot matches the currently-playing
-    // session. Splits collapse to the primary colour (single-colour mascot
-    // is readable; a split mascot would be visually noisy on a 20px icon).
-    lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; }`);
+    // Mascot: SVG upper body/ears use fill: currentColor (primary); lower
+    // body + legs use fill: var(--mascot-secondary, currentColor). Split
+    // arrangements set --mascot-secondary to the partner colour so the
+    // mascot splits top/bottom matching the session palette. Solid
+    // arrangements set secondary = primary, so the mascot renders as one
+    // colour (var falls through cleanly). Keeps one SVG for all 24
+    // arrangements; colours stay clipped to the body rects (no bleed).
+    const secondary = secondaryForArrangement(i, baseColours);
+    lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; --mascot-secondary: ${secondary}; }`);
   }
   lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { border-color: ${palette.NEUTRAL_COLOUR}; box-shadow: 0 0 0 2px ${palette.NEUTRAL_COLOUR}; }`);
-  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; --mascot-secondary: ${palette.NEUTRAL_COLOUR}; }`);
   return lines;
 }
 

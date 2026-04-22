@@ -46,19 +46,35 @@
     <div id="scrubberWrap" class="scrubber-wrap">
       <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
       <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-        <!-- Body, ears, face (fixed) -->
-        <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
-        <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
-        <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
-        <!-- Four legs — each on its own animation track for the walk cycle -->
-        <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="currentColor"/>
-        <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="currentColor"/>
-        <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="currentColor"/>
-        <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="currentColor"/>
-        <!-- Eyes -->
+        <!-- Body: split at y=44 so hsplit/vsplit palette arrangements show
+             a top/bottom colour pair. Solid arrangements set
+             --mascot-secondary = primary, so the fallback through
+             var(--mascot-secondary, currentColor) renders a single colour. -->
+        <!-- Body — top half (primary, currentColor) -->
+        <rect x="13"  y="0"  width="114" height="44" fill="currentColor"/>
+        <!-- Body — bottom half (secondary) -->
+        <rect x="13"  y="44" width="114" height="44" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Left ear — top half (primary), bottom half (secondary) -->
+        <rect x="0"   y="36" width="13" height="8"  fill="currentColor"/>
+        <rect x="0"   y="44" width="13" height="18" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Right ear — same -->
+        <rect x="127" y="36" width="13" height="8"  fill="currentColor"/>
+        <rect x="127" y="44" width="13" height="18" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Four legs — below the y=44 split line, so all legs take the
+             secondary colour. Each stays on its own animation track
+             (.leg-N class) so the walk cycle and scrubbing states work
+             identically to the single-colour version. -->
+        <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Eyes — at y=26-42, sit in the primary (top) half -->
         <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
         <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
-        <!-- Smile (three grey rects form a shallow U) -->
+        <!-- Smile — at y=58-70, sits in the secondary (bottom) half.
+             Dark grey reads on every palette colour except the brightest
+             bone slot, where it stays legible because of the #3a3a3a
+             contrast ratio against #e0e0e0. -->
         <rect x="44" y="58" width="8"  height="6"  fill="#3a3a3a"/>
         <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
         <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>

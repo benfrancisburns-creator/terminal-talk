@@ -257,7 +257,14 @@ function saveWindowPosition() {
 // letterbox we've always shipped. Vertical is a 56 px wide column that's
 // as tall as the workArea minus margins — fits all controls stacked plus
 // room for dots running downward.
-const DIM_HORIZONTAL = { width: 680, height: 114 };
+// Height grew from 114 → 144 when the per-session tabs row landed.
+// Chrome above the dots-row is now: margin 6 + padding 6 + bar-top 36
+// + gap 4 + tabs-row 30 (22 chip + 8 padding) + gap 4 + dots-row 44
+// + padding 8 + margin 6 = 144. Without the bump, overflow: hidden on
+// .bar clipped the dots. The tabs-row auto-hides (:empty) when only
+// one session is active, so single-session users see ~30 px of
+// headroom — acceptable trade for a clean multi-session row.
+const DIM_HORIZONTAL = { width: 680, height: 144 };
 
 // Drag-intent tracking. Without this, snapping from a diagonal drag to a
 // corner picks whichever of (horizontal-edge | vertical-edge) happens to
@@ -1430,6 +1437,62 @@ function startVoiceListener() {
     diag('voice listener started');
   } catch {}
 }
+// Microphone-usage watcher. Spawns app/mic-watcher.ps1 as a long-running
+// child; it polls the Windows CapabilityAccessManager consent-store
+// registry every ~150 ms and emits `MIC_CAPTURED <key>` / `MIC_RELEASED`
+// on stdout when another app starts/stops using the microphone. We
+// forward those transitions to the renderer so TTS playback can auto-
+// pause while the user dictates to Wispr Flow (or any other mic-using
+// tool) and auto-resume when they let go.
+let micWatcherProc = null;
+const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
+
+function startMicWatcher() {
+  if (micWatcherProc) return;
+  try {
+    micWatcherProc = spawn(POWERSHELL_EXE, [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', MIC_WATCHER_SCRIPT
+    ], {
+      windowsHide: true,
+      detached: false,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    let buf = '';
+    micWatcherProc.stdout.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line || !win || win.isDestroyed()) continue;
+        try {
+          if (line.startsWith('MIC_CAPTURED')) {
+            win.webContents.send('mic-captured-elsewhere');
+          } else if (line.startsWith('MIC_RELEASED')) {
+            win.webContents.send('mic-released');
+          }
+        } catch {}
+      }
+    });
+    micWatcherProc.on('exit', (code) => {
+      micWatcherProc = null;
+      diag(`mic-watcher exited code=${code}`);
+      // Restart unless the app is shutting down. Cheap backoff: 2 s.
+      setTimeout(() => { if (!win || win.isDestroyed()) return; startMicWatcher(); }, 2000);
+    });
+    diag('mic-watcher started');
+  } catch (e) {
+    diag(`mic-watcher failed to start: ${e && e.message}`);
+    micWatcherProc = null;
+  }
+}
+
+function stopMicWatcher() {
+  if (!micWatcherProc) return;
+  try { micWatcherProc.kill(); } catch {}
+  micWatcherProc = null;
+}
+
 function toggleListening() {
   const now = isListeningEnabled();
   setListeningState(!now);
@@ -1568,6 +1631,7 @@ app.whenReady().then(() => {
   }
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
+  startMicWatcher();
 });
 
 app.on('will-quit', () => {
@@ -1576,6 +1640,7 @@ app.on('will-quit', () => {
   if (watcher) watcher.close();
   if (voiceProc) { try { voiceProc.kill(); } catch {} }
   if (keyHelper) { try { keyHelper.kill(); } catch {} }
+  stopMicWatcher();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });

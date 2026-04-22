@@ -47,4 +47,10 @@ contextBridge.exposeInMainWorld('api', {
   onSetOrientation:      (cb) => subscribe('set-orientation',        cb, (p) => p),
   onTogglePausePlayback: (cb) => subscribe('toggle-pause-playback',  cb),
   onPausePlaybackOnly:   (cb) => subscribe('pause-playback-only',    cb),
+  // Mic-watcher transitions from app/mic-watcher.ps1. Fire when any
+  // non-self app starts / stops using the microphone — renderer
+  // auto-pauses + auto-resumes TTS so the user never plays over their
+  // dictation and never misses content while they talk.
+  onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
+  onMicReleased:          (cb) => subscribe('mic-released',           cb),
 });

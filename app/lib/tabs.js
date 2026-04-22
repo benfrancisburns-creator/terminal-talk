@@ -227,7 +227,11 @@
       tab.setAttribute('aria-selected', selected ? 'true' : 'false');
       if (selected) tab.classList.add('selected');
       if (stale) tab.classList.add('stale');
-      if (paletteKey) tab.dataset.palette = paletteKey;
+      // NOTE: no data-palette on the tab itself — palette-classes.css uses
+      // the bare `[data-palette="NN"] { background: ... }` attribute
+      // selector, which would paint the whole tab in the session colour
+      // and defeat the black-chip / coloured-dot design. Only the inner
+      // .tab-dot carries the palette attribute.
 
       // Content: optional colour dot + label + optional count badge.
       if (paletteKey) {

@@ -150,6 +150,12 @@
       this._currentIsManual = false;
       this._currentIsUserClick = false;
       this._userScrubbing = false;
+      // Set when a MediaSession 'pause' action auto-pauses us for an
+      // audio-focus handover (e.g. Wispr Flow grabbing comms audio).
+      // Cleared when the matching 'play' action arrives or the user
+      // explicitly plays. Distinguishes system-initiated pauses (auto-
+      // resume-worthy) from user-initiated ones (stay paused).
+      this._systemAutoPaused = false;
 
       // Scrubber + animation internal state.
       this._scrubberRafId = null;
@@ -171,6 +177,27 @@
     }
 
     isUserScrubbing() { return this._userScrubbing; }
+
+    // System-initiated pause — call when another app grabs the mic
+    // (Wispr Flow, Windows Voice Access, VoIP, etc.) via the main-side
+    // mic-watcher. Sets _systemAutoPaused so systemAutoResume() later
+    // knows to pick playback back up from the exact same point.
+    systemAutoPause() {
+      if (!this._audio || !this._audio.src || this._audio.ended) return;
+      if (this._audio.paused) return;
+      this._systemAutoPaused = true;
+      try { this._audio.pause(); } catch {}
+    }
+
+    // System-initiated resume — call when the external mic-grabber
+    // releases. Only resumes if WE paused via systemAutoPause (flag
+    // guard); a user-initiated pause in the meantime stays paused.
+    systemAutoResume() {
+      if (!this._systemAutoPaused) return;
+      this._systemAutoPaused = false;
+      if (!this._audio || !this._audio.src || !this._audio.paused || this._audio.ended) return;
+      try { this._audio.play().catch(() => {}); } catch {}
+    }
 
     playPath(p, manual = false, userClick = false) {
       const queue = this._getQueue();
@@ -455,13 +482,57 @@
             && navigator.mediaDevices
             && typeof navigator.mediaDevices.addEventListener === 'function') {
           this._on(navigator.mediaDevices, 'devicechange', () => {
-            if (!this._audio.src || this._audio.ended) return;
-            const wasPaused = this._audio.paused;
+            // Nudge currentTime so Chromium re-binds to whatever the new
+            // default output device is (headphone plug-in, BT session,
+            // etc.). DON'T force .play() here — a device-change event
+            // also fires when another app claims the microphone for
+            // communications (Wispr Flow dictation, VoIP call, Windows
+            // Voice Access). If Chromium's audio-focus subsystem decides
+            // to pause us on that grab, a forced play() would fight the
+            // pause: user hears audio bleeding over their dictation.
+            if (!this._audio.src || this._audio.ended || this._audio.paused) return;
             const ct = this._audio.currentTime;
             try {
               this._audio.currentTime = Math.max(0, ct - 0.001);
-              if (!wasPaused) this._audio.play().catch(() => {});
             } catch {}
+          });
+        }
+      } catch {}
+
+      // Declare our audio category so Chromium applies the right focus
+      // policy when another app claims audio (comms dictation tools, VoIP,
+      // etc.). 'playback' tells Chromium we're long-form media that
+      // should yield to communications audio. Newer Chromium honours
+      // this by auto-pausing our <audio> on comms-focus loss and
+      // auto-resuming on focus gain — exactly the push-to-talk UX.
+      try {
+        if (typeof navigator !== 'undefined' && navigator.audioSession) {
+          navigator.audioSession.type = 'playback';
+        }
+      } catch {}
+
+      // MediaSession action handlers — Chromium's audio-focus subsystem
+      // surfaces via these when the OS asks the page to pause/resume
+      // (hardware media keys, notification-shelf controls, communications
+      // focus changes). We distinguish system-initiated pauses (remember
+      // to auto-resume) from user-initiated ones (stay paused).
+      try {
+        if (typeof navigator !== 'undefined'
+            && navigator.mediaSession
+            && typeof navigator.mediaSession.setActionHandler === 'function') {
+          navigator.mediaSession.setActionHandler('pause', () => {
+            if (!this._audio.src || this._audio.ended || this._audio.paused) return;
+            this._systemAutoPaused = true;
+            try { this._audio.pause(); } catch {}
+          });
+          navigator.mediaSession.setActionHandler('play', () => {
+            // Only auto-resume if WE paused via the system handler.
+            // Don't hijack a user-intended play button from the OS shelf
+            // when audio is already running or explicitly user-paused.
+            if (!this._systemAutoPaused) return;
+            if (!this._audio.src || !this._audio.paused) return;
+            this._systemAutoPaused = false;
+            try { this._audio.play().catch(() => {}); } catch {}
           });
         }
       } catch {}

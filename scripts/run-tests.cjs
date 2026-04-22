@@ -2575,6 +2575,122 @@ describe('TABS — unread count is derived, not stored', () => {
 });
 
 // =============================================================================
+// MIC-WATCHER auto-pause/auto-resume wiring — regression guards for the
+// Wispr Flow (and any other dictation tool) push-to-talk UX. Policy:
+// the moment any non-self app starts using the microphone, TTS playback
+// pauses; the moment they release, TTS resumes from the exact same
+// point — no content lost, no audio bleeding over dictation.
+// =============================================================================
+describe('MIC-WATCHER — auto-pause on external mic grab', () => {
+  const appDir = path.join(__dirname, '..', 'app');
+  const installDir = path.join(os.homedir(), '.terminal-talk');
+  const watcherRepo = path.join(appDir, 'mic-watcher.ps1');
+  const watcherInstalled = path.join(installDir, 'app', 'mic-watcher.ps1');
+  const mainSrc = fs.readFileSync(path.join(appDir, 'main.js'), 'utf8');
+  const preloadSrc = fs.readFileSync(path.join(appDir, 'preload.js'), 'utf8');
+  const rendererSrc = fs.readFileSync(path.join(appDir, 'renderer.js'), 'utf8');
+  const audioPlayerSrc = fs.readFileSync(path.join(appDir, 'lib', 'audio-player.js'), 'utf8');
+
+  it('app/mic-watcher.ps1 exists in the repo', () => {
+    if (!fs.existsSync(watcherRepo)) {
+      throw new Error('app/mic-watcher.ps1 is missing — the auto-pause sidecar cannot launch');
+    }
+  });
+
+  it('mic-watcher.ps1 is installed (wildcard copy in install.ps1)', () => {
+    if (!fs.existsSync(watcherInstalled)) {
+      throw new Error('~/.terminal-talk/app/mic-watcher.ps1 is missing — re-run install.ps1');
+    }
+  });
+
+  it('mic-watcher emits the MIC_CAPTURED / MIC_RELEASED protocol', () => {
+    const src = fs.readFileSync(watcherRepo, 'utf8');
+    if (!/MIC_CAPTURED/.test(src)) throw new Error('mic-watcher must emit MIC_CAPTURED lines');
+    if (!/MIC_RELEASED/.test(src)) throw new Error('mic-watcher must emit MIC_RELEASED lines');
+  });
+
+  it('mic-watcher filters out self-paths (our own wake-word listener)', () => {
+    const src = fs.readFileSync(watcherRepo, 'utf8');
+    // Without the filter, our own wake-word listener would register as
+    // "another app using the mic" and TTS would pause forever.
+    if (!/selfPathFragments|Test-SelfPath/.test(src)) {
+      throw new Error('mic-watcher must filter self paths (selfPathFragments / Test-SelfPath)');
+    }
+    if (!/terminal-talk/.test(src)) {
+      throw new Error('mic-watcher self-filter must include the terminal-talk install path');
+    }
+  });
+
+  it('main.js spawns the mic-watcher on app ready', () => {
+    if (!/startMicWatcher\s*\(\s*\)/.test(mainSrc)) {
+      throw new Error('main.js must call startMicWatcher() to launch the sidecar');
+    }
+    if (!/spawn\(\s*POWERSHELL_EXE\b[\s\S]{0,200}MIC_WATCHER_SCRIPT/.test(mainSrc)) {
+      throw new Error('main.js must spawn POWERSHELL_EXE on MIC_WATCHER_SCRIPT');
+    }
+    if (!/stopMicWatcher/.test(mainSrc)) {
+      throw new Error('main.js must clean up mic-watcher on will-quit (stopMicWatcher)');
+    }
+  });
+
+  it('main.js auto-restarts the mic-watcher if it exits', () => {
+    // Without restart, a one-time sidecar crash would silently disable
+    // the whole auto-pause feature until the user reloaded the toolbar.
+    if (!/micWatcherProc\.on\(\s*['"]exit['"][\s\S]{0,500}startMicWatcher/.test(mainSrc)) {
+      throw new Error('main.js must restart mic-watcher on exit (setTimeout startMicWatcher)');
+    }
+  });
+
+  it('main.js forwards MIC_CAPTURED / MIC_RELEASED to the renderer', () => {
+    if (!/MIC_CAPTURED[\s\S]{0,200}mic-captured-elsewhere/.test(mainSrc)) {
+      throw new Error('main.js must send mic-captured-elsewhere IPC on MIC_CAPTURED');
+    }
+    if (!/MIC_RELEASED[\s\S]{0,200}mic-released/.test(mainSrc)) {
+      throw new Error('main.js must send mic-released IPC on MIC_RELEASED');
+    }
+  });
+
+  it('preload.js exposes onMicCapturedElsewhere + onMicReleased', () => {
+    if (!/onMicCapturedElsewhere/.test(preloadSrc)) {
+      throw new Error('preload.js must expose window.api.onMicCapturedElsewhere');
+    }
+    if (!/onMicReleased/.test(preloadSrc)) {
+      throw new Error('preload.js must expose window.api.onMicReleased');
+    }
+  });
+
+  it('renderer.js wires mic events to audioPlayer.systemAutoPause / Resume', () => {
+    if (!/onMicCapturedElsewhere[\s\S]{0,400}systemAutoPause/.test(rendererSrc)) {
+      throw new Error('renderer.js must call audioPlayer.systemAutoPause() on mic-captured-elsewhere');
+    }
+    if (!/onMicReleased[\s\S]{0,400}systemAutoResume/.test(rendererSrc)) {
+      throw new Error('renderer.js must call audioPlayer.systemAutoResume() on mic-released');
+    }
+  });
+
+  it('audio-player exposes systemAutoPause + systemAutoResume', () => {
+    if (!/systemAutoPause\s*\(\s*\)\s*\{/.test(audioPlayerSrc)) {
+      throw new Error('audio-player must export systemAutoPause()');
+    }
+    if (!/systemAutoResume\s*\(\s*\)\s*\{/.test(audioPlayerSrc)) {
+      throw new Error('audio-player must export systemAutoResume()');
+    }
+  });
+
+  it('audio-player gates systemAutoResume on the _systemAutoPaused flag', () => {
+    // If the flag is missing, a release from ANY mic grab would unpause
+    // audio that the user had deliberately paused. The flag is the single
+    // guard that distinguishes "we paused this" from "user paused this".
+    if (!/this\._systemAutoPaused/.test(audioPlayerSrc)) {
+      throw new Error('audio-player must track _systemAutoPaused instance state');
+    }
+    if (!/if\s*\(\s*!\s*this\._systemAutoPaused\s*\)\s*return/.test(audioPlayerSrc)) {
+      throw new Error('systemAutoResume must early-return when _systemAutoPaused is false (keep user-initiated pauses paused)');
+    }
+  });
+});
+
+// =============================================================================
 // R3.9 — KIT PALETTE ≡ PRODUCT PALETTE. docs/README.md promises this
 // test exists; landing it here honours the claim.
 // =============================================================================
