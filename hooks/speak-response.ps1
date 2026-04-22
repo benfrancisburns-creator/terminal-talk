@@ -209,17 +209,55 @@ if (-not $text) { Log "EXIT: no text"; exit 0 }
 
 $clean = $text
 
-# Code blocks: when included, keep CONTENT only (drop fence markers + language tag).
-$codeBlocks = New-Object System.Collections.ArrayList
-if ($inc.code_blocks) {
-    $clean = [regex]::Replace($clean, '(?s)```(?:\w+)?\r?\n?(.*?)```', {
-        param($m)
-        $i = $codeBlocks.Add(' ' + $m.Groups[1].Value + ' ')
-        "`0CB${i}`0"
-    })
-} else {
-    $clean = [regex]::Replace($clean, '(?s)```.*?```', ' ')
+# Code blocks: three-way decision per fenced block. See app/lib/text.js
+# for the full rationale. Short version: stripping 100% of fenced
+# content silently drops prose-in-fences (handoff messages, quoted log
+# excerpts, LLM copy-paste blocks). Language-tagged fences are always
+# stripped; un-tagged fences get a syntax-heuristic check — only strip
+# if the body has real code signals.
+$codeSignals = @(
+    '\b(def|function|fn|class)\s+\w+\s*[({:<]'
+    '(?m)^\s*(import|from|require|using|package)\s+[\w.]'
+    '(?m)^\s*(if|else|elif|for|while|try|except|catch|with|switch)\s*\('
+    '(?m)^\s*(if|elif|else|for|while|try|except|with|def|class)\b[^.!?\n]{0,120}:\s*$'
+    '(?m)^\s*[#$>]\s+\S'
+    '(?m)^\s*(npm|yarn|git|pip|apt|sudo|rm|mkdir|cd|ls|cp|mv|cat|echo|curl|python|python3|node|docker|kubectl|taskkill|chmod|ssh|scp|make|cmake)\s+[-\w/]'
+    '\b(Get|Set|New|Remove|Test|Invoke|Start|Stop|Write|Read|Import|Export|Add)-[A-Z]\w+\s'
+    '(?m)^\s*[\{\[]\s*$'
+    '(?m)^\s*"[\w.-]+":\s*(null|true|false|-?\d|"|\{|\[)'
+    '=>\s*[\w(\{\[]'
+    '->\s*\w'
+    '::\s*\w'
+    ';\s*\n'
+)
+
+function Test-LooksLikeCode($body) {
+    if (-not $body -or -not $body.Trim()) { return $false }
+    $hits = 0
+    foreach ($pat in $codeSignals) {
+        if ([regex]::IsMatch($body, $pat)) {
+            $hits++
+            if ($hits -ge 2) { return $true }
+        }
+    }
+    return $false
 }
+
+$codeBlocks = New-Object System.Collections.ArrayList
+$clean = [regex]::Replace($clean, '(?s)```(\w*)\r?\n?(.*?)```', {
+    param($m)
+    $lang = $m.Groups[1].Value.Trim()
+    $body = $m.Groups[2].Value
+    if ($inc.code_blocks) {
+        $i = $codeBlocks.Add(' ' + $body + ' ')
+        return "`0CB${i}`0"
+    }
+    if ($lang -or (Test-LooksLikeCode $body)) {
+        return ' '
+    }
+    # Un-tagged, no code signals — speak the body as prose.
+    return $body
+})
 if ($inc.inline_code) {
     # GFM-balanced inline code. See app/lib/text.js for rationale.
     $clean = [regex]::Replace($clean, '(`+)([^\n]+?)\1', '$2')

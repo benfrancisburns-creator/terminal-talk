@@ -39,19 +39,48 @@ function stripForTTS(text, includes) {
   const inc = { ...DEFAULTS, ...(includes || {}) };
   let t = String(text == null ? '' : text);
 
-  // Code blocks: when included, keep body content only (drop the ``` fences
-  // and the optional language tag). When excluded, drop the whole block.
-  // Preserve kept blocks via a null-sentinel token so downstream regexes
-  // don't touch their content — restored at the very end.
+  // Code blocks: three-way decision per fenced block. See synth_turn.py
+  // for the full rationale. Short version: stripping 100% of fenced
+  // content silently drops LLM "handoff message" / "quoted log" blocks
+  // that are prose-in-fences. Language-tagged fences are always real
+  // code; un-tagged fences get a syntax-heuristic check.
+  const CODE_SIGNALS = [
+    /\b(def|function|fn|class)\s+\w+\s*[({:<]/,
+    /^\s*(import|from|require|using|package)\s+[\w.]/m,
+    /^\s*(if|else|elif|for|while|try|except|catch|with|switch)\s*\(/m,
+    /^\s*(if|elif|else|for|while|try|except|with|def|class)\b[^.!?\n]{0,120}:\s*$/m,
+    /^\s*[#$>]\s+\S/m,
+    /^\s*(npm|yarn|pnpm|git|pip|pipx|apt|sudo|rm|mkdir|cd|ls|cp|mv|cat|echo|curl|wget|python|python3|node|ruby|go|cargo|rustc|java|javac|mvn|gradle|docker|podman|kubectl|helm|terraform|aws|gcloud|az|taskkill|chmod|chown|ssh|scp|rsync|tar|unzip|make|cmake|gcc|clang)\s+[-\w/]/m,
+    /\b(Get|Set|New|Remove|Test|Invoke|Start|Stop|Write|Read|Import|Export|Add|Copy|Move|Out)-[A-Z]\w+\s/,
+    /^\s*[\{\[]\s*$/m,
+    /^\s*"[\w.-]+":\s*(null|true|false|-?\d|"|\{|\[)/m,
+    /=>\s*[\w(\{\[]/,
+    /->\s*\w/,
+    /::\s*\w/,
+    /;\s*\n/,
+  ];
+  function looksLikeCode(body) {
+    if (!body || !body.trim()) return false;
+    let hits = 0;
+    for (const re of CODE_SIGNALS) {
+      const m = body.match(re);
+      if (m) hits++;
+      if (hits >= 2) return true;
+    }
+    return false;
+  }
+
   const codeBlocks = [];
-  if (inc.code_blocks) {
-    t = t.replace(/```(?:\w+)?\r?\n?([\s\S]*?)```/g, (_m, body) => {
+  t = t.replace(/```(\w*)\r?\n?([\s\S]*?)```/g, (_m, lang, body) => {
+    const tagged = (lang || '').length > 0;
+    if (inc.code_blocks) {
       codeBlocks.push(' ' + body + ' ');
       return `\u0000CB${codeBlocks.length - 1}\u0000`;
-    });
-  } else {
-    t = t.replace(/```[\s\S]*?```/g, ' ');
-  }
+    }
+    if (tagged || looksLikeCode(body)) return ' ';
+    // Un-tagged prose-in-fences: speak the body.
+    return body;
+  });
 
   // GFM-balanced inline code: same number of backticks on each side.
   // `(backticks+)(content)\1` handles both single `foo` and double

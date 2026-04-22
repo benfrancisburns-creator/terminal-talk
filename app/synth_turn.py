@@ -333,7 +333,69 @@ def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
 # Sanitisation  (mirrors speak-response.ps1 lines 260-306)
 # ---------------------------------------------------------------------------
 
-_CODE_FENCE_RE = re.compile(r'```[a-zA-Z0-9_+-]*\n?([\s\S]*?)```')
+# Code fence regex now captures TWO groups: the language tag (possibly
+# empty) and the body. Language tag presence is a strong signal the
+# block is genuinely code; absence + non-code body means the block is
+# prose dressed in ``` for visual effect (a common LLM pattern that
+# used to vanish from audio silently).
+_CODE_FENCE_RE = re.compile(r'```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```')
+
+# Patterns that strongly indicate the content is real code, not prose.
+# Tuned to avoid false positives on prose that merely mentions
+# programming terms ("use the class keyword"). Each pattern looks for
+# SYNTAX, not just keyword presence.
+_CODE_SIGNAL_PATTERNS = [
+    # Function / class definitions — identifier followed by paren or colon
+    re.compile(r'\b(def|function|fn|class)\s+\w+\s*[({:<]'),
+    # Import statements at line start
+    re.compile(r'^\s*(import|from|require|using|package)\s+[\w.]', re.MULTILINE),
+    # Control flow with code-style parens or trailing colons
+    re.compile(r'^\s*(if|else|elif|for|while|try|except|catch|with|switch)\s*\(', re.MULTILINE),
+    re.compile(r'^\s*(if|elif|else|for|while|try|except|with|def|class)\b[^.!?\n]{0,120}:\s*$', re.MULTILINE),
+    # Shell prompts / invocations at line start
+    re.compile(r'^\s*[#$>]\s+\S', re.MULTILINE),
+    re.compile(
+        r'^\s*(npm|yarn|pnpm|git|pip|pipx|apt|sudo|rm|mkdir|cd|ls|cp|mv|cat|echo|'
+        r'curl|wget|python|python3|node|ruby|go|cargo|rustc|java|javac|mvn|gradle|'
+        r'docker|podman|kubectl|helm|terraform|aws|gcloud|az|taskkill|chmod|chown|'
+        r'ssh|scp|rsync|tar|unzip|make|cmake|gcc|clang)\s+[-\w/]', re.MULTILINE,
+    ),
+    # PowerShell cmdlets (Verb-Noun pattern)
+    re.compile(r'\b(Get|Set|New|Remove|Test|Invoke|Start|Stop|Write|Read|Import|Export|Add|Copy|Move|Out)-[A-Z]\w+\s'),
+    # JSON / object-literal opener lines
+    re.compile(r'^\s*[\{\[]\s*$', re.MULTILINE),
+    re.compile(r'^\s*"[\w.-]+":\s*(null|true|false|-?\d|"|\{|\[)', re.MULTILINE),
+    # Arrow / pointer / scope operators specific to code
+    re.compile(r'=>\s*[\w(\{\[]'),
+    re.compile(r'->\s*\w'),
+    re.compile(r'::\s*\w'),
+    # Trailing semicolon statement endings (3+ required — stops a single
+    # sentence like "Oh; right" from flipping a whole block).
+    re.compile(r';\s*\n'),
+]
+
+
+def _looks_like_code(content: str) -> bool:
+    """Return True if `content` contains enough code-syntax signals to
+    be treated as real code. Called only when a ``` fence has NO
+    language tag — tagged fences are always treated as code.
+
+    Prefers false positives (strip prose that has 2+ code signals)
+    over false negatives (speak code that shouldn't be spoken). A
+    mis-stripped prose block is a known-failure mode we can fix with
+    tag or pattern tweaks; a mis-spoken code block is annoying noise.
+    """
+    if not content or not content.strip():
+        return False
+    hits = 0
+    for pat in _CODE_SIGNAL_PATTERNS:
+        hits += len(pat.findall(content))
+        if hits >= 2:  # early-exit once threshold is crossed
+            return True
+    # A single hit is ambiguous — could be a prose block that mentions
+    # one code-like token ("see git log for the history"). Don't flip
+    # the whole block on one signal.
+    return False
 # Inline code: GFM-style balanced backtick runs. `(backticks+)(content)\1`
 # requires the closing run to have the same number of backticks as the
 # opening. This correctly parses both single `foo` and double `` `foo` ``
@@ -390,13 +452,34 @@ def sanitize(text: str, flags: dict) -> str:
         return ''
     t = text
 
-    # Code blocks. noqa SIM108: the suggested ternary is a single line
-    # with nested lambda + method chain + boolean — less readable than
-    # explicit if/else even though it's shorter.
-    if flags.get('code_blocks', False):  # noqa: SIM108
-        t = _CODE_FENCE_RE.sub(lambda m: m.group(1), t)
-    else:
-        t = _CODE_FENCE_RE.sub('', t)
+    # Code blocks. Three-way decision per fenced block:
+    #   1. If `code_blocks=true` → always keep body (user opted in to code audio).
+    #   2. If fence has an explicit language tag (```python / ```bash / etc.) →
+    #      treat as real code, strip body when code_blocks=false.
+    #   3. If NO language tag AND body doesn't match code-syntax signals →
+    #      it's prose dressed in ``` for visual effect — KEEP the body.
+    #
+    # Rationale: the previous behaviour stripped 100 % of anything fenced,
+    # silently dropping forward-messages, quoted log excerpts, copy-paste
+    # blocks, etc. from audio. A 4.9 k-char response where 74 % was
+    # fenced-prose became a 1.3 k-char audio stream — listeners got only
+    # the lead and lost the meaty parts. Language-tag-or-syntax-signals
+    # is the robust rule that doesn't depend on the LLM remembering not
+    # to fence its prose.
+    keep_code = flags.get('code_blocks', False)
+
+    def _code_fence_repl(m: re.Match) -> str:
+        lang = m.group(1).strip()
+        content = m.group(2)
+        if keep_code:
+            return content
+        if lang:
+            return ''  # Explicit tag = definitely code; strip body.
+        if _looks_like_code(content):
+            return ''  # No tag but content has code signals; strip.
+        return content  # No tag + prose-like body; speak the content.
+
+    t = _CODE_FENCE_RE.sub(_code_fence_repl, t)
 
     # Inline code. When inline_code=False we normally drop the whole
     # backticked span, but keyboard shortcuts get preserved regardless —
