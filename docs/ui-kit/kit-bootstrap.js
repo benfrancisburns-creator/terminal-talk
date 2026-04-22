@@ -72,8 +72,11 @@
     // Renderer-consumable libs, UMD-lite. Order matters:
     // stale-session-poller + dot-strip read window.TT_COMPONENT so
     // component.js must land first; clip-paths is independent but
-    // must arrive before renderer.js.
+    // must arrive before renderer.js. heartbeat.js is required by
+    // renderer.js (SPINNER_VERBS + randomVerb re-exported from it)
+    // — load before component.js to match app/index.html order.
     await loadScript('../app-mirror/lib/clip-paths.js');
+    await loadScript('../app-mirror/lib/heartbeat.js');
     await loadScript('../app-mirror/lib/component.js');
     await loadScript('../app-mirror/lib/stale-session-poller.js');
     await loadScript('../app-mirror/lib/dot-strip.js');

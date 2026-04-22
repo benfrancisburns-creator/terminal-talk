@@ -319,9 +319,12 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     if (!out.includes('the link')) throw new Error(`link text lost: "${out}"`);
     if (out.includes('example.com')) throw new Error(`link URL leaked: "${out}"`);
   });
-  it('strips inline code by default', () => {
-    const out = stripForTTS('Use `npm install`');
-    if (out.includes('npm install') || out.includes('`')) throw new Error(`inline code leaked: "${out}"`);
+  it('strips real inline code (shell commands with flags, fn calls)', () => {
+    // 2026-04-22 — short identifier-like inline code now speaks (prose
+    // whitelist). Test shell-commands-with-flags + fn-calls instead to
+    // exercise the STRIP path specifically.
+    const out = stripForTTS('Use `git log --oneline` to check history');
+    if (out.includes('--oneline') || out.includes('`')) throw new Error(`inline code leaked: "${out}"`);
   });
   it('keeps inline code content but drops backticks when toggled on', () => {
     const out = stripForTTS('Use `npm install` to install', { inline_code: true });
@@ -802,6 +805,44 @@ describe('STRIP-FOR-TTS EXTRAS', () => {
     const out = stripForTTS('an *important* point');
     if (!out.includes('important')) throw new Error(`italic text lost: "${out}"`);
     if (/\*important\*/.test(out)) throw new Error(`italic marks leaked: "${out}"`);
+  });
+
+  // Inline-code prose whitelist: short identifier-like spans stay in
+  // the spoken output so technical sentences remain coherent.
+  // User-reported cases from a /clear-session-rotation explanation:
+  // stripping these left "rotates the ___" fragments that confused
+  // the listener.
+  it('speaks short identifier-like inline code (single-word backticks)', () => {
+    const out = stripForTTS('`/clear` rotates the `session_id`');
+    if (!out.includes('/clear')) throw new Error(`/clear dropped: "${out}"`);
+    if (!out.includes('session_id')) throw new Error(`session_id dropped: "${out}"`);
+  });
+  it('speaks kebab + PascalCase identifiers', () => {
+    const out = stripForTTS('now `Update-SessionAssignment` re-keys on `remove-session`');
+    if (!out.includes('Update-SessionAssignment')) throw new Error(`cmdlet dropped: "${out}"`);
+    if (!out.includes('remove-session')) throw new Error(`cmd dropped: "${out}"`);
+  });
+  it('speaks literal values and file globs', () => {
+    const out = stripForTTS('ghost entries with `pid=0` and stale `*-<short>.mp3` files');
+    if (!out.includes('pid=0')) throw new Error(`literal dropped: "${out}"`);
+    if (!out.includes('*-<short>.mp3')) throw new Error(`glob dropped: "${out}"`);
+  });
+  it('strips function-call syntax even when short', () => {
+    const out = stripForTTS('call `myFn(1, 2)` to trigger');
+    if (/myFn/.test(out)) throw new Error(`fn call should be stripped: "${out}"`);
+  });
+  it('strips shell commands with flags', () => {
+    const out = stripForTTS('run `git log --oneline -20` for history');
+    if (/--oneline/.test(out)) throw new Error(`shell cmd leaked: "${out}"`);
+  });
+  it('strips language operators (=>, ->, ::)', () => {
+    const out = stripForTTS('use `arr.filter(x => x > 0)` to prune');
+    if (/=>/.test(out)) throw new Error(`operator leaked: "${out}"`);
+    if (/filter/.test(out)) throw new Error(`fn call leaked: "${out}"`);
+  });
+  it('strips content longer than 30 chars (too complex to be a prose token)', () => {
+    const out = stripForTTS('consider `this_is_a_longish_thirty_one_char_ident_value` name');
+    if (/longish_thirty/.test(out)) throw new Error(`long content leaked: "${out}"`);
   });
 });
 
@@ -1595,7 +1636,9 @@ describe('SPEAK-HEARTBEAT IPC VALIDATION (HB1/HB3)', () => {
     assertFalsy(accepts(123, 'a29f747b'));
   });
   it('rejects verbs with digits or symbols', () => {
-    assertFalsy(accepts('Running npm', 'a29f747b'));  // has alphabetics only, but...
+    // 'Running npm' is LEGAL now (multi-word thinking phrases ship since
+    // HB3) — removed from the rejection list. Remaining rejections cover
+    // digits, shell metachars, and HTML.
     assertFalsy(accepts('verb123', 'a29f747b'));
     assertFalsy(accepts('shell cmd;rm -rf /', 'a29f747b'));
     assertFalsy(accepts('<script>', 'a29f747b'));

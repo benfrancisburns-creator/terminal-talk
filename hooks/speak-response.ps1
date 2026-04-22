@@ -262,13 +262,22 @@ if ($inc.inline_code) {
     # GFM-balanced inline code. See app/lib/text.js for rationale.
     $clean = [regex]::Replace($clean, '(`+)([^\n]+?)\1', '$2')
 } else {
-    # Preserve keyboard shortcuts (`Ctrl+R`) even when inline_code=false —
-    # they're UI instructions, not code noise. Optional leading `?` in
-    # the shortcut regex tolerates GFM double-backtick wrapping.
+    # Preserve:
+    #   (1) keyboard shortcuts (`Ctrl+R`)
+    #   (2) short identifier-like inline code (`session_id`, `/clear`,
+    #       `main.js`, `pid=0`) — prose content, not code syntax.
+    # Strip real code (parens, operators, shell commands with flags).
     $clean = [regex]::Replace($clean, '(`+)([^\n]+?)\1', {
         param($m)
         $content = $m.Groups[2].Value
-        if ($content -match '^\s*`?\s*(Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+') { $content } else { ' ' }
+        if ($content -match '^\s*`?\s*(Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+') {
+            return $content
+        }
+        $t = $content.Trim()
+        if ($t.Length -eq 0 -or $t.Length -gt 30) { return ' ' }
+        if ($t -match "`n") { return ' ' }
+        if ($t -match '[(){}]|=>|->(?![a-z])|::|;\s*\S|\s--?\w') { return ' ' }
+        return $content
     })
 }
 # Safety net: strip any surviving backticks.

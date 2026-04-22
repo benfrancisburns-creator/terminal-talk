@@ -88,6 +88,20 @@ function stripForTTS(text, includes) {
   // backticks from different spans, swallowing prose between them.
   // Newline exclusion prevents cross-line runaway.
   const SHORTCUT_RE = /^\s*`?\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+/i;
+  // Second whitelist: short identifier-like inline-code spans
+  // (`session_id`, `/clear`, `main.js`, `pid=0`) are prose, not
+  // real code. Stripping them turns explanatory sentences into
+  // nonsense ("rotates the ___"). Disqualifiers: parens, braces,
+  // language operators, multi-statement `;`, shell-flag patterns.
+  const INLINE_PROSE_MAX = 30;
+  const INLINE_CODE_DISQUAL = /[(){}]|=>|->(?![a-z])|::|;\s*\S|\s--?\w/;
+  function looksLikeInlineProse(content) {
+    if (!content) return false;
+    const t = content.trim();
+    if (!t || t.length > INLINE_PROSE_MAX) return false;
+    if (t.indexOf('\n') >= 0) return false;
+    return !INLINE_CODE_DISQUAL.test(t);
+  }
   if (inc.inline_code) {
     t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => content);
   } else {
@@ -95,9 +109,11 @@ function stripForTTS(text, includes) {
     // not code noise). The optional `?` in SHORTCUT_RE tolerates the
     // GFM double-backtick form where captured content includes inner
     // backticks like " `Ctrl+R` " — still recognised as a shortcut.
-    t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => (
-      SHORTCUT_RE.test(content) ? content : ' '
-    ));
+    t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => {
+      if (SHORTCUT_RE.test(content)) return content;
+      if (looksLikeInlineProse(content)) return content;
+      return ' ';
+    });
   }
   // Safety net: strip any surviving backtick characters (unmatched /
   // unclosed / weird edge cases). They have no speakable meaning.

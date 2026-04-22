@@ -458,6 +458,41 @@ _KBD_SHORTCUT_RE = re.compile(
     r'^\s*`?\s*(?:Ctrl|Cmd|Shift|Alt|Win|Super|Meta|Control|Command|Option|Windows)\s*\+',
     re.IGNORECASE,
 )
+
+# When inline_code=False we normally drop backticked spans, but a
+# second class of backticks is prose: short technical identifiers
+# (`session_id`, `/clear`, `main.js`, `Update-SessionAssignment`,
+# `pid=0`) that appear inline in explanatory sentences. Stripping
+# them turns "/clear rotates the session_id" into "rotates the" —
+# sentence collapses. This heuristic keeps content that LOOKS like
+# an identifier / filename / flag / literal and strips content that
+# looks like real code (function calls, multi-statement blocks,
+# piped shell commands).
+_INLINE_PROSE_MAX_LEN = 30
+# Disqualifiers — any match = strip (real code):
+#   `(` or `)`           — function calls, if-conditions
+#   `{` or `}`           — object literals, blocks
+#   `=>` / `->` / `::`   — language operators
+#   `; <nonspace>`       — two statements separated by semicolon
+#   ` -\w` / ` --\w`     — shell-command flag preceded by a space
+_INLINE_CODE_DISQUAL_RE = re.compile(
+    r'[(){}]|=>|->(?![a-z])|::|;\s*\S|\s--?\w'
+)
+
+
+def _inline_looks_like_prose(content: str) -> bool:
+    """Does this inline-code span read as prose (short identifier /
+    filename / literal) rather than code syntax?"""
+    if not content:
+        return False
+    trimmed = content.strip()
+    if not trimmed or len(trimmed) > _INLINE_PROSE_MAX_LEN:
+        return False
+    if '\n' in trimmed:
+        return False
+    if _INLINE_CODE_DISQUAL_RE.search(trimmed):
+        return False
+    return True
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 # Triple-asterisk emphasis (bold-italic ***x***) must be stripped BEFORE
@@ -535,12 +570,20 @@ def sanitize(text: str, flags: dict) -> str:
     else:
         def _inline_code_repl(m: re.Match) -> str:
             content = m.group(2)
+            # Keyboard shortcuts always survive (later modifier translation
+            # reads `Ctrl+R` as "control R").
             if _KBD_SHORTCUT_RE.match(content):
+                return content
+            # Short identifier-like content is prose, not code — speak it.
+            # Catches cases like `/clear`, `session_id`, `main.js`,
+            # `Update-SessionAssignment` that make prose unreadable when
+            # stripped ("rotates the ___" doesn't make sense to a listener).
+            if _inline_looks_like_prose(content):
                 return content
             # Return a SPACE, not empty. Empty collapses `**\`code\`**`
             # to `****` which misaligns with adjacent bold markers and
             # causes the emphasis regex to greedy-match across unrelated
-            # pairs, silently eating prose. Matches JS stripForTTS.
+            # pairs, silently eating prose.
             return ' '
         t = _INLINE_CODE_RE.sub(_inline_code_repl, t)
 
