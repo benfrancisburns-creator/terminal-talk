@@ -227,10 +227,17 @@ setInterval(() => {
 const HEARTBEAT_INITIAL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 12_000;
 // A session counts as "actively working" if its registry entry has
-// been touched within this window. Matches the statusline's
-// fresh-session window so the audio signal aligns with visible
-// session state.
-const HEARTBEAT_SESSION_FRESH_MS = 180_000;
+// been touched within this tight window. Originally 180 s (matched
+// statusline fresh-session), but that made heartbeat fire for minutes
+// after Claude had finished responding — the registry only knows
+// "session is alive", not "waiting for a response". Narrowed to
+// match the typical PreToolUse cadence during an active response:
+// hooks fire every few seconds when Claude is actually working, so
+// `last_seen` stays fresh inside this window during real work and
+// ages out quickly once the turn ends.
+// TODO HB2: replace this proxy with an explicit UserPromptSubmit →
+// Stop flag file for zero-false-positive working detection.
+const HEARTBEAT_SESSION_FRESH_MS = 15_000;
 let lastHeartbeatAt = 0;
 let heartbeatSilentSince = Date.now();
 
