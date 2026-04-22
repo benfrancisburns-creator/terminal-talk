@@ -134,7 +134,18 @@ async function applyCollapsed(collapsed) {
 }
 
 // Track current click-through state so we don't IPC on every mousemove.
-let clickthroughOn = true;
+// Starts OFF (window receives clicks) to prevent a reload deadlock:
+// if we started ON (click-through enabled = mouse events pass through),
+// the window never receives mousemove, updateClickthrough() can't flip
+// it OFF, and the toolbar is invisibly dead-zoned until the user uses
+// a global hotkey to recover. Starting OFF guarantees the window is
+// immediately interactive after load/Ctrl+R/first-show; updateClickthrough
+// below flips it back ON as soon as the cursor leaves the bar.
+let clickthroughOn = false;
+// Push the OFF state to main synchronously on module load so main's
+// cached state matches — otherwise a reload would leave main thinking
+// click-through is still ON from before.
+try { window.api && window.api.setClickthrough && window.api.setClickthrough(false); } catch {}
 async function updateClickthrough() {
   // Click-through ON (pass clicks to app below) whenever the cursor
   // is NOT over the visible bar pixels. This is what lets the user
