@@ -1501,6 +1501,16 @@ describe('HEARTBEAT TIMER LOGIC (HB1/HB2/HB3)', () => {
     assertEqual(action.type, 'skip');
   });
 
+  it('HB4: isSystemAutoPaused=true always skips (mic is elsewhere)', () => {
+    // User is dictating via Wispr Flow or similar — suppress all
+    // heartbeat emission so clips don't pile up in the queue and
+    // burst-play on mic release.
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      isSystemAutoPaused: true,
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
   it('queue active → reset-silent with newSilentSince=now', () => {
     const state = makeState({ isQueueActive: true, now: 200_000 });
     const action = heartbeat.decideHeartbeatAction(state);

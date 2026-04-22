@@ -122,6 +122,11 @@
       now,
       heartbeatEnabled,
       isQueueActive,
+      // HB4 — external app (Wispr Flow / Voice Access / VoIP) is using
+      // the mic. User is dictating or on a call; suppress heartbeat
+      // emission entirely so their speaking isn't talked over AND no
+      // clips accumulate in the queue to burst-play on mic release.
+      isSystemAutoPaused = false,
       heartbeatSilentSince,
       lastHeartbeatAt,
       workingSessionsCache,
@@ -130,6 +135,7 @@
     } = state || {};
 
     if (!heartbeatEnabled) return { type: 'skip' };
+    if (isSystemAutoPaused) return { type: 'skip' };
     if (isQueueActive) return { type: 'reset-silent', newSilentSince: now };
 
     const silentFor = now - heartbeatSilentSince;

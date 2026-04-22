@@ -273,6 +273,12 @@ setInterval(() => {
       now: Date.now(),
       heartbeatEnabled: cfg.heartbeat_enabled !== false,
       isQueueActive: isQueueActive(),
+      // HB4 — skip when Wispr Flow / Voice Access has grabbed the mic;
+      // otherwise clips pile up and burst-play when the user releases
+      // their dictation hotkey.
+      isSystemAutoPaused: audioPlayer && typeof audioPlayer.isSystemAutoPaused === 'function'
+        ? audioPlayer.isSystemAutoPaused()
+        : false,
       heartbeatSilentSince,
       lastHeartbeatAt,
       workingSessionsCache,

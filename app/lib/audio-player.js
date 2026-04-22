@@ -178,6 +178,14 @@
 
     isUserScrubbing() { return this._userScrubbing; }
 
+    // HB4 — exposes whether the audio element is currently paused
+    // because an external app (Wispr Flow / Voice Access / VoIP) grabbed
+    // the mic. Renderer's heartbeat + transcript-watcher check this so
+    // no new ambient clips get synthesised WHILE the user is dictating
+    // — otherwise those clips pile up in the queue and all burst-play
+    // the moment the user releases the dictation hotkey.
+    isSystemAutoPaused() { return !!this._systemAutoPaused; }
+
     // System-initiated pause — call when another app grabs the mic
     // (Wispr Flow, Windows Voice Access, VoIP, etc.) via the main-side
     // mic-watcher. Sets _systemAutoPaused so systemAutoResume() later
