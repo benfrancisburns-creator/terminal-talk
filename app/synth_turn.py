@@ -825,101 +825,100 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             if i not in state['synthesized_line_indices']
         ]
 
-        if not pending:
-            _log(f'{mode}: no new assistant text for {session_short}')
+        # Compute unannounced tool_use entries (on-tool mode only). We do
+        # this BEFORE the "nothing to do" early-exit so that back-to-back
+        # tool chains without prose between them don't silently skip
+        # narration — the original TN1 regression surfaced in logs as
+        # a run of "no new assistant text" for several minutes while
+        # plenty of tool calls were firing.
+        announced_set = set(state.get('announced_tool_line_indices', []))
+        new_tool_entries: list[tuple] = []
+        if mode == 'on-tool':
+            for tool_idx, tname, tinput in tool_use_entries_after(entries, user_idx):
+                if tool_idx not in announced_set:
+                    new_tool_entries.append((tool_idx, tname, tinput))
+
+        if not pending and not new_tool_entries:
+            _log(f'{mode}: nothing new for {session_short}')
             return 0
 
         config = load_config()
         voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
 
-        # Muted sessions: cut the wire. Still advance the sync state so that
-        # when the user unmutes, we don't retroactively synthesise the silent
-        # period's text — unmute means "from now on", not "replay history".
+        # Muted sessions: cut the wire. Still advance sync state for both
+        # text and tool entries so that when the user unmutes we don't
+        # retroactively synthesise the silent period's content — unmute
+        # means "from now on", not "replay history".
         if muted:
             _log(f'{mode}: {session_short} is muted, skipping synthesis')
             state['synthesized_line_indices'].extend(i for i, _ in pending)
+            if new_tool_entries:
+                state['announced_tool_line_indices'] = list(
+                    announced_set.union(i for i, _, _ in new_tool_entries)
+                )
             save_sync_state(session_id, state)
             return 0
 
-        combined = '\n'.join(t for _, t in pending)
-        clean = sanitize(combined, flags)
-        if not clean:
-            _log(f'{mode}: sanitised text empty for {session_short}')
-            # Still mark synthesized so we don't retry on next tool use
-            state['synthesized_line_indices'].extend(i for i, _ in pending)
-            save_sync_state(session_id, state)
-            return 0
-
-        # For on-stop: questions extracted separately and played first
-        question_sentences: list[str] = []
-        if mode == 'on-stop':
-            questions = extract_questions(clean)
-            if questions:
-                question_sentences = [f'Question. {q}' for q in questions]
-
-        # For on-tool: also narrate the tool_use entries that Claude is
-        # about to call. PreToolUse fires before the tool runs, so the
-        # tool_use blocks are already in the transcript by now. Each
-        # narration synthesised as an ephemeral clip (T- prefix) that
-        # the renderer auto-deletes immediately after playback, so the
-        # dot strip doesn't fill up with "Reading foo.py" / "Running npm"
-        # / etc. across a long tool chain.
+        # Tool narrations (ephemeral T- clips). Emit regardless of
+        # whether text is also pending — "Reading foo.py" during a
+        # long tool chain is the whole point of TN1.
         tool_narrations: list[str] = []
         tool_indices_done: list[int] = []
-        if mode == 'on-tool' and flags.get('tool_calls', True):
-            announced_set = set(state.get('announced_tool_line_indices', []))
-            for tool_idx, tname, tinput in tool_use_entries_after(entries, user_idx):
-                if tool_idx in announced_set:
-                    continue
+        if new_tool_entries and flags.get('tool_calls', True):
+            for tool_idx, tname, tinput in new_tool_entries:
                 phrase = narrate_tool_use(tname, tinput)
                 if phrase:
                     tool_narrations.append(phrase)
-                # Always mark as "handled" even if narration was None so we
-                # don't re-consider the same entry on the next hook fire.
+                # Mark handled even if narration was None so we don't
+                # reconsider the same entry on the next hook fire.
                 tool_indices_done.append(tool_idx)
+        elif new_tool_entries:
+            # tool_calls disabled: still mark as handled.
+            tool_indices_done.extend(i for i, _, _ in new_tool_entries)
 
-        # Body: group sentences into TTS-ready clips. Without grouping,
-        # every full stop becomes its own clip, which shreds connected
-        # prose into staccato delivery. group_sentences_for_tts glues
-        # adjacent short sentences up to ~300 chars per clip while
-        # respecting paragraph boundaries. Questions stay ungrouped
-        # (they're the "hear the ask first" primitive and are meant to
-        # land as short standalone clips ahead of the body).
-        body_clips = group_sentences_for_tts(clean)
-        if not body_clips:
-            state['synthesized_line_indices'].extend(i for i, _ in pending)
-            save_sync_state(session_id, state)
-            return 0
+        # Body + questions: only runs when we have new prose to synth.
+        # When pending is empty (pure tool chain), we skip straight to
+        # the narration emit below.
+        body_clips: list[str] = []
+        question_sentences: list[str] = []
+        if pending:
+            combined = '\n'.join(t for _, t in pending)
+            clean = sanitize(combined, flags)
+            if clean:
+                if mode == 'on-stop':
+                    questions = extract_questions(clean)
+                    if questions:
+                        question_sentences = [f'Question. {q}' for q in questions]
+                # group_sentences_for_tts glues adjacent short sentences
+                # up to ~300 chars while respecting paragraph boundaries
+                # (NG1). Questions stay ungrouped — they're the
+                # "hear the ask first" primitive.
+                body_clips = group_sentences_for_tts(clean)
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '
              f'{len(tool_narrations)} tool narrations')
 
         # Write questions first (play first due to mtime ordering from
-        # release order: questions are synthesised + released before body,
-        # so their mtimes are earlier. The 'Q-' prefix is a human-readable
-        # marker on the filename, not the ordering mechanism.)
+        # release order: questions are synthesised + released before
+        # body, so their mtimes are earlier). Tool narrations between
+        # so the listener gets "Reading X" before the response prose.
         if question_sentences:
             synthesize_parallel(question_sentences, voice, session_short, openai_key, prefix='Q-')
-        # Tool narrations are ephemeral: synthesised with T- prefix so the
-        # renderer auto-deletes them immediately after playback rather than
-        # waiting for the normal auto-prune timer. They announce "what
-        # Claude is doing right now" during long tool chains and would
-        # otherwise flood the dot strip.
         if tool_narrations:
             synthesize_parallel(tool_narrations, voice, session_short, openai_key, prefix='T-')
-        synthesize_parallel(body_clips, voice, session_short, openai_key)
+        if body_clips:
+            synthesize_parallel(body_clips, voice, session_short, openai_key)
 
-        # Mark pending entries as synthesized regardless of individual clip
-        # outcomes (partial failures don't cause replay attempts)
-        state['synthesized_line_indices'].extend(i for i, _ in pending)
-        # Same policy for tool narrations: once we've considered a tool_use
-        # entry for narration (whether we actually emitted a phrase or not),
-        # never reconsider it. Prevents double-announcing on the next hook fire.
+        # Update sync state. Both dimensions tracked independently:
+        # synthesized_line_indices for assistant-text entries,
+        # announced_tool_line_indices for tool_use entries.
+        if pending:
+            state['synthesized_line_indices'].extend(i for i, _ in pending)
         if tool_indices_done:
-            announced = list(state.get('announced_tool_line_indices', []))
-            announced.extend(tool_indices_done)
-            state['announced_tool_line_indices'] = announced
+            state['announced_tool_line_indices'] = list(
+                announced_set.union(tool_indices_done)
+            )
         save_sync_state(session_id, state)
         return 0
 
