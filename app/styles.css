@@ -172,6 +172,18 @@ html, body {
 .dots {
   display: flex;
   align-items: center;
+  /* User-requested (2026-04-22): previously `justify-content: flex-start`
+     bunched dots on the left half of the row leaving 50-75 % of the
+     visual space unused. `space-evenly` distributes dots across the
+     full width from the rewind button's horizontal to the close X's
+     horizontal — the "use the whole bottom row" ask. With few dots
+     they spread out, with many they stay compact. Ordering (oldest
+     left, newest right) preserved because flex items always render
+     in DOM order; only the inter-item spacing changes.
+     Session-run gaps (.dots-run-gap, flex-shrink:0) still respect
+     their explicit 12 px width so cluster-by-session is still legible
+     when multiple terminals are active. */
+  justify-content: space-evenly;
   gap: 5px;
   width: 100%;
   /* No overflow:hidden — it was clipping the active dot's halo. Horizontal
