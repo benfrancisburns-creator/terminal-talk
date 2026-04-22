@@ -361,7 +361,11 @@ _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 # TTS dutifully reads as "asterisk". Bug reported by user hearing
 # "asterisk asterisk foo asterisk asterisk" on bold-italic headings.
 _TRIPLE_EMPHASIS_RE = re.compile(r'\*\*\*([^*\n]+)\*\*\*|___([^_\n]+)___')
-_EMPHASIS_RE = re.compile(r'\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_')
+# `\n` exclusion on every arm: prevents a leftover single `*` from a
+# broken bold pair pairing across newlines with an unrelated stray `*`
+# (e.g. `app/*` glob) and silently eating whole paragraphs as italic
+# content. Cross-line emphasis would be surprising markdown anyway.
+_EMPHASIS_RE = re.compile(r'\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_')
 _IMG_RE = re.compile(r'!\[([^\]]*)\]\([^\)]+\)')
 # All common keyboard modifiers in one regex — used to rewrite
 # `Modifier+Key` into spoken words. Without this, `Ctrl+Shift+A` only
@@ -407,7 +411,11 @@ def sanitize(text: str, flags: dict) -> str:
             content = m.group(2)
             if _KBD_SHORTCUT_RE.match(content):
                 return content
-            return ''
+            # Return a SPACE, not empty. Empty collapses `**\`code\`**`
+            # to `****` which misaligns with adjacent bold markers and
+            # causes the emphasis regex to greedy-match across unrelated
+            # pairs, silently eating prose. Matches JS stripForTTS.
+            return ' '
         t = _INLINE_CODE_RE.sub(_inline_code_repl, t)
 
     # Safety net: strip any surviving backtick characters. Unmatched
@@ -478,6 +486,13 @@ def sanitize(text: str, flags: dict) -> str:
 
     # Collapse excessive blank lines
     t = re.sub(r'\n{3,}', '\n\n', t)
+    # Collapse runs of spaces/tabs (but preserve newlines) introduced
+    # when inline-code strip replaces a backticked span with a space.
+    # Without this, prose like "like `a` or `b`" (with both inline codes
+    # stripped) leaves behind "like   or  " — multi-space runs that
+    # carry no meaning and just bulk the text pre-sentence-split.
+    # Matches JS stripForTTS's `\s+` collapse, minus newline handling.
+    t = re.sub(r'[^\S\n]+', ' ', t)
 
     return t.strip()
 

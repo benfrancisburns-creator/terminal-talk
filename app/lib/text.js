@@ -92,10 +92,13 @@ function stripForTTS(text, includes) {
   // Markdown emphasis — marks gone, inner text kept, every time.
   // Triple *** / ___ first so a naive double-strip doesn't leave stray
   // asterisks on each side (which TTS reads as "asterisk asterisk").
+  // `\n` exclusion on every arm: prevents a leftover single `*` from a
+  // broken bold pair pairing across newlines with an unrelated stray
+  // `*` (e.g. `app/*` glob) and silently eating whole paragraphs.
   t = t.replace(/\*\*\*([^*\n]+)\*\*\*/g, '$1');
   t = t.replace(/___([^_\n]+)___/g, '$1');
-  t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
-  t = t.replace(/__([^_]+)__/g, '$1');
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+  t = t.replace(/__([^_\n]+)__/g, '$1');
   t = t.replace(/\*([^*\n]+)\*/g, '$1');
 
   if (!inc.bullet_markers) {

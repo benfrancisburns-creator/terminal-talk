@@ -226,10 +226,11 @@ if (-not $inc.headings) {
 }
 # Triple *** / ___ before double — see app/lib/text.js for full rationale.
 # Without this, ***bold-italic*** strips to *bold-italic* and TTS reads
-# the stray asterisks aloud.
+# the stray asterisks aloud. `\n` exclusion on every arm prevents a
+# leftover single `*` pairing across newlines with an unrelated stray.
 $clean = $clean -replace '\*\*\*([^*\n]+)\*\*\*', '$1'
 $clean = $clean -replace '___([^_\n]+)___', '$1'
-$clean = $clean -replace '\*\*([^*]+)\*\*', '$1'
+$clean = $clean -replace '\*\*([^*\n]+)\*\*', '$1'
 $clean = $clean -replace '__([^_]+)__', '$1'
 $clean = $clean -replace '\*([^*\n]+)\*', '$1'
 if (-not $inc.bullet_markers) {
