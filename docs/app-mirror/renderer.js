@@ -249,26 +249,16 @@ let heartbeatSilentSince = Date.now();
 let workingSessionsCache = [];
 
 function firstWorkingSessionShort() {
-  // Prefer an actively-working session (HB2 flag file). Fall back to
-  // the `last_seen` proxy for back-compat during the window between
-  // installing HB2 and the first UserPromptSubmit hook firing — and
-  // for any environment where the hook isn't yet registered.
-  if (workingSessionsCache.length > 0) {
-    return workingSessionsCache[0];
-  }
-  // Back-compat fallback: most-recently-seen session within the tight
-  // 15 s window. Catches the case where the hook isn't registered yet.
-  let best = null;
-  let bestTs = 0;
-  const nowSec = Math.floor(Date.now() / 1000);
-  for (const [short, entry] of Object.entries(sessionAssignments || {})) {
-    if (!short || !/^[a-f0-9]{8}$/.test(short)) continue;
-    const ts = Number(entry && entry.last_seen) || 0;
-    if (!ts) continue;
-    if (nowSec - ts > HEARTBEAT_SESSION_FRESH_MS / 1000) continue;
-    if (ts > bestTs) { bestTs = ts; best = short; }
-  }
-  return best;
+  // Strict HB2 gate: heartbeat fires ONLY when a UserPromptSubmit flag
+  // file exists. No `last_seen` fallback — it caused the exact bug
+  // HB2 was meant to fix: Claude Code statusline refreshes `last_seen`
+  // on every terminal redraw, so a passive terminal you're just
+  // reading in kept the flag "fresh" within the 15 s window and
+  // heartbeat fired for minutes after the last response ended.
+  // If the UserPromptSubmit hook isn't registered (fresh install that
+  // hasn't re-run install.ps1), heartbeat stays silent entirely —
+  // that's the right default; noisy-when-idle is worse than silent.
+  return workingSessionsCache.length > 0 ? workingSessionsCache[0] : null;
 }
 
 // HB2 refresh: poll the working-sessions list from main on each tick.
