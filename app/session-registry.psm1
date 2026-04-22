@@ -26,6 +26,71 @@
 
 Set-Variable -Scope Script -Name PaletteSize -Value 24 -Option ReadOnly -Force
 
+# Lock semantics mirror app/lib/registry-lock.js exactly so JS + PS writers
+# serialise against the same .lock file. Without this, the PS statusline /
+# speak-* hooks can read a pre-change registry into memory while the JS
+# toolbar is mid-write, then `Save-Registry` stomps the toolbar's change.
+# Visible symptom: colour / label / mute changes in Settings don't stick.
+Set-Variable -Scope Script -Name LockStaleMs       -Value 3000 -Option ReadOnly -Force
+Set-Variable -Scope Script -Name LockAcquireMs     -Value 500  -Option ReadOnly -Force
+Set-Variable -Scope Script -Name LockPollMs        -Value 15   -Option ReadOnly -Force
+
+function Acquire-RegistryLock {
+    <#
+    .SYNOPSIS
+    Atomic-create a `<RegistryPath>.lock` file using CreateNew + no sharing
+    (O_EXCL equivalent). Returns $true on acquisition, $false if the lock
+    is held by another process and couldn't be claimed within the timeout.
+
+    A lock file older than $script:LockStaleMs is considered abandoned
+    (crashed holder that never released) and stolen. If the acquire loop
+    times out we return $false; callers fall through unlocked rather than
+    freezing the statusline. This matches the JS wrapper in
+    app/lib/registry-lock.js line-for-line.
+    #>
+    param([Parameter(Mandatory = $true)] [string]$RegistryPath)
+    $lockPath = "$RegistryPath.lock"
+    $start = [Environment]::TickCount64
+    while (([Environment]::TickCount64 - $start) -lt $script:LockAcquireMs) {
+        try {
+            $fs = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try {
+                $bytes = [Text.Encoding]::UTF8.GetBytes([string]$PID)
+                $fs.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $fs.Close()
+            }
+            return $true
+        } catch [IO.IOException] {
+            try {
+                $st = Get-Item $lockPath -Force -ErrorAction Stop
+                $ageMs = ([DateTime]::UtcNow - $st.LastWriteTimeUtc).TotalMilliseconds
+                if ($ageMs -gt $script:LockStaleMs) {
+                    Remove-Item $lockPath -Force -ErrorAction SilentlyContinue
+                    continue
+                }
+            } catch {
+                # Stat may race with the other holder releasing -- fall through
+                # and retry rather than spin-panicking.
+            }
+            Start-Sleep -Milliseconds $script:LockPollMs
+        }
+    }
+    return $false
+}
+
+function Release-RegistryLock {
+    <#
+    .SYNOPSIS
+    Delete the `<RegistryPath>.lock` sentinel. Idempotent -- a missing file
+    is a no-op (acquire may have timed out and we're releasing a lock we
+    never held). Never throws.
+    #>
+    param([Parameter(Mandatory = $true)] [string]$RegistryPath)
+    $lockPath = "$RegistryPath.lock"
+    Remove-Item $lockPath -Force -ErrorAction SilentlyContinue
+}
+
 function Read-Registry {
     <#
     .SYNOPSIS
@@ -218,4 +283,4 @@ function Write-SessionPidFile {
     }
 }
 
-Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile
+Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile, Acquire-RegistryLock, Release-RegistryLock

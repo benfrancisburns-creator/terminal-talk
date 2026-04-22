@@ -60,12 +60,21 @@ $now = [long][double]::Parse((Get-Date -UFormat %s))
 # Shared session-registry module -- canonical Read / Touch-Or-Assign /
 # Write-Atomic + per-PID stamp. Replaces ~80 lines of logic that used
 # to be duplicated here AND in speak-response.ps1 AND in statusline.ps1.
-Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
+Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
 
-$assignments = Read-Registry -RegistryPath $registryPath
-$null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
-                                  -SessionId $sessionId -ClaudePid $claudePid -Now $now
-Save-Registry -RegistryPath $registryPath -Assignments $assignments
+# Read-Update-Save must be lock-guarded as a whole -- the Electron toolbar
+# can be mid-write during the window between Read and Save, and without
+# the lock this write would stomp the user's colour/label/mute change.
+# Lock semantics mirror app/lib/registry-lock.js.
+$locked = Acquire-RegistryLock -RegistryPath $registryPath
+try {
+    $assignments = Read-Registry -RegistryPath $registryPath
+    $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
+                                      -SessionId $sessionId -ClaudePid $claudePid -Now $now
+    Save-Registry -RegistryPath $registryPath -Assignments $assignments
+} finally {
+    if ($locked) { Release-RegistryLock -RegistryPath $registryPath }
+}
 Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid `
                       -SessionId $sessionId -Short $sessionShort -Now $now
 

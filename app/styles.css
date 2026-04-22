@@ -42,7 +42,8 @@ html, body {
   background: rgba(24, 26, 32, 0.9);
 }
 .bar.collapsed .bar-top,
-.bar.collapsed .dots-row {
+.bar.collapsed .dots-row,
+.bar.collapsed .tabs-row {
   display: none;
 }
 .bar.collapsed:hover {
@@ -58,6 +59,100 @@ html, body {
 
 .bar-top > * { -webkit-app-region: no-drag; }
 .dots-row { -webkit-app-region: no-drag; }
+.tabs-row { -webkit-app-region: no-drag; }
+
+/* Tabs — per-session filter for the dot strip. Row sits above .dots-row.
+   A hidden tabs row (single-session case) collapses to zero height so
+   single-session users see no visual change from pre-tabs layout. */
+.tabs-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  min-height: 0;   /* zero when .tabs is empty */
+}
+.tabs-row:empty,
+.tabs-row:has(.tabs:empty) { display: none; }
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 4px 0;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs:empty { display: none; }
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.tab.selected {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.38);
+  color: #fff;
+}
+.tab.stale {
+  opacity: 0.55;
+  filter: saturate(0.55);
+}
+.tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: rgba(201, 123, 80, 0.85);
+  color: #1a0c04;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.tab.selected .tab-badge {
+  background: #c97b50;
+}
+.tab-overflow {
+  opacity: 0.75;
+}
+.tab:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
 
 /* Full-width dot strip on the bottom row. Up to ~30 standard dots; if
    more arrive the row clips at the right edge (auto-prune usually keeps

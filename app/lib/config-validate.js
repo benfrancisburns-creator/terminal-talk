@@ -19,6 +19,8 @@ const RULES = [
   { path: 'playback.palette_variant', type: 'string', maxLen: 16 },
   { path: 'speech_includes', type: 'object' },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
+  { path: 'selected_tab',    type: 'string',  maxLen: 64 },
+  { path: 'tabs_expanded',   type: 'boolean' },
 ];
 
 function getPath(obj, path) {

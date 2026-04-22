@@ -63,7 +63,7 @@ if (Test-Path $cachePath) {
 # Load the shared session-registry module (Read-Registry /
 # Touch-Or-Assign-Session / Write-Registry-Atomic / Write-SessionPidFile).
 # Lives alongside this script in the installed `app/` directory.
-Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -ErrorAction SilentlyContinue
+Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
 
 # Track this session's Claude Code PID so hey-jarvis can map the foreground
 # terminal back to a session. The statusline's parent = Claude Code CLI process.
@@ -125,10 +125,20 @@ function Test-ProcessAlive($p) {
 
 # Read, touch/assign, write back -- all via the shared module so statusline
 # and the two Stop/PreToolUse hooks are guaranteed to use identical logic.
-$assignments = Read-Registry -RegistryPath $registryPath
-$idx = Update-SessionAssignment -Assignments $assignments -Short $short `
-                                 -SessionId $sessionId -ClaudePid $claudePid -Now $now
-Save-Registry -RegistryPath $registryPath -Assignments $assignments
+# The Read-Update-Save triplet must be lock-guarded as a whole -- the
+# Electron toolbar can be mid-write during the window between Read and
+# Save, and saving stale state stomps the user's Settings change. Lock
+# semantics mirror app/lib/registry-lock.js (3 s stale, 500 ms acquire
+# timeout, 15 ms poll backoff).
+$locked = Acquire-RegistryLock -RegistryPath $registryPath
+try {
+    $assignments = Read-Registry -RegistryPath $registryPath
+    $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
+                                     -SessionId $sessionId -ClaudePid $claudePid -Now $now
+    Save-Registry -RegistryPath $registryPath -Assignments $assignments
+} finally {
+    if ($locked) { Release-RegistryLock -RegistryPath $registryPath }
+}
 
 $emoji = Get-EmojiForIndex $idx
 $label = $assignments[$short].label

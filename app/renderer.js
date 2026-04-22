@@ -50,6 +50,7 @@ function setDynamicStyle(selector, cssText) {
 
 const audio = document.getElementById('audio');
 const dotsEl = document.getElementById('dots');
+const tabsEl = document.getElementById('tabs');
 const playPauseBtn = document.getElementById('playPause');
 const playIcon = document.getElementById('playIcon');
 const pauseIcon = document.getElementById('pauseIcon');
@@ -394,6 +395,47 @@ const dotStrip = new window.TT_DOT_STRIP({
 });
 dotStrip.mount(dotsEl);
 
+// Tabs — per-session filter above the dot-strip. `selectedTab` is either
+// 'all' (unfiltered chronological view, default) or a session shortId.
+// `tabsExpanded` controls the [▾ N idle] overflow disclosure. Both persist
+// via writeConfig so the toolbar remembers across restarts; on load we
+// defensively fall back to 'all' if the previously-selected session no
+// longer exists in the registry.
+let selectedTab = 'all';
+let tabsExpanded = false;
+const tabs = new window.TT_TABS({
+  clipPaths: window.TT_CLIP_PATHS,
+  staleSessionPoller,
+  paletteSize: PALETTE_SIZE,
+  onTabSelect: (tabId) => {
+    if (selectedTab === tabId) return;
+    selectedTab = tabId;
+    persistTabsState();
+    renderDots();
+  },
+  onExpandChange: (next) => {
+    tabsExpanded = !!next;
+    persistTabsState();
+    renderDots();
+  },
+});
+tabs.mount(tabsEl);
+
+function persistTabsState() {
+  try {
+    window.api.updateConfig({ selected_tab: selectedTab, tabs_expanded: tabsExpanded });
+  } catch {}
+}
+
+// Restore persisted tab state on first config load. Validated after first
+// sessionAssignments sync in renderDots so a gone-stale session doesn't
+// leave the user staring at an empty strip they can't escape from.
+function restoreTabsState(cfg) {
+  if (!cfg) return;
+  if (typeof cfg.selected_tab === 'string') selectedTab = cfg.selected_tab;
+  if (typeof cfg.tabs_expanded === 'boolean') tabsExpanded = cfg.tabs_expanded;
+}
+
 // EX7e — all audio-surface code (playPath, play/pause/ended/error/
 // stalled/waiting/playing/canplay/seeking/timeupdate/loadedmetadata
 // handlers, scrubber rAF + mascot + verb cloud, scrub direction,
@@ -441,12 +483,48 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
 audioPlayer.mount();
 
 function renderDots() {
+  // Defensive fallback: if the persisted selectedTab points at a short
+  // that no longer appears in either queue or sessionAssignments, revert
+  // to 'all' so the user isn't stuck staring at an empty strip.
+  if (selectedTab !== 'all' && !sessionAssignments[selectedTab]) {
+    const stillQueued = queue.some((f) => {
+      const fname = f.path.split(/[\\/]/).pop();
+      return window.TT_CLIP_PATHS.extractSessionShort(fname) === selectedTab;
+    });
+    if (!stillQueued) {
+      selectedTab = 'all';
+      persistTabsState();
+    }
+  }
+
+  // Tab filter: 'all' passes the queue through; a session shortId keeps
+  // only clips that belong to that session. The underlying `queue` array
+  // stays the single source of truth — DotStrip gets a filtered view,
+  // playback order + heardPaths tracking continue globally.
+  const shortId = selectedTab;
+  const visibleQueue = shortId === 'all'
+    ? queue
+    : queue.filter((f) => {
+        const fname = f.path.split(/[\\/]/).pop();
+        return window.TT_CLIP_PATHS.extractSessionShort(fname) === shortId;
+      });
+
   dotStrip.update({
-    queue,
+    queue: visibleQueue,
     currentPath: audioPlayer.getCurrentPath(),
     heardPaths,
     sessionAssignments,
     synthInProgress,
+  });
+
+  // Tabs always see the FULL queue (so per-tab unread counts stay
+  // accurate even while a non-All tab is selected).
+  tabs.update({
+    queue,
+    heardPaths,
+    sessionAssignments,
+    selectedTab,
+    expanded: tabsExpanded,
   });
 }
 
@@ -831,6 +909,8 @@ async function loadSettings() {
   const cfg = await window.api.getConfig();
   if (!cfg) return;
   settingsForm.update({ cfg });
+  restoreTabsState(cfg);
+  renderDots();
 }
 
 settingsBtn.addEventListener('click', async () => {

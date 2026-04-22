@@ -100,6 +100,7 @@ module.exports = [
       'app/lib/sessions-table.js',
       'app/lib/settings-form.js',
       'app/lib/audio-player.js',
+      'app/lib/tabs.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

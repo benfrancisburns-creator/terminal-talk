@@ -61,6 +61,17 @@
       "maxLength": 200,
       "description": "Optional — premium TTS fallback. Stored encrypted via Electron safeStorage after v0.3 (see D2)."
     },
+    "selected_tab": {
+      "type": "string",
+      "maxLength": 64,
+      "default": "all",
+      "description": "Last-selected dot-strip filter tab. 'all' = unfiltered chronological view; otherwise a session shortId. Managed by the toolbar; falls back to 'all' if the previously-selected session is gone."
+    },
+    "tabs_expanded": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the [▾ N idle] overflow row is expanded. Managed by the toolbar."
+    },
     "_comment": {
       "type": "string",
       "description": "Free-form note. JSON has no native comments; _comment is ignored by the loader."

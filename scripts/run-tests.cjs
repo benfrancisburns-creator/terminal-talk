@@ -1635,14 +1635,16 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
   const toolHook     = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-on-tool.ps1'), 'utf8');
   const moduleSrc    = fs.readFileSync(modulePath, 'utf8');
 
-  it('module exports the four canonical functions', () => {
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile']) {
+  it('module exports the six canonical functions', () => {
+    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Acquire-RegistryLock', 'Release-RegistryLock']) {
       if (!moduleSrc.includes(`function ${fn}`)) {
         throw new Error(`session-registry.psm1 missing function ${fn}`);
       }
     }
-    if (!/Export-ModuleMember[\s\S]*Read-Registry[\s\S]*Update-SessionAssignment[\s\S]*Save-Registry[\s\S]*Write-SessionPidFile/.test(moduleSrc)) {
-      throw new Error('session-registry.psm1 must Export-ModuleMember all four canonical functions');
+    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Acquire-RegistryLock', 'Release-RegistryLock']) {
+      if (!new RegExp(`Export-ModuleMember[\\s\\S]*${fn}`).test(moduleSrc)) {
+        throw new Error(`session-registry.psm1 must Export-ModuleMember ${fn}`);
+      }
     }
   });
 
@@ -1675,6 +1677,35 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
       // reappears it means the logic was copy-pasted back.
       if (/\$i\s*-lt\s*\$paletteSize/.test(c.src)) {
         throw new Error(`${c.name}: still contains the inline lowest-free-index loop`);
+      }
+    });
+    it(`${c.name} lock-guards the Read-Update-Save triplet`, () => {
+      // The JS toolbar and the PS hooks race on ~/.terminal-talk/
+      // session-colours.json. PS callers MUST Acquire-RegistryLock
+      // before Read-Registry and Release-RegistryLock after Save-Registry
+      // or a toolbar Settings change can be stomped by a concurrent hook.
+      // Mirror of JS-side app/lib/registry-lock.js withRegistryLock().
+      if (!/\bAcquire-RegistryLock\b/.test(c.src)) {
+        throw new Error(`${c.name}: missing Acquire-RegistryLock before Read/Save`);
+      }
+      if (!/\bRelease-RegistryLock\b/.test(c.src)) {
+        throw new Error(`${c.name}: missing Release-RegistryLock (lock would never be freed)`);
+      }
+      // Structural check: the Save-Registry CALL (not a comment reference)
+      // must sit between Acquire and Release. Strip comment-only PS lines
+      // first so a "Read-Update-Save" reference in a docstring doesn't
+      // fool .indexOf with an earlier match. Normalise CRLF→LF up front
+      // because `\r` is a regex line-terminator in JS and defeats $.
+      const stripped = c.src
+        .replace(/\r/g, '')
+        .split('\n')
+        .filter((ln) => !/^\s*#/.test(ln))
+        .join('\n');
+      const acquireAt = stripped.indexOf('Acquire-RegistryLock');
+      const saveAt    = stripped.indexOf('Save-Registry');
+      const releaseAt = stripped.indexOf('Release-RegistryLock');
+      if (!(acquireAt < saveAt && saveAt < releaseAt)) {
+        throw new Error(`${c.name}: Acquire/Save/Release call ordering wrong (got Acquire@${acquireAt}, Save@${saveAt}, Release@${releaseAt})`);
       }
     });
   }
@@ -2408,6 +2439,138 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     if (!/\.corrupt-.{0,40}\$\{ts\}/.test(src) && !/\.corrupt-\$\{ts\}/.test(src)) {
       throw new Error('archive filename should embed ISO timestamp (.corrupt-<ts>.json)');
     }
+  });
+});
+
+// =============================================================================
+// TABS COMPONENT — per-session filter with unread-count badges
+// =============================================================================
+describe('TABS — unread count is derived, not stored', () => {
+  // Stub the Component base before requiring tabs.js (Node path).
+  const componentPath = path.join(__dirname, '..', 'app', 'lib', 'component.js');
+  const tabsPath = path.join(__dirname, '..', 'app', 'lib', 'tabs.js');
+  // Clear require cache so re-requires always see the current source.
+  delete require.cache[require.resolve(componentPath)];
+  delete require.cache[require.resolve(tabsPath)];
+  const tabsModule = require(tabsPath);
+  const { unreadCount, partitionSessions, truncateLabel } = tabsModule._internals;
+
+  // Minimal clipPaths stub: filenames shaped "<kind>_<short8>_<ts>.mp3".
+  // extractSessionShort returns the short8 token.
+  const stubClipPaths = {
+    extractSessionShort(fname) {
+      const m = /^[a-z]+_([a-f0-9]{8})_/.exec(fname || '');
+      return m ? m[1] : null;
+    },
+    isClipFile(fname) { return /^clip_/.test(fname || ''); },
+    paletteKeyForShort() { return '00'; },
+  };
+
+  const mkClip = (short, id) => ({
+    path: `C:\\fake\\queue\\resp_${short}_${id}.mp3`,
+    mtime: Date.now() + Number(id),
+  });
+
+  it('MIL-1: 5 clips in a session, 2 played → unread reads as 3', () => {
+    const queue = ['a', 'b', 'c', 'd', 'e'].map((id) => mkClip('aaaaaaaa', id));
+    const heard = new Set([queue[0].path, queue[2].path]);
+    const n = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    if (n !== 3) throw new Error(`expected 3 unplayed, got ${n}`);
+  });
+
+  it('MIL-2: each additional play decrements unread monotonically', () => {
+    const queue = [0, 1, 2, 3, 4].map((id) => mkClip('aaaaaaaa', id));
+    const heard = new Set();
+    const progression = [];
+    for (const f of queue) {
+      progression.push(unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa'));
+      heard.add(f.path);
+    }
+    progression.push(unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa'));
+    const expected = [5, 4, 3, 2, 1, 0];
+    if (JSON.stringify(progression) !== JSON.stringify(expected)) {
+      throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(progression)}`);
+    }
+  });
+
+  it('MIL-3: per-session count ignores other sessions entirely', () => {
+    const queue = [
+      mkClip('aaaaaaaa', 0), mkClip('aaaaaaaa', 1), mkClip('aaaaaaaa', 2),
+      mkClip('bbbbbbbb', 0), mkClip('bbbbbbbb', 1),
+      mkClip('cccccccc', 0),
+    ];
+    const heard = new Set();
+    const a = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    const b = unreadCount(queue, heard, stubClipPaths, 'bbbbbbbb');
+    const c = unreadCount(queue, heard, stubClipPaths, 'cccccccc');
+    if (a !== 3 || b !== 2 || c !== 1) {
+      throw new Error(`per-session a=${a} b=${b} c=${c}, expected 3/2/1`);
+    }
+  });
+
+  it('MIL-4: All count = sum of per-session, and also = total-unheard', () => {
+    const queue = [
+      mkClip('aaaaaaaa', 0), mkClip('aaaaaaaa', 1), mkClip('aaaaaaaa', 2),
+      mkClip('bbbbbbbb', 0), mkClip('bbbbbbbb', 1),
+    ];
+    const heard = new Set([queue[0].path]); // play one aaaa clip
+    const all = unreadCount(queue, heard, stubClipPaths, 'all');
+    const a = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    const b = unreadCount(queue, heard, stubClipPaths, 'bbbbbbbb');
+    if (all !== a + b) throw new Error(`all (${all}) != a+b (${a}+${b}=${a+b})`);
+    if (all !== queue.length - heard.size) throw new Error(`all (${all}) != total-unheard (${queue.length - heard.size})`);
+  });
+
+  it('MIL-5: replaying a heard clip keeps unread at 0 (no double-count)', () => {
+    const queue = [mkClip('aaaaaaaa', 0), mkClip('aaaaaaaa', 1)];
+    const heard = new Set([queue[0].path, queue[1].path]);
+    const n = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    if (n !== 0) throw new Error(`expected 0, got ${n}`);
+    // Adding the same path again is a no-op because heard is a Set.
+    heard.add(queue[0].path);
+    const n2 = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    if (n2 !== 0) throw new Error(`expected 0 after redundant add, got ${n2}`);
+  });
+
+  it('MIL-6: empty queue → 0 for every tab', () => {
+    const n = unreadCount([], new Set(), stubClipPaths, 'all');
+    const m = unreadCount([], new Set(), stubClipPaths, 'aaaaaaaa');
+    if (n !== 0 || m !== 0) throw new Error(`expected 0/0, got ${n}/${m}`);
+  });
+
+  it('MIL-7: clip with unparseable filename contributes to All but no per-session', () => {
+    const bad = { path: 'C:\\fake\\queue\\malformed.mp3', mtime: 0 };
+    const queue = [mkClip('aaaaaaaa', 0), bad];
+    const heard = new Set();
+    const all = unreadCount(queue, heard, stubClipPaths, 'all');
+    const a = unreadCount(queue, heard, stubClipPaths, 'aaaaaaaa');
+    if (all !== 2) throw new Error(`All should count all non-heard clips, got ${all}`);
+    if (a !== 1) throw new Error(`session-a should ignore unparseable, got ${a}`);
+  });
+
+  it('partitionSessions: fresh last_seen → active, old → stale', () => {
+    const now = 1_700_000_000_000;
+    const staleMs = 30 * 60 * 1000;
+    const sessionAssignments = {
+      aaaaaaaa: { last_seen: Math.floor(now / 1000) - 60, index: 0 },           // 60 s ago → active
+      bbbbbbbb: { last_seen: Math.floor(now / 1000) - (60 * 60), index: 1 },    // 1 h ago → stale
+      cccccccc: { last_seen: Math.floor(now / 1000) - (2 * 60), index: 2 },    // 2 min ago → active
+    };
+    const queue = [
+      mkClip('aaaaaaaa', 0), mkClip('bbbbbbbb', 0), mkClip('cccccccc', 0),
+    ];
+    const { active, stale } = partitionSessions(sessionAssignments, queue, stubClipPaths, now, staleMs);
+    if (active.length !== 2) throw new Error(`active: expected 2, got ${active.length}`);
+    if (stale.length !== 1) throw new Error(`stale: expected 1, got ${stale.length}`);
+    // Deterministic ordering: most-recent last_seen first.
+    if (active[0] !== 'aaaaaaaa') throw new Error(`active[0] should be most-recent, got ${active[0]}`);
+    if (stale[0] !== 'bbbbbbbb') throw new Error(`stale[0] should be bbbbbbbb, got ${stale[0]}`);
+  });
+
+  it('truncateLabel: cuts with ellipsis when over maxChars', () => {
+    if (truncateLabel('matean', 10) !== 'matean') throw new Error('short label should pass through');
+    if (truncateLabel('matean-brain-thing', 10) !== 'matean-br…') throw new Error(`got ${truncateLabel('matean-brain-thing', 10)}`);
+    if (truncateLabel('', 10) !== '') throw new Error('empty label should stay empty');
   });
 });
 

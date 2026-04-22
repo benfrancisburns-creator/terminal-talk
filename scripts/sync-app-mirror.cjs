@@ -34,6 +34,7 @@ const FILES = [
   'lib/component.js',
   'lib/stale-session-poller.js',
   'lib/dot-strip.js',
+  'lib/tabs.js',
   'lib/sessions-table.js',
   'lib/settings-form.js',
   'lib/audio-player.js',

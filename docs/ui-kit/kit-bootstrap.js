@@ -77,6 +77,7 @@
     await loadScript('../app-mirror/lib/component.js');
     await loadScript('../app-mirror/lib/stale-session-poller.js');
     await loadScript('../app-mirror/lib/dot-strip.js');
+    await loadScript('../app-mirror/lib/tabs.js');
     await loadScript('../app-mirror/lib/sessions-table.js');
     await loadScript('../app-mirror/lib/settings-form.js');
     await loadScript('../app-mirror/lib/audio-player.js');
