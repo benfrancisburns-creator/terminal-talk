@@ -200,17 +200,36 @@
     // System-initiated resume — call when the external mic-grabber
     // releases. Only resumes if WE paused via systemAutoPause (flag
     // guard); a user-initiated pause in the meantime stays paused.
+    // After clearing the paused flag we ALSO trigger playNextPending
+    // so any clips that arrived in the queue during the dictation
+    // window (which playPath refused while _systemAutoPaused was true)
+    // now start playing in order.
     systemAutoResume() {
       if (!this._systemAutoPaused) return;
       this._systemAutoPaused = false;
-      if (!this._audio || !this._audio.src || !this._audio.paused || this._audio.ended) return;
-      try { this._audio.play().catch(() => {}); } catch {}
+      if (this._audio && this._audio.src && this._audio.paused && !this._audio.ended) {
+        try { this._audio.play().catch(() => {}); } catch {}
+      } else {
+        // Nothing was mid-clip when the mic grab happened — drain any
+        // queue that accumulated during the window.
+        try { this._onPlayNextPending(); } catch {}
+      }
     }
 
     playPath(p, manual = false, userClick = false) {
       const queue = this._getQueue();
       const idx = queue.findIndex((f) => f.path === p);
       if (idx < 0) return false;
+      // HB4 — external app (Wispr Flow / Voice Access / VoIP) is
+      // currently using the mic. systemAutoPause() already pauses
+      // any playing clip, but without this guard a new clip arriving
+      // in the queue would be playPath'd and .play()'d over the
+      // pause, talking over the user's dictation. EXCEPTION: manual
+      // user-clicks override — if the user explicitly clicks a dot
+      // while dictating, respect their intent.
+      if (this._systemAutoPaused && !userClick) {
+        return false;
+      }
       this._onPlayStart(p, { manual, userClick });  // triggers cancelAutoDelete
       this._currentPath = p;
       this._currentIsManual = manual;

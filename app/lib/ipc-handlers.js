@@ -448,7 +448,13 @@ function createIpcHandlers(deps) {
         const d = new Date();
         const pad = (n, w = 2) => String(n).padStart(w, '0');
         const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`;
-        const filename = `${ts}-T-0001-${sessionShort}.mp3`;
+        // HB3 — heartbeat clips use H- prefix (not T-). Renderer's
+        // isHeartbeatClip() matches /-H-/ strictly; if these stay under
+        // -T- they're mis-classified as tool-narration clips and play
+        // at 100 % volume instead of 45 %. The original HB3 commit
+        // described this change but the edit didn't persist (file-
+        // modification race); re-applying explicitly.
+        const filename = `${ts}-H-0001-${sessionShort}.mp3`;
         const outPath = path.join(QUEUE_DIR, filename);
         await callEdgeTTS(verb, voice, outPath);
         diag(`heartbeat: "${verb}" → ${filename}`);
