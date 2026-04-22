@@ -274,7 +274,12 @@ html, body {
   filter: drop-shadow(1px 1px 0 rgba(179, 102, 32, 0.9));
   pointer-events: none;     /* clicks pass through to the input underneath */
   overflow: visible;        /* legs can translate outside the original box */
-  transition: filter 0.15s ease, transform 0.25s ease;
+  /* Default orange — the Claude Code homage colour. When a clip is
+     playing, JS sets data-palette on the mascot and palette-classes.css
+     overrides `color` to the session's primary colour. The SVG rects
+     use fill: currentColor so all body/ears/legs follow automatically. */
+  color: #ff8c1a;
+  transition: filter 0.15s ease, transform 0.25s ease, color 0.25s ease;
 }
 
 .scrubber-wrap:hover .scrubber-mascot {

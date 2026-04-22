@@ -129,9 +129,15 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     const primary = primaryForArrangement(i, baseColours);
     lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; }`);
     lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { border-color: ${primary}; box-shadow: 0 0 0 2px ${primary}; }`);
+    // Mascot: SVG body/legs/ears use fill: currentColor — this rule drives
+    // that colour per-palette so the mascot matches the currently-playing
+    // session. Splits collapse to the primary colour (single-colour mascot
+    // is readable; a split mascot would be visually noisy on a 20px icon).
+    lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; }`);
   }
   lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { border-color: ${palette.NEUTRAL_COLOUR}; box-shadow: 0 0 0 2px ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; }`);
   return lines;
 }
 

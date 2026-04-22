@@ -86,7 +86,13 @@
         fileUrl = (p) => p,
         isPathSessionMuted = () => false,
         isPathSessionStale = () => false,
-        clipPaths,                     // { isClipFile }
+        clipPaths,                     // { isClipFile, extractSessionShort }
+        // Resolves a clip path to the session's palette key (e.g. "03")
+        // or null for J-clips / neutral / unknown sessions. Used to
+        // recolour the mascot per playing session. Injected from renderer
+        // so audio-player stays decoupled from the live sessionAssignments
+        // map.
+        resolveSessionPaletteKey = () => null,
         randomVerb = () => 'walking',
         setDynamicStyle = () => {},
 
@@ -125,6 +131,7 @@
       this._isPathSessionMuted = isPathSessionMuted;
       this._isPathSessionStale = isPathSessionStale;
       this._clipPaths = clipPaths;
+      this._resolveSessionPaletteKey = resolveSessionPaletteKey;
       this._randomVerb = randomVerb;
       this._setDynamicStyle = setDynamicStyle;
 
@@ -488,6 +495,25 @@
       const name = this._currentPath ? this._currentPath.split(/[\\/]/).pop() : '';
       const jarvis = !!name && this._clipPaths && this._clipPaths.isClipFile(name);
       this._scrubberWrap.classList.toggle('jarvis-mode', jarvis);
+
+      // Recolour the mascot to the session's primary palette colour
+      // while its clip plays. Cleared (falls back to CSS default orange)
+      // for J-clips or when nothing is playing, so the Claude-Code homage
+      // colour is restored at rest.
+      // Typeof guards: test fixtures use stub objects that don't
+      // implement the full DOM element API; real browser elements always
+      // do. Skipping silently keeps tests passing without special-casing.
+      const mascot = this._scrubberMascot;
+      if (mascot && typeof mascot.setAttribute === 'function') {
+        const key = !jarvis && this._currentPath
+          ? this._resolveSessionPaletteKey(this._currentPath)
+          : null;
+        if (key) {
+          mascot.setAttribute('data-palette', key);
+        } else if (typeof mascot.removeAttribute === 'function') {
+          mascot.removeAttribute('data-palette');
+        }
+      }
     }
 
     // ---- Scrubber: rAF tick + verb cloud -----------------------------

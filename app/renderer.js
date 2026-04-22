@@ -418,6 +418,19 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   isPathSessionMuted,
   isPathSessionStale,
   clipPaths: window.TT_CLIP_PATHS,
+  resolveSessionPaletteKey: (p) => {
+    // Mascot recolour: map a clip path to the session's palette key
+    // (e.g. "03") using the current assignments. Returns null for
+    // J-clips (handled separately by audio-player), neutral clips,
+    // or unresolvable paths — in those cases the mascot falls back
+    // to its default orange.
+    if (!p) return null;
+    const filename = p.split(/[\\/]/).pop();
+    if (!filename || _paths.isClipFile(filename)) return null;
+    const shortId = _paths.extractSessionShort(filename);
+    if (!shortId) return null;
+    return _paths.paletteKeyForShort(shortId, sessionAssignments, PALETTE_SIZE);
+  },
   randomVerb,
   setDynamicStyle,
   onPlayStart: (p) => cancelAutoDelete(p),
