@@ -1332,6 +1332,7 @@ createIpcHandlers({
   saveConfig,
   getQueueFiles,
   ensureAssignmentsForFiles,
+  shortFromFile,
   isPidAlive,
   computeStaleSessions,
   SESSIONS_DIR,
@@ -1574,6 +1575,21 @@ const _watchdog = createWatchdog({
 const startWatchdog = _watchdog.start;
 const stopWatchdog = _watchdog.stop;
 
+// Phase 2 — transcript streaming watcher. Polls the UserPromptSubmit
+// working-flag files every 500 ms; when a session is actively working,
+// spawns synth_turn.py --mode on-stream against that session's
+// transcript JSONL. The Python side slices the growing text entry by
+// char-offset and synthesises complete sentences as they appear,
+// closing the "text visible in terminal but not yet spoken" gap that
+// was the main latency pain point post-HB2.
+const { TranscriptWatcher } = require('./lib/transcript-watcher');
+const _transcriptWatcher = new TranscriptWatcher({
+  ttHome: INSTALL_DIR,
+  synthScript: path.join(INSTALL_DIR, 'app', 'synth_turn.py'),
+  pythonExe: 'python',
+  diag,
+});
+
 // Z2-4 — boot-time SHA-256 of spawned Python helpers. Forensic only —
 // we don't block on mismatch because the install itself is trusted and
 // a corrupt script would fail at runtime with its own exception. But
@@ -1601,6 +1617,7 @@ app.whenReady().then(() => {
   createWindow();
   startWatcher();
   startWatchdog();
+  _transcriptWatcher.start();
 
   const menu = Menu.buildFromTemplate([{
     label: 'Audio',

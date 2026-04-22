@@ -161,16 +161,32 @@ def load_sync_state(session_id: str) -> dict:
             'turn_boundary': -1,
             'synthesized_line_indices': [],
             'announced_tool_line_indices': [],
+            'partial_text_offsets': {},
         }
     try:
         with open(p, encoding='utf-8') as f:
             data = json.load(f)
+        # Back-compat: earlier sync files missing newer fields default
+        # to empty — no crash, no re-synth.
+        raw_offsets = data.get('partial_text_offsets', {}) or {}
+        # JSON keys are always strings; coerce to int for easier use.
+        partial_text_offsets = {}
+        for k, v in raw_offsets.items():
+            try:
+                partial_text_offsets[int(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
         return {
             'turn_boundary': int(data.get('turn_boundary', -1)),
             'synthesized_line_indices': list(data.get('synthesized_line_indices', [])),
-            # Back-compat: older sync files from v0.4 / pre-tool-narration
-            # won't have this key; default to empty so we never blow up.
             'announced_tool_line_indices': list(data.get('announced_tool_line_indices', [])),
+            # Phase 2 (on-stream): per-line char offset of how much of a
+            # growing assistant text entry we've already synthesised. A
+            # 3000-char response entry can land incrementally in the JSONL
+            # as Claude streams tokens; this lets on-stream mode synth
+            # the first few sentences as they appear, remember where it
+            # stopped, and pick up the rest on the next poll.
+            'partial_text_offsets': partial_text_offsets,
         }
     except Exception as e:
         _log(f'sync state read fail ({session_id[:8]}): {e}; resetting')
@@ -178,6 +194,7 @@ def load_sync_state(session_id: str) -> dict:
             'turn_boundary': -1,
             'synthesized_line_indices': [],
             'announced_tool_line_indices': [],
+            'partial_text_offsets': {},
         }
 
 
@@ -305,6 +322,32 @@ def assistant_text_entries_after(entries: list[dict], start_idx: int) -> list[tu
         if text.strip():
             out.append((i, text))
     return out
+
+
+# Sentence-terminator scan for streaming safety. We only synth content
+# up to the LAST terminator in the growing suffix — anything after the
+# last `.!?` might be an in-progress sentence that'll grow on the next
+# poll. Without this, on-stream could speak "Let me chec" mid-token.
+_STREAM_SAFE_END_RE = re.compile(r'[.!?][")\]]*(?=\s|$)')
+
+
+def _safe_stream_slice(content: str, start: int) -> tuple[str, int]:
+    """Return (slice, new_offset) for the portion of `content[start:]`
+    that ends on a complete sentence. Empty slice means 'nothing new
+    is fully-formed yet, wait for more tokens'. Offsets are absolute
+    positions in the original content string."""
+    if start >= len(content):
+        return ('', start)
+    tail = content[start:]
+    # Find the LAST sentence-terminator in the tail. Using finditer +
+    # max so we always pick the latest safe boundary, not the first one.
+    last_end = -1
+    for m in _STREAM_SAFE_END_RE.finditer(tail):
+        last_end = m.end()
+    if last_end < 0:
+        # No terminator yet — defer.
+        return ('', start)
+    return (tail[:last_end], start + last_end)
 
 
 def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
@@ -866,6 +909,102 @@ def extract_questions(text: str) -> list[str]:
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
+def _do_stream(
+    session_id: str,
+    session_short: str,
+    entries: list[dict],
+    user_idx: int,
+    state: dict,
+) -> int:
+    """Full on-stream flow: slice-by-offset → sanitize → group → synth.
+    Called from run() when mode == 'on-stream'. Returns 0 on success."""
+    body_text_chunks, updated_offsets, fully_done = _run_stream_mode(
+        session_id, session_short, entries, user_idx, state
+    )
+    if not body_text_chunks:
+        # Nothing new + no complete sentences yet. Quiet exit — the
+        # watcher will poll again in ~500ms.
+        return 0
+
+    config = load_config()
+    voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
+    if muted:
+        # Don't synth, but DO advance offsets + mark done so unmute
+        # picks up from current moment, not replay history.
+        state['partial_text_offsets'] = updated_offsets
+        state['synthesized_line_indices'].extend(fully_done)
+        save_sync_state(session_id, state)
+        return 0
+
+    # Each chunk goes through the full sanitize + group pipeline
+    # independently so paragraph boundaries within a chunk are
+    # respected and adjacent small sentences merge naturally.
+    all_clips: list[str] = []
+    for raw_chunk in body_text_chunks:
+        clean = sanitize(raw_chunk, flags)
+        if not clean:
+            continue
+        all_clips.extend(group_sentences_for_tts(clean))
+    if not all_clips:
+        state['partial_text_offsets'] = updated_offsets
+        state['synthesized_line_indices'].extend(fully_done)
+        save_sync_state(session_id, state)
+        return 0
+
+    _log(
+        f'on-stream: {session_short} — {len(body_text_chunks)} chunk(s), '
+        f'{len(all_clips)} body clips, {len(fully_done)} line(s) fully done'
+    )
+    synthesize_parallel(all_clips, voice, session_short, openai_key)
+
+    state['partial_text_offsets'] = updated_offsets
+    state['synthesized_line_indices'].extend(fully_done)
+    save_sync_state(session_id, state)
+    return 0
+
+
+def _run_stream_mode(
+    session_id: str,
+    session_short: str,
+    entries: list[dict],
+    user_idx: int,
+    state: dict,
+) -> tuple[list[str], dict[int, int], list[int]]:
+    """Compute streaming body-clips + updated partial offsets.
+
+    Returns (body_clips, updated_offsets, fully_processed_lines).
+    Caller handles synthesis + state persistence.
+
+    Streaming strategy: for each assistant-text entry after `user_idx`,
+    read the current chars, slice from the last-recorded offset up to
+    the last safe sentence boundary, group+synth that slice, advance
+    the offset. A line only lands in `fully_processed_lines` when the
+    slice fully consumed the entry (covers the legacy
+    `synthesized_line_indices` semantics — prevents on-stop from
+    re-synthing content on-stream already said).
+    """
+    body_text_chunks: list[str] = []
+    updated_offsets: dict[int, int] = dict(state.get('partial_text_offsets', {}))
+    fully_done: list[int] = []
+    synthesized = set(state.get('synthesized_line_indices', []))
+
+    for i, text in assistant_text_entries_after(entries, user_idx):
+        if i in synthesized:
+            continue
+        offset = int(updated_offsets.get(i, 0))
+        slice_text, new_offset = _safe_stream_slice(text, offset)
+        if not slice_text:
+            continue
+        body_text_chunks.append(slice_text)
+        updated_offsets[i] = new_offset
+        # If we've consumed the whole entry, mark it fully done so
+        # on-stop doesn't re-process it.
+        if new_offset >= len(text):
+            fully_done.append(i)
+
+    return body_text_chunks, updated_offsets, fully_done
+
+
 def run(session_id: str, transcript_path: str, mode: str) -> int:
     """Returns exit code (0 on success, non-zero on unrecoverable error)."""
     if not session_id or len(session_id) < SESSIONSHORT_LEN:
@@ -902,6 +1041,12 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
                 'synthesized_line_indices': [],
                 'announced_tool_line_indices': [],
             }
+
+        # Streaming mode takes a different path — it slices growing
+        # entries by char-offset instead of the whole-entry "pending"
+        # model the stop/tool modes use.
+        if mode == 'on-stream':
+            return _do_stream(session_id, session_short, entries, user_idx, state)
 
         pending = [
             (i, txt) for (i, txt) in assistant_text_entries_after(entries, user_idx)
@@ -1017,7 +1162,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description='Terminal Talk per-turn synthesis')
     p.add_argument('--session', required=True, help='Claude Code session ID (UUID or similar)')
     p.add_argument('--transcript', required=True, help='Path to transcript JSONL')
-    p.add_argument('--mode', required=True, choices=['on-tool', 'on-stop'])
+    p.add_argument('--mode', required=True, choices=['on-tool', 'on-stop', 'on-stream'])
     args = p.parse_args(argv)
     try:
         return run(args.session, args.transcript, args.mode)
