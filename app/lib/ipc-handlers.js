@@ -33,6 +33,7 @@ function createIpcHandlers(deps) {
     loadAssignments,
     getQueueFiles,
     ensureAssignmentsForFiles,
+    shortFromFile,
     isPidAlive,
     computeStaleSessions,
     SESSIONS_DIR,
@@ -188,8 +189,19 @@ function createIpcHandlers(deps) {
     });
 
     // Explicit remove: user clicked × on a Sessions row. We drop the
-    // assignment from the registry; if the terminal is still alive the
-    // session will get re-registered on its next hook fire.
+    // assignment from the registry AND purge any queue files still
+    // tagged with that short. Without the purge, the queue-watcher's
+    // next tick calls ensureAssignmentsForFiles, which re-creates a
+    // ghost entry (pid=0, empty label) at the lowest free palette
+    // slot -- the user sees "I deleted it and it came back in a
+    // different colour." Matching files is done via shortFromFile so
+    // only genuine clip filenames are touched; arbitrary files in the
+    // queue dir (logs etc.) are left alone.
+    //
+    // If the terminal is still live, its next hook fire will re-register
+    // the short via Update-SessionAssignment -- PID migration (see
+    // session-registry.psm1) will then re-inherit any other entry that
+    // shares this claude_pid, so the user's colour/label survive.
     ipcMain.handle('remove-session', (_e, shortId) => {
       if (!allowMutation('remove-session')) return null;
       if (!validShort(shortId)) return false;
@@ -197,7 +209,26 @@ function createIpcHandlers(deps) {
       if (!all[shortId]) return false;
       delete all[shortId];
       const ok = saveAssignments(all);
-      if (ok) notifyQueue();
+      if (ok) {
+        try {
+          if (typeof shortFromFile === 'function' && QUEUE_DIR && fs.existsSync(QUEUE_DIR)) {
+            let purged = 0;
+            for (const name of fs.readdirSync(QUEUE_DIR)) {
+              if (shortFromFile(name) !== shortId) continue;
+              try {
+                fs.unlinkSync(path.join(QUEUE_DIR, name));
+                purged += 1;
+              } catch (e) {
+                diag(`remove-session: unlink ${name} failed: ${e.message}`);
+              }
+            }
+            if (purged > 0) diag(`remove-session: purged ${purged} queue files for ${shortId}`);
+          }
+        } catch (e) {
+          diag(`remove-session: queue purge failed: ${e.message}`);
+        }
+        notifyQueue();
+      }
       return ok;
     });
 

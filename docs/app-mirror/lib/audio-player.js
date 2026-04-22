@@ -210,6 +210,17 @@
       this._audio.src = this._fileUrl(p);
       this._audio.currentTime = 0;
       this._audio.playbackRate = this._getPlaybackSpeed();
+      // HB3 — heartbeat clips (H- prefix) play quieter than body /
+      // tool-narration clips. They're ambient filler during silent
+      // stretches, not primary content, and should fade into the
+      // background rather than compete with the response audio.
+      // Tool narrations (T- prefix) stay at full volume — they describe
+      // real activity the user wants to hear.
+      const fn = p ? p.split(/[\\/]/).pop() : '';
+      const isHeartbeat = !!fn && this._clipPaths
+        && typeof this._clipPaths.isHeartbeatClip === 'function'
+        && this._clipPaths.isHeartbeatClip(fn);
+      this._audio.volume = isHeartbeat ? 0.45 : 1.0;
       this._audio.play().catch(() => {});
       this._markPlayed(p);
       if (manual) this._markHeard(p);

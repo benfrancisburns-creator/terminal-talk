@@ -59,20 +59,26 @@
     return /-clip-/.test(filename);
   }
 
-  // Ephemeral clips carry the `-T-` prefix in their filename (matching
-  // the Q- convention used for extracted questions). They're short
-  // tool-narration snippets like "Reading foo.py" / "Running npm" that
-  // fill silence during long tool chains. By convention they should
-  // auto-delete immediately after playback rather than lingering on the
-  // dot strip under the normal auto-prune timer — otherwise a 20-tool
-  // chain would flood the toolbar with ephemeral status dots next to
-  // the actual response content.
+  // Ephemeral clips — short clips that auto-delete on play-end rather
+  // than lingering on the dot strip under the normal auto-prune timer.
+  // Two kinds, both ephemeral but differently-sourced:
+  //   - T- prefix: TN1 tool narrations ("Reading foo.py", "Running npm").
+  //     These ARE content — they describe what Claude is doing right now.
+  //     Play at full volume.
+  //   - H- prefix: HB1/HB2 heartbeat verbs + thinking phrases
+  //     ("Moonwalking", "Thinking this through"). Ambient filler while
+  //     Claude is silent. Play at reduced volume so they clearly read
+  //     as background, not content.
   //
-  // Pattern match is anchored to the full `-T-NNNN-HHHHHHHH.(wav|mp3)$`
-  // form so we don't false-match on body clips whose content happens
-  // to contain "T-" inside a sentence before session-short parsing.
+  // Patterns anchored to the full `-X-NNNN-HHHHHHHH.(wav|mp3)$` form
+  // so we don't false-match on body clips whose content contains the
+  // literal "T-" or "H-" before session-short parsing.
   function isEphemeralClip(filename) {
-    return /-T-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i.test(filename);
+    return /-[TH]-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i.test(filename);
+  }
+
+  function isHeartbeatClip(filename) {
+    return /-H-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i.test(filename);
   }
 
   return {
@@ -81,5 +87,6 @@
     extractSessionShort,
     isClipFile,
     isEphemeralClip,
+    isHeartbeatClip,
   };
 }));

@@ -1368,9 +1368,12 @@ describe('EPHEMERAL CLIP DETECTION (T- prefix)', () => {
   // contain the literal "T-" inside content.
   const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths'));
 
-  it('recognises T-prefixed clip filenames', () => {
+  it('recognises T- and H-prefixed clip filenames as ephemeral', () => {
     assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-T-0001-294c5d60.mp3'));
     assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-T-0042-abcdef01.wav'));
+    // HB3 — heartbeat clips now use H- prefix (was T-). Also ephemeral.
+    assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-H-0001-294c5d60.mp3'));
+    assertTruthy(clipPaths.isEphemeralClip('20260421T233815497-H-0042-abcdef01.wav'));
   });
   it('rejects regular body clip filenames', () => {
     assertFalsy(clipPaths.isEphemeralClip('20260421T233815497-0001-294c5d60.mp3'));
@@ -1378,10 +1381,18 @@ describe('EPHEMERAL CLIP DETECTION (T- prefix)', () => {
   it('rejects Q-prefixed question clip filenames', () => {
     assertFalsy(clipPaths.isEphemeralClip('20260421T233815497-Q-0001-294c5d60.mp3'));
   });
-  it('rejects filenames with T- inside but not at the prefix slot', () => {
-    // A malicious / unexpected filename shouldn't trigger ephemeral mode
+  it('rejects filenames with T/H inside but not at the prefix slot', () => {
     assertFalsy(clipPaths.isEphemeralClip('T-somefile-0001-294c5d60.mp3'));
     assertFalsy(clipPaths.isEphemeralClip('foo-T-bar-0001-294c5d60.mp3'));
+    assertFalsy(clipPaths.isEphemeralClip('H-somefile-0001-294c5d60.mp3'));
+  });
+  it('isHeartbeatClip distinguishes H- from T- (volume dip only on H-)', () => {
+    assertTruthy(clipPaths.isHeartbeatClip('20260421T233815497-H-0001-294c5d60.mp3'));
+    // Tool narrations (T-) are NOT heartbeats — they stay full volume.
+    assertFalsy(clipPaths.isHeartbeatClip('20260421T233815497-T-0001-294c5d60.mp3'));
+    // Regular body + question clips aren't heartbeats either.
+    assertFalsy(clipPaths.isHeartbeatClip('20260421T233815497-0001-294c5d60.mp3'));
+    assertFalsy(clipPaths.isHeartbeatClip('20260421T233815497-Q-0001-294c5d60.mp3'));
   });
   it('still returns session short via extractSessionShort', () => {
     // T- prefix doesn't interfere with session identification
@@ -1716,6 +1727,361 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
       }
     });
   }
+});
+
+// =============================================================================
+// PS SESSION-IDENTITY BEHAVIOUR — drive the real module with a temp registry
+// to prove the Update-SessionAssignment migration + preservation invariants.
+// Ben hit a visible bug on 2026-04-22 where /clear rotated session_id, the old
+// entry hung around with its colour, and a "ghost" orange re-appeared from
+// stale queue files. These scenarios are the behavioural contract for the fix.
+// =============================================================================
+describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
+  const MODULE_PATH = path.join(APP_DIR, 'session-registry.psm1');
+
+  // Skip fast on non-Windows / missing install — the describe() guard already
+  // handles --logic-only via NEEDS_INSTALL, but we also protect against
+  // running the block if the module file isn't there for any reason.
+  if (!fs.existsSync(MODULE_PATH)) {
+    it('session-registry.psm1 missing — cannot exercise PS behaviour', () => {
+      throw new Error(`expected module at ${MODULE_PATH}`);
+    });
+    return;
+  }
+
+  // Invoke Update-SessionAssignment via the real PS module against a fresh
+  // temp registry file each call. Read-Registry + Save-Registry on the PS
+  // side handle the JSON-to-hashtable round-trip, so we can seed arbitrary
+  // entries including voice + speech_includes and assert on the persisted
+  // shape. Much higher fidelity than regexing the source.
+  //
+  // We route the PS block through a temp .ps1 file invoked with -File
+  // rather than -Command. Windows arg-quoting for -Command mangles
+  // backslashes inside paths ("C:\Users\..." becomes "C:Users..." before
+  // PowerShell parses it), which silently empties the registry read.
+  function runUpdate({ seed = {}, short, sessionId, claudePid, now }) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const regPath    = path.join(os.tmpdir(), `tt-test-mig-${nonce}.json`);
+    const scriptPath = path.join(os.tmpdir(), `tt-test-mig-${nonce}.ps1`);
+    fs.writeFileSync(regPath, JSON.stringify({ assignments: seed }), 'utf8');
+    const psEscape = (s) => String(s).replace(/'/g, "''");
+    const script = [
+      `Import-Module '${psEscape(MODULE_PATH)}' -Force`,
+      `$p = '${psEscape(regPath)}'`,
+      `$a = Read-Registry -RegistryPath $p`,
+      `$idx = Update-SessionAssignment -Assignments $a -Short '${psEscape(short)}' -SessionId '${psEscape(sessionId)}' -ClaudePid ${Number(claudePid) | 0} -Now ${Number(now)}`,
+      `Save-Registry -RegistryPath $p -Assignments $a`,
+      `Write-Output $idx`,
+      '',
+    ].join("\r\n");
+    fs.writeFileSync(scriptPath, script, 'utf8');
+    const r = spawnSync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      { encoding: 'utf8', timeout: 20000 }
+    );
+    try { fs.unlinkSync(scriptPath); } catch {}
+    if (r.status !== 0) {
+      try { fs.unlinkSync(regPath); } catch {}
+      throw new Error(`PS exited ${r.status}: ${r.stderr || r.stdout}`);
+    }
+    const returnedIndex = parseInt(r.stdout.trim().split(/\s+/).pop(), 10);
+    const finalState = JSON.parse(fs.readFileSync(regPath, 'utf8'));
+    try { fs.unlinkSync(regPath); } catch {}
+    return { returnedIndex, assignments: finalState.assignments || {} };
+  }
+
+  const NOW = 1_776_900_000; // fixed "now" for determinism
+  const FRESH = NOW - 30;    // 30 s ago — well inside the 600 s window
+  const STALE = NOW - 601;   // just outside the window
+
+  it('/clear migration: new short inherits palette slot + every metadata field', () => {
+    // Covers the core bug: the user's terminal does /clear, session_id
+    // rotates, but the same CLI process means claude_pid is stable. Every
+    // piece of metadata the user has set on that terminal must survive.
+    const seed = {
+      'oldshort': {
+        index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
+        label: 'MATE.AIN brain', pinned: true, muted: true, focus: true,
+        last_seen: FRESH, voice: 'en-GB-RyanNeural',
+        speech_includes: { urls: true, code_blocks: false, headings: true }
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW,
+    });
+    assertEqual(returnedIndex, 7);
+    if (assignments['oldshort']) {
+      throw new Error('old short must be removed after migration');
+    }
+    const migrated = assignments['newshort'];
+    if (!migrated) throw new Error('new short entry missing after migration');
+    assertEqual(migrated.index, 7);
+    assertEqual(migrated.label, 'MATE.AIN brain');
+    assertEqual(migrated.pinned, true);
+    assertEqual(migrated.muted, true);
+    assertEqual(migrated.focus, true);
+    assertEqual(migrated.voice, 'en-GB-RyanNeural');
+    assertEqual(migrated.speech_includes, { urls: true, code_blocks: false, headings: true });
+    assertEqual(migrated.session_id, 'newshort-uuid');  // refreshed to new UUID
+    assertEqual(migrated.claude_pid, 1234);             // pid carried forward
+  });
+
+  it('stale pid (last_seen outside the 600 s freshness window) does NOT migrate', () => {
+    // If Windows reuses a pid hours/days later, the claim of "same
+    // terminal" is no longer credible. We fall through to fresh
+    // allocation rather than inherit a stranger's colour + label.
+    const seed = {
+      'oldshort': {
+        index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
+        label: 'should not migrate', pinned: true,
+        last_seen: STALE,
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW,
+    });
+    // oldshort keeps its slot (it's pinned), newshort gets the lowest free
+    // slot that isn't 7. That's 0.
+    assertEqual(returnedIndex, 0);
+    assertTruthy(assignments['oldshort'], 'stale entry must remain (not migrated)');
+    assertTruthy(assignments['newshort'], 'new entry created fresh');
+    assertEqual(assignments['newshort'].label, '');
+    assertEqual(assignments['newshort'].pinned, false);
+  });
+
+  it('claude_pid=0 never triggers migration (blocks ghost-entry pollution)', () => {
+    // main.js's ensureAssignmentsForFiles path creates entries with
+    // claude_pid=0 when it sees a clip filename for an unknown short.
+    // If the PS side migrated on pid=0, ALL such ghosts would migrate
+    // into each other and pollute every session's metadata.
+    const seed = {
+      'oldshort': {
+        index: 5, session_id: 'oldshort', claude_pid: 0,
+        label: 'ghost', pinned: false,
+        last_seen: FRESH,
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 0, now: NOW,
+    });
+    // Lowest free index NOT equal to 5 is 0.
+    assertEqual(returnedIndex, 0);
+    assertTruthy(assignments['oldshort'], 'pid=0 entry must remain');
+    assertTruthy(assignments['newshort'], 'new entry created fresh');
+    assertEqual(assignments['newshort'].label, '');
+  });
+
+  it('matching short already in registry: bookkeeping update only (no migration)', () => {
+    // Same short fires twice in a row (e.g. statusline heartbeat). We
+    // just touch last_seen / session_id / claude_pid on the existing
+    // entry. No new slot, no migration scan.
+    const seed = {
+      'aabbccdd': {
+        index: 3, session_id: 'old-uuid', claude_pid: 999,
+        label: 'existing', pinned: true, muted: false, focus: false,
+        last_seen: FRESH - 100,
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'aabbccdd', sessionId: 'new-uuid-same-short', claudePid: 999, now: NOW,
+    });
+    assertEqual(returnedIndex, 3);
+    assertEqual(Object.keys(assignments).length, 1);
+    assertEqual(assignments['aabbccdd'].label, 'existing');
+    assertEqual(assignments['aabbccdd'].session_id, 'new-uuid-same-short');
+    assertEqual(assignments['aabbccdd'].last_seen, NOW);
+  });
+
+  it('multiple /clear in sequence: only one entry persists, slot preserved', () => {
+    // /clear → short A migrates to B. /clear again → B migrates to C.
+    // Final state must be exactly one entry (C) at the original slot.
+    let state = {
+      'alpha111': {
+        index: 12, session_id: 'alpha-uuid', claude_pid: 5555,
+        label: 'persistent', pinned: true, muted: false, focus: false,
+        last_seen: FRESH, voice: 'en-GB-RyanNeural',
+      }
+    };
+    const after1 = runUpdate({
+      seed: state, short: 'beta2222', sessionId: 'beta-uuid', claudePid: 5555, now: NOW,
+    });
+    assertEqual(after1.returnedIndex, 12);
+    assertEqual(Object.keys(after1.assignments).length, 1);
+    assertTruthy(after1.assignments['beta2222']);
+    const after2 = runUpdate({
+      seed: after1.assignments, short: 'cafebabe', sessionId: 'gamma-uuid',
+      claudePid: 5555, now: NOW + 10,
+    });
+    assertEqual(after2.returnedIndex, 12);
+    assertEqual(Object.keys(after2.assignments).length, 1);
+    assertTruthy(after2.assignments['cafebabe']);
+    assertEqual(after2.assignments['cafebabe'].label, 'persistent');
+    assertEqual(after2.assignments['cafebabe'].voice, 'en-GB-RyanNeural');
+    assertEqual(after2.assignments['cafebabe'].pinned, true);
+  });
+
+  it('per-session voice survives /clear migration', () => {
+    const seed = {
+      'voicedcd': {
+        index: 9, session_id: 'old-uuid', claude_pid: 7777,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH, voice: 'shimmer',
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'newvoice', sessionId: 'new-uuid', claudePid: 7777, now: NOW,
+    });
+    assertEqual(assignments['newvoice'].voice, 'shimmer');
+  });
+
+  it('per-session speech_includes survives /clear migration', () => {
+    const seed = {
+      'incl0000': {
+        index: 2, session_id: 'old-uuid', claude_pid: 8888,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH,
+        speech_includes: { urls: true, code_blocks: true, headings: false, bullet_markers: true },
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'inclnewe', sessionId: 'new-uuid', claudePid: 8888, now: NOW,
+    });
+    assertEqual(assignments['inclnewe'].speech_includes, {
+      urls: true, code_blocks: true, headings: false, bullet_markers: true,
+    });
+  });
+
+  it('multi-terminal isolation: migration touches ONLY the matching pid', () => {
+    // Terminals A (pid 1111, idx 3) and B (pid 2222, idx 7). /clear on
+    // A must migrate A only — B's entry and its metadata are untouched.
+    const seed = {
+      'termaaaa': {
+        index: 3, session_id: 'term-a', claude_pid: 1111,
+        label: 'terminal A', pinned: true, muted: false, focus: false,
+        last_seen: FRESH, voice: 'en-GB-RyanNeural',
+      },
+      'termbbbb': {
+        index: 7, session_id: 'term-b', claude_pid: 2222,
+        label: 'terminal B', pinned: true, muted: true, focus: false,
+        last_seen: FRESH, voice: 'en-GB-SoniaNeural',
+        speech_includes: { urls: false },
+      },
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'termanew', sessionId: 'term-a-new', claudePid: 1111, now: NOW,
+    });
+    assertEqual(returnedIndex, 3);
+    if (assignments['termaaaa']) throw new Error('terminal A old entry must be removed');
+    const a = assignments['termanew'];
+    const b = assignments['termbbbb'];
+    assertEqual(a.index, 3);
+    assertEqual(a.label, 'terminal A');
+    assertEqual(a.voice, 'en-GB-RyanNeural');
+    // B stays untouched
+    assertEqual(b.index, 7);
+    assertEqual(b.label, 'terminal B');
+    assertEqual(b.muted, true);
+    assertEqual(b.voice, 'en-GB-SoniaNeural');
+    assertEqual(b.speech_includes, { urls: false });
+    assertEqual(b.claude_pid, 2222);
+  });
+
+  it('no matching pid: falls through to lowest-free palette slot', () => {
+    const seed = {
+      'filler00': { index: 0, session_id: 'f-uuid', claude_pid: 100, label: '', pinned: false, muted: false, focus: false, last_seen: FRESH },
+      'filler11': { index: 1, session_id: 'f-uuid', claude_pid: 200, label: '', pinned: false, muted: false, focus: false, last_seen: FRESH },
+      'filler22': { index: 2, session_id: 'f-uuid', claude_pid: 300, label: '', pinned: false, muted: false, focus: false, last_seen: FRESH },
+    };
+    const { returnedIndex } = runUpdate({
+      seed, short: 'newentry', sessionId: 'n-uuid', claudePid: 9999, now: NOW,
+    });
+    assertEqual(returnedIndex, 3);
+  });
+
+  it('pinned entry preserves pinned=true through migration', () => {
+    // Explicit scenario: user pinned their colour, then /clear. The pin
+    // is a "this terminal's colour should NEVER change" contract. It
+    // must cross the migration boundary intact.
+    const seed = {
+      'pinnedab': {
+        index: 15, session_id: 'old-uuid', claude_pid: 4242,
+        label: 'pinned term', pinned: true, muted: false, focus: false,
+        last_seen: FRESH,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'pinnedcd', sessionId: 'new-uuid', claudePid: 4242, now: NOW,
+    });
+    assertEqual(assignments['pinnedcd'].pinned, true);
+    assertEqual(assignments['pinnedcd'].index, 15);
+  });
+
+  it('migration preserves muted=true and focus=true independently', () => {
+    const seed = {
+      'mutefocu': {
+        index: 4, session_id: 'old-uuid', claude_pid: 3737,
+        label: '', pinned: false, muted: true, focus: true,
+        last_seen: FRESH,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'mfnewxxx', sessionId: 'new-uuid', claudePid: 3737, now: NOW,
+    });
+    assertEqual(assignments['mfnewxxx'].muted, true);
+    assertEqual(assignments['mfnewxxx'].focus, true);
+  });
+
+  it('freshness boundary: exactly at cutoff migrates; one second past does not', () => {
+    // Exercises the `-ge $cutoff` comparison directly. last_seen at
+    // (NOW - 600) must migrate; last_seen at (NOW - 601) must not.
+    const atBoundary = {
+      'boundary': {
+        index: 6, session_id: 'b-uuid', claude_pid: 11111,
+        label: 'at-boundary', pinned: false, muted: false, focus: false,
+        last_seen: NOW - 600,
+      }
+    };
+    const r1 = runUpdate({
+      seed: atBoundary, short: 'newbound', sessionId: 'nb-uuid', claudePid: 11111, now: NOW,
+    });
+    assertEqual(r1.returnedIndex, 6);
+    assertTruthy(r1.assignments['newbound'], 'at-boundary must migrate');
+
+    const pastBoundary = {
+      'boundary': {
+        index: 6, session_id: 'b-uuid', claude_pid: 22222,
+        label: 'past-boundary', pinned: false, muted: false, focus: false,
+        last_seen: NOW - 601,
+      }
+    };
+    const r2 = runUpdate({
+      seed: pastBoundary, short: 'newpast', sessionId: 'np-uuid', claudePid: 22222, now: NOW,
+    });
+    if (r2.returnedIndex === 6) {
+      throw new Error('past-boundary (601 s stale) must NOT migrate');
+    }
+    assertTruthy(r2.assignments['boundary'], 'past-boundary entry must survive');
+  });
+
+  it('ghost-then-hook: pre-existing pid=0 entry for same short is updated in place', () => {
+    // Rare race: main.js creates a ghost entry for short X via
+    // ensureAssignmentsForFiles (pid=0), THEN the hook for session X
+    // fires with the real pid. The existing-short branch updates the
+    // ghost's pid in place — no migration, no extra slot.
+    const seed = {
+      'racedabc': {
+        index: 9, session_id: 'racedabc', claude_pid: 0,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH,
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'racedabc', sessionId: 'racedabc-uuid', claudePid: 55555, now: NOW,
+    });
+    assertEqual(returnedIndex, 9);
+    assertEqual(assignments['racedabc'].claude_pid, 55555);
+    assertEqual(assignments['racedabc'].session_id, 'racedabc-uuid');
+  });
 });
 
 describe('JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP', () => {
@@ -2164,6 +2530,29 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
     // Pinned sessions must be skipped from eviction candidates.
     if (!/pinned\s*-ne\s*\$true/.test(src)) {
       throw new Error('session-registry.psm1 LRU eviction must exclude pinned entries');
+    }
+  });
+
+  it('session-registry.psm1 migrates palette slot by claude_pid across /clear', () => {
+    // Claude Code's /clear rotates session_id but keeps the same CLI
+    // process. Update-SessionAssignment must notice a colliding
+    // claude_pid on an existing entry and re-key that entry under the
+    // new short rather than allocating a fresh palette slot (which
+    // would make the user's colour/label silently "move" on /clear).
+    const psPath = path.join(__dirname, '..', 'app', 'session-registry.psm1');
+    const src = fs.readFileSync(psPath, 'utf8');
+    // Signal 1: a pid-matching scan against existing entries, gated on
+    // $ClaudePid being non-zero (0 means "unknown" and would false-match).
+    if (!/\$ClaudePid\s*-gt\s*0/.test(src)) {
+      throw new Error('session-registry.psm1 must only migrate when $ClaudePid > 0');
+    }
+    if (!/\[int\]\$entry\.claude_pid\s*-eq\s*\$ClaudePid/.test(src)) {
+      throw new Error('session-registry.psm1 must match on equal claude_pid during migration');
+    }
+    // Signal 2: the old short is removed after migration so the
+    // registry doesn't accumulate duplicate entries.
+    if (!/\$Assignments\.Remove\(\$oldShort\)/.test(src)) {
+      throw new Error('session-registry.psm1 must Remove($oldShort) after PID-migration re-keys the entry');
     }
   });
 });
@@ -3710,6 +4099,55 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), true);
     assertFalsy(deps._registry.aabbccdd, 'entry should be gone');
     assertEqual(deps._notifyLog.length, 1);
+  });
+
+  it('remove-session purges queue files matching the deleted short', () => {
+    // Regression guard: the queue-watcher re-creates a ghost registry
+    // entry (pid=0, empty label, lowest-free palette slot) any time it
+    // sees a clip filename whose short has no registry entry. Without
+    // this purge, clicking × on a session made it "come back in a
+    // different colour" seconds later -- visible bug Ben reported
+    // post-/clear on 2026-04-22. The purge only touches files whose
+    // shortFromFile() resolves to the removed short; unrelated logs
+    // and other sessions' clips stay intact.
+    const fakeFs = {
+      _files: new Set([
+        '20260422T204301220-0000-aabbccdd.mp3',
+        '20260422T204301220-0001-aabbccdd.mp3',
+        '20260422T210029277-0015-ffeeddcc.mp3',  // another session
+        '_hook.log',                              // non-clip file
+      ]),
+      existsSync: () => true,
+      readdirSync: () => Array.from(fakeFs._files),
+      unlinkSync: (p) => { fakeFs._files.delete(path.basename(p)); },
+    };
+    // Same regex main.js uses. Kept inline so the test documents the
+    // contract rather than coupling to main.js internals.
+    const END_RE = /-([a-f0-9]{8})\.(wav|mp3)$/i;
+    const CLIP_RE = /-clip-([a-f0-9]{8})-\d+\.(wav|mp3)$/i;
+    const shortFromFile = (name) => {
+      let m = name.match(END_RE); if (m) return m[1].toLowerCase();
+      m = name.match(CLIP_RE); if (m) return m[1].toLowerCase();
+      return null;
+    };
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0 } },
+      fs: fakeFs,
+      QUEUE_DIR: '/fake/queue',
+      shortFromFile,
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), true);
+    // Files for removed short gone.
+    assertFalsy(fakeFs._files.has('20260422T204301220-0000-aabbccdd.mp3'), 'aabbccdd clip not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-0001-aabbccdd.mp3'), 'aabbccdd clip not purged');
+    // Unrelated files left alone.
+    if (!fakeFs._files.has('20260422T210029277-0015-ffeeddcc.mp3')) {
+      throw new Error('other session\'s clip was incorrectly purged');
+    }
+    if (!fakeFs._files.has('_hook.log')) {
+      throw new Error('non-clip file was incorrectly purged');
+    }
   });
 
   it('set-session-muted stores + broadcasts when window alive', () => {
