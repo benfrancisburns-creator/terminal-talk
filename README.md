@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (224 unit + 25 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (387 unit + 25 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
@@ -325,7 +325,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 224-test harness exercises the actual installed components:
+A 387-test harness exercises the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose

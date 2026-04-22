@@ -2,6 +2,88 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — post-v0.4.0
+
+Audio-pipeline quality pass (NG / TN / HB initiatives) + assorted UX
+fixes surfaced by live use. Branch `main`; no tag cut yet.
+
+### Added
+
+- **NG1 — smart sentence grouping.** `app/sentence_group.py` glues
+  adjacent short sentences into ~300-char TTS clips respecting
+  paragraph boundaries. Goodnight fixture: 3 → 2 clips; long
+  explanatory response: 8+ → 4 clips. Eliminates staccato audio
+  delivery from per-sentence splitting. Tuned via
+  `TT_GROUP_TARGET` / `TT_GROUP_HARD_MAX` env vars.
+- **TN1 — tool-call narration.** New `app/tool_narration.py` maps
+  tool-use entries to ~50-char spoken phrases ("Reading
+  synth_turn.py", "Running npm test --verbose", "Searching for
+  class Communicate"). Emitted as ephemeral T-prefixed clips that
+  auto-delete on play-end, so long tool chains don't flood the dot
+  strip. Gated by `speech_includes.tool_calls` (default on).
+- **HB1 + HB2 — heartbeat verb emission.** Fills audible silence
+  during active-but-silent working stretches with short spinner
+  verbs ("Moonwalking", "Percolating") + longer thinking phrases
+  ("Thinking this through", "Just a moment"). State-driven: a new
+  `hooks/mark-working.ps1` UserPromptSubmit hook writes a
+  per-session working flag; Stop hook clears it; heartbeat timer
+  gates strictly on flag presence. Default on; toggle via
+  `heartbeat_enabled` in config.json.
+- **Mascot session-colour recolour.** The scrubber mascot now
+  takes the playing session's primary palette colour for the
+  duration of its clips; falls back to the Claude-Code homage
+  orange at rest.
+- **Per-session tabs** (parallel-terminal work by Ben). Row above
+  the dot strip with per-session filter + unread counts.
+- **Renderer reload via Settings button + Ctrl+R** (EX3 extension).
+
+### Changed
+
+- **Questions-first extraction removed.** The feature extracted
+  every `?`-ending sentence and played it ahead of the body;
+  caused order mismatches with the terminal, false positives on
+  `?` inside inline code, and duplication. Audio now tracks
+  terminal prose 1:1. `extract_questions()` stays in the module
+  for the test harness / future re-enable.
+- **`uninstall.ps1` process hunt covers the rebrand.** First sweep
+  now matches both `terminal-talk` and `electron` names; previously
+  only `electron`, which silently missed the running toolbar after
+  the commit-17bc677 rebrand.
+
+### Fixed — TTS sanitiser
+
+- Triple-asterisk `***bold-italic***` no longer leaves stray `*`
+  for TTS to read as "asterisk". All three mirrors (Python / JS /
+  PowerShell) updated.
+- Tilde `~` characters stripped before synth — edge-tts pronounces
+  them as "tilda" in all contexts.
+- Keyboard shortcuts inside inline code (`` `Ctrl+R` ``) preserved
+  through the sanitiser, then translated to spoken form. Previously
+  the inline-code strip dropped them entirely.
+- All common modifier chords (Ctrl / Cmd / Shift / Alt / Win /
+  Super / Meta / Option) translate to spoken form via one regex
+  sweep. `Ctrl+Shift+A` now reads "control shift A" end-to-end.
+- GFM double-backtick spans (`` `` `code` `` ``) no longer mis-pair
+  adjacent unmatched backticks across different code spans,
+  preventing paragraphs from being silently eaten between bullets.
+- Bullet lists get an implicit `.` per item so stripped bullets
+  don't flatten to one 500-char run-on sentence.
+- Inline-code strip returns a space (not empty) in Python to match
+  JS — prevents `**\`code\`**` collapsing to `****` and misaligning
+  with sibling bold markers.
+- Emphasis regex `\n`-excluded on every arm so a leftover single
+  `*` doesn't cross-line-pair with an unrelated stray (e.g. `app/*`
+  glob patterns).
+
+### Fixed — UX + renderer
+
+- Click-through state starts OFF on renderer load, preventing a
+  reload deadlock where the toolbar became visible but uninteractive
+  until app restart.
+- TN1 didn't fire during text-free tool chains — early-exit guard
+  bypassed the tool-narration branch when `pending` text was empty.
+  Now emits narrations regardless of whether new prose is pending.
+
 ## [0.4.0] — 2026-04-21
 
 v0.4 execution-tier work after the assessment passes (S1-S7) + the

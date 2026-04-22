@@ -26,7 +26,13 @@ Write-Host "=================================================" -ForegroundColor 
 
 # 1. Stop processes
 Write-Step "Stopping processes"
-Get-Process -Name electron -ErrorAction SilentlyContinue | ForEach-Object {
+# Match both the rebranded binary (terminal-talk.exe, since commit 17bc677)
+# and the legacy electron.exe — covers users running this uninstaller
+# before re-running install.ps1 to pick up the rebrand. Without
+# 'terminal-talk' in the name list, the typical install's running
+# processes go unkilled and the directory removal at step 4 fails
+# with "file in use".
+Get-Process -Name 'terminal-talk','electron' -ErrorAction SilentlyContinue | ForEach-Object {
     $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine
     if ($cmdLine -match [regex]::Escape($installDir)) {
         Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
