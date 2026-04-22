@@ -61,60 +61,14 @@ const scrubberWrap = document.getElementById('scrubberWrap');
 const scrubberMascot = document.getElementById('scrubberMascot');
 const scrubberJarvis = document.getElementById('scrubberJarvis');
 
-// Claude Code's real tengu_spinner_words list (90 entries, sourced from
-// levindixon/tengu_spinner_words). Shown as a trail of vocabulary behind
-// the walking mascot — picked at random per emit so you never know
-// which one will pop out next. "Moonwalking" is in there; so is
-// "Flibbertigibbeting".
-const SPINNER_VERBS = [
-  'Accomplishing','Actioning','Actualizing','Baking','Booping','Brewing',
-  'Calculating','Cerebrating','Channelling','Churning','Clauding','Coalescing',
-  'Cogitating','Combobulating','Computing','Concocting','Conjuring','Considering',
-  'Contemplating','Cooking','Crafting','Creating','Crunching','Deciphering',
-  'Deliberating','Determining','Discombobulating','Divining','Doing','Effecting',
-  'Elucidating','Enchanting','Envisioning','Finagling','Flibbertigibbeting',
-  'Forging','Forming','Frolicking','Generating','Germinating','Hatching','Herding',
-  'Honking','Hustling','Ideating','Imagining','Incubating','Inferring','Jiving',
-  'Manifesting','Marinating','Meandering','Moonwalking','Moseying','Mulling',
-  'Mustering','Musing','Noodling','Percolating','Perusing','Philosophising',
-  'Pontificating','Pondering','Processing','Puttering','Puzzling','Reticulating',
-  'Ruminating','Scheming','Schlepping','Shimmying','Shucking','Simmering',
-  'Smooshing','Spelunking','Spinning','Stewing','Sussing','Synthesizing','Thinking',
-  'Tinkering','Transmuting','Unfurling','Unravelling','Vibing','Wandering',
-  'Whirring','Wibbling','Wizarding','Working','Wrangling'
-];
-// Longer thinking phrases — mixed with single SPINNER_VERBS so the
-// heartbeat audio alternates between the short Claude-Code homage
-// words ("Moonwalking") and richer context phrases that actually
-// tell the listener what's going on. User feedback: a single word
-// felt too terse; a full phrase like "Thinking this through"
-// conveys the intent better while still being a short clip.
-const THINKING_PHRASES = [
-  'Thinking this through',
-  'Working through it',
-  'Let me think about this',
-  'Considering your message',
-  'Processing your request',
-  'Composing a response',
-  'Still working on it',
-  'Getting my head around this',
-  'Piecing it together',
-  'Just a moment',
-  'Nearly there',
-  'Just crunching the details',
-  'Sussing this out',
-  'Giving it a proper think',
-];
-function randomVerb() {
-  // 40% chance of a longer phrase, 60% chance of a single spinner
-  // verb. Keeps the Claude-Code-homage vocabulary front and centre
-  // but introduces enough context that a long silent gap doesn't
-  // just play five random single-word verbs in a row.
-  if (Math.random() < 0.4) {
-    return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)];
-  }
-  return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
-}
+// HB1 / HB2 / HB3 — ambient narration constants + decision logic live
+// in app/lib/heartbeat.js so they're independently unit-testable.
+// The setInterval tick below is a thin wrapper that reads live state,
+// calls decideHeartbeatAction(), and applies the returned mutation.
+// randomVerb + SPINNER_VERBS are re-exported from TT_HEARTBEAT so
+// existing callers (mascot word-cloud trail) keep working unchanged.
+const SPINNER_VERBS = window.TT_HEARTBEAT.SPINNER_VERBS;
+const randomVerb = window.TT_HEARTBEAT.pickHeartbeatVerb;
 const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
 const clearPlayedBtn = document.getElementById('clearPlayed');
@@ -315,18 +269,24 @@ setInterval(() => {
 
   try {
     const cfg = (window.TT_CONFIG_SNAPSHOT || {});
-    if (cfg.heartbeat_enabled === false) return;
-    if (isQueueActive()) {
-      heartbeatSilentSince = Date.now();
+    const action = window.TT_HEARTBEAT.decideHeartbeatAction({
+      now: Date.now(),
+      heartbeatEnabled: cfg.heartbeat_enabled !== false,
+      isQueueActive: isQueueActive(),
+      heartbeatSilentSince,
+      lastHeartbeatAt,
+      workingSessionsCache,
+      initialMs: HEARTBEAT_INITIAL_MS,
+      intervalMs: HEARTBEAT_INTERVAL_MS,
+    });
+    if (action.type === 'reset-silent') {
+      heartbeatSilentSince = action.newSilentSince;
       return;
     }
-    const silentFor = Date.now() - heartbeatSilentSince;
-    if (silentFor < HEARTBEAT_INITIAL_MS) return;
-    if (Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
-    const shortId = firstWorkingSessionShort();
-    if (!shortId) return;
+    if (action.type !== 'emit') return;
+    lastHeartbeatAt = action.newLastHeartbeatAt;
     const verb = randomVerb();
-    lastHeartbeatAt = Date.now();
+    const shortId = action.sessionShort;
     if (window.api && window.api.speakHeartbeat) {
       window.api.speakHeartbeat(verb, shortId).catch(() => {});
     }
