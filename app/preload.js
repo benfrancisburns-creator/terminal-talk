@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('api', {
   // HB2 — list sessions currently marked working (UserPromptSubmit
   // fired, Stop hasn't yet). Heartbeat timer gates on this.
   getWorkingSessions: () => ipcRenderer.invoke('get-working-sessions'),
+  // About panel: expose the installed Electron/app version so users can
+  // sanity-check they're on the latest release without diffing
+  // package.json. Reads app.getVersion() on the main side.
+  getVersion: () => ipcRenderer.invoke('get-version'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),

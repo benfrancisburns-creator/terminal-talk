@@ -251,11 +251,18 @@ Install a speech-to-text tool from the table above. Say _"Claude, refactor this 
     "urls":           false,
     "headings":       true,
     "bullet_markers": false,
-    "image_alt":      false
+    "image_alt":      false,
+    "tool_calls":     true
   },
+  "heartbeat_enabled": true,
   "openai_api_key": null
 }
 ```
+
+Two newer keys worth calling out:
+
+- **`speech_includes.tool_calls`** (default `true`) — narrate each tool Claude is about to call as an ephemeral clip (e.g. _"Reading synth_turn.py"_, _"Running npm test --verbose"_, _"Searching for pattern"_). Plays at the PreToolUse hook, auto-deletes on play-end so long tool chains don't flood the dot strip. Per-session override available on the Sessions panel tri-state toggle.
+- **`heartbeat_enabled`** (default `true`) — during the silent gap between submitting a prompt and hearing Claude's response, play short spinner-verb + thinking-phrase clips every ~8 s so you know Claude is working, not stuck. Mirrors the visible mascot word-cloud. Stops immediately when response audio starts playing. Toggle on the Playback settings panel.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice` and an optional `speech_includes` partial:
 

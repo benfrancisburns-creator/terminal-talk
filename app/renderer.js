@@ -986,7 +986,10 @@ const INCLUDE_LABELS = [
   ['urls',           'URLs'],
   ['headings',       'Headings'],
   ['bullet_markers', 'Bullet markers'],
-  ['image_alt',      'Image alt-text']
+  ['image_alt',      'Image alt-text'],
+  // TN1 — per-session override for the tool-call narration T-clips.
+  // Default comes from global speech_includes.tool_calls (true).
+  ['tool_calls',     'Tool-call narration']
 ];
 
 // EX7d-1 — sessions table (per-session rows with label/palette/focus/

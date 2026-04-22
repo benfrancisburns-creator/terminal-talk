@@ -625,6 +625,19 @@ body.settings-open .panel { display: block; }
   margin: 0 0 8px;
 }
 
+/* "Installed version: v0.4.0" line in the About panel. Monospace for
+   the version value so v0.4.0-rc.1 etc. don't look weirdly spaced,
+   and a subtle colour so it reads as metadata not narrative. */
+.version-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.version-value {
+  font-family: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .panel .row {
   display: flex;
   align-items: center;

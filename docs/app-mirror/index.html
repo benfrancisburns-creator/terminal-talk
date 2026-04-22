@@ -125,6 +125,10 @@
           <label class="toggle"><input type="checkbox" id="paletteVariantToggle"><span class="toggle-slider"></span></label>
         </div>
         <div class="row">
+          <label for="heartbeatToggle" title="When Claude Code is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Heartbeat ambient narration</label>
+          <label class="toggle"><input type="checkbox" id="heartbeatToggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="row">
           <label>Troubleshooting</label>
           <button type="button" id="reloadToolbar" class="text-btn" title="Rebuild the toolbar from disk (keyboard: Ctrl+R). Useful if the display is stuck or stale.">Reload toolbar</button>
         </div>
@@ -153,6 +157,9 @@
           Hands-free voice workflow for Claude Code. Say "hey jarvis" with text highlighted anywhere
           and it's read aloud. Claude's replies are auto-spoken. Each terminal gets its own colour,
           shown as an emoji in its statusline and as a dot on the toolbar.
+        </p>
+        <p class="panel-hint version-line">
+          Installed version: <span id="versionLabel" class="version-value">…</span>
         </p>
         <p class="panel-hint shortcuts-title">Global shortcuts</p>
         <table class="shortcuts">

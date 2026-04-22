@@ -72,6 +72,8 @@
         continueToggle:   document.getElementById('autoContinueToggle'),
         reloadBtn:        document.getElementById('reloadToolbar'),
         paletteToggle:    document.getElementById('paletteVariantToggle'),
+        heartbeatToggle:  document.getElementById('heartbeatToggle'),
+        versionLabel:     document.getElementById('versionLabel'),
         voiceEdgeResp:    document.getElementById('voiceEdgeResponse'),
         voiceEdgeClip:    document.getElementById('voiceEdgeClip'),
         voiceOaiResp:     document.getElementById('voiceOpenaiResponse'),
@@ -91,8 +93,10 @@
       this._wireAutoContinue();
       this._wireReloadButton();
       this._wirePaletteVariant();
+      this._wireHeartbeatToggle();
       this._wireVoiceSelects();
       this._wireIncludeBoxes();
+      this._loadVersion();
     }
 
     // Populate from config. Safe to call multiple times — values
@@ -104,6 +108,7 @@
       this._populateAutoPrune(cfg);
       this._populateAutoContinue(cfg);
       this._populatePaletteVariant(cfg);
+      this._populateHeartbeat(cfg);
       this._populateVoiceSelects(cfg);
       this._populateIncludeBoxes(cfg);
     }
@@ -177,6 +182,31 @@
       });
     }
 
+    _wireHeartbeatToggle() {
+      const { heartbeatToggle } = this._el;
+      if (!heartbeatToggle) return;
+      // HB1/HB2 — ambient narration toggle. Writes top-level
+      // `heartbeat_enabled` (not inside speech_includes — it isn't a
+      // sanitisation rule, it's a behaviour). Renderer's HB2 poll
+      // reads TT_CONFIG_SNAPSHOT.heartbeat_enabled; loadSettings()
+      // refreshes the snapshot on every panel open, so the toggle
+      // takes effect within one tick without a reload.
+      this._on(heartbeatToggle, 'change', async () => {
+        const on = !!heartbeatToggle.checked;
+        await this._api.updateConfig({ heartbeat_enabled: on });
+        if (window.TT_CONFIG_SNAPSHOT) window.TT_CONFIG_SNAPSHOT.heartbeat_enabled = on;
+      });
+    }
+
+    async _loadVersion() {
+      const { versionLabel } = this._el;
+      if (!versionLabel || !this._api || !this._api.getVersion) return;
+      try {
+        const v = await this._api.getVersion();
+        if (v) versionLabel.textContent = `v${v}`;
+      } catch {}
+    }
+
     _wireVoiceSelects() {
       const pairs = [
         [this._el.voiceEdgeResp, 'edge_response'],
@@ -236,6 +266,14 @@
       const variant = (cfg.playback && cfg.playback.palette_variant) || 'default';
       document.body.dataset.paletteVariant = variant;
       if (paletteToggle) paletteToggle.checked = variant === 'cb';
+    }
+
+    _populateHeartbeat(cfg) {
+      const { heartbeatToggle } = this._el;
+      if (!heartbeatToggle) return;
+      // Default true — matches DEFAULTS.heartbeat_enabled in main.js.
+      const on = cfg.heartbeat_enabled !== false;
+      heartbeatToggle.checked = on;
     }
 
     _populateVoiceSelects(cfg) {

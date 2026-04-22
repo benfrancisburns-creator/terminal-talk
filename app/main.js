@@ -1323,6 +1323,7 @@ createIpcHandlers({
   ipcMain,
   diag,
   callEdgeTTS,
+  getAppVersion: () => app.getVersion(),
   getCFG: () => CFG,
   setCFG: (next) => { CFG = next; },
   getWin: () => win,

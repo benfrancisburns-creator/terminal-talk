@@ -26,6 +26,9 @@ function createIpcHandlers(deps) {
     // handler can synthesise a spinner verb to an ephemeral T-prefixed
     // clip without duplicating the callEdgeTTS promise plumbing.
     callEdgeTTS,
+    // About panel: `app.getVersion()`-equivalent getter. Injected so
+    // the factory doesn't need to import electron directly.
+    getAppVersion,
     getCFG,
     loadAssignments,
     getQueueFiles,
@@ -340,6 +343,17 @@ function createIpcHandlers(deps) {
         return true;
       } catch {}
       return false;
+    });
+
+    // About panel version query. Returns whatever `app.getVersion()`
+    // returns on the main side — which reads package.json's `version`
+    // field. The IPC wraps a getter so the ipc-handlers factory stays
+    // pure and testable without having to spin up an Electron context.
+    ipcMain.handle('get-version', () => {
+      if (typeof getAppVersion === 'function') {
+        try { return String(getAppVersion() || ''); } catch { return ''; }
+      }
+      return '';
     });
 
     // HB2 — list session shorts currently marked "working" via the
