@@ -1091,10 +1091,27 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         if mode == 'on-stream':
             return _do_stream(session_id, session_short, entries, user_idx, state)
 
-        pending = [
+        # Pending text entries for this non-stream mode. If on-stream has
+        # already synthesised a portion of an entry (recorded in
+        # partial_text_offsets), we only want the TAIL — not the whole
+        # entry, which would duplicate content the user already heard.
+        # Previously on-stop ignored partial offsets and re-synthesised
+        # full entries, producing byte-identical duplicate clips a few
+        # seconds after on-stream's versions (user-reported: 5+ repeats
+        # across recent responses).
+        partial_offsets = state.get('partial_text_offsets', {}) or {}
+        pending_raw = [
             (i, txt) for (i, txt) in assistant_text_entries_after(entries, user_idx)
             if i not in state['synthesized_line_indices']
         ]
+        pending = []
+        for (i, txt) in pending_raw:
+            off = int(partial_offsets.get(i, 0) or 0)
+            if off >= len(txt):
+                # on-stream fully consumed this entry between its last
+                # tick and this hook firing — nothing left to say.
+                continue
+            pending.append((i, txt[off:]))
 
         # Compute unannounced tool_use entries (on-tool mode only). We do
         # this BEFORE the "nothing to do" early-exit so that back-to-back
@@ -1193,6 +1210,14 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         # announced_tool_line_indices for tool_use entries.
         if pending:
             state['synthesized_line_indices'].extend(i for i, _ in pending)
+            # Clear per-line partial offsets for entries we just fully
+            # consumed — they're done-done now, the on-stream watcher
+            # won't see them again (already in synthesized_line_indices).
+            if partial_offsets:
+                done_set = set(i for i, _ in pending)
+                state['partial_text_offsets'] = {
+                    k: v for k, v in partial_offsets.items() if k not in done_set
+                }
         if tool_indices_done:
             state['announced_tool_line_indices'] = list(
                 announced_set.union(tool_indices_done)
