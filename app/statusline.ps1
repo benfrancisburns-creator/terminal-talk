@@ -71,7 +71,9 @@ $sessionsDir = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 try {
     $myPid = $PID
-    $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
+    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else {
+        [int](Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
+    }
     $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
     Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid -SessionId $sessionId -Short $short -Now $nowSec
 } catch {}
@@ -113,9 +115,15 @@ $registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join
 $now = [long][double]::Parse((Get-Date -UFormat %s))
 
 # Parent PID of this statusline script = Claude Code CLI process.
+# TT_FAKE_CLAUDE_PID is a test-only knob so the run-tests.cjs harness
+# can drive multiple spawnSync invocations with distinct logical pids
+# (they'd otherwise share the test runner's pid and trigger the /clear
+# PID-migration path in Update-SessionAssignment). Never set in prod.
 $claudePid = 0
 try {
-    $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else {
+        [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+    }
 } catch {}
 
 function Test-ProcessAlive($p) {

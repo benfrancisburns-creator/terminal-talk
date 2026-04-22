@@ -35,6 +35,13 @@ Set-Variable -Scope Script -Name LockStaleMs       -Value 3000 -Option ReadOnly 
 Set-Variable -Scope Script -Name LockAcquireMs     -Value 500  -Option ReadOnly -Force
 Set-Variable -Scope Script -Name LockPollMs        -Value 15   -Option ReadOnly -Force
 
+# Window (seconds) during which a non-zero claude_pid on an existing
+# entry is considered fresh enough to re-key for /clear migration.
+# 600 s covers any realistic gap between consecutive hook fires on
+# one terminal; anything older suggests Windows pid reuse, not the
+# same live terminal, so we fall through to fresh palette allocation.
+Set-Variable -Scope Script -Name PidMigrateWindowSec -Value 600 -Option ReadOnly -Force
+
 function Enter-RegistryLock {
     <#
     .SYNOPSIS
@@ -178,6 +185,43 @@ function Update-SessionAssignment {
         $Assignments[$Short].session_id = $SessionId
         $Assignments[$Short].claude_pid = $ClaudePid
         return [int]$Assignments[$Short].index
+    }
+
+    # PID-identity migration. Claude Code's /clear rotates session_id but
+    # keeps the same CLI process, so the same terminal walks in here with
+    # a brand-new short. Without this migration we allocate a fresh
+    # palette slot -- the user sees their colour "change" and their label
+    # vanish, even though the terminal is the same. If an existing entry
+    # has this claude_pid we re-key it under the new short, preserving
+    # index / label / pinned / muted / focus / voice / speech_includes.
+    #
+    # Guards against false migration:
+    #   1. Only match on non-zero pids: 0 means "unknown" and would
+    #      collide across ghost entries created by main.js's queue-
+    #      scanner fallback.
+    #   2. Require freshness -- the matched entry's last_seen must be
+    #      within $PidMigrateWindowSec. Without this, Windows reusing a
+    #      pid hours later (rare but possible) would let a brand-new
+    #      terminal inherit a long-dead session's colour and label.
+    if ($ClaudePid -gt 0) {
+        $cutoff = $Now - $script:PidMigrateWindowSec
+        $oldShort = $null
+        foreach ($key in @($Assignments.Keys)) {
+            $entry = $Assignments[$key]
+            if ([int]$entry.claude_pid -eq $ClaudePid -and [long]$entry.last_seen -ge $cutoff) {
+                $oldShort = $key
+                break
+            }
+        }
+        if ($oldShort) {
+            $migrated = $Assignments[$oldShort]
+            $migrated.session_id = $SessionId
+            $migrated.claude_pid = $ClaudePid
+            $migrated.last_seen  = $Now
+            $Assignments[$Short] = $migrated
+            [void]$Assignments.Remove($oldShort)
+            return [int]$migrated.index
+        }
     }
 
     $busy = @{}

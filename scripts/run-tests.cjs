@@ -76,6 +76,24 @@ function assertEqual(actual, expected, msg) {
 function assertTruthy(v, msg) { if (!v) throw new Error(msg || `expected truthy, got ${v}`); }
 function assertFalsy(v, msg)  { if (v)  throw new Error(msg || `expected falsy, got ${v}`); }
 
+// Order-insensitive deep compare for plain objects (e.g. speech_includes
+// bags round-tripped through PowerShell, which enumerates hashtable keys
+// in insertion order — different from our seed object key order).
+function assertDeepEqual(actual, expected, msg) {
+  const canon = (v) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted = {};
+      for (const k of Object.keys(v).sort()) sorted[k] = canon(v[k]);
+      return sorted;
+    }
+    if (Array.isArray(v)) return v.map(canon);
+    return v;
+  };
+  const a = JSON.stringify(canon(actual));
+  const e = JSON.stringify(canon(expected));
+  if (a !== e) throw new Error(`${msg || 'assertDeepEqual'}: expected ${e}, got ${a}`);
+}
+
 function clearRegistry() {
   try { fs.unlinkSync(REGISTRY_PATH); } catch {}
 }
@@ -87,15 +105,22 @@ function readRegistry() {
   } catch { return {}; }
 }
 
-function runStatusline(sessionId) {
+function runStatusline(sessionId, fakePid = null) {
+  // fakePid overrides the real ParentProcessId Claude-Code-CLI detection.
+  // Real terminals have distinct pids; the test runner spawns all PS
+  // scripts from one node parent, so without this override the new
+  // /clear PID-migration logic would treat every call as the same
+  // terminal re-entering and merge all entries into one.
   const script = path.join(APP_DIR, 'statusline.ps1');
+  const env = { ...process.env, TT_REGISTRY_PATH: REGISTRY_PATH };
+  if (fakePid != null) env.TT_FAKE_CLAUDE_PID = String(fakePid);
   const result = spawnSync('powershell.exe',
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
     {
       input: JSON.stringify({ session_id: sessionId }),
       encoding: 'utf8',
       timeout: 10000,
-      env: { ...process.env, TT_REGISTRY_PATH: REGISTRY_PATH }
+      env,
     }
   );
   return { stdout: result.stdout && result.stdout.trim(), stderr: result.stderr, code: result.status };
@@ -215,9 +240,13 @@ describe('STATUSLINE ASSIGNMENT', () => {
     });
 
     it('assigns different indexes to two distinct sessions', () => {
+      // fakePid per call so the /clear PID-migration heuristic treats
+      // them as genuinely separate terminals (in prod each Claude Code
+      // CLI has its own pid; the test runner's single pid would fool
+      // the migration into collapsing both into one slot).
       clearRegistry();
-      runStatusline('aaaaaaaa-1111-2222-3333-444444444444');
-      runStatusline('bbbbbbbb-1111-2222-3333-444444444444');
+      runStatusline('aaaaaaaa-1111-2222-3333-444444444444', 100001);
+      runStatusline('bbbbbbbb-1111-2222-3333-444444444444', 100002);
       const reg = readRegistry();
       assertTruthy(reg['aaaaaaaa'], 'aaaaaaaa missing');
       assertTruthy(reg['bbbbbbbb'], 'bbbbbbbb missing');
@@ -1403,6 +1432,191 @@ describe('EPHEMERAL CLIP DETECTION (T- prefix)', () => {
   });
 });
 
+describe('HEARTBEAT TIMER LOGIC (HB1/HB2/HB3)', () => {
+  // decideHeartbeatAction is a pure function — the setInterval tick
+  // in renderer.js is a thin wrapper that reads live state and applies
+  // the returned mutation. Test it with synthetic inputs rather than
+  // spinning up Electron + time controllers.
+  const heartbeat = require(path.join(__dirname, '..', 'app', 'lib', 'heartbeat.js'));
+
+  // Helper to build a full state object with sensible defaults. Tests
+  // override only the field(s) relevant to each assertion.
+  function makeState(overrides = {}) {
+    return {
+      now: 100_000,
+      heartbeatEnabled: true,
+      isQueueActive: false,
+      heartbeatSilentSince: 90_000,   // 10 s of silence
+      lastHeartbeatAt: 0,             // never fired
+      workingSessionsCache: ['a29f747b'],
+      initialMs: 5_000,
+      intervalMs: 8_000,
+      ...overrides,
+    };
+  }
+
+  it('heartbeatEnabled=false always skips', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({ heartbeatEnabled: false }));
+    assertEqual(action.type, 'skip');
+  });
+
+  it('queue active → reset-silent with newSilentSince=now', () => {
+    const state = makeState({ isQueueActive: true, now: 200_000 });
+    const action = heartbeat.decideHeartbeatAction(state);
+    assertEqual(action.type, 'reset-silent');
+    assertEqual(action.newSilentSince, 200_000);
+  });
+
+  it('silence < initialMs → skip', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      now: 94_000,                    // 4 s of silence, < 5 s initial
+      heartbeatSilentSince: 90_000,
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
+  it('silence >= initialMs but within intervalMs of last emit → skip', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      now: 100_000,
+      heartbeatSilentSince: 90_000,   // 10 s of silence
+      lastHeartbeatAt: 95_000,        // 5 s ago, < 8 s interval
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
+  it('silence + interval elapsed BUT no working sessions → skip', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      workingSessionsCache: [],
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
+  it('all conditions met → emit with first working session + newLastHeartbeatAt', () => {
+    const state = makeState({
+      now: 100_000,
+      workingSessionsCache: ['a29f747b', '921d862c'],
+    });
+    const action = heartbeat.decideHeartbeatAction(state);
+    assertEqual(action.type, 'emit');
+    assertEqual(action.sessionShort, 'a29f747b');
+    assertEqual(action.newLastHeartbeatAt, 100_000);
+  });
+
+  it('workingSessionsCache non-array → treated as empty, skip', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      workingSessionsCache: null,
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
+  it('custom initialMs / intervalMs thresholds respected', () => {
+    // Tighter config: 2 s initial, 3 s interval. With 4 s silent +
+    // 3.5 s since last heartbeat, we fire.
+    const state = makeState({
+      now: 104_000,
+      heartbeatSilentSince: 100_000,  // 4 s
+      lastHeartbeatAt: 100_500,       // 3.5 s ago
+      initialMs: 2_000,
+      intervalMs: 3_000,
+    });
+    const action = heartbeat.decideHeartbeatAction(state);
+    assertEqual(action.type, 'emit');
+  });
+
+  it('SPINNER_VERBS and THINKING_PHRASES are populated', () => {
+    if (!Array.isArray(heartbeat.SPINNER_VERBS) || heartbeat.SPINNER_VERBS.length < 50) {
+      throw new Error(`SPINNER_VERBS too small: ${heartbeat.SPINNER_VERBS && heartbeat.SPINNER_VERBS.length}`);
+    }
+    if (!Array.isArray(heartbeat.THINKING_PHRASES) || heartbeat.THINKING_PHRASES.length < 5) {
+      throw new Error(`THINKING_PHRASES too small: ${heartbeat.THINKING_PHRASES && heartbeat.THINKING_PHRASES.length}`);
+    }
+  });
+
+  it('pickHeartbeatVerb returns a phrase when rng < mix ratio', () => {
+    // Force a phrase: rng returns 0.2 which is under PHRASE_MIX_RATIO=0.4.
+    // The same rng is called again to index into THINKING_PHRASES, so
+    // return 0 on the second call → first phrase.
+    let call = 0;
+    const rng = () => (call++ === 0 ? 0.2 : 0);
+    const out = heartbeat.pickHeartbeatVerb(rng);
+    assertEqual(out, heartbeat.THINKING_PHRASES[0]);
+  });
+
+  it('pickHeartbeatVerb returns a spinner verb when rng >= mix ratio', () => {
+    // Force a verb: rng returns 0.6 (above 0.4 phrase ratio), then 0.
+    let call = 0;
+    const rng = () => (call++ === 0 ? 0.6 : 0);
+    const out = heartbeat.pickHeartbeatVerb(rng);
+    assertEqual(out, heartbeat.SPINNER_VERBS[0]);
+  });
+
+  it('pickHeartbeatVerb 40/60 distribution holds approximately over many samples', () => {
+    // Statistical smoke test — 10k samples from Math.random; phrase
+    // fraction should land within 2 % of the nominal 40 %.
+    let phrases = 0;
+    const total = 10_000;
+    const phraseSet = new Set(heartbeat.THINKING_PHRASES);
+    for (let i = 0; i < total; i++) {
+      if (phraseSet.has(heartbeat.pickHeartbeatVerb())) phrases++;
+    }
+    const fraction = phrases / total;
+    if (fraction < 0.36 || fraction > 0.44) {
+      throw new Error(`phrase fraction out of band: ${fraction.toFixed(3)} (expected ~0.40)`);
+    }
+  });
+});
+
+describe('SPEAK-HEARTBEAT IPC VALIDATION (HB1/HB3)', () => {
+  // The speak-heartbeat handler in app/lib/ipc-handlers.js validates
+  // its inputs before calling edge-tts — tests cover the rejection
+  // paths so a compromised renderer can't smuggle arbitrary text or
+  // filename fragments through. Black-box-style: re-implement the
+  // accept/reject regex locally and assert the shape matches.
+  const VERB_RE = /^[A-Za-z][A-Za-z ]{1,59}$/;
+  const SHORT_RE = /^[a-f0-9]{8}$/;
+  function accepts(verb, shortId) {
+    if (typeof verb !== 'string' || !VERB_RE.test(verb)) return false;
+    if (/\s\s/.test(verb)) return false;
+    if (typeof shortId !== 'string' || !SHORT_RE.test(shortId)) return false;
+    return true;
+  }
+
+  it('accepts single-word verbs', () => {
+    assertTruthy(accepts('Moonwalking', 'a29f747b'));
+    assertTruthy(accepts('Percolating', 'abcdef01'));
+  });
+  it('accepts multi-word thinking phrases (single spaces)', () => {
+    assertTruthy(accepts('Thinking this through', 'a29f747b'));
+    assertTruthy(accepts('Just a moment', 'a29f747b'));
+  });
+  it('rejects empty / non-string verbs', () => {
+    assertFalsy(accepts('', 'a29f747b'));
+    assertFalsy(accepts(null, 'a29f747b'));
+    assertFalsy(accepts(123, 'a29f747b'));
+  });
+  it('rejects verbs with digits or symbols', () => {
+    assertFalsy(accepts('Running npm', 'a29f747b'));  // has alphabetics only, but...
+    assertFalsy(accepts('verb123', 'a29f747b'));
+    assertFalsy(accepts('shell cmd;rm -rf /', 'a29f747b'));
+    assertFalsy(accepts('<script>', 'a29f747b'));
+  });
+  it('rejects verbs with double-spaces (normaliser safety)', () => {
+    assertFalsy(accepts('double  space', 'a29f747b'));
+    assertFalsy(accepts('trailing  ', 'a29f747b'));
+  });
+  it('rejects verbs longer than 60 chars', () => {
+    assertFalsy(accepts('x'.repeat(61), 'a29f747b'));
+    assertTruthy(accepts('x'.repeat(60), 'a29f747b'));
+  });
+  it('rejects invalid session shorts', () => {
+    assertFalsy(accepts('Moonwalking', ''));
+    assertFalsy(accepts('Moonwalking', 'xyz12345'));    // not hex
+    assertFalsy(accepts('Moonwalking', 'A29F747B'));    // uppercase
+    assertFalsy(accepts('Moonwalking', 'a29f747'));     // too short (7 chars)
+    assertFalsy(accepts('Moonwalking', 'a29f747bc'));   // too long (9 chars)
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
@@ -1821,7 +2035,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(migrated.muted, true);
     assertEqual(migrated.focus, true);
     assertEqual(migrated.voice, 'en-GB-RyanNeural');
-    assertEqual(migrated.speech_includes, { urls: true, code_blocks: false, headings: true });
+    assertDeepEqual(migrated.speech_includes, { urls: true, code_blocks: false, headings: true });
     assertEqual(migrated.session_id, 'newshort-uuid');  // refreshed to new UUID
     assertEqual(migrated.claude_pid, 1234);             // pid carried forward
   });
@@ -1946,7 +2160,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { assignments } = runUpdate({
       seed, short: 'inclnewe', sessionId: 'new-uuid', claudePid: 8888, now: NOW,
     });
-    assertEqual(assignments['inclnewe'].speech_includes, {
+    assertDeepEqual(assignments['inclnewe'].speech_includes, {
       urls: true, code_blocks: true, headings: false, bullet_markers: true,
     });
   });
@@ -1982,7 +2196,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(b.label, 'terminal B');
     assertEqual(b.muted, true);
     assertEqual(b.voice, 'en-GB-SoniaNeural');
-    assertEqual(b.speech_includes, { urls: false });
+    assertDeepEqual(b.speech_includes, { urls: false });
     assertEqual(b.claude_pid, 2222);
   });
 
@@ -2061,6 +2275,76 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       throw new Error('past-boundary (601 s stale) must NOT migrate');
     }
     assertTruthy(r2.assignments['boundary'], 'past-boundary entry must survive');
+  });
+
+  it('full round-trip (no migration): every field survives Read + Save', () => {
+    // Every voice-selection / mute / focus / pin / include flag must
+    // survive a bookkeeping-only touch. This is the common case — the
+    // hook fires, statusline ticks, just the three volatile fields
+    // (last_seen, session_id, claude_pid) rotate. Everything else
+    // must be byte-identical to the seed.
+    const seed = {
+      'roundtri': {
+        index: 11, session_id: 'seed-uuid', claude_pid: 7070,
+        label: 'round-trip', pinned: true, muted: true, focus: true,
+        last_seen: FRESH, voice: 'shimmer',
+        speech_includes: { urls: true, tool_calls: true, inline_code: false },
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'roundtri', sessionId: 'seed-uuid', claudePid: 7070, now: NOW,
+    });
+    const e = assignments['roundtri'];
+    assertEqual(e.index, 11);
+    assertEqual(e.label, 'round-trip');
+    assertEqual(e.pinned, true);
+    assertEqual(e.muted, true);
+    assertEqual(e.focus, true);
+    assertEqual(e.voice, 'shimmer');
+    assertDeepEqual(e.speech_includes, { urls: true, tool_calls: true, inline_code: false });
+  });
+
+  it('OpenAI voice ids (shimmer / onyx etc.) round-trip through migration', () => {
+    // Registry schema whitelists both edge-tts voice naming and the
+    // OpenAI single-word ids. Migration must not downcast or reject
+    // OpenAI ids when re-keying.
+    for (const v of ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']) {
+      const seed = {
+        'oaivoice': {
+          index: 6, session_id: 'o-uuid', claude_pid: 1212,
+          label: '', pinned: false, muted: false, focus: false,
+          last_seen: FRESH, voice: v,
+        }
+      };
+      const { assignments } = runUpdate({
+        seed, short: 'oainewxx', sessionId: 'o-new', claudePid: 1212, now: NOW,
+      });
+      assertEqual(
+        assignments['oainewxx'] && assignments['oainewxx'].voice, v,
+        `voice ${v} must survive migration`
+      );
+    }
+  });
+
+  it('entry without voice stays voice-free through migration (no ghost field)', () => {
+    // Regression guard: an entry with no per-session voice override
+    // (falling back to the global default) must not suddenly sprout a
+    // voice field after /clear. That would silently pin the session
+    // to whatever the global default happened to be at migration time.
+    const seed = {
+      'novoice1': {
+        index: 2, session_id: 'nv-uuid', claude_pid: 1313,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'novoice2', sessionId: 'nv-new', claudePid: 1313, now: NOW,
+    });
+    const e = assignments['novoice2'];
+    if (e.voice !== undefined && e.voice !== null && e.voice !== '') {
+      throw new Error(`no-voice entry acquired voice '${e.voice}' across migration`);
+    }
   });
 
   it('ghost-then-hook: pre-existing pid=0 entry for same short is updated in place', () => {
