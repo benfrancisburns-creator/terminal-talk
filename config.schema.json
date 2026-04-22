@@ -48,8 +48,14 @@
         "urls":           { "type": "boolean" },
         "headings":       { "type": "boolean" },
         "bullet_markers": { "type": "boolean" },
-        "image_alt":      { "type": "boolean" }
+        "image_alt":      { "type": "boolean" },
+        "tool_calls":     { "type": "boolean", "description": "Narrate each tool call ('Reading foo.py', 'Running npm') as an ephemeral T-prefixed clip during long tool chains. Default true." }
       }
+    },
+    "heartbeat_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "HB1 — when Claude Code is actively working but the queue has been silent for 15 s, synthesise a single spinner-verb ('Moonwalking', 'Pontificating') as an ephemeral T-prefixed clip so you get audible confirmation the session is alive. Mirrors the mascot's visible word-cloud."
     },
     "window": {
       "type": ["object", "null"],

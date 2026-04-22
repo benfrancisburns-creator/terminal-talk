@@ -195,6 +195,71 @@ setInterval(() => {
   }
 }, POLL_INTERVAL_MS);
 
+// HB1 — heartbeat verb emission. When Claude Code is actively working
+// (a recent hook touched a session) but the audio queue is silent
+// (no playback, no pending clips), emit a single short spinner-verb
+// ("Moonwalking", "Pontificating") so the listener gets audible
+// confirmation the session is alive. Mirrors the mascot's visible
+// word-cloud behaviour.
+//
+// The fire gate is stricter than collapse-on-idle because a heartbeat
+// is audio output, not a cosmetic visual change. We only fire when:
+//   - config enables heartbeat (user toggle in settings)
+//   - audio is idle AND queue has no unplayed unmuted clips
+//   - at least one registered session exists AND was touched recently
+//     (session activity is our proxy for "Claude is actively working";
+//     if every session has gone stale we assume the user isn't in a
+//     Claude session and stay quiet)
+//   - last heartbeat was > HEARTBEAT_INTERVAL_MS ago (cool-down)
+//   - audio has been silent for at least HEARTBEAT_INITIAL_MS (don't
+//     start heartbeating the instant a response ends)
+const HEARTBEAT_INITIAL_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS = 12_000;
+// A session counts as "actively working" if its registry entry has
+// been touched within this window. Matches the statusline's
+// fresh-session window so the audio signal aligns with visible
+// session state.
+const HEARTBEAT_SESSION_FRESH_MS = 180_000;
+let lastHeartbeatAt = 0;
+let heartbeatSilentSince = Date.now();
+
+function mostRecentActiveSessionShort() {
+  // Returns the 8-hex short for the session with the most recent
+  // `last_seen`, or null if none are fresh enough to count as active.
+  let best = null;
+  let bestTs = 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const [short, entry] of Object.entries(sessionAssignments || {})) {
+    if (!short || !/^[a-f0-9]{8}$/.test(short)) continue;
+    const ts = Number(entry && entry.last_seen) || 0;
+    if (!ts) continue;
+    if (nowSec - ts > HEARTBEAT_SESSION_FRESH_MS / 1000) continue;
+    if (ts > bestTs) { bestTs = ts; best = short; }
+  }
+  return best;
+}
+
+setInterval(() => {
+  try {
+    const cfg = (window.TT_CONFIG_SNAPSHOT || {});
+    if (cfg.heartbeat_enabled === false) return;
+    if (isQueueActive()) {
+      heartbeatSilentSince = Date.now();
+      return;
+    }
+    const silentFor = Date.now() - heartbeatSilentSince;
+    if (silentFor < HEARTBEAT_INITIAL_MS) return;
+    if (Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+    const shortId = mostRecentActiveSessionShort();
+    if (!shortId) return;
+    const verb = randomVerb();
+    lastHeartbeatAt = Date.now();
+    if (window.api && window.api.speakHeartbeat) {
+      window.api.speakHeartbeat(verb, shortId).catch(() => {});
+    }
+  } catch {}
+}, POLL_INTERVAL_MS);
+
 // EX7b — stale-session polling extracted into a component. Greys out
 // session rows and their dots within 10 s of a terminal's PID going
 // away. Component-owned setInterval + setTimeout can't orphan across
@@ -908,6 +973,12 @@ settingsForm.mount();
 async function loadSettings() {
   const cfg = await window.api.getConfig();
   if (!cfg) return;
+  // Cache a snapshot of the live config for anyone that can't go
+  // async on each read — currently the HB1 heartbeat timer, which
+  // fires every 1 s and wouldn't benefit from an IPC roundtrip.
+  // `update-config` is rare; the snapshot is refreshed here and on
+  // the settingsForm change callbacks below.
+  window.TT_CONFIG_SNAPSHOT = cfg;
   settingsForm.update({ cfg });
   restoreTabsState(cfg);
   renderDots();

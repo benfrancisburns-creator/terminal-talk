@@ -81,6 +81,13 @@ const DEFAULTS = {
     // in app/synth_turn.py for the authoritative default.
     tool_calls: true
   },
+  // HB1 — heartbeat emission. When Claude Code is actively working but
+  // the audio queue has been silent for >15 s, renderer asks main to
+  // synthesise a single short spinner-verb clip ("Moonwalking") so the
+  // listener gets audible confirmation the session is alive. Mirrors
+  // the mascot's visible word-cloud. Ephemeral T- prefix; auto-deletes
+  // on play-end. Off suppresses emission entirely (zero IPC traffic).
+  heartbeat_enabled: true,
   openai_api_key: null
 };
 
@@ -1315,6 +1322,7 @@ const { createIpcHandlers } = require('./lib/ipc-handlers');
 createIpcHandlers({
   ipcMain,
   diag,
+  callEdgeTTS,
   getCFG: () => CFG,
   setCFG: (next) => { CFG = next; },
   getWin: () => win,

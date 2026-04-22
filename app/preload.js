@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('api', {
   // shortcut (Ctrl+R) bypasses IPC via before-input-event at window
   // creation. Both paths end in the same reload().
   reloadRenderer: () => ipcRenderer.invoke('reload-renderer'),
+  // HB1 — renderer asks main to synthesise a single ephemeral spinner
+  // verb ("Moonwalking", "Pontificating") when Claude is actively
+  // working but the queue has been silent. Main writes a T-prefixed mp3
+  // to the queue; renderer picks it up via the existing fs.watch.
+  speakHeartbeat: (verb, sessionShort) => ipcRenderer.invoke('speak-heartbeat', verb, sessionShort),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),

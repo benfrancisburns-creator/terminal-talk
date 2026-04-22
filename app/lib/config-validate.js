@@ -18,6 +18,9 @@ const RULES = [
   { path: 'playback.auto_continue_after_click', type: 'boolean' },
   { path: 'playback.palette_variant', type: 'string', maxLen: 16 },
   { path: 'speech_includes', type: 'object' },
+  // HB1 — heartbeat toggle. Default true in DEFAULTS; users disable
+  // via settings or by writing false to config.json.
+  { path: 'heartbeat_enabled', type: 'boolean' },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
   { path: 'selected_tab',    type: 'string',  maxLen: 64 },
   { path: 'tabs_expanded',   type: 'boolean' },

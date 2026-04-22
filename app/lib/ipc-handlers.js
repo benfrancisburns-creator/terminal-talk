@@ -22,6 +22,10 @@ function createIpcHandlers(deps) {
     ipcMain,
     // Read-side deps (EX6f-1)
     diag,
+    // Heartbeat (HB1): main-side edge-tts spawner. Injected so the
+    // handler can synthesise a spinner verb to an ephemeral T-prefixed
+    // clip without duplicating the callEdgeTTS promise plumbing.
+    callEdgeTTS,
     getCFG,
     loadAssignments,
     getQueueFiles,
@@ -336,6 +340,46 @@ function createIpcHandlers(deps) {
         return true;
       } catch {}
       return false;
+    });
+
+    // HB1 — heartbeat verb. Renderer fires this when it detects
+    // Claude Code is actively working but the queue has been silent
+    // for a while (no playback, no pending clips). Emits one short
+    // ephemeral clip (T- prefix, auto-deletes on play-end) so the
+    // listener gets audible confirmation the session is alive, matching
+    // the mascot's visible spinner-word behaviour.
+    //
+    // Security: both arguments validated strictly — verb must be pure
+    // letters (cross-references the SPINNER_VERBS whitelist in
+    // renderer.js without importing it here), session-short must match
+    // the canonical 8-hex pattern. A compromised renderer can't pipe
+    // shell metachars through the edge-tts stdin path.
+    let heartbeatInFlight = false;
+    ipcMain.handle('speak-heartbeat', async (_e, verb, sessionShort) => {
+      if (heartbeatInFlight) return false;
+      if (typeof verb !== 'string' || !/^[A-Za-z]{2,30}$/.test(verb)) return false;
+      if (typeof sessionShort !== 'string' || !/^[a-f0-9]{8}$/.test(sessionShort)) return false;
+      if (typeof callEdgeTTS !== 'function') return false;
+      const cfg = getCFG();
+      if (cfg && cfg.heartbeat_enabled === false) return false;
+      heartbeatInFlight = true;
+      try {
+        const voice = (cfg && cfg.voices && cfg.voices.edge_response) || 'en-GB-RyanNeural';
+        const d = new Date();
+        const pad = (n, w = 2) => String(n).padStart(w, '0');
+        const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`;
+        const filename = `${ts}-T-0001-${sessionShort}.mp3`;
+        const outPath = path.join(QUEUE_DIR, filename);
+        await callEdgeTTS(verb, voice, outPath);
+        diag(`heartbeat: "${verb}" → ${filename}`);
+        if (typeof notifyQueue === 'function') notifyQueue();
+        return true;
+      } catch (e) {
+        diag(`heartbeat: FAIL ${e && e.message ? e.message : e}`);
+        return false;
+      } finally {
+        heartbeatInFlight = false;
+      }
     });
 
     ipcMain.handle('hide-window', () => {
