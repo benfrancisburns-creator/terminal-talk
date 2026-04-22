@@ -39,6 +39,21 @@ if (-not ($sessionShort -match '^[a-f0-9]{8}$')) {
     Log "EXIT: invalid sessionShort '$sessionShort' (refusing to write)"
     exit 0
 }
+
+# HB2: clear the working flag as early as possible in the Stop hook.
+# The heartbeat timer gates on the presence of this flag, so clearing
+# it here stops verb emission the instant the response starts playing
+# (before audio synth has time to finish). If any of the heavier work
+# below fails, the flag still gets cleared — matching the user's
+# mental model of "Claude finished, stop saying 'Percolating'".
+$workingFlag = Join-Path $ttHome "sessions\$sessionShort-working.flag"
+try {
+    if (Test-Path $workingFlag) {
+        Remove-Item -Force $workingFlag -ErrorAction SilentlyContinue
+        Log "cleared working flag for $sessionShort"
+    }
+} catch {}
+
 $claudePid = 0
 try { $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId } catch {}
 

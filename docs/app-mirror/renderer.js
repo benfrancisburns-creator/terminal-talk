@@ -241,9 +241,23 @@ const HEARTBEAT_SESSION_FRESH_MS = 15_000;
 let lastHeartbeatAt = 0;
 let heartbeatSilentSince = Date.now();
 
-function mostRecentActiveSessionShort() {
-  // Returns the 8-hex short for the session with the most recent
-  // `last_seen`, or null if none are fresh enough to count as active.
+// HB2 — working-sessions cache. Populated from main via
+// `window.api.getWorkingSessions()` on every heartbeat tick (cheap —
+// it's just a readdir on a tiny sessions directory). Returns the
+// session shorts whose UserPromptSubmit hook fired but whose Stop
+// hook hasn't, so a heartbeat genuinely maps to "waiting for Claude".
+let workingSessionsCache = [];
+
+function firstWorkingSessionShort() {
+  // Prefer an actively-working session (HB2 flag file). Fall back to
+  // the `last_seen` proxy for back-compat during the window between
+  // installing HB2 and the first UserPromptSubmit hook firing — and
+  // for any environment where the hook isn't yet registered.
+  if (workingSessionsCache.length > 0) {
+    return workingSessionsCache[0];
+  }
+  // Back-compat fallback: most-recently-seen session within the tight
+  // 15 s window. Catches the case where the hook isn't registered yet.
   let best = null;
   let bestTs = 0;
   const nowSec = Math.floor(Date.now() / 1000);
@@ -257,7 +271,24 @@ function mostRecentActiveSessionShort() {
   return best;
 }
 
+// HB2 refresh: poll the working-sessions list from main on each tick.
+// Async IPC so the heartbeat tick itself stays synchronous and cheap.
+async function refreshWorkingSessions() {
+  try {
+    if (!window.api || !window.api.getWorkingSessions) return;
+    const arr = await window.api.getWorkingSessions();
+    workingSessionsCache = Array.isArray(arr) ? arr : [];
+  } catch {
+    // Leave cache as-is — stale for one tick is better than empty.
+  }
+}
+
 setInterval(() => {
+  // Fire the async refresh — don't await; we'll see the result on the
+  // NEXT tick. One-tick lag (max 1 s) is acceptable for this coarse
+  // signal and keeps the tick non-blocking.
+  refreshWorkingSessions();
+
   try {
     const cfg = (window.TT_CONFIG_SNAPSHOT || {});
     if (cfg.heartbeat_enabled === false) return;
@@ -268,7 +299,7 @@ setInterval(() => {
     const silentFor = Date.now() - heartbeatSilentSince;
     if (silentFor < HEARTBEAT_INITIAL_MS) return;
     if (Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
-    const shortId = mostRecentActiveSessionShort();
+    const shortId = firstWorkingSessionShort();
     if (!shortId) return;
     const verb = randomVerb();
     lastHeartbeatAt = Date.now();

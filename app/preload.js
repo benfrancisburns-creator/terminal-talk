@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
   // working but the queue has been silent. Main writes a T-prefixed mp3
   // to the queue; renderer picks it up via the existing fs.watch.
   speakHeartbeat: (verb, sessionShort) => ipcRenderer.invoke('speak-heartbeat', verb, sessionShort),
+  // HB2 — list sessions currently marked working (UserPromptSubmit
+  // fired, Stop hasn't yet). Heartbeat timer gates on this.
+  getWorkingSessions: () => ipcRenderer.invoke('get-working-sessions'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),

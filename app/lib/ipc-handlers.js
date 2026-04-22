@@ -342,6 +342,36 @@ function createIpcHandlers(deps) {
       return false;
     });
 
+    // HB2 — list session shorts currently marked "working" via the
+    // per-session flag files written by the UserPromptSubmit hook and
+    // cleared by the Stop hook. Heartbeat timer uses this instead of
+    // the old `last_seen` proxy (which stayed fresh for minutes after
+    // a response ended, making heartbeat fire when the user was idle).
+    // Flag files are named `<sessionShort>-working.flag` in SESSIONS_DIR.
+    // Stale flags (older than 10 min — user killed Claude Code
+    // mid-response) are filtered here so callers never see them.
+    ipcMain.handle('get-working-sessions', () => {
+      try {
+        if (!SESSIONS_DIR || !fs.existsSync(SESSIONS_DIR)) return [];
+        const now = Math.floor(Date.now() / 1000);
+        const STALE_SEC = 600;
+        const out = [];
+        for (const name of fs.readdirSync(SESSIONS_DIR)) {
+          const m = /^([a-f0-9]{8})-working\.flag$/.exec(name);
+          if (!m) continue;
+          const full = path.join(SESSIONS_DIR, name);
+          try {
+            const content = fs.readFileSync(full, 'utf8').trim();
+            const ts = Number(content) || 0;
+            if (ts && now - ts <= STALE_SEC) {
+              out.push(m[1]);
+            }
+          } catch {}
+        }
+        return out;
+      } catch { return []; }
+    });
+
     // HB1 — heartbeat verb. Renderer fires this when it detects
     // Claude Code is actively working but the queue has been silent
     // for a while (no playback, no pending clips). Emits one short

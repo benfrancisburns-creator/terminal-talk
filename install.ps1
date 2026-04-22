@@ -261,6 +261,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
         $respHook = Join-Path $hooksDir 'speak-response.ps1'
         $notifHook = Join-Path $hooksDir 'speak-notification.ps1'
         $toolHook = Join-Path $hooksDir 'speak-on-tool.ps1'
+        $workHook = Join-Path $hooksDir 'mark-working.ps1'
         $settings.hooks.Stop = @(@{
             matcher = ''
             hooks = @(@{
@@ -288,8 +289,21 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
                 timeout = 10
             })
         })
+        # HB2 — UserPromptSubmit hook. Writes a per-session working flag
+        # when you submit a prompt; the Stop hook clears it when Claude
+        # finishes. Heartbeat-verb emission gates on the flag so the
+        # "Percolating / Moonwalking" verbs only speak while a response
+        # is genuinely in flight.
+        $settings.hooks.UserPromptSubmit = @(@{
+            matcher = ''
+            hooks = @(@{
+                type = 'command'
+                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$workHook`""
+                timeout = 10
+            })
+        })
         $settings | ConvertTo-Json -Depth 20 | Set-Content $claudeSettings -Encoding utf8
-        Write-Ok "Hooks registered (Stop, Notification, PreToolUse - settings.json backed up)"
+        Write-Ok "Hooks registered (Stop, Notification, PreToolUse, UserPromptSubmit - settings.json backed up)"
     }
 } else {
     Write-Warn2 "Skipped. You can still use highlight-to-speak + wake word."
