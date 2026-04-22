@@ -302,10 +302,30 @@ def read_transcript_lines(transcript_path: Path) -> list[dict]:
 
 
 def find_last_user_idx(entries: list[dict]) -> int:
-    """Line index (0-based) of most recent user-type entry, or -1."""
+    """Line index (0-based) of the most recent REAL user prompt, or -1.
+
+    tool_result entries also carry type='user' in the JSONL, but they're
+    mid-turn (the tool returning to Claude), not a new turn boundary.
+    Treating them as user prompts caused on-stream to skip every
+    intermediate assistant-text chunk in a multi-tool-call turn: every
+    tool_result jumped turn_boundary past the text Claude had just
+    written, so assistant_text_entries_after(…, user_idx) came back
+    empty and the watcher exited quiet. Fix: only count user entries
+    whose content is NOT a tool_result block.
+    """
     for i in range(len(entries) - 1, -1, -1):
-        if entries[i].get('type') == 'user':
-            return i
+        e = entries[i]
+        if e.get('type') != 'user':
+            continue
+        content = e.get('message', {}).get('content', [])
+        if isinstance(content, list):
+            is_tool_result = any(
+                isinstance(c, dict) and c.get('type') == 'tool_result'
+                for c in content
+            )
+            if is_tool_result:
+                continue
+        return i
     return -1
 
 

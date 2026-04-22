@@ -1725,6 +1725,29 @@ describe('SYNTH TURN TEXT EXTRACTION', () => {
     const out = run(`print(synth_turn.find_last_user_idx([{'type':'system'}]))`);
     assertEqual(out, '-1');
   });
+  it('find_last_user_idx skips tool_result entries (mid-turn, not a new turn)', () => {
+    const entries = JSON.stringify([
+      { type: 'user', message: { content: [{ type: 'text', text: 'hi' }] } },       // 0 — real
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } },  // 1
+      { type: 'assistant', message: { content: [{ type: 'tool_use' }] } },          // 2
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } }, // 3 — skip
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'next' }] } },// 4
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'y' }] } }, // 5 — skip
+    ]);
+    const out = run(`print(synth_turn.find_last_user_idx(${entries}))`);
+    assertEqual(out, '0');
+  });
+  it('find_last_user_idx returns most recent REAL user when multiple prompts', () => {
+    const entries = JSON.stringify([
+      { type: 'user', message: { content: [{ type: 'text', text: 'first' }] } },    // 0
+      { type: 'assistant', message: { content: [{ type: 'tool_use' }] } },          // 1
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } }, // 2 — skip
+      { type: 'user', message: { content: [{ type: 'text', text: 'second' }] } },   // 3 — real
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'z' }] } }, // 4 — skip
+    ]);
+    const out = run(`print(synth_turn.find_last_user_idx(${entries}))`);
+    assertEqual(out, '3');
+  });
   it('assistant_text_entries_after filters tool_use correctly', () => {
     const entries = JSON.stringify([
       { type: 'user' },
