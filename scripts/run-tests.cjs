@@ -2583,9 +2583,7 @@ describe('TABS — unread count is derived, not stored', () => {
 // =============================================================================
 describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   const appDir = path.join(__dirname, '..', 'app');
-  const installDir = path.join(os.homedir(), '.terminal-talk');
   const watcherRepo = path.join(appDir, 'mic-watcher.ps1');
-  const watcherInstalled = path.join(installDir, 'app', 'mic-watcher.ps1');
   const mainSrc = fs.readFileSync(path.join(appDir, 'main.js'), 'utf8');
   const preloadSrc = fs.readFileSync(path.join(appDir, 'preload.js'), 'utf8');
   const rendererSrc = fs.readFileSync(path.join(appDir, 'renderer.js'), 'utf8');
@@ -2597,15 +2595,16 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
   });
 
-  it('mic-watcher.ps1 is installed (wildcard copy in install.ps1)', () => {
-    // Skip on environments without an install dir (Linux CI, fresh clone
-    // without install.ps1 ran). The REPO-side presence check above is the
-    // authoritative "the file exists" test; this one specifically covers
-    // the "install.ps1 wildcard copied it across" step, which only runs
-    // on Windows machines where the install has been performed.
-    if (!fs.existsSync(installDir)) return;
-    if (!fs.existsSync(watcherInstalled)) {
-      throw new Error('~/.terminal-talk/app/mic-watcher.ps1 is missing — re-run install.ps1');
+  it('install.ps1 wildcards app/*.ps1 so mic-watcher is picked up automatically', () => {
+    // We don't assert that ~/.terminal-talk/app/mic-watcher.ps1 exists —
+    // on Linux CI the install dir can be polluted by earlier tests but
+    // the install step never runs, so the post-install file check is
+    // unreliable there. Instead, assert the source-level guarantee:
+    // install.ps1 copies `Join-Path $appDir '*.ps1'` wildcard, which
+    // deterministically catches every .ps1 we ship in app/.
+    const installSrc = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
+    if (!/\$appDir\s+'\*\.ps1'/.test(installSrc)) {
+      throw new Error(`install.ps1 must copy app/*.ps1 via wildcard so new .ps1 files (like mic-watcher.ps1) are auto-picked`);
     }
   });
 
