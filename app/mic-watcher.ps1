@@ -25,12 +25,12 @@
 # Parent (main.js) spawns us as a detached child, reads stdout, and fans
 # events to the renderer. If we crash or get terminated, main.js restarts
 # us. The loop guards against transient registry read failures with a
-# silent retry — never fatal.
+# silent retry -- never fatal.
 
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-# App paths to ignore — our own wake-word listener (python.exe under the
+# App paths to ignore -- our own wake-word listener (python.exe under the
 # installed Terminal Talk tree) should not trigger pause. Match loosely
 # against subkey names (which are file paths with `\` replaced by `#`).
 $selfPathFragments = @(
@@ -75,7 +75,7 @@ function Get-ActiveMicUser {
 $lastState = 'UNKNOWN'
 
 # Emit one line immediately so the parent knows we're alive and the
-# current state — avoids a race where main misses the first transition.
+# current state -- avoids a race where main misses the first transition.
 $current = Get-ActiveMicUser
 if ($current) { Write-Output "MIC_CAPTURED $current"; $lastState = 'CAPTURED' }
 else          { Write-Output 'MIC_RELEASED';          $lastState = 'RELEASED' }

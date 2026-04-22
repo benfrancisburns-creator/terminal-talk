@@ -2598,6 +2598,12 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   });
 
   it('mic-watcher.ps1 is installed (wildcard copy in install.ps1)', () => {
+    // Skip on environments without an install dir (Linux CI, fresh clone
+    // without install.ps1 ran). The REPO-side presence check above is the
+    // authoritative "the file exists" test; this one specifically covers
+    // the "install.ps1 wildcard copied it across" step, which only runs
+    // on Windows machines where the install has been performed.
+    if (!fs.existsSync(installDir)) return;
     if (!fs.existsSync(watcherInstalled)) {
       throw new Error('~/.terminal-talk/app/mic-watcher.ps1 is missing — re-run install.ps1');
     }
