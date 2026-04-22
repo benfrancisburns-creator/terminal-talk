@@ -63,7 +63,7 @@ if (Test-Path $cachePath) {
 # Load the shared session-registry module (Read-Registry /
 # Touch-Or-Assign-Session / Write-Registry-Atomic / Write-SessionPidFile).
 # Lives alongside this script in the installed `app/` directory.
-Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
+Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -ErrorAction SilentlyContinue
 
 # Track this session's Claude Code PID so hey-jarvis can map the foreground
 # terminal back to a session. The statusline's parent = Claude Code CLI process.
@@ -130,14 +130,14 @@ function Test-ProcessAlive($p) {
 # Save, and saving stale state stomps the user's Settings change. Lock
 # semantics mirror app/lib/registry-lock.js (3 s stale, 500 ms acquire
 # timeout, 15 ms poll backoff).
-$locked = Acquire-RegistryLock -RegistryPath $registryPath
+$locked = Enter-RegistryLock -RegistryPath $registryPath
 try {
     $assignments = Read-Registry -RegistryPath $registryPath
     $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
                                      -SessionId $sessionId -ClaudePid $claudePid -Now $now
     Save-Registry -RegistryPath $registryPath -Assignments $assignments
 } finally {
-    if ($locked) { Release-RegistryLock -RegistryPath $registryPath }
+    if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }
 
 $emoji = Get-EmojiForIndex $idx

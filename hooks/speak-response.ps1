@@ -51,19 +51,19 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     # Shared session-registry module -- canonical Read / Touch-Or-Assign /
     # Write-Atomic + per-PID stamp. Replaces ~80 lines of duplication that
     # used to live here AND in speak-on-tool.ps1 AND in statusline.ps1.
-    Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
+    Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
 
     # Read-Update-Save must be lock-guarded -- toolbar can be mid-write
     # and would otherwise be stomped. See app/lib/registry-lock.js for
     # the JS-side counterpart this mirrors.
-    $locked = Acquire-RegistryLock -RegistryPath $registryPath
+    $locked = Enter-RegistryLock -RegistryPath $registryPath
     try {
         $assignments = Read-Registry -RegistryPath $registryPath
         $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
                                           -SessionId $sessionId -ClaudePid $claudePid -Now $now
         Save-Registry -RegistryPath $registryPath -Assignments $assignments
     } finally {
-        if ($locked) { Release-RegistryLock -RegistryPath $registryPath }
+        if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
     }
     Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid `
                           -SessionId $sessionId -Short $sessionShort -Now $now

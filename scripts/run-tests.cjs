@@ -1636,12 +1636,12 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
   const moduleSrc    = fs.readFileSync(modulePath, 'utf8');
 
   it('module exports the six canonical functions', () => {
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Acquire-RegistryLock', 'Release-RegistryLock']) {
+    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
       if (!moduleSrc.includes(`function ${fn}`)) {
         throw new Error(`session-registry.psm1 missing function ${fn}`);
       }
     }
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Acquire-RegistryLock', 'Release-RegistryLock']) {
+    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
       if (!new RegExp(`Export-ModuleMember[\\s\\S]*${fn}`).test(moduleSrc)) {
         throw new Error(`session-registry.psm1 must Export-ModuleMember ${fn}`);
       }
@@ -1681,15 +1681,15 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
     });
     it(`${c.name} lock-guards the Read-Update-Save triplet`, () => {
       // The JS toolbar and the PS hooks race on ~/.terminal-talk/
-      // session-colours.json. PS callers MUST Acquire-RegistryLock
-      // before Read-Registry and Release-RegistryLock after Save-Registry
+      // session-colours.json. PS callers MUST Enter-RegistryLock
+      // before Read-Registry and Exit-RegistryLock after Save-Registry
       // or a toolbar Settings change can be stomped by a concurrent hook.
       // Mirror of JS-side app/lib/registry-lock.js withRegistryLock().
-      if (!/\bAcquire-RegistryLock\b/.test(c.src)) {
-        throw new Error(`${c.name}: missing Acquire-RegistryLock before Read/Save`);
+      if (!/\bEnter-RegistryLock\b/.test(c.src)) {
+        throw new Error(`${c.name}: missing Enter-RegistryLock before Read/Save`);
       }
-      if (!/\bRelease-RegistryLock\b/.test(c.src)) {
-        throw new Error(`${c.name}: missing Release-RegistryLock (lock would never be freed)`);
+      if (!/\bExit-RegistryLock\b/.test(c.src)) {
+        throw new Error(`${c.name}: missing Exit-RegistryLock (lock would never be freed)`);
       }
       // Structural check: the Save-Registry CALL (not a comment reference)
       // must sit between Acquire and Release. Strip comment-only PS lines
@@ -1701,9 +1701,9 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
         .split('\n')
         .filter((ln) => !/^\s*#/.test(ln))
         .join('\n');
-      const acquireAt = stripped.indexOf('Acquire-RegistryLock');
+      const acquireAt = stripped.indexOf('Enter-RegistryLock');
       const saveAt    = stripped.indexOf('Save-Registry');
-      const releaseAt = stripped.indexOf('Release-RegistryLock');
+      const releaseAt = stripped.indexOf('Exit-RegistryLock');
       if (!(acquireAt < saveAt && saveAt < releaseAt)) {
         throw new Error(`${c.name}: Acquire/Save/Release call ordering wrong (got Acquire@${acquireAt}, Save@${saveAt}, Release@${releaseAt})`);
       }

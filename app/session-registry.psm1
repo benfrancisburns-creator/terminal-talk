@@ -35,7 +35,7 @@ Set-Variable -Scope Script -Name LockStaleMs       -Value 3000 -Option ReadOnly 
 Set-Variable -Scope Script -Name LockAcquireMs     -Value 500  -Option ReadOnly -Force
 Set-Variable -Scope Script -Name LockPollMs        -Value 15   -Option ReadOnly -Force
 
-function Acquire-RegistryLock {
+function Enter-RegistryLock {
     <#
     .SYNOPSIS
     Atomic-create a `<RegistryPath>.lock` file using CreateNew + no sharing
@@ -79,7 +79,7 @@ function Acquire-RegistryLock {
     return $false
 }
 
-function Release-RegistryLock {
+function Exit-RegistryLock {
     <#
     .SYNOPSIS
     Delete the `<RegistryPath>.lock` sentinel. Idempotent -- a missing file
@@ -283,4 +283,4 @@ function Write-SessionPidFile {
     }
 }
 
-Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile, Acquire-RegistryLock, Release-RegistryLock
+Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile, Enter-RegistryLock, Exit-RegistryLock
