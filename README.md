@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (387 unit + 25 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (686 unit + 28 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
@@ -53,6 +53,8 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 - **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
 - **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
 - **Per-session controls.** Mute individual terminals (no synthesis, no clips — truly "cut the wire"), focus one to prioritise its clips in the queue, give each a custom voice, override speech-include behaviour per session (code blocks, URLs, headings, etc.).
+- **Auto-pauses when you dictate.** If another app (Wispr Flow, Windows Voice Access, VoIP) grabs the mic, Terminal Talk pauses whatever's playing so it doesn't talk over you. Releases and resumes automatically. New arrivals that land during the dictation window queue up and drain in order once the mic's free — they never burst all at once.
+- **End-of-reply closer.** At the end of each Claude response, Terminal Talk speaks the exact verb from the terminal footer — "Brewed for 8m 49s", "Sautéed for 1m 0s", "Cogitated for 24m 56s". Read directly off the Windows Terminal buffer via UI Automation so the audio matches what you see.
 - **Runs in the background.** Small always-on-top toolbar snaps to the top or bottom edge, auto-collapses after 15 s of idle, becomes click-through when hidden. `Ctrl+Shift+A` is the universal show/hide recovery hotkey.
 
 ## UI states
@@ -89,7 +91,7 @@ A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips —
   <img src="docs/screenshots/toolbar-settings-panel.png" alt="Full settings panel: Playback with speed slider + auto-prune toggle, Sessions table with focus star + mute on every row + one expanded row showing voice + speech-includes, About section with ASCII banner + shortcuts table" width="900">
 </p>
 
-The gear reveals three sections. **Playback** — speed 0.5–2.5× + auto-prune toggle (off = clips stack up for review). **Sessions** — every active terminal in a 7-column row: chevron · swatch · 8-char ID · editable label · colour dropdown (24 arrangements) · focus ★ · mute 🔊/🔇. The chevron reveals per-session voice (45 Edge voices — pick different voices so you can tell terminals apart by ear) and six tri-state speech-includes toggles. **About** has the ASCII banner + full shortcuts.
+The gear reveals four sections. **Playback** — speed 0.5–2.5× · master volume 0–100% · auto-prune toggle + seconds · auto-continue after clicking · colour-blind palette · heartbeat narration · reload toolbar. **OpenAI (premium)** — collapsible section for pasting an API key, flipping the "Prefer OpenAI" primary-provider toggle, and a Test button (detail in [Premium TTS](#premium-tts-optional)). **Sessions** — every active terminal on one row with chevron · swatch · 8-char ID · editable label · palette dropdown (24 arrangements) · focus ★ · mute 🔊/🔇 · remove. The chevron reveals per-session voice (45 Edge voices + 6 OpenAI voices) and seven tri-state speech-includes toggles. **About** has the ASCII banner + full shortcuts.
 
 **Playback precedence** — (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
 
@@ -149,6 +151,7 @@ Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word
 - **Dot colour = session colour** (matches the emoji at the bottom of that terminal). Muted sessions don't show dots at all.
 - **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
 - **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
+- **Session tabs row** (above the dots) — when two or more terminals are active, a row of colour-pill tabs appears so you can filter the dot strip per terminal. Click a tab to see only that session's clips; click "All" to re-show everything. Each tab carries a small unread-count badge derived from the current queue state.
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
 - Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
 - Up to ~30 dots visible; beyond that the oldest drop off.
@@ -161,10 +164,13 @@ Click the gear to expand the toolbar into a panel with:
 
 - **Playback** —
   - **Speed slider** (0.5×–2.5×).
-  - **Auto-prune** on/off + seconds input (3–600 s). Off = clips stack up until you clear them manually.
+  - **Master volume** (0–100%). Drag live while a clip is playing. Heartbeat narration clips stay at 0.45× this value so the ambient-vs-content mix ratio is preserved at any master level.
+  - **Auto-prune** on/off + seconds input (3–600 s). Applies to body clips only — tool narrations (T-prefixed) and heartbeat verbs (H-prefixed) always auto-delete on play-end regardless. Off = body clips stack up until you clear them manually.
   - **Auto-continue after clicking** — when a clip you clicked ends, chain forward through the remaining clips in time order. Default on. Turn off if you want one-clip-at-a-time click-to-replay.
   - **Colour-blind friendly palette** — swap the default 8-colour palette for Paul Tol's "muted" scheme, proven distinguishable under deutan / protan / tritan colour-blindness. Default palette stays for everyone else.
+  - **Heartbeat ambient narration** — short spinner verbs ("Percolating", "Moonwalking") + thinking phrases ("Just a moment") played every ~8 s during the silent gap between you submitting a prompt and Claude's response starting. Stops the moment real response audio begins. Toggle here.
   - **Reload toolbar** button — rebuilds the UI from disk without restarting the Electron process. Same thing `Ctrl+R` does.
+- **OpenAI (premium)** — collapsible. See [Premium TTS](#premium-tts-optional) below.
 - **Sessions** — one row per active Claude Code session:
   - Coloured swatch + 8-character session ID.
   - Editable label (shows next to the emoji in that terminal's statusline).
@@ -177,7 +183,7 @@ Click the gear to expand the toolbar into a panel with:
 Click the chevron on any session row to expand its per-session controls:
 
 - **Voice for this session** — pick any of the 45 verified Edge TTS English voices. Two terminals open? Give them different voices and you'll _hear_ which one spoke without even looking. Leave on _"follow global default"_ to use the main voice.
-- **Speech includes overrides** — six tri-state toggles per session:
+- **Speech includes overrides** — seven tri-state toggles per session:
 
   | Toggle | What it controls |
   |---|---|
@@ -187,6 +193,7 @@ Click the chevron on any session row to expand its per-session controls:
   | Headings | `# Heading` lines |
   | Bullet markers | `- item` / `1. item` prefixes |
   | Image alt-text | `![alt text](url)` alt attribute |
+  | Tool-call narration | Ephemeral spoken "Reading foo.py" / "Running npm test" clips during tool chains |
 
   Each toggle is **Default** (follow global), **On** (always speak), or **Off** (always skip). Saved to the session entry in `~/.terminal-talk/session-colours.json` and applied on the next turn — no restart needed.
 
@@ -212,39 +219,58 @@ When a "hey jarvis" / `Ctrl+Shift+S` fires from somewhere outside a Claude Code 
 - **TTS**: [edge-tts](https://github.com/rany2/edge-tts) — Microsoft Edge's neural voices (45 verified English voices across UK, US, AU, IE, CA, IN, NZ, ZA, HK, SG, PH, NG, KE, TZ).
 - No accounts. No API keys.
 
-### 💳 Premium fallback (optional)
+### 💳 Premium TTS (optional)
 
-Add an [OpenAI API key](https://platform.openai.com/api-keys) and Terminal Talk falls back to OpenAI TTS (`onyx`, `shimmer`, etc.) whenever edge-tts has a network wobble. ~$0.015 per 1,000 characters.
+Add an [OpenAI API key](https://platform.openai.com/api-keys) for OpenAI TTS (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`). Use it as a fallback when edge-tts has a network wobble, or flip the preference so OpenAI is your primary voice and edge-tts becomes the fallback. ~$0.015 per 1,000 characters, billed directly by OpenAI.
 
-Set via any of:
-- `~/.terminal-talk/config.json`: `"openai_api_key": "sk-..."`
-- Environment variable: `OPENAI_API_KEY=sk-...`
-- `~/.claude/.env`: existing Claude Code setup is auto-detected
+**Easiest path — Settings panel:**
+1. Click the gear, expand **OpenAI (premium)** (collapsible header with a chevron).
+2. Paste your key into the password field, click **Save**. The input disappears once saved (a "Change key" link brings it back if you ever need to rotate).
+3. Click **Test** to confirm it works — you'll hear a short phrase in the OpenAI voice.
+4. Flip **Use OpenAI as primary** on to make OpenAI the default; leave it off to use OpenAI only as a fallback.
+
+The key is stored encrypted via [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage) (DPAPI on Windows, Keychain on Mac) at `~/.terminal-talk/openai_key.enc`. A user-ACL'd plaintext sidecar at `~/.terminal-talk/config.secrets.json` is written for the PowerShell hooks that can't reach safeStorage. Neither file is in `config.json` or git.
+
+**Headless / advanced alternatives:**
+- Environment variable `OPENAI_API_KEY=sk-...` (process-lifetime only)
+- `~/.claude/.env` — existing Claude Code setup is auto-detected
 
 ### 🎙️ Voice-in + voice-out (bonus)
 
-Install a speech-to-text tool from the table above. Say _"Claude, refactor this function"_ → Claude Code processes → Terminal Talk reads the answer back. Fully hands-free.
+Install a speech-to-text tool from the [Companion dictation tools](#companion-dictation-tools-optional) table near the bottom. Say _"Claude, refactor this function"_ → Claude Code processes → Terminal Talk reads the answer back. Fully hands-free. When you activate your dictation tool mid-playback, Terminal Talk auto-pauses so you're not talking over yourself.
 
 ---
 
 ## Configuration
 
-`~/.terminal-talk/config.json` (created on first install, preserved on re-install):
+`~/.terminal-talk/config.json` (created on first install, preserved on re-install). Every field below has a UI control in the Settings panel — hand-editing the file is only needed for headless / scripted setups:
 
 ```json
 {
   "voices": {
-    "edge_clip":      "en-GB-SoniaNeural",
-    "edge_response":  "en-GB-RyanNeural",
-    "openai_clip":    "shimmer",
-    "openai_response": "onyx"
+    "edge_clip":         "en-GB-SoniaNeural",
+    "edge_response":     "en-GB-RyanNeural",
+    "edge_question":     "en-GB-SoniaNeural",
+    "edge_notification": "en-GB-RyanNeural",
+    "openai_clip":       "shimmer",
+    "openai_response":   "onyx"
   },
   "hotkeys": {
     "toggle_window":    "Control+Shift+A",
     "speak_clipboard":  "Control+Shift+S",
-    "toggle_listening": "Control+Shift+J"
+    "toggle_listening": "Control+Shift+J",
+    "pause_resume":     "Control+Shift+P",
+    "pause_only":       "Control+Shift+O"
   },
-  "playback": { "speed": 1.25 },
+  "playback": {
+    "speed":                     1.25,
+    "master_volume":             1.0,
+    "auto_prune":                true,
+    "auto_prune_sec":            20,
+    "auto_continue_after_click": true,
+    "palette_variant":           "default",
+    "tts_provider":              "edge"
+  },
   "speech_includes": {
     "code_blocks":    false,
     "inline_code":    false,
@@ -259,10 +285,14 @@ Install a speech-to-text tool from the table above. Say _"Claude, refactor this 
 }
 ```
 
-Two newer keys worth calling out:
+Key fields worth calling out:
 
-- **`speech_includes.tool_calls`** (default `true`) — narrate each tool Claude is about to call as an ephemeral clip (e.g. _"Reading synth_turn.py"_, _"Running npm test --verbose"_, _"Searching for pattern"_). Plays at the PreToolUse hook, auto-deletes on play-end so long tool chains don't flood the dot strip. Per-session override available on the Sessions panel tri-state toggle.
-- **`heartbeat_enabled`** (default `true`) — during the silent gap between submitting a prompt and hearing Claude's response, play short spinner-verb + thinking-phrase clips every ~8 s so you know Claude is working, not stuck. Mirrors the visible mascot word-cloud. Stops immediately when response audio starts playing. Toggle on the Playback settings panel.
+- **`playback.master_volume`** (0.0–1.0, default 1.0) — master output volume. Heartbeat clips stay at 0.45× this value so the ambient mix ratio is preserved at any master level.
+- **`playback.palette_variant`** (`"default"` | `"cb"`, default `"default"`) — swaps the 8-colour session palette for Paul Tol's "muted" scheme under deutan / protan / tritan colour-blindness.
+- **`playback.tts_provider`** (`"edge"` | `"openai"`, default `"edge"`) — which TTS provider to try first. The other becomes the fallback on failure. Needs a saved `openai_api_key` (in safeStorage, NOT in this file) to set to `"openai"`.
+- **`speech_includes.tool_calls`** (default `true`) — narrate each tool Claude is about to call as an ephemeral clip (e.g. _"Reading synth_turn.py"_, _"Running npm test --verbose"_, _"Searching for pattern"_). Plays at the PreToolUse hook, auto-deletes on play-end so long tool chains don't flood the dot strip.
+- **`heartbeat_enabled`** (default `true`) — during the silent gap between submitting a prompt and hearing Claude's response, play short spinner-verb + thinking-phrase clips every ~8 s so you know Claude is working, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins.
+- **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice` and an optional `speech_includes` partial:
 
@@ -332,7 +362,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 387-test harness exercises the actual installed components:
+A 686-test harness plus 28 Playwright E2E tests exercise the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
