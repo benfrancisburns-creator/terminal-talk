@@ -9555,6 +9555,267 @@ describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
 });
 
 // =============================================================================
+// PHASE 4 — MODULE 5: audio-player.js STATE-TRANSITION VULNERABILITY PASS
+//
+// Existing EX7e covers happy paths (27 tests); Phase 2a added volume +
+// systemAutoPause/Resume (12 tests). This pass targets state-transition
+// edges that could leave the player in an inconsistent state: rapid
+// clip-swap, abort during pause, button clamping, null-audioContext
+// tolerance, ended-handler edge branches, stall timer lifecycle.
+// =============================================================================
+describe('PHASE 4 #5 — audio-player state transitions', () => {
+  const { AudioPlayer } = require(path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'));
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  function makeFakeAudio() {
+    const a = {
+      src: '', currentTime: 0, duration: NaN, playbackRate: 1,
+      paused: true, ended: false, readyState: 0, volume: 1,
+      _listeners: new Map(),
+      play: () => Promise.resolve().then(() => { a.paused = false; }),
+      pause: () => { a.paused = true; },
+      addEventListener(ev, fn) {
+        if (!a._listeners.has(ev)) a._listeners.set(ev, new Set());
+        a._listeners.get(ev).add(fn);
+      },
+      removeEventListener(ev, fn) {
+        if (a._listeners.has(ev)) a._listeners.get(ev).delete(fn);
+      },
+      fire(ev) { if (a._listeners.has(ev)) for (const fn of a._listeners.get(ev)) fn({}); },
+    };
+    return a;
+  }
+  function makeFakeRange() {
+    const r = global.document.createElement('input');
+    r.max = '1000'; r.value = '0';
+    r.getBoundingClientRect = () => ({ left: 0, width: 200, top: 0, bottom: 10, right: 200 });
+    return r;
+  }
+  function makeFakeWrap() {
+    const w = global.document.createElement('div');
+    w.getBoundingClientRect = () => ({ left: 0, width: 200, top: 0, bottom: 10, right: 200 });
+    return w;
+  }
+  function makeM5Player(overrides = {}) {
+    const audio = overrides.audio || makeFakeAudio();
+    const calls = { played: [], heard: [], removedPending: [], playStart: [], clipEnded: [], playNext: 0, renderDots: 0 };
+    const queue = overrides.queue || [];
+    const player = new AudioPlayer({
+      audio,
+      playPauseBtn: global.document.createElement('button'),
+      playIcon: global.document.createElement('span'),
+      pauseIcon: global.document.createElement('span'),
+      back10Btn: global.document.createElement('button'),
+      fwd10Btn: global.document.createElement('button'),
+      scrubber: makeFakeRange(),
+      scrubberWrap: makeFakeWrap(),
+      scrubberMascot: global.document.createElement('div'),
+      scrubberJarvis: global.document.createElement('div'),
+      timeEl: global.document.createElement('span'),
+      getPlaybackSpeed: () => 1.25,
+      getAutoContinueAfterClick: () => overrides.autoContinue !== false,
+      getQueue: () => queue,
+      getHeardPaths: () => overrides.heardPaths || new Set(),
+      markPlayed: (p) => calls.played.push(p),
+      markHeard: (p) => calls.heard.push(p),
+      removePending: (p) => calls.removedPending.push(p),
+      fmt: (s) => `${Math.floor(s || 0)}s`,
+      fileUrl: (p) => `file://${p}`,
+      isPathSessionMuted: overrides.isPathSessionMuted || (() => false),
+      isPathSessionStale: overrides.isPathSessionStale || (() => false),
+      clipPaths,
+      randomVerb: () => 'testing',
+      setDynamicStyle: () => {},
+      onPlayStart: (p, m) => calls.playStart.push([p, m]),
+      onClipEnded: (p, m) => calls.clipEnded.push([p, m]),
+      onPlayNextPending: () => { calls.playNext++; },
+      onRenderDots: () => { calls.renderDots++; },
+      audioContextFactory: overrides.audioContextFactory,
+    });
+    return { player, audio, calls, queue };
+  }
+
+  // ---- abort during systemAutoPaused ----------------------------------
+  it('abort() leaves _systemAutoPaused sticky (documented behaviour)', () => {
+    const { player, audio } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    audio.paused = false;
+    player.systemAutoPause();
+    assertEqual(player.isSystemAutoPaused(), true);
+    player.abort();
+    assertEqual(player.isSystemAutoPaused(), true,
+      'abort is user-initiated stop; the pause-flag should stay pinned so the next systemAutoResume takes the drain branch');
+    player.unmount();
+  });
+
+  // ---- Rapid swap playPath A → B mid-playback -------------------------
+  it('playPath(B) mid-playback of A: state cleanly switches to B', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }, { path: '/b.mp3', mtime: 2 }];
+    const { player, audio, calls } = makeM5Player({ queue });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    assertEqual(player.getCurrentPath(), '/a.mp3');
+    player.playPath('/b.mp3', true, true);
+    assertEqual(player.getCurrentPath(), '/b.mp3');
+    assertEqual(audio.src, 'file:///b.mp3');
+    assertTruthy(calls.played.includes('/a.mp3'));
+    assertTruthy(calls.played.includes('/b.mp3'));
+    player.unmount();
+  });
+
+  // ---- playPath on path not in queue ----------------------------------
+  it('playPath on missing path returns false and does not set currentPath', () => {
+    const { player } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    assertEqual(player.playPath('/ghost.mp3', true, true), false);
+    assertEqual(player.getCurrentPath(), null);
+    player.unmount();
+  });
+
+  it('playPath(missing) after a successful prior play: state stays on prior clip', () => {
+    const { player } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    assertEqual(player.getCurrentPath(), '/a.mp3');
+    assertEqual(player.playPath('/never.mp3', true, true), false);
+    assertEqual(player.getCurrentPath(), '/a.mp3',
+      'failed playPath must not clobber currentPath');
+    player.unmount();
+  });
+
+  // ---- Button handlers clamping ---------------------------------------
+  it('back10 clamps currentTime at 0 (no negative seek)', () => {
+    const { player, audio } = makeM5Player();
+    player.mount();
+    audio.currentTime = 5;
+    player._back10Btn._listeners.find(l => l.ev === 'click').fn();
+    assertEqual(audio.currentTime, 0);
+    player.unmount();
+  });
+
+  it('fwd10 clamps currentTime to duration (no over-seek)', () => {
+    const { player, audio } = makeM5Player();
+    player.mount();
+    audio.duration = 12;
+    audio.currentTime = 5;
+    player._fwd10Btn._listeners.find(l => l.ev === 'click').fn();
+    assertEqual(audio.currentTime, 12);
+    player.unmount();
+  });
+
+  it('fwd10 is a no-op when duration is NaN (guard against NaN seek)', () => {
+    const { player, audio } = makeM5Player();
+    player.mount();
+    audio.duration = NaN;
+    audio.currentTime = 3;
+    player._fwd10Btn._listeners.find(l => l.ev === 'click').fn();
+    assertEqual(audio.currentTime, 3);
+    player.unmount();
+  });
+
+  // ---- abortIfAutoPlayed state ----------------------------------------
+  it('abortIfAutoPlayed returns null when nothing is playing', () => {
+    const { player } = makeM5Player();
+    player.mount();
+    assertEqual(player.abortIfAutoPlayed(), null);
+    player.unmount();
+  });
+
+  it('abortIfAutoPlayed after a prior abort is a clean no-op', () => {
+    const { player } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', false);
+    player.abort();
+    assertEqual(player.abortIfAutoPlayed(), null);
+    player.unmount();
+  });
+
+  // ---- playToggleTone tolerance ---------------------------------------
+  it('playToggleTone tolerates a factory returning null', () => {
+    const { player } = makeM5Player({ audioContextFactory: () => null });
+    player.mount();
+    player.playToggleTone(true);
+    player.playToggleTone(false);
+    player.unmount();
+  });
+
+  it('playToggleTone tolerates a factory that throws', () => {
+    const { player } = makeM5Player({ audioContextFactory: () => { throw new Error('boom'); } });
+    player.mount();
+    player.playToggleTone(true);
+    player.unmount();
+  });
+
+  // ---- ended handler edge cases ---------------------------------------
+  it('ended with user-click + auto-continue ON + no forward clips: stops cleanly (no playNextPending)', () => {
+    // After the last forward clip ends, chain completes. Must not
+    // fall through to playNextPending — that would resurrect unplayed
+    // clips BEHIND the user's click-start.
+    const { player, audio, calls } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    calls.playNext = 0;
+    audio.fire('ended');
+    assertEqual(calls.playNext, 0,
+      'last user-click clip must not trigger playNextPending — chain complete');
+    assertEqual(player.getCurrentPath(), null);
+    player.unmount();
+  });
+
+  it('ended fired with no current clip does not throw', () => {
+    const { player, audio } = makeM5Player();
+    player.mount();
+    audio.fire('ended');
+    player.unmount();
+  });
+
+  // ---- systemAutoPause idempotency ------------------------------------
+  it('systemAutoPause twice: second call is a no-op, flag stays true', () => {
+    const { player, audio } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    audio.paused = false;
+    player.systemAutoPause();
+    assertEqual(player.isSystemAutoPaused(), true);
+    player.systemAutoPause();
+    assertEqual(player.isSystemAutoPaused(), true);
+    player.unmount();
+  });
+
+  // ---- isIdle consistency through transitions -------------------------
+  it('isIdle after abort is true', () => {
+    const { player } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true);
+    player.abort();
+    assertEqual(player.isIdle(), true);
+    player.unmount();
+  });
+
+  it('isIdle when audio.ended is true', () => {
+    const { player, audio } = makeM5Player({ queue: [{ path: '/a.mp3', mtime: 1 }] });
+    player.mount();
+    player.playPath('/a.mp3', true);
+    audio.ended = true;
+    assertEqual(player.isIdle(), true);
+    player.unmount();
+  });
+
+  // ---- Stall timer lifecycle ------------------------------------------
+  it('repeated stalled events do not leak timer handles (unmount clears them all)', () => {
+    const { player, audio } = makeM5Player();
+    player.mount();
+    audio.fire('stalled');
+    assertTruthy(player._stallRecoveryTimer);
+    audio.fire('stalled');
+    player.unmount();
+    assertFalsy(player._stallRecoveryTimer,
+      'unmount must clear stall timer regardless of how many stalls fired');
+  });
+});
+
+// =============================================================================
 // PHASE 4 — MODULE 4: ipc-handlers.js DEEPER VALIDATOR COVERAGE
 //
 // EX6f-1/2/3/4 combined have ~61 tests covering the happy paths and core
