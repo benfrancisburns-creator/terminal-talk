@@ -1093,28 +1093,63 @@ def _run_stream_mode(
     return body_text_chunks, updated_offsets, fully_done
 
 
-def format_elapsed_phrase(seconds: int) -> str:
+# Past-tense spinner verbs mirroring Claude Code's own terminal footer
+# ("Cooked for 49s", "Sautéed for 1m 0s"). Present-continuous forms live
+# in app/lib/heartbeat.js SPINNER_VERBS; this is the past-tense render
+# so the end-of-response clip sounds natural ("Simmered for 2 minutes"
+# not "Simmering for 2 minutes"). Sautéed explicitly included because
+# the terminal uses it and it's what Ben pointed at in the transcript.
+# Irregulars (Thinking → Thought, Doing → Done, Spinning → Spun) use
+# their standard past forms.
+PAST_TENSE_VERBS = (
+    'Accomplished', 'Actioned', 'Actualised', 'Baked', 'Booped', 'Brewed',
+    'Calculated', 'Cerebrated', 'Channelled', 'Churned', 'Clauded', 'Coalesced',
+    'Cogitated', 'Combobulated', 'Computed', 'Concocted', 'Conjured', 'Considered',
+    'Contemplated', 'Cooked', 'Crafted', 'Created', 'Crunched', 'Deciphered',
+    'Deliberated', 'Determined', 'Discombobulated', 'Divined', 'Effected',
+    'Elucidated', 'Enchanted', 'Envisioned', 'Finagled', 'Flibbertigibbeted',
+    'Forged', 'Formed', 'Frolicked', 'Generated', 'Germinated', 'Hatched',
+    'Herded', 'Honked', 'Hustled', 'Ideated', 'Imagined', 'Incubated',
+    'Inferred', 'Jived', 'Manifested', 'Marinated', 'Meandered', 'Moonwalked',
+    'Moseyed', 'Mulled', 'Mustered', 'Mused', 'Noodled', 'Percolated',
+    'Perused', 'Philosophised', 'Pontificated', 'Pondered', 'Processed',
+    'Puttered', 'Puzzled', 'Reticulated', 'Ruminated', 'Sautéed', 'Schemed',
+    'Schlepped', 'Shimmied', 'Shucked', 'Simmered', 'Smooshed', 'Spelunked',
+    'Spun', 'Stewed', 'Sussed', 'Synthesised', 'Thought', 'Tinkered',
+    'Transmuted', 'Unfurled', 'Unravelled', 'Vibed', 'Wandered', 'Whirred',
+    'Wibbled', 'Wizarded', 'Worked', 'Wrangled',
+)
+
+
+def format_elapsed_phrase(seconds: int, rng=None) -> str:
     """Humanise a turn duration for the end-of-response audio clip.
 
-    Matches the terminal's "Cooked for Xs" / "Worked for Xm Ys" style
-    Ben wanted spoken at the end of every reply. Examples:
+    Mirrors Claude Code's terminal footer "Cooked for 49s" / "Sautéed
+    for 1m 0s" pattern, but kept in natural spoken English so edge-tts
+    doesn't say "one em zero ess" for "1m 0s". Verb picked at random
+    from PAST_TENSE_VERBS per turn — matches the terminal's varied
+    spinner feel. `rng` overridable for deterministic tests.
 
-        5   → 'worked for 5 seconds'
-        59  → 'worked for 59 seconds'
-        60  → 'worked for 1 minute'
-        90  → 'worked for 1 minute and 30 seconds'
-        448 → 'worked for 7 minutes and 28 seconds'
+        5   → 'Cooked for 5 seconds'
+        59  → 'Sautéed for 59 seconds'
+        60  → 'Simmered for 1 minute'
+        90  → 'Pondered for 1 minute and 30 seconds'
+        448 → 'Thought for 7 minutes and 28 seconds'
     """
     if seconds is None or seconds < 1:
         return ''
     seconds = int(seconds)
+    if rng is None:
+        import random
+        rng = random
+    verb = rng.choice(PAST_TENSE_VERBS)
     mins, secs = divmod(seconds, 60)
     if mins == 0:
-        return f'worked for {secs} second{"" if secs == 1 else "s"}'
+        return f'{verb} for {secs} second{"" if secs == 1 else "s"}'
     if secs == 0:
-        return f'worked for {mins} minute{"" if mins == 1 else "s"}'
+        return f'{verb} for {mins} minute{"" if mins == 1 else "s"}'
     return (
-        f'worked for {mins} minute{"" if mins == 1 else "s"} '
+        f'{verb} for {mins} minute{"" if mins == 1 else "s"} '
         f'and {secs} second{"" if secs == 1 else "s"}'
     )
 

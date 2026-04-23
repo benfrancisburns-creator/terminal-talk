@@ -1763,23 +1763,52 @@ describe('SYNTH TURN SYNC STATE', () => {
     assertEqual(r.code, 2);
   });
 
-  it('format_elapsed_phrase humanises durations like the terminal does', () => {
-    // Matches Claude Code's "Cooked for Xs" / "Worked for Xm Ys" footer
-    // that Ben wanted spoken at the end of every reply.
+  it('format_elapsed_phrase humanises durations with varied past-tense verbs', () => {
+    // Matches Claude Code's terminal footer pattern ("Cooked for 49s",
+    // "Sautéed for 1m 0s") but in natural spoken English so edge-tts
+    // pronounces it correctly. Verb picked from PAST_TENSE_VERBS per
+    // turn — pass a seeded random.Random so the test is deterministic.
+    // PAST_TENSE_VERBS[0] is 'Accomplished' so we can assert exactly.
+    const runSeeded = (sec) => run(
+      `import random; print(synth_turn.format_elapsed_phrase(${sec}, rng=random.Random(0)))`
+    );
+    // Seeded rng.choice(PAST_TENSE_VERBS) with seed=0 picks a specific
+    // verb — compute it inside Python once so the asserts just check
+    // the DURATION part and the VERB prefix stays whatever seed 0 picks.
+    const picked = run(
+      `import random; r=random.Random(0); print(r.choice(synth_turn.PAST_TENSE_VERBS))`
+    );
     const cases = [
       [0,    ''],
-      [1,    'worked for 1 second'],
-      [5,    'worked for 5 seconds'],
-      [59,   'worked for 59 seconds'],
-      [60,   'worked for 1 minute'],
-      [61,   'worked for 1 minute and 1 second'],
-      [90,   'worked for 1 minute and 30 seconds'],
-      [120,  'worked for 2 minutes'],
-      [448,  'worked for 7 minutes and 28 seconds'],
+      [1,    `${picked} for 1 second`],
+      [5,    `${picked} for 5 seconds`],
+      [59,   `${picked} for 59 seconds`],
+      [60,   `${picked} for 1 minute`],
+      [61,   `${picked} for 1 minute and 1 second`],
+      [90,   `${picked} for 1 minute and 30 seconds`],
+      [120,  `${picked} for 2 minutes`],
+      [448,  `${picked} for 7 minutes and 28 seconds`],
     ];
     for (const [sec, want] of cases) {
-      const got = run(`print(synth_turn.format_elapsed_phrase(${sec}))`);
+      const got = runSeeded(sec);
       if (got !== want) throw new Error(`${sec}s → got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+  });
+
+  it('format_elapsed_phrase uses a varied verb pool (not always "Worked")', () => {
+    // Regression guard for Ben's 2026-04-23 ask: the first cut always
+    // said "worked for X" — he wanted Claude Code's spinner variety
+    // ("Cooked", "Sautéed", "Pondered"...). Assert the verb pool has
+    // at least 30 entries + contains the two he explicitly pointed at.
+    const poolSize = run(`print(len(synth_turn.PAST_TENSE_VERBS))`);
+    if (Number(poolSize) < 30) {
+      throw new Error(`PAST_TENSE_VERBS should have ≥ 30 entries, got ${poolSize}`);
+    }
+    const hasKeyVerbs = run(
+      `print('Sautéed' in synth_turn.PAST_TENSE_VERBS and 'Cooked' in synth_turn.PAST_TENSE_VERBS)`
+    );
+    if (hasKeyVerbs !== 'True') {
+      throw new Error(`PAST_TENSE_VERBS must include Sautéed + Cooked (got ${hasKeyVerbs})`);
     }
   });
 
