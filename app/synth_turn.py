@@ -1243,7 +1243,18 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                 if tool_idx not in announced_set:
                     new_tool_entries.append((tool_idx, tname, tinput))
 
-        if not pending and not new_tool_entries:
+        # On-stop ALWAYS owes the user a footer clip ("Cooked for 49s"
+        # etc.) when elapsed_sec is known. Without this carve-out the
+        # early-exit below fires whenever the on-stream watcher has
+        # already synthesised all body text during the turn — and the
+        # footer never gets spoken. Observed live 2026-04-23: body audio
+        # played fine, silence where the footer should have been.
+        owes_footer = (
+            mode == 'on-stop'
+            and elapsed_sec is not None
+            and elapsed_sec >= 1
+        )
+        if not pending and not new_tool_entries and not owes_footer:
             _log(f'{mode}: nothing new for {session_short}')
             return 0
 

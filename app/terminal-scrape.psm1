@@ -104,7 +104,13 @@ function Get-TerminalFooter {
         $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
     } catch { return '' }
 
-    $footerRegex = [regex]'(?m)([A-Z][a-zA-ZÀ-ſ]+) for (?:\d+m\s?)?\d+s\b'
+    # \p{L} matches any Unicode letter class, so accented verbs
+    # ("Sautéed", "Philosophised") still match without us baking a
+    # Latin-range literal into the regex. Important because this file
+    # sometimes gets read by PowerShell as Windows-1252, which mangles
+    # literal UTF-8 bytes mid-regex and throws "[x-y] range in reverse
+    # order". ASCII + \p{L} avoids that class of bug entirely.
+    $footerRegex = [regex]'(?m)([A-Z]\p{L}+) for (?:\d+m\s?)?\d+s\b'
 
     foreach ($w in $windows) {
         try {
