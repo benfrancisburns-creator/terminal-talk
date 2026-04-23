@@ -406,8 +406,12 @@ function createIpcHandlers(deps) {
           if (provider === 'openai') {
             const script = path.join(path.dirname(QUEUE_DIR), 'app', 'openai_tts.py');
             if (!fs.existsSync(script)) { resolve({ ok: false, err: 'openai_tts.py missing from install' }); return; }
-            proc = spawn('python', [script, key, openaiVoice, outPath],
-              { stdio: ['pipe', 'ignore', 'pipe'] });
+            // Pass the key via env var, not argv, so a crash / timeout
+            // stringifier can't leak it into a log or error message.
+            // Matches synth_turn._run_openai_fallback's contract.
+            const envWithKey = { ...process.env, OPENAI_API_KEY: key };
+            proc = spawn('python', [script, openaiVoice, outPath],
+              { stdio: ['pipe', 'ignore', 'pipe'], env: envWithKey });
           } else {
             const script = path.join(path.dirname(QUEUE_DIR), 'app', 'edge_tts_speak.py');
             if (!fs.existsSync(script)) { resolve({ ok: false, err: 'edge_tts_speak.py missing from install' }); return; }

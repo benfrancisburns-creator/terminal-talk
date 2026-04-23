@@ -5,15 +5,22 @@ Called by two sites:
   - ipc-handlers.js `test-openai-voice` (the Settings panel "Test" button)
 
 Both sites spawn it as:
-    python openai_tts.py <API_KEY> <VOICE> <OUT_PATH>
+    OPENAI_API_KEY=<key> python openai_tts.py <VOICE> <OUT_PATH>
 with the text to synthesise piped on stdin, and expect an mp3 written
 to OUT_PATH on exit 0. stdlib-only so there's no pip install step at
 runtime — urllib is enough for a single POST.
+
+The key is passed via the OPENAI_API_KEY env var (NOT argv) so it
+never appears in a subprocess.run TimeoutExpired exception string,
+which includes the full command and would leak the key to the hook
+log. Leaked once on 2026-04-23 before this wrapper routed the key
+off argv.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -31,10 +38,15 @@ MIN_RESPONSE_BYTES = 500
 
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
-    if len(args) != 3:
-        sys.stderr.write('usage: openai_tts.py API_KEY VOICE OUT_PATH\n')
+    if len(args) != 2:
+        sys.stderr.write('usage: OPENAI_API_KEY=<key> openai_tts.py VOICE OUT_PATH\n')
         return 2
-    api_key, voice, out_path = args
+    voice, out_path = args
+
+    api_key = os.environ.get('OPENAI_API_KEY', '').strip()
+    if not api_key:
+        sys.stderr.write('OPENAI_API_KEY env var not set\n')
+        return 2
 
     text = sys.stdin.read() or ''
     if not text.strip():

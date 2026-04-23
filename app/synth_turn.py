@@ -112,6 +112,18 @@ MAX_PARALLEL_SYNTH = 4
 # notice "oh, something's gone wrong" instead of assuming the app is frozen.
 # Responsiveness audit R4.
 SYNTH_TIMEOUT_SEC = 15
+# OpenAI's /v1/audio/speech is noticeably slower than edge-tts — short
+# prose regularly takes 5–15 s, longer chunks can run 20–30 s on a
+# congested OpenAI endpoint or a poor connection. The edge-tts cap
+# above is tight because edge-tts retries; OpenAI is single-shot per
+# invocation, so a harder cap here means every turn falls back to
+# edge-tts and the user's "Prefer OpenAI" toggle is effectively a
+# no-op. Observed 2026-04-23: every /clear turn timed out at 15 s
+# and played in Edge voice despite the toggle being on. 60 s is a
+# generous ceiling that still guarantees a stuck request can't wedge
+# a whole batch — synthesize_parallel's 2× SYNTH_TIMEOUT outer cap
+# overrides individual tasks anyway.
+SYNTH_OPENAI_TIMEOUT_SEC = 60
 
 # Lock file timeout: if another invocation is holding the lock for this
 # session longer than this, assume it's dead and proceed.
@@ -871,22 +883,47 @@ def resolve_tts_routing(config: dict) -> tuple[str, str]:
 
 def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path) -> bool:
     """OpenAI TTS synth (primary OR fallback depending on tts_provider).
-    Mirrors current Stop hook. Optional."""
+    Mirrors current Stop hook. Optional.
+
+    API key is passed to the subprocess via the OPENAI_API_KEY env var,
+    NOT argv, so a TimeoutExpired / CalledProcessError stringifier
+    can't dump the key into the hook log. (It did on 2026-04-23, one
+    turn before we moved it off argv.)
+    """
+    import os as _os
     import subprocess
     script = Path(__file__).resolve().parent / 'openai_tts.py'
     if not script.exists():
         return False
+    env = dict(_os.environ)
+    env['OPENAI_API_KEY'] = api_key
     try:
         proc = subprocess.run(
-            [sys.executable, str(script), api_key, voice, str(out_path)],
+            [sys.executable, str(script), voice, str(out_path)],
             input=sentence.encode('utf-8'),
-            timeout=SYNTH_TIMEOUT_SEC,
+            timeout=SYNTH_OPENAI_TIMEOUT_SEC,
             capture_output=True,
+            env=env,
         )
         if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 500:
             return True
+        # Failure path: scrub stderr for accidental key echoes (defence
+        # in depth — the wrapper writes to stderr, and an indiscreet
+        # traceback from urllib could in theory contain headers).
+        err = (proc.stderr.decode('utf-8', 'replace') if proc.stderr else '').strip()
+        if api_key and api_key in err:
+            err = err.replace(api_key, '<redacted>')
+        _log(f'openai fallback rc={proc.returncode} stderr={err[:200]}')
+    except subprocess.TimeoutExpired:
+        # Explicitly DO NOT log the exception object itself — Python's
+        # default repr includes the full cmd (argv) which used to
+        # contain the key. Voice + timeout is plenty to diagnose.
+        _log(f'openai fallback timeout ({SYNTH_OPENAI_TIMEOUT_SEC}s) voice={voice}')
     except Exception as e:
-        _log(f'openai fallback fail: {e}')
+        msg = str(e)
+        if api_key and api_key in msg:
+            msg = msg.replace(api_key, '<redacted>')
+        _log(f'openai fallback fail: {type(e).__name__}: {msg[:200]}')
     return False
 
 
