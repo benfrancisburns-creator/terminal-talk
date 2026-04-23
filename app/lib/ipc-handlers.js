@@ -377,8 +377,25 @@ function createIpcHandlers(deps) {
         // Fire the edge helper — which is what synth_turn.py does
         // under the hood anyway. For the OpenAI path we invoke the
         // Python wrapper the same way synth_turn does.
+        // Ride the test clip on whichever session is most recently
+        // active, so it appears as a dot in that tab and plays through
+        // the normal queue path. Previous version used a literal
+        // 'test0000' short which ISN'T valid hex — the renderer's
+        // short-extraction regex rejected it, the clip orphaned, and
+        // nothing ever played even though the mp3 was sitting in the
+        // queue dir. If no session is pinned/active (fresh install),
+        // we fall back to the first 8 hex chars of `deadbeefcafef00d`
+        // which is valid hex and will create a throwaway assignment.
+        let shortOut = 'deadbeef';
+        try {
+          const all = typeof loadAssignments === 'function' ? loadAssignments() : {};
+          const entries = Object.entries(all);
+          if (entries.length > 0) {
+            entries.sort((a, b) => (b[1].last_seen || 0) - (a[1].last_seen || 0));
+            shortOut = entries[0][0];
+          }
+        } catch {}
         const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 17);
-        const shortOut = 'test0000';  // valid 8-hex so queue file-name validator passes
         const phrase = 'Terminal Talk test, one two three.';
         const extFor = (prov) => prov === 'openai' ? 'mp3' : 'mp3';
         const outPath = path.join(QUEUE_DIR, `${ts}-0000-${shortOut}.${extFor(provider)}`);
