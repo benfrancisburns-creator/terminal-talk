@@ -87,14 +87,43 @@ try {
     $scrapeHelper = Join-Path $ttHome 'app\scrape-footer.ps1'
     if ($elapsedSec -ge 1 -and (Test-Path $scrapeHelper)) {
         $registryPathForScrape = Join-Path $ttHome 'session-colours.json'
-        $out = & powershell.exe -STA -NoProfile -ExecutionPolicy Bypass `
-            -File $scrapeHelper `
-            -SessionShort $sessionShort `
-            -RegistryPath $registryPathForScrape `
-            -ExpectedSec $elapsedSec 2>$null
-        if ($out) { $footerPhrase = [string]($out | Select-Object -First 1).Trim() }
-        if ($footerPhrase) { Log "terminal footer scraped: '$footerPhrase'" }
-        else               { Log "terminal footer scrape empty (fallback to computed phrase)" }
+        # Parent-side hard timeout on the subprocess. Observed live
+        # 2026-04-23: the scrape-footer.ps1 subprocess occasionally
+        # takes 20-30 s — assembly cold-start + UIA window enumeration
+        # + the in-helper polling loop stack up well past the 2 s
+        # MaxWaitMs that only guards the polling. Claude Code's Stop-
+        # hook timeout then kills the entire hook BEFORE it reaches
+        # the `Stop: spawned synth_turn.py` line, so NO audio (body
+        # OR footer) gets spoken for that turn. Using
+        # System.Diagnostics.Process directly gives us a proper
+        # WaitForExit(ms) with a .Kill() escape hatch; `& ...` in
+        # PowerShell has no way to enforce a timeout. 4 s is the
+        # budget: ~1 s cold-start + ~1 s assembly + the 2 s poll
+        # window — anything slower gets killed and we fall back to
+        # synth_turn.py's own computed phrase.
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName  = 'powershell.exe'
+        $psi.Arguments = "-STA -NoProfile -ExecutionPolicy Bypass -File `"$scrapeHelper`" " +
+                         "-SessionShort `"$sessionShort`" " +
+                         "-RegistryPath `"$registryPathForScrape`" " +
+                         "-ExpectedSec $elapsedSec"
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow  = $true
+        $scrapeProc = [System.Diagnostics.Process]::Start($psi)
+        $out = $null
+        $scrapeTimedOut = $false
+        if ($scrapeProc.WaitForExit(4000)) {
+            $out = $scrapeProc.StandardOutput.ReadToEnd()
+        } else {
+            try { $scrapeProc.Kill() } catch {}
+            $scrapeTimedOut = $true
+        }
+        if ($out) { $footerPhrase = [string]($out -split "`n" | Select-Object -First 1).Trim() }
+        if     ($footerPhrase)    { Log "terminal footer scraped: '$footerPhrase'" }
+        elseif ($scrapeTimedOut)  { Log "terminal footer scrape timed out after 4s (fallback to computed phrase)" }
+        else                      { Log "terminal footer scrape empty (fallback to computed phrase)" }
     }
 } catch {
     Log "terminal footer scrape failed: $($_.Exception.Message)"
