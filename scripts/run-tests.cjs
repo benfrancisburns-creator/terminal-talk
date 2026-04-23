@@ -5096,6 +5096,98 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('set-session-voice', missing, 'shimmer'), false);
     assertEqual(deps.ipcMain.invoke('set-session-include', missing, 'urls', true), false);
   });
+
+  // -----------------------------------------------------------------
+  // End-to-end settings-persistence round-trip. The 'tool_calls'
+  // regression (IPC write-gate missing the key while the UI exposed
+  // it and the disk sanitiser accepted it) hid in the gap between
+  // three components: sessions-table.js emits a set-session-include
+  // IPC call → ipc-handlers.js validates + writes via saveAssignments
+  // → main.js sanitiseEntry drops anything it doesn't recognise on
+  // read. If any one of those three layers rejects a field the other
+  // two accept, the setting appears to work (in-memory state mutates)
+  // but silently resets the next time queue-updated re-hydrates
+  // sessionAssignments from disk.
+  //
+  // This test exercises the full write-then-reload cycle for every
+  // per-session setting the UI exposes: label, palette index, focus,
+  // muted, voice, and all 7 speech-includes keys. It asserts each
+  // value is present AFTER a JSON.stringify → JSON.parse → sanitise
+  // round-trip, which is what actually happens when the registry
+  // file is written to disk and read back by loadAssignments.
+  // -----------------------------------------------------------------
+  it('every per-session setting survives a disk round-trip (write → load → sanitise)', () => {
+    const fs = require('fs');
+    // Pull the real sanitiseEntry body + its dependent constants from
+    // main.js. Can't require() main.js directly — it boots Electron.
+    // Regex extraction keeps this test honest: if someone edits
+    // sanitiseEntry or VALID_INCLUDE_KEYS / VOICE_KEY_RE in main.js,
+    // the next test run picks that change up automatically.
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const voiceMatch   = mainSrc.match(/const VOICE_KEY_RE\s*=\s*\/[^\n]+/);
+    const includeMatch = mainSrc.match(/const VALID_INCLUDE_KEYS\s*=\s*new Set\([^)]+\);/);
+    const fnMatch      = mainSrc.match(/function sanitiseEntry\(e\) \{[\s\S]*?\n\}/);
+    if (!voiceMatch)   throw new Error('could not extract VOICE_KEY_RE from main.js');
+    if (!includeMatch) throw new Error('could not extract VALID_INCLUDE_KEYS from main.js');
+    if (!fnMatch)      throw new Error('could not extract sanitiseEntry body from main.js');
+    // eslint-disable-next-line no-new-func
+    const sanitiseEntry = new Function(
+      `${voiceMatch[0]}\n${includeMatch[0]}\n${fnMatch[0]}\nreturn sanitiseEntry;`
+    )();
+
+    // Seed a real entry — index is required or sanitiseEntry returns
+    // null (mirrors loadAssignments dropping malformed entries).
+    const short = 'aabbccdd';
+    const deps = mutationDeps({
+      registry: {
+        [short]: { index: 3, session_id: short, claude_pid: 0, label: '', pinned: false, last_seen: 0 },
+      },
+    });
+    createIpcHandlers(deps).register();
+
+    // Write every setting.
+    assertEqual(deps.ipcMain.invoke('set-session-label', short, 'TT Red'), true);
+    assertEqual(deps.ipcMain.invoke('set-session-index', short, 7), true);
+    assertEqual(deps.ipcMain.invoke('set-session-focus', short, true), true);
+    assertEqual(deps.ipcMain.invoke('set-session-muted', short, true), true);
+    assertEqual(deps.ipcMain.invoke('set-session-voice', short, 'en-GB-RyanNeural'), true);
+    const includeKeys = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt', 'tool_calls'];
+    for (const k of includeKeys) {
+      // Alternate true/false so we catch bugs that only treat "true"
+      // as a valid save path (`set-session-include` has an early-exit
+      // branch that differs between the two).
+      const val = includeKeys.indexOf(k) % 2 === 0;
+      assertEqual(deps.ipcMain.invoke('set-session-include', short, k, val), true);
+    }
+
+    // Simulate the disk write → disk read cycle. saveAssignments in
+    // main.js writes JSON.stringify({ assignments: all }) to tmp then
+    // os.rename; loadAssignments reads the JSON back and runs each
+    // entry through sanitiseEntry. Replicate that exact sequence.
+    const onDisk = JSON.parse(JSON.stringify({ assignments: deps._registry }));
+    const loaded = {};
+    for (const [k, v] of Object.entries(onDisk.assignments)) {
+      const clean = sanitiseEntry(v);
+      if (clean) loaded[k] = clean;
+    }
+
+    // Every setting must be present after the round-trip.
+    const e = loaded[short];
+    if (!e) throw new Error(`entry ${short} dropped by sanitiseEntry`);
+    assertEqual(e.label, 'TT Red');
+    assertEqual(e.index, 7);
+    assertEqual(e.focus, true);
+    assertEqual(e.muted, true);
+    assertEqual(e.voice, 'en-GB-RyanNeural');
+    assertEqual(e.pinned, true);  // at least one write-path auto-pinned
+    if (!e.speech_includes) throw new Error('speech_includes dropped entirely on round-trip');
+    for (const k of includeKeys) {
+      const expected = includeKeys.indexOf(k) % 2 === 0;
+      if (e.speech_includes[k] !== expected) {
+        throw new Error(`speech_includes.${k}: expected ${expected}, got ${e.speech_includes[k]} after round-trip`);
+      }
+    }
+  });
 });
 
 describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
