@@ -212,11 +212,26 @@
     // System-initiated pause — call when another app grabs the mic
     // (Wispr Flow, Windows Voice Access, VoIP, etc.) via the main-side
     // mic-watcher. Sets _systemAutoPaused so systemAutoResume() later
-    // knows to pick playback back up from the exact same point.
+    // knows to pick playback back up from the exact same point AND
+    // so the heartbeat timer / playPath guard can see the capture.
+    //
+    // The flag represents "external app is using the mic", NOT "we
+    // paused something". Those are related but distinct — on a silent
+    // stretch there's nothing playing to pause, but heartbeat + any
+    // inbound clip must still be suppressed. Previous version (pre-
+    // 2026-04-24) only set the flag when there was a live audio
+    // element to pause, so heartbeat fired over Wispr Flow dictation
+    // during response-silence windows. Observed live 2026-04-23:
+    //   22:59:12 MIC_CAPTURED Wispr Flow
+    //   22:59:15 heartbeat: "Working"     ← race: flag never set
+    //   22:59:23 MIC_RELEASED
     systemAutoPause() {
+      this._systemAutoPaused = true;
+      // Pause the in-flight clip if there is one. Guarded because
+      // pausing an ended / src-less <audio> is a no-op in Chromium
+      // but pause() throws NotAllowedError mid-teardown in rare races.
       if (!this._audio || !this._audio.src || this._audio.ended) return;
       if (this._audio.paused) return;
-      this._systemAutoPaused = true;
       try { this._audio.pause(); } catch {}
     }
 

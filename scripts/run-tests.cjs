@@ -8066,12 +8066,36 @@ describe('EX7e — AudioPlayer', () => {
     player.unmount();
   });
 
-  it('systemAutoPause is a no-op when nothing is playing', () => {
+  it('systemAutoPause arms the flag even when nothing is playing (heartbeat-gate fix)', () => {
+    // HB4 race fix (2026-04-24): the flag represents "external app is
+    // using the mic", not "we paused something". Previous behaviour
+    // bailed early when no clip was loaded, leaving
+    // isSystemAutoPaused=false — so heartbeat + inbound clips still
+    // fired over the user's dictation. Observed live 2026-04-23:
+    //   22:59:12 MIC_CAPTURED Wispr Flow
+    //   22:59:15 heartbeat fires (flag still false)
+    //   22:59:23 MIC_RELEASED
     const { player } = makePlayer();
     player.mount();
     player.systemAutoPause();
-    assertEqual(player.isSystemAutoPaused(), false,
-      'no clip loaded — flag must not arm');
+    assertEqual(player.isSystemAutoPaused(), true,
+      'flag must arm on mic capture regardless of current playback state');
+    player.unmount();
+  });
+
+  it('systemAutoPause with nothing playing does not try to pause the (empty) element', () => {
+    // Belt-and-braces: setting the flag is unconditional, but we
+    // must not invoke audio.pause() on a never-loaded element — that
+    // has no effect on Chromium but we want an explicit contract so
+    // a future refactor doesn't accidentally make it into a warning.
+    const { player, audio } = makePlayer();
+    player.mount();
+    audio.paused = true;   // fresh element is "paused" by default
+    let pauseCalled = false;
+    const origPause = audio.pause;
+    audio.pause = () => { pauseCalled = true; origPause.call(audio); };
+    player.systemAutoPause();
+    assertEqual(pauseCalled, false, 'systemAutoPause must not call audio.pause() when nothing is loaded');
     player.unmount();
   });
 
