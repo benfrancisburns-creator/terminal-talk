@@ -1763,6 +1763,26 @@ describe('SYNTH TURN SYNC STATE', () => {
     assertEqual(r.code, 2);
   });
 
+  it('format_elapsed_phrase humanises durations like the terminal does', () => {
+    // Matches Claude Code's "Cooked for Xs" / "Worked for Xm Ys" footer
+    // that Ben wanted spoken at the end of every reply.
+    const cases = [
+      [0,    ''],
+      [1,    'worked for 1 second'],
+      [5,    'worked for 5 seconds'],
+      [59,   'worked for 59 seconds'],
+      [60,   'worked for 1 minute'],
+      [61,   'worked for 1 minute and 1 second'],
+      [90,   'worked for 1 minute and 30 seconds'],
+      [120,  'worked for 2 minutes'],
+      [448,  'worked for 7 minutes and 28 seconds'],
+    ];
+    for (const [sec, want] of cases) {
+      const got = run(`print(synth_turn.format_elapsed_phrase(${sec}))`);
+      if (got !== want) throw new Error(`${sec}s → got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+  });
+
   it('LOCK_ACQUIRE_TIMEOUT_SEC is long enough to cover real synth runs', () => {
     // Regression guard for Ben's 2026-04-23 narration-duplication bug:
     // acquire used to time out after 2 s, shorter than a single edge-tts

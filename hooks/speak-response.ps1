@@ -46,11 +46,24 @@ if (-not ($sessionShort -match '^[a-f0-9]{8}$')) {
 # (before audio synth has time to finish). If any of the heavier work
 # below fails, the flag still gets cleared — matching the user's
 # mental model of "Claude finished, stop saying 'Percolating'".
+#
+# Also capture turn elapsed seconds: flag content = epoch seconds at
+# UserPromptSubmit (set by mark-working.ps1). synth_turn.py reads this
+# via --elapsed-sec and appends a "worked for X" clip to the end of
+# the response audio.
 $workingFlag = Join-Path $ttHome "sessions\$sessionShort-working.flag"
+$elapsedSec = 0
 try {
     if (Test-Path $workingFlag) {
+        try {
+            $startSec = [long](Get-Content $workingFlag -Raw -Encoding utf8).Trim()
+            $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
+            if ($startSec -gt 0 -and $nowSec -ge $startSec) {
+                $elapsedSec = [int]($nowSec - $startSec)
+            }
+        } catch {}
         Remove-Item -Force $workingFlag -ErrorAction SilentlyContinue
-        Log "cleared working flag for $sessionShort"
+        Log "cleared working flag for $sessionShort (elapsed ${elapsedSec}s)"
     }
 } catch {}
 
@@ -178,7 +191,8 @@ if (Test-Path $synthScript) {
             $synthScript,
             '--session', $sessionId,
             '--transcript', $transcript,
-            '--mode', 'on-stop'
+            '--mode', 'on-stop',
+            '--elapsed-sec', [string]$elapsedSec
         )
         Start-Process -FilePath 'python' -ArgumentList $spawnArgs -WindowStyle Hidden -WorkingDirectory $ttHome
         Log "Stop: spawned synth_turn.py (streaming)"

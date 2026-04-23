@@ -1093,7 +1093,33 @@ def _run_stream_mode(
     return body_text_chunks, updated_offsets, fully_done
 
 
-def run(session_id: str, transcript_path: str, mode: str) -> int:
+def format_elapsed_phrase(seconds: int) -> str:
+    """Humanise a turn duration for the end-of-response audio clip.
+
+    Matches the terminal's "Cooked for Xs" / "Worked for Xm Ys" style
+    Ben wanted spoken at the end of every reply. Examples:
+
+        5   → 'worked for 5 seconds'
+        59  → 'worked for 59 seconds'
+        60  → 'worked for 1 minute'
+        90  → 'worked for 1 minute and 30 seconds'
+        448 → 'worked for 7 minutes and 28 seconds'
+    """
+    if seconds is None or seconds < 1:
+        return ''
+    seconds = int(seconds)
+    mins, secs = divmod(seconds, 60)
+    if mins == 0:
+        return f'worked for {secs} second{"" if secs == 1 else "s"}'
+    if secs == 0:
+        return f'worked for {mins} minute{"" if mins == 1 else "s"}'
+    return (
+        f'worked for {mins} minute{"" if mins == 1 else "s"} '
+        f'and {secs} second{"" if secs == 1 else "s"}'
+    )
+
+
+def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0) -> int:
     """Returns exit code (0 on success, non-zero on unrecoverable error)."""
     if not session_id or len(session_id) < SESSIONSHORT_LEN:
         _log(f'invalid session_id: {session_id!r}')
@@ -1245,6 +1271,17 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
             if clean:
                 body_clips = group_sentences_for_tts(clean)
 
+        # End-of-response elapsed-time clip. Only appended in on-stop
+        # mode (the Stop hook is the only site that knows the turn's
+        # end). Phrased like "worked for 7 minutes and 28 seconds" —
+        # matches Claude Code's own "Cooked for 49s" terminal footer
+        # that Ben wanted in audio. Sanitise so voice-specific flags
+        # (inline_code stripping etc.) can't corrupt the phrase.
+        if mode == 'on-stop' and elapsed_sec and elapsed_sec >= 1:
+            phrase = format_elapsed_phrase(elapsed_sec)
+            if phrase:
+                body_clips.append(phrase)
+
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '
              f'{len(tool_narrations)} tool narrations')
@@ -1286,9 +1323,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--session', required=True, help='Claude Code session ID (UUID or similar)')
     p.add_argument('--transcript', required=True, help='Path to transcript JSONL')
     p.add_argument('--mode', required=True, choices=['on-tool', 'on-stop', 'on-stream'])
+    p.add_argument('--elapsed-sec', type=int, default=0,
+                   help='Seconds since UserPromptSubmit; speak-response.ps1 reads '
+                        'the working flag mtime and passes it here for the '
+                        'end-of-response "worked for X" clip (on-stop only).')
     args = p.parse_args(argv)
     try:
-        return run(args.session, args.transcript, args.mode)
+        return run(args.session, args.transcript, args.mode, elapsed_sec=args.elapsed_sec)
     except KeyboardInterrupt:
         _log('interrupted')
         return 130
