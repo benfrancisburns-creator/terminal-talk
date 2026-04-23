@@ -629,6 +629,39 @@ body.settings-open .panel { display: block; }
   margin-bottom: 8px;
 }
 
+/* Collapsible section header. Click to toggle visibility of the
+ * section-body beneath. Used in the OpenAI (premium) section — once
+ * a user has saved a working key they don't need to see the settings
+ * every time, so we collapse by default in that state. Chevron
+ * rotates to indicate expand/collapse. */
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.section-toggle:hover { color: rgba(255, 255, 255, 0.85); }
+.section-toggle .chevron { transition: transform .15s ease; }
+.section-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+.panel-section.collapsed .section-body { display: none; }
+
+/* Inline hint shown where the password input used to sit, when the
+ * key is saved but we're hiding its value. */
+.panel-hint-inline {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  flex: 1;
+}
+
 .panel-hint {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.4);

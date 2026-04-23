@@ -161,18 +161,36 @@
         </div>
       </section>
 
-      <section class="panel-section">
-        <header>OpenAI <span class="panel-header-sub">(premium)</span></header>
+      <section class="panel-section" id="openaiSection">
+        <header>
+          <button type="button" id="openaiSectionToggle" class="section-toggle" aria-expanded="true" aria-controls="openaiBody">
+            <svg class="chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <span>OpenAI <span class="panel-header-sub">(premium)</span></span>
+          </button>
+        </header>
+        <div class="section-body" id="openaiBody">
         <p class="panel-hint">
           Optional. Paste an OpenAI API key to enable OpenAI TTS as either a fallback
           (when edge-tts has a network wobble) or your primary voice. Pricing is
           ~$0.015 per 1,000 characters, billed by OpenAI on their side.
         </p>
-        <div class="row">
+        <!-- Key-input row: shown ONLY when no key is saved or the last
+             test failed. When a valid key is in place we swap in the
+             "Change key" row below to save a line of panel height. -->
+        <div class="row" id="openaiKeyInputRow">
           <label for="openaiKeyInput" title="Your key is stored encrypted (Windows DPAPI) in openai_key.enc, with a user-ACL'd plaintext sidecar at config.secrets.json that PowerShell hooks read. Neither is in config.json or git.">API key</label>
           <input type="password" id="openaiKeyInput" class="openai-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false">
           <button type="button" id="openaiKeySave"  class="text-btn">Save</button>
           <button type="button" id="openaiKeyClear" class="text-btn danger">Clear</button>
+        </div>
+        <!-- Compact replacement row shown when a key IS saved. One-
+             click to switch back to the input row if the user wants to
+             rotate the key. -->
+        <div class="row hidden" id="openaiKeyChangeRow">
+          <label>API key</label>
+          <span class="panel-hint-inline">Saved (hidden for security)</span>
+          <button type="button" id="openaiKeyChange" class="text-btn">Change key</button>
+          <button type="button" id="openaiKeyClear2" class="text-btn danger">Clear</button>
         </div>
         <div class="row">
           <label>Status</label>
@@ -194,6 +212,7 @@
           <button type="button" id="openaiTestBtn" class="text-btn" title="Synthesise a short test phrase through whichever provider is currently preferred and drop it in the queue. Confirms your key works and lets you hear the voice without waiting for a real reply.">Test</button>
           <span id="openaiTestResult" class="openai-test-result" aria-live="polite"></span>
         </div>
+        </div><!-- /#openaiBody -->
       </section>
 
       <section class="panel-section">

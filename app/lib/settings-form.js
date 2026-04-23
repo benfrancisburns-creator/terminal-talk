@@ -94,6 +94,14 @@
         openaiKeySave:    document.getElementById('openaiKeySave'),
         openaiKeyClear:   document.getElementById('openaiKeyClear'),
         openaiKeyStatus:  document.getElementById('openaiKeyStatus'),
+        // Key-saved compact row refs (the "hide input when saved" UX).
+        openaiKeyInputRow:  document.getElementById('openaiKeyInputRow'),
+        openaiKeyChangeRow: document.getElementById('openaiKeyChangeRow'),
+        openaiKeyChange:    document.getElementById('openaiKeyChange'),
+        openaiKeyClear2:    document.getElementById('openaiKeyClear2'),
+        // Section-collapse refs.
+        openaiSection:      document.getElementById('openaiSection'),
+        openaiSectionToggle: document.getElementById('openaiSectionToggle'),
         openaiPreferToggle: document.getElementById('openaiPreferToggle'),
         openaiPreferPillBox: document.getElementById('openaiPreferPillBox'),
         openaiTestBtn:    document.getElementById('openaiTestBtn'),
@@ -346,7 +354,50 @@
       const {
         openaiKeyInput, openaiKeySave, openaiKeyClear,
         openaiPreferToggle, openaiTestBtn,
+        openaiSection, openaiSectionToggle,
+        openaiKeyChange, openaiKeyClear2,
       } = this._el;
+
+      // In-memory flag: user explicitly clicked "Change key" to rotate
+      // a previously-saved key. Overrides the auto-collapse for this
+      // panel session so the input stays visible until they Save / Clear.
+      this._openaiUserWantsInput = false;
+      // Same pattern for last-test-failed: once the Test button comes
+      // back !ok, we keep the input visible + the section expanded so
+      // the user can rotate the key without hunting for a toggle.
+      this._openaiLastTestFailed = false;
+
+      // Section-collapse toggle on the OpenAI header.
+      if (openaiSectionToggle && openaiSection) {
+        this._on(openaiSectionToggle, 'click', () => {
+          const willCollapse = !openaiSection.classList.contains('collapsed');
+          openaiSection.classList.toggle('collapsed', willCollapse);
+          openaiSectionToggle.setAttribute('aria-expanded', willCollapse ? 'false' : 'true');
+        });
+      }
+
+      // "Change key" — user wants to rotate the key. Reveal the input
+      // row for this panel session.
+      if (openaiKeyChange) {
+        this._on(openaiKeyChange, 'click', () => {
+          this._openaiUserWantsInput = true;
+          this._refreshOpenAiStatus();
+          if (openaiKeyInput) openaiKeyInput.focus();
+        });
+      }
+      // Second Clear button lives on the compact row.
+      if (openaiKeyClear2) {
+        this._on(openaiKeyClear2, 'click', async () => {
+          this._setTestResult('Clearing…', 'busy');
+          await this._api.updateConfig({ openai_api_key: '' });
+          if (openaiKeyInput) openaiKeyInput.value = '';
+          await this._api.updateConfig({ playback: { tts_provider: 'edge' } });
+          this._setTestResult('Key cleared. Provider reset to Edge.', 'ok');
+          this._openaiUserWantsInput = false;
+          this._openaiLastTestFailed = false;
+          await this._refreshOpenAiStatus();
+        });
+      }
 
       if (openaiKeySave) {
         this._on(openaiKeySave, 'click', async () => {
@@ -360,6 +411,10 @@
           this._setTestResult('Saving…', 'busy');
           await this._api.updateConfig({ openai_api_key: key });
           openaiKeyInput.value = '';
+          // Fresh save — reset the UX override flags so the input row
+          // collapses back down as "saved / hidden".
+          this._openaiUserWantsInput = false;
+          this._openaiLastTestFailed = false;
           this._setTestResult('Key saved.', 'ok');
           await this._refreshOpenAiStatus();
         });
@@ -375,6 +430,8 @@
           // silently. Better to make the demotion explicit.
           await this._api.updateConfig({ playback: { tts_provider: 'edge' } });
           this._setTestResult('Key cleared. Provider reset to Edge.', 'ok');
+          this._openaiUserWantsInput = false;
+          this._openaiLastTestFailed = false;
           await this._refreshOpenAiStatus();
         });
       }
@@ -411,11 +468,24 @@
               this._setTestResult('Test rate-limited, try again in a second.', 'err');
             } else if (r.ok) {
               this._setTestResult(`OK — ${r.provider} / ${r.voice}. Listen for "Terminal Talk test…".`, 'ok');
+              this._openaiLastTestFailed = false;
+              await this._refreshOpenAiStatus();
             } else {
               this._setTestResult(`Failed — ${r.error || 'unknown error'}`, 'err');
+              // Test failed → the user needs to re-check / re-save the
+              // key. Auto-reveal the input row + ensure the section is
+              // expanded so they don't have to hunt.
+              this._openaiLastTestFailed = true;
+              if (openaiSection && openaiSection.classList.contains('collapsed')) {
+                openaiSection.classList.remove('collapsed');
+                if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'true');
+              }
+              await this._refreshOpenAiStatus();
             }
           } catch (e) {
             this._setTestResult(`Failed — ${e.message}`, 'err');
+            this._openaiLastTestFailed = true;
+            await this._refreshOpenAiStatus();
           }
         });
       }
@@ -430,7 +500,11 @@
     }
 
     async _refreshOpenAiStatus() {
-      const { openaiKeyStatus, openaiPreferToggle, openaiPreferPillBox } = this._el;
+      const {
+        openaiKeyStatus, openaiPreferToggle, openaiPreferPillBox,
+        openaiKeyInputRow, openaiKeyChangeRow,
+        openaiSection, openaiSectionToggle,
+      } = this._el;
       if (!openaiKeyStatus && !openaiPreferToggle) return;
       let saved = false;
       try {
@@ -446,11 +520,33 @@
       if (openaiPreferPillBox) {
         openaiPreferPillBox.classList.toggle('disabled', !saved);
       }
-      // If the key was just cleared and Prefer OpenAI was visually on,
-      // force the pill off so UI matches the auto-reset we did server-side.
       if (!saved && openaiPreferToggle && openaiPreferToggle.checked) {
         openaiPreferToggle.checked = false;
         this._syncPill(openaiPreferToggle);
+      }
+
+      // Row-swap: key-saved state shows the compact "Change key" row
+      // instead of the password input. Two exceptions keep the input
+      // visible even when a key IS saved:
+      //   - user just clicked "Change key" (wants to rotate)
+      //   - last Test came back failed (key might be stale/invalid)
+      const forceInputRow = this._openaiUserWantsInput || this._openaiLastTestFailed;
+      const hideInputRow = saved && !forceInputRow;
+      if (openaiKeyInputRow)  openaiKeyInputRow .classList.toggle('hidden', hideInputRow);
+      if (openaiKeyChangeRow) openaiKeyChangeRow.classList.toggle('hidden', !hideInputRow);
+
+      // Auto-collapse the whole section once the key is saved AND the
+      // last test (if any) passed. First-time / failing states stay
+      // expanded so the controls are visible. This is a one-shot on
+      // the first refresh after panel mount — a user who manually
+      // expands the section later shouldn't have it snap closed on
+      // the next queue-updated tick.
+      if (openaiSection && !this._openaiCollapseDecided) {
+        this._openaiCollapseDecided = true;
+        if (saved && !this._openaiLastTestFailed) {
+          openaiSection.classList.add('collapsed');
+          if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'false');
+        }
       }
     }
 
