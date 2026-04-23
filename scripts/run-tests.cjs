@@ -1795,6 +1795,92 @@ describe('SYNTH TURN SYNC STATE', () => {
     }
   });
 
+  it('run() prefers --footer-phrase over computed fallback when provided', () => {
+    // Ben's 2026-04-23 ask: the end-of-reply clip should say the EXACT
+    // phrase Claude Code printed to the terminal, not something we
+    // made up. speak-response.ps1 scrapes the Windows Terminal buffer
+    // via UIA and passes the phrase here as --footer-phrase; run()
+    // must use that string verbatim. This test drives run() with a
+    // fake transcript + a non-empty footer_phrase and asserts the
+    // body_clips log line reports the scraped phrase landed.
+    const tmpDir = os.tmpdir();
+    const fakeTranscript = path.join(tmpDir, `tt-footer-test-${process.pid}-${Date.now()}.jsonl`);
+    fs.writeFileSync(fakeTranscript,
+      '{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
+      'utf8');
+    // Deterministic session id so we can wipe any prior sync state.
+    const testSession = 'deadbeef-1111-2222-3333-444455556666';
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    const scrapedPhrase = 'Sauteed for 1m 0s';  // ASCII-only so PS arg parse doesn't muck about
+    const code = `
+import sys
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+# Short-circuit the actual edge-tts spawn so we don't network out during the test.
+# synthesize_parallel is the single call site for clip writing; replace with a
+# recorder that captures (phrase-list, prefix) tuples.
+captured = []
+def fake_synth(phrases, voice, short, openai_key, prefix=''):
+    captured.append((list(phrases), prefix))
+synth_turn.synthesize_parallel = fake_synth
+rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
+                    'on-stop', elapsed_sec=60, footer_phrase='${scrapedPhrase}')
+print('RC', rc)
+for ph, pref in captured:
+    print('CLIP', repr(pref), repr(ph))
+`;
+    const r = runPythonInline(code);
+    try { fs.unlinkSync(fakeTranscript); } catch {}
+    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
+    // Exactly one synthesize_parallel call, no prefix (= body clip path),
+    // containing BOTH the reply text AND the scraped footer verbatim.
+    const clips = [...r.stdout.matchAll(/^CLIP '(.*?)' (\[.*)$/gm)].map((m) => ({ prefix: m[1], list: m[2] }));
+    const body = clips.find((c) => c.prefix === '');
+    if (!body) throw new Error(`no body-clip call; stdout:\n${r.stdout}`);
+    if (!body.list.includes(scrapedPhrase)) {
+      throw new Error(`scraped footer '${scrapedPhrase}' not in body clips: ${body.list}`);
+    }
+  });
+
+  it('run() falls back to format_elapsed_phrase when footer_phrase is empty', () => {
+    const tmpDir = os.tmpdir();
+    const fakeTranscript = path.join(tmpDir, `tt-footer-fallback-${process.pid}-${Date.now()}.jsonl`);
+    fs.writeFileSync(fakeTranscript,
+      '{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
+      'utf8');
+    const testSession = 'feedface-aaaa-bbbb-cccc-dddddddddddd';
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    const code = `
+import sys, random
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+captured = []
+def fake_synth(phrases, voice, short, openai_key, prefix=''):
+    captured.append((list(phrases), prefix))
+synth_turn.synthesize_parallel = fake_synth
+# Seed random so the fallback verb is deterministic for asserting.
+random.seed(42)
+rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
+                    'on-stop', elapsed_sec=90, footer_phrase='')
+print('RC', rc)
+for ph, pref in captured:
+    print('CLIP', repr(pref), repr(ph))
+`;
+    const r = runPythonInline(code);
+    try { fs.unlinkSync(fakeTranscript); } catch {}
+    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
+    const clips = [...r.stdout.matchAll(/^CLIP '(.*?)' (\[.*)$/gm)].map((m) => ({ prefix: m[1], list: m[2] }));
+    const body = clips.find((c) => c.prefix === '');
+    if (!body) throw new Error(`no body-clip call; stdout:\n${r.stdout}`);
+    // Fallback must include the duration in words ("1 minute and 30 seconds"
+    // for elapsed_sec=90). Verb is random so we don't assert on it.
+    if (!/1 minute and 30 seconds/.test(body.list)) {
+      throw new Error(`fallback phrase not in body clips: ${body.list}`);
+    }
+  });
+
   it('format_elapsed_phrase uses a varied verb pool (not always "Worked")', () => {
     // Regression guard for Ben's 2026-04-23 ask: the first cut always
     // said "worked for X" — he wanted Claude Code's spinner variety

@@ -67,6 +67,30 @@ try {
     }
 } catch {}
 
+# Scrape Claude Code's actual terminal footer ("Cooked for 49s" /
+# "Sautéed for 1m 0s"). That phrase is render-only — never persisted
+# to jsonl or hook payload — so UIA on the Windows Terminal buffer is
+# the only path. Guarded: we only accept the scrape if its duration
+# is within 3 s of our own measured elapsedSec, so a stale scrollback
+# footer from a prior turn can't leak into this turn's audio. Empty
+# return means "fall back to synth_turn's own computed phrase".
+$footerPhrase = ''
+try {
+    $scrapeModule = Join-Path $ttHome 'app\terminal-scrape.psm1'
+    if ($elapsedSec -ge 1 -and (Test-Path $scrapeModule)) {
+        Import-Module $scrapeModule -Force -ErrorAction SilentlyContinue
+        $registryPathForScrape = Join-Path $ttHome 'session-colours.json'
+        $footerPhrase = Get-TerminalFooter `
+            -SessionShort $sessionShort `
+            -RegistryPath $registryPathForScrape `
+            -ExpectedSec $elapsedSec
+        if ($footerPhrase) { Log "terminal footer scraped: '$footerPhrase'" }
+        else               { Log "terminal footer scrape empty (fallback to computed phrase)" }
+    }
+} catch {
+    Log "terminal footer scrape failed: $($_.Exception.Message)"
+}
+
 $claudePid = 0
 try { $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId } catch {}
 
@@ -194,6 +218,10 @@ if (Test-Path $synthScript) {
             '--mode', 'on-stop',
             '--elapsed-sec', [string]$elapsedSec
         )
+        if ($footerPhrase) {
+            $spawnArgs += '--footer-phrase'
+            $spawnArgs += $footerPhrase
+        }
         Start-Process -FilePath 'python' -ArgumentList $spawnArgs -WindowStyle Hidden -WorkingDirectory $ttHome
         Log "Stop: spawned synth_turn.py (streaming)"
         exit 0

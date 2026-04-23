@@ -1154,7 +1154,8 @@ def format_elapsed_phrase(seconds: int, rng=None) -> str:
     )
 
 
-def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0) -> int:
+def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
+        footer_phrase: str = '') -> int:
     """Returns exit code (0 on success, non-zero on unrecoverable error)."""
     if not session_id or len(session_id) < SESSIONSHORT_LEN:
         _log(f'invalid session_id: {session_id!r}')
@@ -1308,12 +1309,18 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0) 
 
         # End-of-response elapsed-time clip. Only appended in on-stop
         # mode (the Stop hook is the only site that knows the turn's
-        # end). Phrased like "worked for 7 minutes and 28 seconds" —
-        # matches Claude Code's own "Cooked for 49s" terminal footer
-        # that Ben wanted in audio. Sanitise so voice-specific flags
-        # (inline_code stripping etc.) can't corrupt the phrase.
+        # end). Preference order:
+        #   1. footer_phrase — the actual string Claude Code printed to
+        #      the terminal (scraped by speak-response.ps1 via UIA over
+        #      the Windows Terminal buffer). Ben's explicit ask: match
+        #      what the terminal shows.
+        #   2. Computed fallback via format_elapsed_phrase — used when
+        #      the scrape returned empty (UIA blocked, Windows Terminal
+        #      not the host, scrape too stale vs elapsedSec, etc.).
         if mode == 'on-stop' and elapsed_sec and elapsed_sec >= 1:
-            phrase = format_elapsed_phrase(elapsed_sec)
+            phrase = footer_phrase.strip() if footer_phrase else ''
+            if not phrase:
+                phrase = format_elapsed_phrase(elapsed_sec)
             if phrase:
                 body_clips.append(phrase)
 
@@ -1362,9 +1369,16 @@ def main(argv: list[str] | None = None) -> int:
                    help='Seconds since UserPromptSubmit; speak-response.ps1 reads '
                         'the working flag mtime and passes it here for the '
                         'end-of-response "worked for X" clip (on-stop only).')
+    p.add_argument('--footer-phrase', type=str, default='',
+                   help='Verbatim footer string scraped from the Windows Terminal '
+                        'buffer (e.g. "Sautéed for 1m 0s"). Overrides the computed '
+                        'fallback when non-empty. The scrape validates freshness '
+                        'against --elapsed-sec before passing it here, so either '
+                        'this is trustworthy or it is empty.')
     args = p.parse_args(argv)
     try:
-        return run(args.session, args.transcript, args.mode, elapsed_sec=args.elapsed_sec)
+        return run(args.session, args.transcript, args.mode,
+                   elapsed_sec=args.elapsed_sec, footer_phrase=args.footer_phrase)
     except KeyboardInterrupt:
         _log('interrupted')
         return 130
