@@ -206,4 +206,34 @@ What the new combinatorial tests cover:
 
 ### Phase 4 entry state
 
-Harness sits at **541 tests, 0 gaps in the Tier-A/B/C scope, 2 documented JS↔Python drifts**. Phase 4 (function-by-function vulnerability pass) can proceed when you're ready.
+Harness sits at **541 tests, 0 gaps in the Tier-A/B/C scope, 2 documented JS↔Python drifts**. Phase 4 (function-by-function vulnerability pass) runs one module per session.
+
+### Phase 4 — Module 1 result (commit forthcoming)
+
+**Target**: `app/lib/text.js` / `stripForTTS`. Pipe for every turn's audio + every highlight-to-speak clip. Tested 2026-04-23.
+
+**29 probing tests across 7 categories**:
+
+1. **Type safety (6 tests)** — null, undefined, number, boolean, object, array. All coerce to string without throwing. The existing `String(text == null ? '' : text)` guard holds up.
+2. **Regex complexity / ReDoS (5 tests)** — 100 KB plain prose, 1000 consecutive asterisks, 1000 consecutive underscores, unclosed fence with 5000-line body, 500 alternating backticks. All complete in < 500 ms (no catastrophic backtracking on any regex).
+3. **Empty-payload corners (4 tests)** — empty fences, empty inline backticks, empty link `[](url)`, empty image `![](url)`. All handled cleanly.
+4. **Unicode fidelity (5 tests)** — CJK, emoji, Arabic RTL, zero-width joiner adjacency, astral-plane surrogate pair. All preserved.
+5. **Control chars / line endings (3 tests)** — NUL byte alongside prose, CRLF=LF equivalence, bare CR (classic-mac). All handled.
+6. **Mixed/nested markdown (3 tests)** — code fence inside bullet list, emphasis inside link text, triple-asterisk bold-italic.
+7. **Whitelist boundary + performance (3 tests)** — 30-char inline-code kept, 31-char stripped, 50 KB realistic input under 500 ms.
+
+**Result**: Zero real bugs surfaced. Module 1 is robust. Found one low-severity note:
+
+- The code-block placeholder sentinels are `\u0000CB<N>\u0000`. User input containing those exact bytes AFTER a real code fence in the same input could theoretically collide, but the `if (codeBlocks.length > 0)` guard prevents false restoration. Not a security boundary (users control their own input to TTS); no fix needed.
+
+541 → 570 tests local (580 with other terminal's concurrent work).
+
+### Phase 4 — remaining modules
+
+Recommended order for subsequent sessions (biggest attack surface first):
+
+- **Module 2**: `app/lib/palette-alloc.js` (LRU + hash-collision paths; user-intent protection recently added)
+- **Module 3**: `app/session-registry.psm1` (PID migration edge cases; `/clear` handling)
+- **Module 4**: `app/lib/ipc-handlers.js` (mutation surface; already covered, but look for missing validator branches)
+- **Module 5**: `app/lib/audio-player.js` (state transitions during scrubbing + user clicks + system pause)
+- **Module 6**: `app/lib/clip-paths.js` (path regex surface; user filenames could be adversarial)
