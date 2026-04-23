@@ -156,6 +156,41 @@
       </section>
 
       <section class="panel-section">
+        <header>OpenAI <span class="panel-header-sub">(premium)</span></header>
+        <p class="panel-hint">
+          Optional. Paste an OpenAI API key to enable OpenAI TTS as either a fallback
+          (when edge-tts has a network wobble) or your primary voice. Pricing is
+          ~$0.015 per 1,000 characters, billed by OpenAI on their side.
+        </p>
+        <div class="row">
+          <label for="openaiKeyInput" title="Your key is stored encrypted (Windows DPAPI) in openai_key.enc, with a user-ACL'd plaintext sidecar at config.secrets.json that PowerShell hooks read. Neither is in config.json or git.">API key</label>
+          <input type="password" id="openaiKeyInput" class="openai-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false">
+          <button type="button" id="openaiKeySave"  class="text-btn">Save</button>
+          <button type="button" id="openaiKeyClear" class="text-btn danger">Clear</button>
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <span id="openaiKeyStatus" class="openai-key-status" aria-live="polite">
+            <span class="status-dot" data-state="unset"></span>
+            <span class="status-text">Not set</span>
+          </span>
+        </div>
+        <div class="row">
+          <label for="openaiPreferToggle" title="When On, OpenAI TTS is the primary provider for every response, tool narration and heartbeat clip. Edge-tts is used only as a fallback if OpenAI errors out. When Off (default), edge-tts is primary and OpenAI is the fallback. Needs a saved key; without one the toggle is disabled.">Prefer OpenAI</label>
+          <div class="pill-toggle tri-ctrl" id="openaiPreferPillBox">
+            <input type="checkbox" id="openaiPreferToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Test voice</label>
+          <button type="button" id="openaiTestBtn" class="text-btn" title="Synthesise a short test phrase through whichever provider is currently preferred and drop it in the queue. Confirms your key works and lets you hear the voice without waiting for a real reply.">Test</button>
+          <span id="openaiTestResult" class="openai-test-result" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="panel-section">
         <header>Sessions</header>
         <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Claude Code sessions"></div>
       </section>

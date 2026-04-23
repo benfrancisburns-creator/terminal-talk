@@ -67,7 +67,16 @@ const DEFAULTS = {
     // on slot 5). 'cb' switches to Paul Tol's "muted" palette — proven
     // distinguishable under deutan / protan / tritan. Users opt in
     // via Settings > Playback > Colour-blind friendly palette.
-    palette_variant: 'default'
+    palette_variant: 'default',
+    // TTS provider preference.
+    //   'edge'   — try Microsoft edge-tts first (free, no key); fall back
+    //              to OpenAI only if edge errors AND a key is configured.
+    //   'openai' — try OpenAI TTS first (paid, ~$0.015 / 1000 chars);
+    //              fall back to edge-tts if OpenAI errors. Needs a saved
+    //              key; Settings greys the toggle out without one.
+    // Any other value is treated as 'edge' by the consumers
+    // (synth_turn.py + tts-helper.psm1) for forward-compat.
+    tts_provider: 'edge'
   },
   speech_includes: {
     code_blocks: false,

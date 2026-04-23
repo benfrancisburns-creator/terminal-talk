@@ -2081,7 +2081,7 @@ import synth_turn
 # synthesize_parallel is the single call site for clip writing; replace with a
 # recorder that captures (phrase-list, prefix) tuples.
 captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix=''):
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy'):
     captured.append((list(phrases), prefix))
 synth_turn.synthesize_parallel = fake_synth
 rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
@@ -2117,7 +2117,7 @@ import sys, random
 sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
 import synth_turn
 captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix=''):
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy'):
     captured.append((list(phrases), prefix))
 synth_turn.synthesize_parallel = fake_synth
 # Seed random so the fallback verb is deterministic for asserting.
@@ -2205,6 +2205,69 @@ print('RC', rc)
     try { fs.unlinkSync(lockPath); } catch {}
     if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
     if (!/RC 0/.test(r.stdout)) throw new Error(`expected RC 0, got: ${r.stdout}`);
+  });
+
+  // ---------------------------------------------------------------------
+  // OpenAI provider preference plumbing (2026-04-23).
+  //
+  // resolve_tts_routing reads playback.tts_provider + voices.openai_response
+  // off the config dict. The turn runner passes those through to
+  // synthesize_parallel, which reorders the edge-vs-openai attempt chain
+  // accordingly. These tests drive the pure resolver so we don't depend
+  // on a live edge-tts / OpenAI endpoint.
+  // ---------------------------------------------------------------------
+
+  it('resolve_tts_routing defaults to edge when tts_provider is missing', () => {
+    const out = run(`p, v = synth_turn.resolve_tts_routing({}); print(p, v)`);
+    assertEqual(out, 'edge alloy');
+  });
+
+  it('resolve_tts_routing honours an explicit "openai" choice', () => {
+    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}, 'voices': {'openai_response': 'onyx'}}); print(p, v)`);
+    assertEqual(out, 'openai onyx');
+  });
+
+  it('resolve_tts_routing normalises unknown values to edge', () => {
+    // Garbage input — e.g. legacy config, typo, hand-edit — must NOT
+    // crash and must NOT silently route to OpenAI (which would spend
+    // the user's credits unexpectedly).
+    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'premium'}}); print(p)`);
+    assertEqual(out, 'edge');
+    const out2 = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': None}}); print(p)`);
+    assertEqual(out2, 'edge');
+  });
+
+  it('resolve_tts_routing: case-insensitive provider string', () => {
+    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'OpenAI'}}); print(p)`);
+    assertEqual(out, 'openai');
+  });
+
+  it('resolve_tts_routing: openai_voice defaults to "alloy" when not set', () => {
+    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}}); print(v)`);
+    assertEqual(out, 'alloy');
+  });
+
+  it('synthesize_parallel signature accepts provider + openai_voice kwargs', () => {
+    // Guard: if someone refactors synthesize_parallel to drop these
+    // kwargs, every caller in run() starts throwing TypeError at the
+    // first synth attempt. Smoke-test the signature accepts them.
+    const out = run(`import inspect; sig = inspect.signature(synth_turn.synthesize_parallel); print('provider' in sig.parameters, 'openai_voice' in sig.parameters)`);
+    assertEqual(out, 'True True');
+  });
+
+  it('config-validate accepts the new playback.tts_provider string', () => {
+    // Keep the JS validator + Python resolver in agreement about the
+    // field being string-typed. Values other than 'edge' / 'openai'
+    // still pass validation (Python resolver normalises them) — so
+    // a stale config can't lock users out.
+    const { validateConfig } = require(path.join(__dirname, '..', 'app', 'lib', 'config-validate.js'));
+    const ok = validateConfig({ playback: { tts_provider: 'openai' } });
+    if (!ok.ok) throw new Error(`validator rejected 'openai': ${JSON.stringify(ok.violations)}`);
+    const ok2 = validateConfig({ playback: { tts_provider: 'edge' } });
+    if (!ok2.ok) throw new Error(`validator rejected 'edge': ${JSON.stringify(ok2.violations)}`);
+    // Numeric instead of string should be rejected.
+    const bad = validateConfig({ playback: { tts_provider: 42 } });
+    if (bad.ok) throw new Error(`validator must reject non-string tts_provider`);
   });
 });
 
@@ -5493,6 +5556,50 @@ describe('EX6f-1 — ipc-handlers (read-only group)', () => {
     assertEqual(deps.ipcMain.invoke('get-config'), { a: 2 });
   });
 
+  // -------------------------------------------------------------------
+  // OpenAI (premium) Settings section — get-openai-key-status + the
+  // test-openai-voice handler. Key storage + mutation still live
+  // through update-config; these two handlers are the additions.
+  // -------------------------------------------------------------------
+
+  it('get-openai-key-status returns { saved: true } when apiKeyStore has a key', () => {
+    const deps = baseDeps({
+      apiKeyStore: { get: () => 'sk-abc123', set: () => {} },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('get-openai-key-status'), { saved: true });
+  });
+
+  it('get-openai-key-status returns { saved: false } on empty / null / throw', () => {
+    for (const getImpl of [
+      () => null,
+      () => '',
+      () => { throw new Error('store read fail'); },
+    ]) {
+      const deps = baseDeps({ apiKeyStore: { get: getImpl, set: () => {} } });
+      createIpcHandlers(deps).register();
+      assertEqual(deps.ipcMain.invoke('get-openai-key-status'), { saved: false });
+    }
+  });
+
+  it('get-openai-key-status never returns the key itself', () => {
+    // Contract guard: UI status probe must never leak the key — the
+    // renderer has contextIsolation + no direct filesystem access, so
+    // the key should live only in main / apiKeyStore. A sloppy refactor
+    // that returned `{ key: 'sk-…' }` would silently expose it.
+    const deps = baseDeps({
+      apiKeyStore: { get: () => 'sk-must-not-appear-in-ipc-response', set: () => {} },
+    });
+    createIpcHandlers(deps).register();
+    const r = deps.ipcMain.invoke('get-openai-key-status');
+    const dumped = JSON.stringify(r);
+    if (dumped.includes('sk-must-not-appear')) {
+      throw new Error(`get-openai-key-status leaked the key: ${dumped}`);
+    }
+    // Exact shape: only a single `saved` boolean.
+    assertEqual(Object.keys(r).sort(), ['saved']);
+  });
+
   it('get-queue composes files + assignments', () => {
     const deps = baseDeps({
       getQueueFiles: () => ['x.mp3', 'y.mp3'],
@@ -8698,6 +8805,237 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
     if (failures.length) {
       throw new Error(`session override failed:\n  ` + failures.join('\n  '));
     }
+  });
+});
+
+// =============================================================================
+// PHASE 4 — MODULE 1: stripForTTS VULNERABILITY PASS
+//
+// Function-by-function edge-case hunt on app/lib/text.js. stripForTTS runs
+// on every Claude response + every highlight-to-speak clip. A crash here
+// means the Stop hook silently dies; a hang means the user waits for audio
+// that never arrives; a bad unicode path means garbled TTS. Audit
+// 2026-04-23 Phase 4 scope: probe every regex for backtracking, every
+// input handler for type confusion, every code path for unicode fidelity.
+// =============================================================================
+describe('PHASE 4 #1 — stripForTTS vulnerability pass', () => {
+  const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
+
+  // ---- Type safety: non-string inputs must not crash ------------------
+  it('accepts null without throwing (returns empty)', () => {
+    assertEqual(stripForTTS(null), '');
+  });
+  it('accepts undefined without throwing', () => {
+    assertEqual(stripForTTS(undefined), '');
+  });
+  it('accepts a number without throwing (coerces to string)', () => {
+    const out = stripForTTS(42);
+    assertEqual(typeof out, 'string');
+  });
+  it('accepts a boolean without throwing', () => {
+    const out = stripForTTS(true);
+    assertEqual(typeof out, 'string');
+  });
+  it('accepts an object without throwing', () => {
+    const out = stripForTTS({ foo: 1 });
+    assertEqual(typeof out, 'string');
+  });
+  it('accepts an array without throwing', () => {
+    const out = stripForTTS(['a', 'b']);
+    assertEqual(typeof out, 'string');
+  });
+
+  // ---- Regex complexity: adversarial inputs must complete quickly ------
+  // ReDoS (catastrophic backtracking) would hang the Stop hook. Claude
+  // Code kills the hook at ~60 s, so even a 30 s hang = no audio that
+  // turn. Each input below was hand-picked to pressure a specific regex.
+
+  it('100KB plain prose completes in < 500 ms', () => {
+    const input = ('Lorem ipsum dolor sit amet. ').repeat(3500);
+    const t0 = Date.now();
+    stripForTTS(input);
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `100KB prose took ${dt}ms (budget 500ms)`);
+  });
+
+  it('1000 consecutive asterisks does not backtrack catastrophically', () => {
+    const input = '*'.repeat(1000) + ' end';
+    const t0 = Date.now();
+    stripForTTS(input);
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `asterisk run took ${dt}ms (ReDoS candidate: bold/italic regex)`);
+  });
+
+  it('1000 consecutive underscores does not backtrack catastrophically', () => {
+    const input = '_'.repeat(1000) + ' end';
+    const t0 = Date.now();
+    stripForTTS(input);
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `underscore run took ${dt}ms`);
+  });
+
+  it('unclosed code fence does not hang', () => {
+    const input = '```python\n' + ('x = 1\n'.repeat(5000));
+    const t0 = Date.now();
+    const out = stripForTTS(input, { code_blocks: false });
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `unclosed fence took ${dt}ms`);
+    assertEqual(typeof out, 'string');
+  });
+
+  it('alternating backticks does not chew CPU', () => {
+    const input = '`a'.repeat(500) + '`';
+    const t0 = Date.now();
+    stripForTTS(input);
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `alternating backticks took ${dt}ms`);
+  });
+
+  // ---- Empty corners: features with empty payloads --------------------
+  it('empty code fence does not crash', () => {
+    const fence = '\u0060\u0060\u0060';
+    const out = stripForTTS(`before\n${fence}\n${fence}\nafter`);
+    assertEqual(typeof out, 'string');
+    assertTruthy(out.includes('before'));
+    assertTruthy(out.includes('after'));
+  });
+
+  it('empty inline backticks are handled safely', () => {
+    const out = stripForTTS('x `` y');
+    assertEqual(typeof out, 'string');
+  });
+
+  it('empty markdown link [](url) does not crash', () => {
+    const out = stripForTTS('hello [](http://a) world');
+    assertEqual(typeof out, 'string');
+    assertTruthy(out.includes('hello'));
+    assertTruthy(out.includes('world'));
+  });
+
+  it('empty image alt ![](url) drops cleanly with image_alt=false', () => {
+    const out = stripForTTS('x ![](http://img) y', { image_alt: false });
+    assertTruthy(out.includes('x'));
+    assertTruthy(out.includes('y'));
+    assertFalsy(out.includes('![]'));
+  });
+
+  // ---- Unicode: TTS input must preserve foreign scripts + emoji -------
+  it('CJK characters pass through unchanged', () => {
+    const out = stripForTTS('Hello 你好 world');
+    assertTruthy(out.includes('你好'), 'CJK characters must not be stripped');
+  });
+
+  it('emoji pass through unchanged', () => {
+    const out = stripForTTS('Click the 🚀 button');
+    assertTruthy(out.includes('🚀'), 'emoji must not be stripped');
+  });
+
+  it('RTL text (Arabic) passes through without corruption', () => {
+    const arabic = 'العربية';
+    const out = stripForTTS(`prefix ${arabic} suffix`);
+    assertTruthy(out.includes(arabic), `Arabic must survive: got ${out}`);
+  });
+
+  it('zero-width joiner does not break regex matching', () => {
+    const input = 'hello\u200Dworld **bold**';
+    const out = stripForTTS(input);
+    assertFalsy(out.includes('**'), 'bold markers still stripped with ZWJ nearby');
+  });
+
+  it('surrogate pair (astral plane) does not corrupt regex', () => {
+    const input = 'formula \uD835\uDC31 = 1';  // mathematical bold x
+    const out = stripForTTS(input);
+    assertTruthy(out.includes('\uD835\uDC31'),
+      'astral-plane mathematical x must survive intact');
+  });
+
+  // ---- Control chars + line endings -----------------------------------
+  it('NUL byte in input does not break the code-block placeholder system', () => {
+    // stripForTTS uses \u0000CB<N>\u0000 sentinels internally. If a
+    // user-supplied NUL byte collides with those, the placeholder
+    // restoration could replace attacker-controlled content.
+    const input = 'prose \u0000CB0\u0000 more prose';
+    const out = stripForTTS(input);
+    assertTruthy(out.includes('prose'), 'NUL byte must not break prose content');
+  });
+
+  it('CRLF line endings handled identically to LF', () => {
+    const lf   = stripForTTS('# H1\nbody\n- bullet');
+    const crlf = stripForTTS('# H1\r\nbody\r\n- bullet');
+    const norm = s => s.replace(/\s+/g, ' ').trim();
+    assertEqual(norm(lf), norm(crlf), 'CRLF and LF must produce the same spoken text');
+  });
+
+  it('bare CR line endings (old-mac style) do not crash', () => {
+    const out = stripForTTS('# H1\rbody\r- bullet');
+    assertEqual(typeof out, 'string');
+  });
+
+  // ---- Mixed / nested markdown patterns -------------------------------
+  it('code fence inside a bullet list preserves both boundary semantics', () => {
+    const fence = '\u0060\u0060\u0060';
+    const input = [
+      '- first',
+      '',
+      `${fence}python`,
+      'x = 1',
+      `${fence}`,
+      '',
+      '- second',
+    ].join('\n');
+    const out = stripForTTS(input, { bullet_markers: false });
+    assertTruthy(/first\./.test(out));
+    assertTruthy(/second\./.test(out));
+  });
+
+  it('link text containing markdown-like chars survives emphasis stripping', () => {
+    const out = stripForTTS('See [the *starred* item](http://x)');
+    assertTruthy(out.includes('starred'));
+    assertFalsy(out.includes('http'));
+  });
+
+  it('nested emphasis (***bold-italic***) strips cleanly to content', () => {
+    const out = stripForTTS('a ***very*** important b');
+    assertTruthy(out.includes('very'));
+    assertFalsy(/\*+/.test(out), 'no asterisks should leak');
+  });
+
+  // ---- Boundary cases on the inline-code prose whitelist --------------
+  it('inline-code at exact 30-char whitelist boundary: kept as prose', () => {
+    const thirty = 'abcdefghijklmnopqrstuvwxyz1234';  // 30 chars
+    assertEqual(thirty.length, 30);
+    const out = stripForTTS(`Run \`${thirty}\` cmd`, { inline_code: false });
+    assertTruthy(out.includes(thirty),
+      '30-char identifier inside backticks must be kept by the whitelist');
+  });
+
+  it('inline-code at 31-char: stripped (exceeds whitelist max)', () => {
+    const thirtyone = 'abcdefghijklmnopqrstuvwxyz12345';  // 31 chars
+    const out = stripForTTS(`Run \`${thirtyone}\` cmd`, { inline_code: false });
+    assertFalsy(out.includes(thirtyone),
+      '31-char identifier exceeds INLINE_PROSE_MAX — must be stripped');
+  });
+
+  // ---- Performance under realistic large input -----------------------
+  it('realistic 50KB mixed markdown completes in < 500 ms', () => {
+    const fence = '\u0060\u0060\u0060';
+    const chunk = [
+      '# Heading',
+      'Paragraph with `inline` code and *emphasis*.',
+      '- bullet one',
+      '- bullet two',
+      fence,
+      'function foo() { return 42; }',
+      fence,
+      '[a link](http://example.com) and a bare https://other.com/url',
+      '',
+    ].join('\n');
+    const input = chunk.repeat(500);
+    const t0 = Date.now();
+    const out = stripForTTS(input);
+    const dt = Date.now() - t0;
+    assertTruthy(dt < 500, `50KB realistic input took ${dt}ms`);
+    assertTruthy(out.length > 0);
   });
 });
 

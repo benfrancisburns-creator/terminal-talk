@@ -37,7 +37,8 @@
         "auto_prune":     { "type": "boolean", "default": true },
         "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 },
         "auto_continue_after_click": { "type": "boolean", "default": true, "description": "When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. When off, a click plays only the clicked clip." },
-        "palette_variant": { "type": "string", "enum": ["default", "cb"], "default": "default", "description": "Colour palette variant. 'default' = the standard 8-colour palette; 'cb' = colour-blind-friendly (Paul Tol's 'muted' scheme, distinguishable under deutan/protan/tritan). EX5 / H3 Option 2." }
+        "palette_variant": { "type": "string", "enum": ["default", "cb"], "default": "default", "description": "Colour palette variant. 'default' = the standard 8-colour palette; 'cb' = colour-blind-friendly (Paul Tol's 'muted' scheme, distinguishable under deutan/protan/tritan). EX5 / H3 Option 2." },
+        "tts_provider": { "type": "string", "enum": ["edge", "openai"], "default": "edge", "description": "Which TTS provider to try first. 'edge' = Microsoft edge-tts (free, no key, default). 'openai' = OpenAI TTS (paid, needs openai_api_key configured; ~$0.015 per 1,000 characters). Either way the other provider is used as a fallback if the primary errors." }
       }
     },
     "speech_includes": {

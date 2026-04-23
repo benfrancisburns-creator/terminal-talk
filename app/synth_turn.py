@@ -849,8 +849,29 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
     return False
 
 
+def resolve_tts_routing(config: dict) -> tuple[str, str]:
+    """Return (provider, openai_voice) for this turn.
+
+    provider is 'edge' or 'openai'. Anything else (malformed config,
+    missing key) gets normalised to 'edge' — Ben's default + safest
+    fallback when the toggle has an unexpected value.
+
+    openai_voice reads voices.openai_response. Keeps the voice Ben
+    picked from the dropdown when the OpenAI path fires — previously
+    hardcoded to 'alloy' no matter what he selected.
+    """
+    playback = config.get('playback') or {}
+    provider = str(playback.get('tts_provider') or 'edge').lower()
+    if provider not in ('edge', 'openai'):
+        provider = 'edge'
+    voices = config.get('voices') or {}
+    openai_voice = voices.get('openai_response') or 'alloy'
+    return provider, openai_voice
+
+
 def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path) -> bool:
-    """OpenAI TTS fallback (mirrors current Stop hook). Optional."""
+    """OpenAI TTS synth (primary OR fallback depending on tts_provider).
+    Mirrors current Stop hook. Optional."""
     import subprocess
     script = Path(__file__).resolve().parent / 'openai_tts.py'
     if not script.exists():
@@ -875,6 +896,15 @@ def synthesize_parallel(
     session_short: str,
     openai_key: str | None,
     prefix: str = '',  # e.g., 'Q-' for questions
+    # TTS routing: when `provider == 'openai'` AND `openai_key` is set,
+    # OpenAI TTS is tried FIRST with `openai_voice`, with edge-tts as
+    # the fallback. Otherwise (default) edge-tts is primary with
+    # OpenAI as the fallback — exactly the pre-2026-04-23 behaviour.
+    # `voice` stays the edge voice so existing callers don't change
+    # meaning; `openai_voice` was previously hardcoded to 'alloy' which
+    # ignored the user's Settings dropdown pick. Now honours it.
+    provider: str = 'edge',
+    openai_voice: str = 'alloy',
 ) -> int:
     """Synthesize each sentence; write to queue in order as they finish.
 
@@ -934,9 +964,19 @@ def synthesize_parallel(
 
     def _synth_task(seq: int, sentence: str) -> None:
         tmp = tmp_dir / f'{turn_ts}-{session_short}-{seq:04d}.mp3'
-        ok = _run_edge_tts(sentence, voice, tmp)
-        if not ok and openai_key:
-            ok = _run_openai_fallback(sentence, openai_key, 'alloy', tmp)
+        if provider == 'openai' and openai_key:
+            # OpenAI-primary: try OpenAI first, fall back to edge-tts on
+            # API error / rate limit / network wobble. Ben's Settings
+            # toggle "Prefer OpenAI" routes here.
+            ok = _run_openai_fallback(sentence, openai_key, openai_voice, tmp)
+            if not ok:
+                ok = _run_edge_tts(sentence, voice, tmp)
+        else:
+            # Edge-primary (default): try edge-tts first, fall back to
+            # OpenAI on failure (and only if a key is configured).
+            ok = _run_edge_tts(sentence, voice, tmp)
+            if not ok and openai_key:
+                ok = _run_openai_fallback(sentence, openai_key, openai_voice, tmp)
         with release_lock:
             results[seq] = tmp if ok else None
             _release_ready()
@@ -1016,6 +1056,7 @@ def _do_stream(
 
     config = load_config()
     voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
+    provider, openai_voice = resolve_tts_routing(config)
     if muted:
         # Don't synth, but DO advance offsets + mark done so unmute
         # picks up from current moment, not replay history.
@@ -1043,7 +1084,8 @@ def _do_stream(
         f'on-stream: {session_short} — {len(body_text_chunks)} chunk(s), '
         f'{len(all_clips)} body clips, {len(fully_done)} line(s) fully done'
     )
-    synthesize_parallel(all_clips, voice, session_short, openai_key)
+    synthesize_parallel(all_clips, voice, session_short, openai_key,
+                        provider=provider, openai_voice=openai_voice)
 
     state['partial_text_offsets'] = updated_offsets
     state['synthesized_line_indices'].extend(fully_done)
@@ -1260,6 +1302,7 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
 
         config = load_config()
         voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
+        provider, openai_voice = resolve_tts_routing(config)
 
         # Muted sessions: cut the wire. Still advance sync state for both
         # text and tool entries so that when the user unmutes we don't
@@ -1344,11 +1387,14 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         # body, so their mtimes are earlier). Tool narrations between
         # so the listener gets "Reading X" before the response prose.
         if question_sentences:
-            synthesize_parallel(question_sentences, voice, session_short, openai_key, prefix='Q-')
+            synthesize_parallel(question_sentences, voice, session_short, openai_key,
+                                prefix='Q-', provider=provider, openai_voice=openai_voice)
         if tool_narrations:
-            synthesize_parallel(tool_narrations, voice, session_short, openai_key, prefix='T-')
+            synthesize_parallel(tool_narrations, voice, session_short, openai_key,
+                                prefix='T-', provider=provider, openai_voice=openai_voice)
         if body_clips:
-            synthesize_parallel(body_clips, voice, session_short, openai_key)
+            synthesize_parallel(body_clips, voice, session_short, openai_key,
+                                provider=provider, openai_voice=openai_voice)
 
         # Update sync state. Both dimensions tracked independently:
         # synthesized_line_indices for assistant-text entries,

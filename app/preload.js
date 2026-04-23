@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld('api', {
   setSessionMuted: (shortId, muted) => ipcRenderer.invoke('set-session-muted', shortId, muted),
   setSessionFocus: (shortId, focus) => ipcRenderer.invoke('set-session-focus', shortId, focus),
   removeSession: (shortId) => ipcRenderer.invoke('remove-session', shortId),
+  // Settings panel "OpenAI (premium)" section.
+  // - getOpenAiKeyStatus: drives the "● Key set / ○ Not set" dot + the
+  //   "Prefer OpenAI" toggle enable state. Never returns the key itself.
+  // - testOpenAiVoice: "Test voice" button — synths a short known phrase
+  //   through whichever provider is currently preferred and drops the
+  //   clip into the queue, so the user hears which path fired.
+  getOpenAiKeyStatus: () => ipcRenderer.invoke('get-openai-key-status'),
+  testOpenAiVoice:    () => ipcRenderer.invoke('test-openai-voice'),
   setClickthrough: (on) => ipcRenderer.invoke('set-clickthrough', on),
   setPanelOpen: (open) => ipcRenderer.invoke('set-panel-open', open),
   // S1.1 — renderer-side error/rejection forwarding lives in main so the

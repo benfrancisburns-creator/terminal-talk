@@ -321,6 +321,89 @@ function createIpcHandlers(deps) {
       if (win && !win.isDestroyed()) win.webContents.reload();
     });
 
+    // Settings panel "OpenAI (premium)" status probe. Returns whether
+    // a key is currently saved in the apiKeyStore WITHOUT returning
+    // the key itself — renderer uses this to drive the "● Key set" /
+    // "○ Not set" status dot and to grey out the "Prefer OpenAI"
+    // toggle when no key exists. Cheap: one filesystem existence
+    // check + maybe one decrypt, never an IPC roundtrip per render.
+    ipcMain.handle('get-openai-key-status', () => {
+      try {
+        const k = apiKeyStore.get();
+        return { saved: typeof k === 'string' && k.length > 0 };
+      } catch { return { saved: false }; }
+    });
+
+    // Settings panel "Test voice" button. Synthesises a short known
+    // phrase through the currently-preferred provider (reading
+    // playback.tts_provider off live config) and writes it into the
+    // queue like any other response clip. Ben hears immediately
+    // whether his key works + which voice + which provider fired.
+    // Idempotent/re-runnable: each press produces one fresh clip.
+    //
+    // Uses the same edge_tts_speak.py + openai_tts.py wrappers
+    // synth_turn.py uses, not a new code path — keeps "test" honest.
+    ipcMain.handle('test-openai-voice', async () => {
+      if (!allowMutation('test-openai-voice')) return null;
+      try {
+        const cfg = getCFG() || {};
+        const voices = cfg.voices || {};
+        const playback = cfg.playback || {};
+        const provider = String(playback.tts_provider || 'edge').toLowerCase();
+        const edgeVoice = voices.edge_response || 'en-GB-RyanNeural';
+        const openaiVoice = voices.openai_response || 'alloy';
+        const key = apiKeyStore.get();
+        if (provider === 'openai' && !key) {
+          return { ok: false, provider: 'openai', error: 'Prefer OpenAI is on but no API key is saved.' };
+        }
+
+        // Fire the edge helper — which is what synth_turn.py does
+        // under the hood anyway. For the OpenAI path we invoke the
+        // Python wrapper the same way synth_turn does.
+        const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 17);
+        const shortOut = 'test0000';  // valid 8-hex so queue file-name validator passes
+        const phrase = 'Terminal Talk test, one two three.';
+        const extFor = (prov) => prov === 'openai' ? 'mp3' : 'mp3';
+        const outPath = path.join(QUEUE_DIR, `${ts}-0000-${shortOut}.${extFor(provider)}`);
+
+        const { spawn } = require('node:child_process');
+        const ok = await new Promise((resolve) => {
+          let proc;
+          if (provider === 'openai') {
+            const script = path.join(path.dirname(QUEUE_DIR), 'app', 'openai_tts.py');
+            if (!fs.existsSync(script)) { resolve({ ok: false, err: 'openai_tts.py missing from install' }); return; }
+            proc = spawn('python', [script, key, openaiVoice, outPath],
+              { stdio: ['pipe', 'ignore', 'pipe'] });
+          } else {
+            const script = path.join(path.dirname(QUEUE_DIR), 'app', 'edge_tts_speak.py');
+            if (!fs.existsSync(script)) { resolve({ ok: false, err: 'edge_tts_speak.py missing from install' }); return; }
+            proc = spawn('python', [script, edgeVoice, outPath],
+              { stdio: ['pipe', 'ignore', 'pipe'] });
+          }
+          let stderr = '';
+          proc.stderr.on('data', (d) => { stderr += d.toString(); });
+          proc.on('error', (e) => resolve({ ok: false, err: e.message }));
+          proc.on('close', (code) => {
+            const size = fs.existsSync(outPath) ? fs.statSync(outPath).size : 0;
+            if (code === 0 && size > 500) resolve({ ok: true });
+            else resolve({ ok: false, err: `exit ${code}, size ${size}, stderr: ${stderr.slice(0, 200)}` });
+          });
+          proc.stdin.end(phrase, 'utf-8');
+        });
+
+        if (ok.ok) {
+          notifyQueue();
+          diag(`test-openai-voice OK: provider=${provider} voice=${provider === 'openai' ? openaiVoice : edgeVoice}`);
+          return { ok: true, provider, voice: provider === 'openai' ? openaiVoice : edgeVoice };
+        }
+        diag(`test-openai-voice FAIL: ${ok.err}`);
+        return { ok: false, provider, error: ok.err };
+      } catch (e) {
+        diag(`test-openai-voice crash: ${e.message}`);
+        return { ok: false, error: e.message };
+      }
+    });
+
     // Config mutation — merges shallow sub-objects and routes
     // openai_api_key through the encrypted key store so config.json
     // never persists the plaintext secret.

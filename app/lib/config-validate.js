@@ -18,6 +18,12 @@ const RULES = [
   { path: 'playback.auto_prune_sec', type: 'number', min: 1, max: 600 },
   { path: 'playback.auto_continue_after_click', type: 'boolean' },
   { path: 'playback.palette_variant', type: 'string', maxLen: 16 },
+  // TTS provider preference. 'edge' (default) tries Microsoft edge-tts
+  // first and only falls back to OpenAI on failure. 'openai' flips the
+  // order — tries OpenAI first (needs openai_api_key set), falls back
+  // to edge-tts if OpenAI errors. Consumers (synth_turn.py +
+  // tts-helper.psm1) default to 'edge' for any unrecognised value.
+  { path: 'playback.tts_provider', type: 'string', maxLen: 16 },
   { path: 'speech_includes', type: 'object' },
   // HB1 — heartbeat toggle. Default true in DEFAULTS; users disable
   // via settings or by writing false to config.json.

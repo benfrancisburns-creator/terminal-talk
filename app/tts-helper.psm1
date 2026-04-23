@@ -129,10 +129,18 @@ function Invoke-OpenAiTts {
 function Invoke-TtsWithFallback {
     <#
     .SYNOPSIS
-    Run the canonical edge-tts → OpenAI fallback chain. Returns the path
-    to the produced audio file on success, or $null on total failure.
+    Run the canonical TTS chain. Returns the path to the produced audio
+    file on success, or $null on total failure.
 
-    `$BasePath` is the output path WITHOUT extension -- this helper adds
+    Provider order is controlled by `-Provider`:
+      'edge'   (default) — edge-tts first, OpenAI as fallback if the edge
+                          attempt fails AND an API key is configured.
+      'openai' — OpenAI first, edge-tts as fallback if OpenAI errors. A
+                 key is REQUIRED for this mode; if none is configured we
+                 silently drop back to the edge-first path so the user
+                 still gets audio rather than nothing.
+
+    `$BasePath` is the output path WITHOUT extension — this helper adds
     `.mp3` (edge) or `.wav` (OpenAI).
     #>
     param(
@@ -143,14 +151,36 @@ function Invoke-TtsWithFallback {
         [Parameter(Mandatory = $true)] [string]$BasePath,
         [string]$OpenAiApiKey,
         [string]$OpenAiInstructions = 'Speak in a calm, clear, conversational tone.',
-        [int]$OpenAiTimeoutSec = 60
+        [int]$OpenAiTimeoutSec = 60,
+        # 'edge' | 'openai'. Any other value is treated as 'edge'.
+        [string]$Provider = 'edge'
     )
+    $provider = $Provider.ToLower()
+    if ($provider -ne 'openai') { $provider = 'edge' }
+
     $mp3 = "$BasePath.mp3"
+    $wav = "$BasePath.wav"
+
+    if ($provider -eq 'openai' -and $OpenAiApiKey) {
+        # OpenAI-primary: try OpenAI first.
+        if (Invoke-OpenAiTts -ApiKey $OpenAiApiKey -Voice $OpenAiVoice -Text $Text `
+                             -OutWav $wav -Instructions $OpenAiInstructions `
+                             -TimeoutSec $OpenAiTimeoutSec) {
+            return $wav
+        }
+        # Fall through to edge on failure.
+        if (Invoke-EdgeTts -EdgeScriptPath $EdgeScriptPath -Voice $EdgeVoice -Text $Text -OutMp3 $mp3) {
+            return $mp3
+        }
+        return $null
+    }
+
+    # Edge-primary (default, also the path when openai was requested but
+    # no key is configured).
     if (Invoke-EdgeTts -EdgeScriptPath $EdgeScriptPath -Voice $EdgeVoice -Text $Text -OutMp3 $mp3) {
         return $mp3
     }
     if (-not $OpenAiApiKey) { return $null }
-    $wav = "$BasePath.wav"
     if (Invoke-OpenAiTts -ApiKey $OpenAiApiKey -Voice $OpenAiVoice -Text $Text `
                          -OutWav $wav -Instructions $OpenAiInstructions `
                          -TimeoutSec $OpenAiTimeoutSec) {

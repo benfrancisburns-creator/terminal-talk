@@ -82,6 +82,15 @@
         voiceEdgeClip:    document.getElementById('voiceEdgeClip'),
         voiceOaiResp:     document.getElementById('voiceOpenaiResponse'),
         voiceOaiClip:     document.getElementById('voiceOpenaiClip'),
+        // OpenAI (premium) Settings section.
+        openaiKeyInput:   document.getElementById('openaiKeyInput'),
+        openaiKeySave:    document.getElementById('openaiKeySave'),
+        openaiKeyClear:   document.getElementById('openaiKeyClear'),
+        openaiKeyStatus:  document.getElementById('openaiKeyStatus'),
+        openaiPreferToggle: document.getElementById('openaiPreferToggle'),
+        openaiPreferPillBox: document.getElementById('openaiPreferPillBox'),
+        openaiTestBtn:    document.getElementById('openaiTestBtn'),
+        openaiTestResult: document.getElementById('openaiTestResult'),
         // Speech-includes checkboxes follow a consistent naming scheme.
         incBoxes: {
           code_blocks:    document.getElementById('incCodeBlocks'),
@@ -102,6 +111,7 @@
       this._wireHeartbeatToggle();
       this._wireVoiceSelects();
       this._wireIncludeBoxes();
+      this._wireOpenAiSection();
       this._loadVersion();
     }
 
@@ -118,6 +128,7 @@
       this._populateHeartbeat(cfg);
       this._populateVoiceSelects(cfg);
       this._populateIncludeBoxes(cfg);
+      this._populateOpenAi(cfg);
     }
 
     // ---- Wire-up (mount-time, idempotent) --------------------------
@@ -146,6 +157,7 @@
         this._el.continueToggle,
         this._el.paletteToggle,
         this._el.heartbeatToggle,
+        this._el.openaiPreferToggle,
       ];
       for (const input of inputs) {
         if (!input || !input.parentElement) continue;
@@ -317,6 +329,112 @@
       }
     }
 
+    // OpenAI (premium) — save/clear key + prefer toggle + test button.
+    // Key input is password-typed so it never renders plaintext on screen.
+    // Save → update-config IPC routes openai_api_key through apiKeyStore
+    // (encrypts + sidecar). Clear sends empty string which the store
+    // reads as "wipe both files". Prefer toggle sets playback.tts_provider.
+    // Test button invokes a one-shot synth through the active provider.
+    _wireOpenAiSection() {
+      const {
+        openaiKeyInput, openaiKeySave, openaiKeyClear,
+        openaiPreferToggle, openaiTestBtn,
+      } = this._el;
+
+      if (openaiKeySave) {
+        this._on(openaiKeySave, 'click', async () => {
+          if (!openaiKeyInput) return;
+          const key = (openaiKeyInput.value || '').trim();
+          if (!key) {
+            // Empty save is a user slip, not a clear. Guide, don't act.
+            this._setTestResult('Paste a key first (sk-…). Use Clear to wipe a saved key.', 'err');
+            return;
+          }
+          this._setTestResult('Saving…', 'busy');
+          await this._api.updateConfig({ openai_api_key: key });
+          openaiKeyInput.value = '';
+          this._setTestResult('Key saved.', 'ok');
+          await this._refreshOpenAiStatus();
+        });
+      }
+
+      if (openaiKeyClear) {
+        this._on(openaiKeyClear, 'click', async () => {
+          this._setTestResult('Clearing…', 'busy');
+          await this._api.updateConfig({ openai_api_key: '' });
+          if (openaiKeyInput) openaiKeyInput.value = '';
+          // If Prefer OpenAI was on, flip it off — it would otherwise
+          // route the next turn to the now-missing key and fall back
+          // silently. Better to make the demotion explicit.
+          await this._api.updateConfig({ playback: { tts_provider: 'edge' } });
+          this._setTestResult('Key cleared. Provider reset to Edge.', 'ok');
+          await this._refreshOpenAiStatus();
+        });
+      }
+
+      if (openaiPreferToggle) {
+        this._on(openaiPreferToggle, 'change', async () => {
+          const prefer = !!openaiPreferToggle.checked;
+          const provider = prefer ? 'openai' : 'edge';
+          await this._api.updateConfig({ playback: { tts_provider: provider } });
+          this._setTestResult(prefer
+            ? 'Now preferring OpenAI for all responses. Edge fallback stays on.'
+            : 'Back to Edge (free) as primary.', 'ok');
+        });
+      }
+
+      if (openaiTestBtn) {
+        this._on(openaiTestBtn, 'click', async () => {
+          this._setTestResult('Testing…', 'busy');
+          try {
+            const r = await this._api.testOpenAiVoice();
+            if (!r) {
+              this._setTestResult('Test rate-limited, try again in a second.', 'err');
+            } else if (r.ok) {
+              this._setTestResult(`OK — ${r.provider} / ${r.voice}. Listen for "Terminal Talk test…".`, 'ok');
+            } else {
+              this._setTestResult(`Failed — ${r.error || 'unknown error'}`, 'err');
+            }
+          } catch (e) {
+            this._setTestResult(`Failed — ${e.message}`, 'err');
+          }
+        });
+      }
+    }
+
+    _setTestResult(text, state) {
+      const el = this._el.openaiTestResult;
+      if (!el) return;
+      el.textContent = text;
+      if (state) el.setAttribute('data-state', state);
+      else el.removeAttribute('data-state');
+    }
+
+    async _refreshOpenAiStatus() {
+      const { openaiKeyStatus, openaiPreferToggle, openaiPreferPillBox } = this._el;
+      if (!openaiKeyStatus && !openaiPreferToggle) return;
+      let saved = false;
+      try {
+        const r = await this._api.getOpenAiKeyStatus();
+        saved = !!(r && r.saved);
+      } catch {}
+      if (openaiKeyStatus) {
+        const dot  = openaiKeyStatus.querySelector('.status-dot');
+        const text = openaiKeyStatus.querySelector('.status-text');
+        if (dot)  dot.setAttribute('data-state', saved ? 'set' : 'unset');
+        if (text) text.textContent = saved ? 'Key set' : 'Not set';
+      }
+      if (openaiPreferPillBox) {
+        openaiPreferPillBox.classList.toggle('disabled', !saved);
+      }
+      // If the key was just cleared and Prefer OpenAI was visually on,
+      // force the pill off so UI matches the auto-reset we did server-side.
+      if (!saved && openaiPreferToggle && openaiPreferToggle.checked) {
+        openaiPreferToggle.checked = false;
+        this._syncPill(openaiPreferToggle);
+      }
+    }
+
     // ---- Populate (update-time; listeners already wired) -----------
 
     _populateSpeed(cfg) {
@@ -325,6 +443,22 @@
       if (speedSlider) speedSlider.value = Math.round(speed * 100);
       if (speedValue) speedValue.textContent = `${speed.toFixed(2)}x`;
       this._onPlaybackSpeedChange(speed);
+    }
+
+    _populateOpenAi(cfg) {
+      const { openaiPreferToggle } = this._el;
+      const provider = String(
+        (cfg.playback && cfg.playback.tts_provider) || 'edge'
+      ).toLowerCase();
+      if (openaiPreferToggle) {
+        openaiPreferToggle.checked = (provider === 'openai');
+        this._syncPill(openaiPreferToggle);
+      }
+      // Async status probe doesn't await — populate is called from
+      // _onUpdate (sync) and the key-status IPC is ~1 ms anyway. This
+      // also auto-handles the "Clear key + provider reset" case so the
+      // pill's disabled state catches up on the next re-populate.
+      this._refreshOpenAiStatus();
     }
 
     _populateVolume(cfg) {

@@ -675,6 +675,73 @@ body.settings-open .panel { display: block; }
   line-height: 1.2;
 }
 
+/* OpenAI (premium) section — Settings panel. Same row/label grid as the
+   Playback rows; adds a masked key input, a status dot, and the test
+   result inline text. Kept self-contained so the existing panel layout
+   doesn't need any generic rule changes. */
+.panel-section header .panel-header-sub {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.openai-key-input {
+  flex: 1 1 auto;
+  min-width: 140px;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.5px;
+}
+.openai-key-input:focus {
+  outline: none;
+  border-color: rgba(201, 123, 80, 0.55);
+}
+.openai-key-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.openai-key-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+.openai-key-status .status-dot[data-state="set"] {
+  background: #5bd16a;
+  box-shadow: 0 0 4px rgba(91, 209, 106, 0.6);
+}
+.openai-key-status .status-dot[data-state="unset"] {
+  background: rgba(255, 255, 255, 0.18);
+}
+/* Greyed-out "Prefer OpenAI" toggle when no key is saved. */
+.pill-toggle.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.openai-test-result {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.openai-test-result[data-state="ok"]   { color: #5bd16a; }
+.openai-test-result[data-state="err"]  { color: #e26b6b; }
+.openai-test-result[data-state="busy"] { color: rgba(255, 255, 255, 0.8); }
+.text-btn.danger {
+  color: #e26b6b;
+}
+.text-btn.danger:hover {
+  background: rgba(226, 107, 107, 0.12);
+}
+
 /* On/Off pill toggle — matches the Session-settings speech-includes
  * style (.tri-ctrl + .tri-btn). The underlying <input type=checkbox>
  * stays the source of truth; the two pill buttons just drive its
