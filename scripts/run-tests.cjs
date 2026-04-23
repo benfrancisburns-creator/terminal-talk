@@ -1762,6 +1762,55 @@ describe('SYNTH TURN SYNC STATE', () => {
     const r = runPythonInline(prelude + `sys.exit(run('bad', '/tmp/nonexistent.jsonl', 'on-stop'))`);
     assertEqual(r.code, 2);
   });
+
+  it('LOCK_ACQUIRE_TIMEOUT_SEC is long enough to cover real synth runs', () => {
+    // Regression guard for Ben's 2026-04-23 narration-duplication bug:
+    // acquire used to time out after 2 s, shorter than a single edge-tts
+    // retry burst (~15 s × 3 = 45 s worst case). Racing runs then
+    // "proceeded without" the lock and re-narrated the same tool_use
+    // entries 3-4 times. 30 s is the minimum credible floor — enough
+    // for a realistic synth cycle while staying under LOCK_STALE_SEC
+    // (60 s) so a genuinely crashed holder still gets stolen first.
+    const out = run(`print(synth_turn.LOCK_ACQUIRE_TIMEOUT_SEC, synth_turn.LOCK_STALE_SEC)`);
+    const [acquire, stale] = out.split(/\s+/).map(Number);
+    if (!Number.isFinite(acquire) || acquire < 30) {
+      throw new Error(`LOCK_ACQUIRE_TIMEOUT_SEC must be ≥ 30 (got ${acquire})`);
+    }
+    if (!Number.isFinite(stale) || stale <= acquire) {
+      throw new Error(`LOCK_STALE_SEC (${stale}) must exceed LOCK_ACQUIRE_TIMEOUT_SEC (${acquire})`);
+    }
+  });
+
+  it('lock not acquired → run() exits 0 without synthesising (no duplicate narration)', () => {
+    // Seed a stale-but-not-yet-stale lock, then invoke run() with a
+    // short acquire timeout monkeypatched down to <0.5 s so the test
+    // doesn't wait 30 s. Expect exit 0 + early "deferring to current
+    // holder" log — never the full synth pipeline.
+    const lockDir = path.join(os.homedir(), '.terminal-talk', 'sessions');
+    try { fs.mkdirSync(lockDir, { recursive: true }); } catch {}
+    // Realistic UUID-shaped session id so SESSION_SHORT_RE passes on the
+    // 8-char slice synth_turn derives from it.
+    const testSession = 'abcdef01-2345-6789-abcd-ef0123456789';
+    const lockPath = path.join(lockDir, `${testSession}-sync.lock`);
+    fs.writeFileSync(lockPath, `999999:otherhost:${Date.now()}`, 'utf8');
+
+    const code = `
+import sys
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+synth_turn.LOCK_ACQUIRE_TIMEOUT_SEC = 1  # short-circuit for test
+# Write a dummy transcript so run() gets past the path checks.
+import pathlib, tempfile
+tmp = pathlib.Path(tempfile.mkdtemp()) / 'fake.jsonl'
+tmp.write_text('{"type":"user","message":{"content":"x"}}\\n', encoding='utf-8')
+rc = synth_turn.run('${testSession}', str(tmp), 'on-tool')
+print('RC', rc)
+`;
+    const r = runPythonInline(code);
+    try { fs.unlinkSync(lockPath); } catch {}
+    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
+    if (!/RC 0/.test(r.stdout)) throw new Error(`expected RC 0, got: ${r.stdout}`);
+  });
 });
 
 describe('SYNTH TURN TEXT EXTRACTION', () => {

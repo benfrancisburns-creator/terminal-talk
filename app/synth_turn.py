@@ -117,6 +117,18 @@ SYNTH_TIMEOUT_SEC = 15
 # session longer than this, assume it's dead and proceed.
 LOCK_STALE_SEC = 60
 
+# How long to wait trying to acquire the per-session lock before giving up.
+# Previously 2 s (40 × 50 ms polling). That's shorter than the edge-tts
+# retry budget (3 attempts × 15 s = 45 s worst case), so a backlog of
+# PreToolUse fires would cascade: fire 1 holds the lock through its
+# retries, fires 2..N give up after 2 s and "proceed without" — reading
+# stale state and re-narrating tool-use entries fire 1 hadn't marked
+# announced yet. User heard the same "Reading X / Running Y" phrase 3-4×
+# per tool call. 30 s now matches real synth duration; on ultimate
+# timeout (stale-lock steal at LOCK_STALE_SEC already handled during
+# polling), the new run exits rather than duplicating work.
+LOCK_ACQUIRE_TIMEOUT_SEC = 30
+
 # Sessionshort validation: 8 hex chars. Refusing anything else stops path
 # traversal via crafted transcript paths.
 SESSION_SHORT_RE = re.compile(r'^[a-f0-9]{8}$')
@@ -230,7 +242,9 @@ class _SessionLock:
         # backup; ms timestamp disambiguates PID re-use on fast turn loops.
         payload = f'{os.getpid()}:{socket.gethostname()}:{int(time.time() * 1000)}'
         self._payload = payload
-        for _ in range(40):  # ~2s of polling
+        # Poll at 50 ms -> total attempts = timeout_sec × 20.
+        attempts = max(1, LOCK_ACQUIRE_TIMEOUT_SEC * 20)
+        for _ in range(attempts):
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.write(fd, payload.encode())
@@ -247,7 +261,18 @@ class _SessionLock:
                 except FileNotFoundError:
                     continue
                 time.sleep(0.05)
-        _log('could not acquire session lock; proceeding without')
+        # Couldn't acquire within timeout. Don't "proceed without" — that
+        # was the 2026-04-23 duplication bug: racing synth_turn runs each
+        # read stale state and re-narrated the same tool_use entries 3-4
+        # times per call. The current holder will mark those entries
+        # announced on its own exit; the NEXT PreToolUse fire will spawn
+        # a fresh run that sees the correct state and picks up any genuine
+        # new deltas. self.acquired stays False so the caller knows to
+        # skip its work.
+        _log(
+            f'could not acquire session lock within {LOCK_ACQUIRE_TIMEOUT_SEC}s; '
+            f'skipping this run (holder will cover these entries)'
+        )
         return self
 
     def __exit__(self, *_exc):
@@ -1088,7 +1113,17 @@ def run(session_id: str, transcript_path: str, mode: str) -> int:
         _log(f'transcript does not exist: {transcript}')
         return 2
 
-    with _SessionLock(session_id):
+    with _SessionLock(session_id) as lock:
+        # If the lock wasn't acquired within LOCK_ACQUIRE_TIMEOUT_SEC, exit
+        # early rather than racing the current holder. The holder will
+        # mark this turn's tool_use entries announced + any pending
+        # assistant text synthesized; the next PreToolUse / Stop fire will
+        # pick up any genuine new deltas with fresh state. Proceeding
+        # without the lock was the 2026-04-23 narration-duplication bug.
+        if not lock.acquired:
+            _log('lock contention -- deferring to current holder')
+            return 0
+
         entries = read_transcript_lines(transcript)
         if not entries:
             _log('no transcript entries')
