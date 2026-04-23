@@ -318,7 +318,24 @@ function createIpcHandlers(deps) {
     // window has been destroyed mid-quit.
     ipcMain.handle('reload-renderer', () => {
       const win = getWin();
-      if (win && !win.isDestroyed()) win.webContents.reload();
+      if (!win || win.isDestroyed()) return;
+      // Defensive reload-deadlock fix (2026-04-23): Chromium's
+      // setIgnoreMouseEvents flag lives on the BrowserWindow, not on
+      // the renderer content, so webContents.reload() does NOT reset
+      // it. If click-through was ON at reload time (cursor off the
+      // bar), the window stays dead-zoned through the reload; the new
+      // renderer's module-load setClickthrough(false) races main's
+      // handler registration and can land before main is ready to
+      // receive it. Net effect: toolbar visible but unclickable
+      // until something external nudges updateClickthrough() — a
+      // new queue clip, a global-hotkey show, an explicit mousemove
+      // over the bar edge. Forcing mouse events ON main-side BEFORE
+      // the reload guarantees the new renderer starts from a known
+      // interactive state regardless of what the pre-reload state
+      // was. Renderer's own updateClickthrough() takes over as soon
+      // as the first mousemove fires.
+      try { win.setIgnoreMouseEvents(false); } catch {}
+      win.webContents.reload();
     });
 
     // Settings panel "OpenAI (premium)" status probe. Returns whether
