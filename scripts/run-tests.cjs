@@ -4566,11 +4566,35 @@ describe('EX6e — ipc-validate', () => {
   });
 
   it('ALLOWED_INCLUDE_KEYS matches DEFAULTS.speech_includes shape', () => {
-    const expected = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt'];
+    const expected = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt', 'tool_calls'];
     for (const k of expected) {
       if (!ALLOWED_INCLUDE_KEYS.has(k)) throw new Error(`ALLOWED_INCLUDE_KEYS missing ${k}`);
     }
     assertEqual(ALLOWED_INCLUDE_KEYS.size, expected.length);
+  });
+
+  // Regression guard: ipc-validate's ALLOWED_INCLUDE_KEYS (the IPC
+  // write-gate) must match main.js's VALID_INCLUDE_KEYS (the disk
+  // read-sanitiser) exactly. A mismatch = "UI lets you toggle, IPC
+  // silently refuses to save". tool_calls spent weeks in that state.
+  it('ALLOWED_INCLUDE_KEYS matches VALID_INCLUDE_KEYS in app/main.js', () => {
+    const fs = require('fs');
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const m = mainSrc.match(/VALID_INCLUDE_KEYS\s*=\s*new Set\(\[([^\]]+)\]\)/);
+    if (!m) throw new Error('VALID_INCLUDE_KEYS not found in main.js');
+    const mainKeys = Array.from(m[1].matchAll(/'([^']+)'/g)).map((x) => x[1]);
+    const mainSet = new Set(mainKeys);
+    for (const k of mainKeys) {
+      if (!ALLOWED_INCLUDE_KEYS.has(k)) {
+        throw new Error(`main.js has "${k}" but ipc-validate.js ALLOWED_INCLUDE_KEYS does not`);
+      }
+    }
+    for (const k of ALLOWED_INCLUDE_KEYS) {
+      if (!mainSet.has(k)) {
+        throw new Error(`ipc-validate.js has "${k}" but main.js VALID_INCLUDE_KEYS does not`);
+      }
+    }
+    assertEqual(ALLOWED_INCLUDE_KEYS.size, mainKeys.length);
   });
 });
 
