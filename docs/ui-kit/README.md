@@ -4,8 +4,8 @@
 
 ## Files
 
-- `index.html` — the demo shell. Mounts the same DOM `app/index.html` has (by-id elements `bar`, `audio`, `dots`, `playPause`, `scrubber`, `scrubberMascot`, `scrubberJarvis`, `time`, `sessionsTable`, `speedSlider`, etc.), loads `../../app/styles.css` + `../../app/lib/palette-classes.css` + local `kit-chrome.css`, then the scripts in this order: tokens-window.js → voices-window.js → `mock-ipc.js` → `../../app/renderer.js`.
-- `mock-ipc.js` — installs `window.api` with 16 invoke handlers (`getQueue`, `deleteFile`, `hideWindow`, `getConfig`, `getStaleSessions`, `updateConfig`, `setSession*`, `removeSession`, `setClickthrough`, `setPanelOpen`, `logRendererError`) and 8 event channels (`queue-updated`, `priority-play`, `clipboard-status`, `listening-state`, `force-expand`, `set-orientation`, `toggle-pause-playback`, `pause-playback-only`). Adds an "Add fake clip / Clear queue / Toggle panel" control bar below the toolbar.
+- `index.html` — the demo shell. Mounts the same DOM `app/index.html` has (by-id elements `bar`, `audio`, `dots`, `playPause`, `scrubber`, `scrubberMascot`, `scrubberJarvis`, `time`, `sessionsTable`, `speedSlider`, `volumeSlider`, etc.), loads `../../app/styles.css` + `../../app/lib/palette-classes.css` + local `kit-chrome.css`, then the scripts in this order: tokens-window → voices-window → clip-paths → heartbeat → component → stale-session-poller → dot-strip → tabs → sessions-table → settings-form → audio-player → `mock-ipc.js` → `../../app/renderer.js`.
+- `mock-ipc.js` — installs `window.api` with the full 22-channel IPC surface (`getQueue`, `getConfig`, `getStaleSessions`, `getOpenAiKeyStatus`, `testOpenAiVoice`, `getWorkingSessions`, `getVersion`, `updateConfig`, `setSession*`, `removeSession`, `deleteFile`, `hideWindow`, `setClickthrough`, `setPanelOpen`, `logRendererError`, `reloadRenderer`, `speakHeartbeat`) plus 10 event channels (`queue-updated`, `priority-play`, `clipboard-status`, `listening-state`, `force-expand`, `set-orientation`, `toggle-pause-playback`, `pause-playback-only`, `mic-captured-elsewhere`, `mic-released`). Adds an "Add fake clip / Clear queue / Toggle panel / Reset" control bar below the toolbar.
 - `kit-chrome.css` — purple-gradient demo backdrop + control bar styling. Overrides the two `position: fixed` rules on `.bar` / `.panel` so they flow normally in the demo page.
 - `tokens.mjs` — **generated, do not hand-edit**. ESM export of `app/lib/tokens.json` for any external hand-rolled consumer. Rebuild via `node scripts/generate-tokens-css.cjs`; a drift test in `scripts/run-tests.cjs` fails if it goes out of sync with the JSON source.
 
@@ -13,8 +13,42 @@
 
 Both used by `docs/design-system/mocks-annotated.html` and `docs/design-system/components.html` when iframing this page:
 
-- `?seed=<name>` — picks the preset initial state. Valid: `idle`, `three-sessions`, `mixed-states`, `settings-panel`, `snapped-top`. Default: `three-sessions`.
+- `?seed=<name>` — picks the preset initial state. Default: `three-sessions`. Valid:
+
+  | seed | what it shows |
+  |---|---|
+  | `idle` | empty queue, panel closed, no sessions |
+  | `three-sessions` | A A A — B B B — C C run-clustered queue, oldest playing |
+  | `mixed-states` | heard + playing + queued + J-clip across four sessions |
+  | `settings-panel` | 3 sessions, panel open — good for Playback-section shots |
+  | `snapped-top` | two sessions, visually docked to the top edge |
+  | `tabs-active` | 3 labelled sessions — the tabs row pops with unread badges |
+  | `settings-panel-openai-unset` | panel open, OpenAI section expanded, password input visible |
+  | `settings-panel-openai-saved` | panel open, OpenAI auto-collapsed (click chevron to screenshot expanded-saved state) |
+  | `settings-panel-sessions-expanded` | panel open, first session row auto-expanded — voice dropdown + 7 tri-state toggles visible |
+  | `heartbeat` | queue mixing body + `H-` prefix ephemeral clips |
+
 - `?chrome=0` — hides the "Add fake clip" control bar so iframed contexts render cleanly.
+
+### Screenshot recipes
+
+The kit is the source of truth for README images — rather than
+taking live-app screenshots, load the kit with the right seed and
+grab the frame. Images stay pixel-identical to what ships, and a
+product change automatically updates the kit on next sync.
+
+| docs/screenshots/ file | seed to load |
+|---|---|
+| `toolbar-idle.png` | `idle` |
+| `toolbar-three-sessions.png` | `three-sessions` |
+| `toolbar-mixed-states.png` | `mixed-states` |
+| `toolbar-settings-panel.png` | `settings-panel` |
+| `toolbar-snapped-top.png` | `snapped-top` |
+| `toolbar-tabs-with-sessions.png` | `tabs-active` |
+| `toolbar-openai-section-saved.png` | `settings-panel-openai-saved` (click chevron to expand the auto-collapsed section) |
+| `toolbar-openai-section-unset.png` | `settings-panel-openai-unset` |
+| `toolbar-sessions-panel-expanded.png` | `settings-panel-sessions-expanded` |
+| `toolbar-heartbeat.png` | `heartbeat` |
 
 ## What works / what doesn't
 

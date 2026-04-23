@@ -11,11 +11,16 @@
 // still toggle. Users who want real audio run the real app.
 //
 // Seeds (via URL param ?seed=<name>):
-//   idle            empty queue, panel closed, no sessions
-//   three-sessions  A A A — B B B — C C  run-clustered queue, playing
-//   mixed-states    heard + playing + queued + J-clip
-//   settings-panel  3 sessions, panel open, one row expanded
-//   snapped-top     same as three-sessions but visually docked top
+//   idle                              empty queue, panel closed, no sessions
+//   three-sessions                    A A A — B B B — C C run-clustered, playing
+//   mixed-states                      heard + playing + queued + J-clip
+//   settings-panel                    3 sessions, panel open
+//   snapped-top                       same as three-sessions, visually docked top
+//   tabs-active                       3 sessions with labels for the tabs row
+//   settings-panel-openai-unset       panel open, OpenAI section expanded, no key
+//   settings-panel-openai-saved       panel open, OpenAI auto-collapsed (saved key)
+//   settings-panel-sessions-expanded  panel open, one session row auto-expanded
+//   heartbeat                         queue mixing body + H- prefix ephemeral clips
 //
 // Pass ?chrome=0 to hide the demo scaffolding (purple gradient + add-fake
 // buttons). The mocks-annotated + components iframes use this.
@@ -101,14 +106,38 @@
       pause_resume:     'Control+Shift+P',
       pause_only:       'Control+Shift+O',
     },
-    playback: { speed: 1.25, auto_prune: true, auto_prune_sec: 20, auto_continue_after_click: true },
+    playback: {
+      speed: 1.25,
+      master_volume: 1.0,
+      auto_prune: true,
+      auto_prune_sec: 20,
+      auto_continue_after_click: true,
+      palette_variant: 'default',
+      tts_provider: 'edge',
+    },
     speech_includes: {
       code_blocks: false, inline_code: false, urls: false,
       headings: true, bullet_markers: false, image_alt: false,
+      tool_calls: true,
     },
+    heartbeat_enabled: true,
     window: null,
     openai_api_key: null,
   };
+
+  // Simulated OpenAI key store. The renderer's getOpenAiKeyStatus
+  // returns { saved: boolean } — we drive that from here rather than
+  // the config so seeds can flip the "key is saved" visual state
+  // without storing an actual key value.
+  let openaiKeySaved = false;
+
+  // App version string surfaced in the About section.
+  const KIT_VERSION = '0.4.0-kit';
+
+  // Sessions currently marked "working" (UserPromptSubmit fired, Stop
+  // hasn't). Drives heartbeat gating. Seeds set this on first render;
+  // chrome controls can toggle it to demo heartbeat behaviour.
+  let workingShorts = new Set();
 
   // Queue files — the mock's "filesystem". Each has shape the renderer
   // expects from getQueue: { path, mtime } (duration is derived by the
@@ -225,6 +254,77 @@
         ],
       };
     }
+    // --- 2026-04-24: seeds for the screenshot shot list --------------
+    if (name === 'tabs-active') {
+      // Multi-session queue with enough clips-per-session to show the
+      // tabs row + unread-count badges clearly. Mirrors `mixed-states`
+      // but with labels set so the tab pills are legible.
+      const A = 'abcd1234', B = 'a08f2b71', C = '7e5c9a04';
+      const s = {};
+      s[A] = { index: 0,  label: 'TT 1',         session_id: A, pinned: true, last_seen: t / 1000 };
+      s[B] = { index: 4,  label: 'mateain brain', session_id: B, pinned: true, last_seen: t / 1000 };
+      s[C] = { index: 17, label: 'Frontend',     session_id: C, pinned: true, last_seen: t / 1000 };
+      return {
+        sessions: s, staleShorts: [], panelOpen: false,
+        queueFiles: [
+          { path: makePath(A, 'resp'), mtime: t - 30000 },
+          { path: makePath(A, 'resp'), mtime: t - 28000 },
+          { path: makePath(A, 'resp'), mtime: t - 26000 },
+          { path: makePath(B, 'resp'), mtime: t - 22000 },
+          { path: makePath(B, 'resp'), mtime: t - 20000 },
+          { path: makePath(C, 'resp'), mtime: t - 14000 },
+          { path: makePath(C, 'resp'), mtime: t - 12000 },
+          { path: makePath(C, 'resp'), mtime: t - 10000 },
+        ],
+      };
+    }
+    if (name === 'settings-panel-openai-unset') {
+      // Settings panel open, OpenAI section expanded (no key saved →
+      // no auto-collapse), password input visible for the shot.
+      const seed = buildSeed('settings-panel');
+      openaiKeySaved = false;
+      return seed;
+    }
+    if (name === 'settings-panel-openai-saved') {
+      // Settings panel open with a saved key. The renderer's
+      // _populateOpenAi will auto-collapse the OpenAI section on
+      // first mount. Screenshots can be taken either collapsed
+      // (just the header visible) or post-click-to-expand (the
+      // compact "Saved (hidden for security) / Change key / Clear"
+      // row + Prefer toggle + Test button).
+      const seed = buildSeed('settings-panel');
+      openaiKeySaved = true;
+      return seed;
+    }
+    if (name === 'settings-panel-sessions-expanded') {
+      // Settings panel open with one session row auto-expanded so
+      // the voice dropdown + 7 speech-includes tri-state toggles
+      // are visible for the screenshot. Adds a post-load click.
+      const seed = buildSeed('settings-panel');
+      seed.expandSessionRow = true;  // bootstrap picks this up
+      return seed;
+    }
+    if (name === 'heartbeat') {
+      // Single session with a mix of response + H- prefix heartbeat
+      // clips in the queue, so the dot strip shows the quieter
+      // ambient clips alongside body audio.
+      const A = 'abcd1234';
+      const s = {};
+      s[A] = { index: 0, label: 'TT 1', session_id: A, pinned: true, last_seen: t / 1000 };
+      workingShorts = new Set([A]);  // gates heartbeat timer
+      const ts = String(now());
+      const pad = (n) => String(n).padStart(4, '0');
+      return {
+        sessions: s, staleShorts: [], panelOpen: false,
+        queueFiles: [
+          { path: makePath(A, 'resp'), mtime: t - 30000 },
+          { path: `${ts}-H-${pad(1)}-${A}.mp3`,         mtime: t - 20000 },
+          { path: makePath(A, 'resp'), mtime: t - 15000 },
+          { path: `${ts}-H-${pad(2)}-${A}.mp3`,         mtime: t - 8000 },
+          { path: makePath(A, 'resp'), mtime: t - 3000 },
+        ],
+      };
+    }
     // Fall-through: same as three-sessions
     return buildSeed('three-sessions');
   }
@@ -238,14 +338,16 @@
   // Event dispatch — eight channels mirroring preload.js subscribe helpers
   // ═══════════════════════════════════════════════════════════════════════
   const listeners = {
-    'queue-updated':         [],
-    'priority-play':         [],
-    'clipboard-status':      [],
-    'listening-state':       [],
-    'force-expand':          [],
-    'set-orientation':       [],
-    'toggle-pause-playback': [],
-    'pause-playback-only':   [],
+    'queue-updated':          [],
+    'priority-play':          [],
+    'clipboard-status':       [],
+    'listening-state':        [],
+    'force-expand':           [],
+    'set-orientation':        [],
+    'toggle-pause-playback':  [],
+    'pause-playback-only':    [],
+    'mic-captured-elsewhere': [],
+    'mic-released':           [],
   };
   function emit(channel, payload) {
     for (const cb of listeners[channel] || []) {
@@ -288,8 +390,24 @@
         playback: { ...config.playback, ...(partial.playback || {}) },
         speech_includes: { ...config.speech_includes, ...(partial.speech_includes || {}) },
       };
+      // OpenAI key save / clear is routed through updateConfig in the
+      // real IPC handler — mirror that here so the settings panel's
+      // save → Test flow switches the status dot live.
+      if (Object.prototype.hasOwnProperty.call(partial, 'openai_api_key')) {
+        const k = partial.openai_api_key;
+        openaiKeySaved = !!(typeof k === 'string' && k.trim());
+      }
       return Promise.resolve(config);
     },
+    // OpenAI premium-TTS Settings panel IPC:
+    //   getOpenAiKeyStatus: drives the status dot + "Prefer OpenAI"
+    //     toggle enable state. Never returns the key itself.
+    //   testOpenAiVoice: "Test voice" button. In the kit we return a
+    //     synthetic pass/fail based on whether a key is saved.
+    getOpenAiKeyStatus: () => Promise.resolve({ saved: openaiKeySaved }),
+    testOpenAiVoice:    () => Promise.resolve(openaiKeySaved
+      ? { ok: true,  provider: config.playback.tts_provider, voice: config.playback.tts_provider === 'openai' ? config.voices.openai_response : config.voices.edge_response }
+      : { ok: false, error: 'No API key saved.' }),
     setSessionLabel: (short, label) => { if (sessions[short]) sessions[short].label = label; notifyQueue(); return Promise.resolve(true); },
     setSessionIndex: (short, index) => { if (sessions[short]) { sessions[short].index = index; sessions[short].pinned = true; } notifyQueue(); return Promise.resolve(true); },
     setSessionInclude: (short, key, value) => {
@@ -323,20 +441,46 @@
     },
 
     // --- UI-only / electron-only noops -------------------------------
-    hideWindow:      () => Promise.resolve(),
-    setClickthrough: () => Promise.resolve(),
-    setPanelOpen:    () => Promise.resolve(),
+    hideWindow:       () => Promise.resolve(),
+    setClickthrough:  () => Promise.resolve(),
+    setPanelOpen:     () => Promise.resolve(),
     logRendererError: (payload) => { console.warn('[renderer-error]', payload); return Promise.resolve(); },
+    reloadRenderer:   () => { location.reload(); return Promise.resolve(); },
+    // HB1: main-side edge-tts spawner for heartbeat verbs. In the kit
+    // we fabricate an H-prefixed ephemeral clip the renderer picks up
+    // via the normal queue-updated path.
+    speakHeartbeat: (verb, sessionShort) => {
+      const short = sessionShort && /^[a-f0-9]{8}$/.test(sessionShort)
+        ? sessionShort
+        : (Object.keys(sessions)[0] || 'deadbeef');
+      const ts = String(now() - Math.floor(Math.random() * 1000));
+      const pad = (n) => String(n).padStart(4, '0');
+      queueFiles.push({
+        path: `${ts}-H-${pad(1)}-${short}.mp3`,
+        mtime: now(),
+      });
+      notifyQueue();
+      return Promise.resolve(true);
+    },
+    // HB2: heartbeat timer gates on this — only fires verbs for
+    // sessions currently marked working.
+    getWorkingSessions: () => Promise.resolve([...workingShorts]),
+    // About-panel version readout.
+    getVersion: () => Promise.resolve(KIT_VERSION),
 
     // --- event subscribers (return disposers per preload pattern) ----
-    onQueueUpdated:        (cb) => subscribe('queue-updated',         cb),
-    onPriorityPlay:        (cb) => subscribe('priority-play',         cb),
-    onClipboardStatus:     (cb) => subscribe('clipboard-status',      cb),
-    onListeningState:      (cb) => subscribe('listening-state',       cb),
-    onForceExpand:         (cb) => subscribe('force-expand',          cb),
-    onSetOrientation:      (cb) => subscribe('set-orientation',       cb),
-    onTogglePausePlayback: (cb) => subscribe('toggle-pause-playback', cb),
-    onPausePlaybackOnly:   (cb) => subscribe('pause-playback-only',   cb),
+    onQueueUpdated:         (cb) => subscribe('queue-updated',          cb),
+    onPriorityPlay:         (cb) => subscribe('priority-play',          cb),
+    onClipboardStatus:      (cb) => subscribe('clipboard-status',       cb),
+    onListeningState:       (cb) => subscribe('listening-state',        cb),
+    onForceExpand:          (cb) => subscribe('force-expand',           cb),
+    onSetOrientation:       (cb) => subscribe('set-orientation',        cb),
+    onTogglePausePlayback:  (cb) => subscribe('toggle-pause-playback',  cb),
+    onPausePlaybackOnly:    (cb) => subscribe('pause-playback-only',    cb),
+    // HB4 — mic-watcher transitions. Chrome controls can emit these
+    // to demo the auto-pause / auto-resume flow.
+    onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
+    onMicReleased:          (cb) => subscribe('mic-released',           cb),
   };
 
   function notifyQueue() {
@@ -414,6 +558,18 @@
     if (seed.panelOpen) {
       const s = document.getElementById('settingsBtn');
       if (s) setTimeout(() => s.click(), 100);
+    }
+
+    // Seed post-load actions for screenshot-targeted seeds. Done via
+    // setTimeout so the renderer has mounted + populated the Sessions
+    // table from the initial notify before we start clicking on it.
+    if (seed.expandSessionRow) {
+      setTimeout(() => {
+        // First session-row chevron; renderer renders these as
+        // <button class="row-chevron"> elements inside each session row.
+        const chevron = document.querySelector('.session-row .row-chevron, .session-row .chevron');
+        if (chevron) chevron.click();
+      }, 300);
     }
   });
 })();
