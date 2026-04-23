@@ -143,10 +143,32 @@ async function updateClickthrough() {
   }
 }
 
+// Queue is "active" when there's audio playing OR a clip that arrived
+// RECENTLY (within ACTIVE_FRESH_MS) and hasn't been played yet. The
+// freshness gate is load-bearing for two downstream consumers:
+//
+//   - Heartbeat timer — skips emission when the queue is active. With
+//     auto-prune off (Ben's default), stale clips that the user never
+//     played sit in `queue` indefinitely. Without a freshness gate
+//     every clip older than today still counts as "pending", so
+//     heartbeat never fires even when the system is genuinely silent
+//     for minutes waiting on Claude.
+//   - Toolbar idle collapse timer — same story: old un-played clips
+//     shouldn't keep the toolbar permanently un-collapsed.
+//
+// 60 s was picked to be comfortably past the ~15 s edge-tts retry
+// budget + any realistic synth-and-settle delay. A fresh clip has a
+// full minute to get played before it's considered "backlog, ignore".
+const ACTIVE_FRESH_MS = 60_000;
 function isQueueActive() {
   const audioBusy = audio.src && !audio.paused && !audio.ended && audio.readyState >= 2;
   if (audioBusy) return true;
-  return queue.some(f => !playedPaths.has(f.path) && !isPathSessionMuted(f.path));
+  const freshCutoff = Date.now() - ACTIVE_FRESH_MS;
+  return queue.some(f =>
+    (f.mtime || 0) >= freshCutoff &&
+    !playedPaths.has(f.path) &&
+    !isPathSessionMuted(f.path)
+  );
 }
 
 function isMouseOverBar() {
@@ -997,6 +1019,16 @@ const sessionsTable = new window.TT_SESSIONS_TABLE({
   hsplitPartner: HSPLIT_PARTNER,
   vsplitPartner: VSPLIT_PARTNER,
   edgeVoices: EDGE_VOICES,
+  openaiVoices: OPENAI_VOICES,
+  // Read the active TTS provider off the live config snapshot so the
+  // per-session voice dropdown shows the right catalogue. When the
+  // global "Use OpenAI as primary" toggle flips, we call renderSessionsTable()
+  // which picks up the refreshed snapshot.
+  getTtsProvider: () => {
+    const snap = window.TT_CONFIG_SNAPSHOT || {};
+    const p = (snap.playback && snap.playback.tts_provider) || 'edge';
+    return String(p).toLowerCase() === 'openai' ? 'openai' : 'edge';
+  },
   includeLabels: INCLUDE_LABELS,
   onSetLabel:   (shortId, label) => window.api.setSessionLabel(shortId, label),
   onSetIndex:   (shortId, idx)   => window.api.setSessionIndex(shortId, idx),
@@ -1038,6 +1070,9 @@ const settingsForm = new window.TT_SETTINGS_FORM({
   onAutoPruneEnabledChange: (on) => setAutoPruneEnabled(on),
   onAutoPruneSecChange: (n) => { autoPruneSec = n; },
   onAutoContinueChange: (on) => { autoContinueAfterClick = on; },
+  // Fired after "Use OpenAI as primary" flips so the sessions-table's
+  // per-session voice dropdown repaints with the right catalogue.
+  onAfterMutation: () => { renderSessionsTable(); },
 });
 settingsForm.mount();
 

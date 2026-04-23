@@ -176,7 +176,7 @@
           </span>
         </div>
         <div class="row">
-          <label for="openaiPreferToggle" title="When On, OpenAI TTS is the primary provider for every response, tool narration and heartbeat clip. Edge-tts is used only as a fallback if OpenAI errors out. When Off (default), edge-tts is primary and OpenAI is the fallback. Needs a saved key; without one the toggle is disabled.">Prefer OpenAI</label>
+          <label for="openaiPreferToggle" title="On — OpenAI is your primary voice: every response, tool narration and heartbeat plays in OpenAI's voice. Edge-tts only runs if OpenAI errors (key invalid, rate-limited, network glitch). Off — edge-tts is primary (free, default), OpenAI is the fallback. Needs a saved key to switch on.">Use OpenAI as primary <span class="hint-sub">(the other provider becomes the fallback)</span></label>
           <div class="pill-toggle tri-ctrl" id="openaiPreferPillBox">
             <input type="checkbox" id="openaiPreferToggle" class="pill-toggle-input">
             <button type="button" class="tri-btn on"  data-val="1">On</button>

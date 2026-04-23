@@ -53,6 +53,14 @@
         hsplitPartner = [],
         vsplitPartner = [],
         edgeVoices = [],
+        openaiVoices = [],
+        // () => 'edge' | 'openai'. Controls which voice catalogue the
+        // per-session "Voice for this session" dropdown shows. Default
+        // returns 'edge' for backward-compat in unit tests that don't
+        // pass it. Evaluated at render time — on every re-render, so
+        // flipping the global "Use OpenAI as primary" toggle reflows
+        // the voice options on the next paint.
+        getTtsProvider = () => 'edge',
         includeLabels = [],
         // Per-action IPC callbacks (all return a boolean-ish promise).
         onSetLabel = async () => {},
@@ -71,6 +79,8 @@
       this._hsplitPartner = hsplitPartner;
       this._vsplitPartner = vsplitPartner;
       this._edgeVoices = edgeVoices;
+      this._openaiVoices = openaiVoices;
+      this._getTtsProvider = getTtsProvider;
       this._includeLabels = includeLabels;
       this._onSetLabel = onSetLabel;
       this._onSetIndex = onSetIndex;
@@ -343,14 +353,25 @@
       const voiceRow = document.createElement('div');
       voiceRow.className = 'expanded-row';
       const voiceLabel = document.createElement('label');
-      voiceLabel.textContent = 'Voice for this session';
+      // Explicit provider in the label so the user knows which
+      // catalogue they're overriding. "Voice for this session
+      // (OpenAI)" vs "Voice for this session (Edge)".
+      const provider = (typeof this._getTtsProvider === 'function')
+        ? this._getTtsProvider()
+        : 'edge';
+      voiceLabel.textContent = provider === 'openai'
+        ? 'Voice for this session (OpenAI)'
+        : 'Voice for this session (Edge)';
       voiceRow.appendChild(voiceLabel);
       const voiceSel = document.createElement('select');
       const defaultOpt = document.createElement('option');
       defaultOpt.value = '';
       defaultOpt.textContent = '— follow global default —';
       voiceSel.appendChild(defaultOpt);
-      for (const v of this._edgeVoices) {
+      const catalogue = provider === 'openai'
+        ? (this._openaiVoices || [])
+        : (this._edgeVoices || []);
+      for (const v of catalogue) {
         const o = document.createElement('option');
         o.value = v.id;
         o.textContent = v.label;

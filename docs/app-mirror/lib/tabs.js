@@ -44,14 +44,20 @@
   }
 
   // Pure: compute unread count for a session (or 'all') from the single
-  // source of truth: queue + heardPaths. Exported for unit tests so the
-  // military accuracy requirement can be exercised in isolation.
-  function unreadCount(queue, heardPaths, clipPaths, shortId) {
+  // source of truth: full on-disk path list + heardPaths. Accepts either
+  // a path-string list (preferred, uncapped, comes from main.js's
+  // allPaths) or a {path} object list (fallback when pre-allPaths
+  // main is running). The uncapped path list is the only way the badge
+  // stays accurate past MAX_FILES — otherwise deletion "refills" the
+  // visible 20 and the user sees no progress.
+  function unreadCount(pathsOrFiles, heardPaths, clipPaths, shortId) {
     let n = 0;
-    for (const f of queue) {
-      if (heardPaths.has(f.path)) continue;
+    for (const item of pathsOrFiles) {
+      const p = typeof item === 'string' ? item : item && item.path;
+      if (!p) continue;
+      if (heardPaths.has(p)) continue;
       if (shortId === 'all') { n++; continue; }
-      const fname = f.path.split(/[\\/]/).pop();
+      const fname = p.split(/[\\/]/).pop();
       const short = clipPaths.extractSessionShort(fname);
       if (short === shortId) n++;
     }
@@ -124,6 +130,11 @@
       this._pendingRaf = null;
       this.state = {
         queue: [],
+        // Uncapped on-disk path list shipped by main.js alongside the
+        // capped `files` array. Drives unread counts so badges are
+        // honest past MAX_FILES. Falls back to queue paths if main
+        // didn't send one (pre-2026-04-23 builds).
+        allPaths: [],
         heardPaths: new Set(),
         sessionAssignments: {},
         selectedTab: 'all',
@@ -151,16 +162,22 @@
 
     _renderNow() {
       if (!this.root) return;
-      const { queue, heardPaths, sessionAssignments, selectedTab, expanded } = this.state;
+      const { queue, allPaths, heardPaths, sessionAssignments, selectedTab, expanded } = this.state;
       const now = this._nowProvider();
       const { active, stale } = partitionSessions(
         sessionAssignments, queue, this._clipPaths, now, this._staleCollapseMs,
       );
 
+      // Prefer the uncapped on-disk path list for unread accounting;
+      // fall back to queue (capped at MAX_FILES) when main hasn't
+      // emitted allPaths. Either way, unreadCount normalises both
+      // shapes so the per-tab badges stay honest.
+      const pathsForCount = (Array.isArray(allPaths) && allPaths.length > 0) ? allPaths : queue;
+
       this.root.innerHTML = '';
 
       // [All N] tab — always leftmost. Count is total unread clips.
-      const allCount = unreadCount(queue, heardPaths, this._clipPaths, 'all');
+      const allCount = unreadCount(pathsForCount, heardPaths, this._clipPaths, 'all');
       this.root.appendChild(this._buildTab({
         id: 'all',
         label: 'All',
@@ -178,7 +195,7 @@
           id: short,
           label: truncateLabel(fullLabel, this._maxLabelChars),
           fullLabel,
-          count: unreadCount(queue, heardPaths, this._clipPaths, short),
+          count: unreadCount(pathsForCount, heardPaths, this._clipPaths, short),
           selected: selectedTab === short,
           paletteKey: this._clipPaths.paletteKeyForShort(short, sessionAssignments, this._paletteSize),
           stale: false,
@@ -208,7 +225,7 @@
               id: short,
               label: truncateLabel(fullLabel, this._maxLabelChars),
               fullLabel,
-              count: unreadCount(queue, heardPaths, this._clipPaths, short),
+              count: unreadCount(pathsForCount, heardPaths, this._clipPaths, short),
               selected: selectedTab === short,
               paletteKey: this._clipPaths.paletteKeyForShort(short, sessionAssignments, this._paletteSize),
               stale: true,

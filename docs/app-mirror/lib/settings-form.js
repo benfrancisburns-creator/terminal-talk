@@ -50,6 +50,12 @@
         onAutoPruneEnabledChange = () => {},
         onAutoPruneSecChange = () => {},
         onAutoContinueChange = () => {},
+        // Fired after any settings-form mutation that needs the
+        // renderer to repaint state derived from config — specifically
+        // the per-session voice dropdown when the "Use OpenAI as
+        // primary" toggle flips, so the right voice catalogue appears
+        // without requiring a toolbar reload.
+        onAfterMutation = () => {},
       } = deps;
       this._api = api;
       this._edgeVoices = edgeVoices;
@@ -59,6 +65,7 @@
       this._onAutoPruneEnabledChange = onAutoPruneEnabledChange;
       this._onAutoPruneSecChange = onAutoPruneSecChange;
       this._onAutoContinueChange = onAutoContinueChange;
+      this._onAfterMutation = onAfterMutation;
     }
 
     _onMount() {
@@ -376,10 +383,22 @@
         this._on(openaiPreferToggle, 'change', async () => {
           const prefer = !!openaiPreferToggle.checked;
           const provider = prefer ? 'openai' : 'edge';
-          await this._api.updateConfig({ playback: { tts_provider: provider } });
+          const merged = await this._api.updateConfig({ playback: { tts_provider: provider } });
+          // Refresh the live config snapshot so the per-session voice
+          // dropdown (which reads tts_provider on every repaint) sees
+          // the switch immediately — otherwise it keeps showing the
+          // Edge catalogue until the user reloads the toolbar. The
+          // update-config IPC returns the merged config on success.
+          if (merged) {
+            window.TT_CONFIG_SNAPSHOT = merged;
+            // Tell any consumer that cares about the provider flip to
+            // repaint. renderer.js wires renderSessionsTable() behind
+            // the onAfterMutation hook we reuse here.
+            if (typeof this._onAfterMutation === 'function') this._onAfterMutation();
+          }
           this._setTestResult(prefer
-            ? 'Now preferring OpenAI for all responses. Edge fallback stays on.'
-            : 'Back to Edge (free) as primary.', 'ok');
+            ? 'Now using OpenAI — response body, tool narrations + heartbeat all run through OpenAI first.'
+            : 'Back to Edge (free) as primary. OpenAI stays wired as the fallback.', 'ok');
         });
       }
 

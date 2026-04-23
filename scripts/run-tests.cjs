@@ -4575,12 +4575,14 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
       throw new Error('main.js missing archiveCorruptRegistry helper');
     }
     // Must be called on JSON.parse failure AND on shape mismatch.
-    const load = src.match(/function loadAssignments[\s\S]{0,1500}\n\}/);
+    // Capture window bumped 1500 → 2500 after the rolling-backup
+    // recovery code landed in loadAssignments on 2026-04-23.
+    const load = src.match(/function loadAssignments[\s\S]{0,2500}\n\}/);
     if (!load) throw new Error('loadAssignments block not found');
-    if (!/archiveCorruptRegistry\(.{0,80}JSON\.parse/i.test(load[0])) {
+    if (!/archiveCorruptRegistry\(.{0,100}JSON\.parse/i.test(load[0])) {
       throw new Error('loadAssignments must archive on JSON.parse failure');
     }
-    if (!/archiveCorruptRegistry\(.{0,80}(missing|assignments|shape)/i.test(load[0])) {
+    if (!/archiveCorruptRegistry\(.{0,100}(missing|assignments|shape)/i.test(load[0])) {
       throw new Error('loadAssignments must archive on shape mismatch');
     }
   });

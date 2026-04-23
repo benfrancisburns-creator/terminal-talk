@@ -1137,27 +1137,24 @@ function archiveCorruptRegistry(reason) {
   }
 }
 
-function loadAssignments() {
+// Rolling backup for registry recovery. Ben's sessions wiped 2026-04-23
+// with no corrupt-archive trace — something wrote {assignments: {}}
+// over the live file. These backups let us walk back up to 3 writes
+// and surface the most recent non-empty snapshot when the primary
+// loads as empty but backups have content.
+const REGISTRY_BACKUP_SLOTS = 3;
+function _registryBackupPath(slot) {
+  return `${COLOURS_REGISTRY}.bak${slot}`;
+}
+
+function _parseRegistryFile(fullPath) {
+  if (!fs.existsSync(fullPath)) return null;
   let raw;
-  try {
-    if (!fs.existsSync(COLOURS_REGISTRY)) return {};
-    raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
-  } catch (e) {
-    diag(`loadAssignments read failed: ${e && e.message}`);
-    return {};
-  }
+  try { raw = fs.readFileSync(fullPath, 'utf8'); } catch { return null; }
   if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
   let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    archiveCorruptRegistry(`JSON.parse: ${e && e.message}`);
-    return {};
-  }
-  if (!parsed || !parsed.assignments || typeof parsed.assignments !== 'object') {
-    archiveCorruptRegistry('missing or non-object assignments field');
-    return {};
-  }
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (!parsed || !parsed.assignments || typeof parsed.assignments !== 'object') return null;
   const clean = {};
   for (const [k, v] of Object.entries(parsed.assignments)) {
     if (!SHORT_KEY_RE.test(k)) continue;
@@ -1167,8 +1164,66 @@ function loadAssignments() {
   return clean;
 }
 
-function writeAssignments(all) {
+function loadAssignments() {
+  if (!fs.existsSync(COLOURS_REGISTRY)) return {};
+  const primary = _parseRegistryFile(COLOURS_REGISTRY);
+  if (primary === null) {
+    // Archive note covers both JSON.parse failure and the shape
+    // mismatch (missing assignments field) inside one helper call.
+    archiveCorruptRegistry('JSON.parse failed OR missing assignments field');
+    // Even though the primary is corrupt, try recovering from a backup
+    // before falling back to empty. Matches the "pick newest non-empty
+    // slot" rule below.
+    for (let slot = 1; slot <= REGISTRY_BACKUP_SLOTS; slot++) {
+      const b = _parseRegistryFile(_registryBackupPath(slot));
+      if (b && Object.keys(b).length > 0) {
+        diag(`loadAssignments: primary unreadable; recovered ${Object.keys(b).length} entries from .bak${slot}`);
+        return b;
+      }
+    }
+    return {};
+  }
+  // Registry-wipe recovery: primary loaded but has zero entries.
+  // If ANY backup has entries, surface the newest non-empty one.
+  // This catches the pattern Ben hit: something wrote an empty
+  // assignments object (race between taskkill and saveAssignments),
+  // primary parses fine but all labels are gone. Without this guard
+  // a fresh ensureAssignmentsForFiles call creates empty entries
+  // and the user's labels never come back.
+  if (Object.keys(primary).length === 0) {
+    for (let slot = 1; slot <= REGISTRY_BACKUP_SLOTS; slot++) {
+      const b = _parseRegistryFile(_registryBackupPath(slot));
+      if (b && Object.keys(b).length > 0) {
+        diag(`loadAssignments: primary empty; recovered ${Object.keys(b).length} entries from .bak${slot}`);
+        // Also write back to primary so subsequent readers (PS
+        // statusline, hook scripts) see the recovered state without
+        // having to implement the same backup-walk logic.
+        writeAssignments(b, { skipBackup: true });
+        return b;
+      }
+    }
+  }
+  return primary;
+}
+
+function writeAssignments(all, opts) {
+  const skipBackup = !!(opts && opts.skipBackup);
   try {
+    // Rotate backups: .bak2 → .bak3, .bak1 → .bak2, current → .bak1.
+    // Then write the new primary atomically. Order matters — we only
+    // replace the primary via rename AFTER the backup is in place,
+    // so a crash mid-rotation leaves at least one good copy on disk.
+    if (!skipBackup && fs.existsSync(COLOURS_REGISTRY)) {
+      for (let slot = REGISTRY_BACKUP_SLOTS - 1; slot >= 1; slot--) {
+        const from = _registryBackupPath(slot);
+        const to   = _registryBackupPath(slot + 1);
+        if (fs.existsSync(from)) {
+          try { fs.copyFileSync(from, to); } catch (e) { diag(`backup rotate ${slot}->${slot+1} failed: ${e.message}`); }
+        }
+      }
+      try { fs.copyFileSync(COLOURS_REGISTRY, _registryBackupPath(1)); }
+      catch (e) { diag(`backup copy primary->bak1 failed: ${e.message}`); }
+    }
     const tmp = COLOURS_REGISTRY + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
     fs.renameSync(tmp, COLOURS_REGISTRY);
