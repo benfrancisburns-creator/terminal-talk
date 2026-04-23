@@ -78,24 +78,14 @@ function _ParseFooterSeconds([string]$footer) {
     return $mins * 60 + $secs
 }
 
-function Get-TerminalFooter {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)] [string]$SessionShort,
-        [Parameter(Mandatory = $true)] [string]$RegistryPath,
-        [Parameter(Mandatory = $true)] [int]$ExpectedSec,
-        # Freshness tolerance: scraped duration must be within this many
-        # seconds of ExpectedSec or we reject as stale. 3 s covers the
-        # brief window between Claude Code printing the footer and the
-        # Stop hook firing; wider would risk accepting a near-miss from
-        # a prior short turn.
-        [int]$ToleranceSec = 3
-    )
-
-    if ($ExpectedSec -lt 1) { return '' }
-
-    $signature = _Get-Signature -RegistryPath $RegistryPath -Short $SessionShort
-    if (-not $signature) { return '' }
+function _Try-ScrapeOnce([string]$Signature, [int]$ExpectedSec, [int]$ToleranceSec) {
+    # \p{L} matches any Unicode letter class, so accented verbs
+    # ("Sautéed", "Philosophised") match without us baking a Latin
+    # range literal into the regex. Important because PowerShell
+    # reads this file as Windows-1252 when there's no BOM, which
+    # mangles UTF-8 bytes mid-regex and throws "[x-y] range in
+    # reverse order". ASCII + \p{L} avoids that class of bug entirely.
+    $footerRegex = [regex]'(?m)([A-Z]\p{L}+) for (?:\d+m\s?)?\d+s\b'
 
     try {
         $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -103,14 +93,6 @@ function Get-TerminalFooter {
             ([System.Windows.Automation.AutomationElement]::ClassNameProperty), 'CASCADIA_HOSTING_WINDOW_CLASS'
         $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
     } catch { return '' }
-
-    # \p{L} matches any Unicode letter class, so accented verbs
-    # ("Sautéed", "Philosophised") still match without us baking a
-    # Latin-range literal into the regex. Important because this file
-    # sometimes gets read by PowerShell as Windows-1252, which mangles
-    # literal UTF-8 bytes mid-regex and throws "[x-y] range in reverse
-    # order". ASCII + \p{L} avoids that class of bug entirely.
-    $footerRegex = [regex]'(?m)([A-Z]\p{L}+) for (?:\d+m\s?)?\d+s\b'
 
     foreach ($w in $windows) {
         try {
@@ -125,25 +107,67 @@ function Get-TerminalFooter {
                 $text = $tp.DocumentRange.GetText(-1)
             } catch { continue }
             if (-not $text) { continue }
-            if (-not $text.Contains($signature)) { continue }
+            if (-not $text.Contains($Signature)) { continue }
 
             $matches = $footerRegex.Matches($text)
             if ($matches.Count -eq 0) { continue }
 
-            # Walk matches newest-first (they're in textual order,
-            # which for a terminal buffer is oldest-first) and return
-            # the first one that passes the freshness guard.
+            # Walk matches newest-first (textual order = oldest-first
+            # in a terminal buffer). Return the first one whose parsed
+            # duration is within ToleranceSec of ExpectedSec.
             for ($i = $matches.Count - 1; $i -ge 0; $i--) {
                 $phrase = $matches[$i].Value
                 $scrapedSec = _ParseFooterSeconds $phrase
                 if ($scrapedSec -lt 0) { continue }
                 $diff = [Math]::Abs($scrapedSec - $ExpectedSec)
-                if ($diff -le $ToleranceSec) {
-                    return $phrase
-                }
+                if ($diff -le $ToleranceSec) { return $phrase }
             }
         }
     }
+    return ''
+}
+
+function Get-TerminalFooter {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [string]$SessionShort,
+        [Parameter(Mandatory = $true)] [string]$RegistryPath,
+        [Parameter(Mandatory = $true)] [int]$ExpectedSec,
+        # Freshness tolerance: scraped duration must be within this
+        # many seconds of ExpectedSec or we reject as stale. 3 s covers
+        # the brief window between Claude Code printing the footer and
+        # the Stop hook firing; wider would risk accepting a near-miss
+        # from a prior short turn.
+        [int]$ToleranceSec = 3,
+        # Claude Code renders the footer AFTER the Stop hook fires
+        # (the hook is part of its "end of turn" pipeline; the footer
+        # is the last thing printed to the user-visible TTY). If we
+        # scrape once and immediately give up, the fresh match
+        # usually isn't there yet — fallback runs, user hears
+        # "Vibed for 24 minutes..." instead of the terminal's
+        # "Brewed for 24m 56s". Poll up to $MaxWaitMs waiting for the
+        # footer to appear. Observed live 2026-04-23: delay is under
+        # 500 ms most turns, never over ~1.5 s in testing.
+        [int]$MaxWaitMs = 2000,
+        [int]$PollIntervalMs = 250
+    )
+
+    if ($ExpectedSec -lt 1) { return '' }
+
+    $signature = _Get-Signature -RegistryPath $RegistryPath -Short $SessionShort
+    if (-not $signature) { return '' }
+
+    $deadline = [Environment]::TickCount64 + $MaxWaitMs
+    do {
+        $phrase = _Try-ScrapeOnce -Signature $signature `
+                                  -ExpectedSec $ExpectedSec `
+                                  -ToleranceSec $ToleranceSec
+        if ($phrase) { return $phrase }
+        $remaining = $deadline - [Environment]::TickCount64
+        if ($remaining -le 0) { break }
+        $sleepMs = [Math]::Min($PollIntervalMs, [int]$remaining)
+        Start-Sleep -Milliseconds $sleepMs
+    } while ([Environment]::TickCount64 -lt $deadline)
 
     return ''
 }
