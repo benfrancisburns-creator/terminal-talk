@@ -3604,6 +3604,239 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(assignments['racedabc'].claude_pid, 55555);
     assertEqual(assignments['racedabc'].session_id, 'racedabc-uuid');
   });
+
+  // ============================================================
+  // PHASE 4 — MODULE 3: session-registry.psm1 VULNERABILITY PASS
+  //
+  // Existing PS SESSION-IDENTITY BEHAVIOUR tests cover /clear
+  // migration in depth. Gaps this pass fills:
+  //   - Update-SessionAssignment palette-full paths (LRU eviction +
+  //     hash-collision when every slot is pinned)
+  //   - Read-Registry tolerance for missing / malformed / empty JSON
+  //   - Save-Registry writes UTF-8 without BOM (JS JSON.parse
+  //     rejects BOM-prefixed files)
+  //   - Write-SessionPidFile edge cases (pid=0 no-op)
+  //   - Unicode labels through the full round-trip
+  // ============================================================
+
+  // Batched PS helper: runs an arbitrary script body that imports the
+  // module, emits JSON on stdout, returns parsed object. Single spawn
+  // per test — ~5 s overhead either way, so keep one test = one spawn.
+  function runBatchedPs(scriptBody) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const scriptPath = path.join(os.tmpdir(), `tt-phase4-m3-${nonce}.ps1`);
+    const script = [
+      `Import-Module '${MODULE_PATH.replace(/'/g, "''")}' -Force`,
+      scriptBody,
+      '',
+    ].join("\r\n");
+    fs.writeFileSync(scriptPath, script, 'utf8');
+    const r = spawnSync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      { encoding: 'utf8', timeout: 20000 }
+    );
+    try { fs.unlinkSync(scriptPath); } catch {}
+    if (r.status !== 0) {
+      throw new Error(`PS exited ${r.status}: ${r.stderr || r.stdout}`);
+    }
+    return r.stdout;
+  }
+
+  it('Update-SessionAssignment LRU-evicts when palette full and no user intent', () => {
+    // Seed all 24 slots with plain entries (no label / voice / pin).
+    // Oldest last_seen must be the eviction target.
+    const seed = {};
+    for (let i = 0; i < 24; i++) {
+      seed[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, session_id: `u-${i}`, claude_pid: 1000 + i,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: 1_776_000_000 + i,  // ascending → s0000000 is LRU
+      };
+    }
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'freshses', sessionId: 'fresh-uuid',
+      claudePid: 99999, now: NOW,
+    });
+    if (assignments['s0000000']) {
+      throw new Error('LRU-oldest entry should have been evicted');
+    }
+    assertEqual(returnedIndex, 0);
+    assertEqual(assignments['freshses'].index, 0);
+  });
+
+  it('Update-SessionAssignment palette-full + every slot has user intent → hash-collision', () => {
+    // Every entry has a label → every entry has user intent → no
+    // eviction candidates. Fall through to hash-mod fallback which
+    // must return a finite index 0..23 without throwing.
+    const seed = {};
+    for (let i = 0; i < 24; i++) {
+      seed[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, session_id: `u-${i}`, claude_pid: 1000 + i,
+        label: `terminal-${i}`, pinned: false, muted: false, focus: false,
+        last_seen: 1_776_000_000 + i,
+      };
+    }
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'aabbccdd', sessionId: 'coll-uuid',
+      claudePid: 99999, now: NOW,
+    });
+    // All 24 originals must survive.
+    assertEqual(Object.keys(assignments).length, 25,
+      '24 pre-existing + 1 new = 25 entries after hash-collision fallback');
+    assertTruthy(Number.isFinite(returnedIndex));
+    assertTruthy(returnedIndex >= 0 && returnedIndex < 24);
+  });
+
+  it('Read-Registry returns empty hashtable when file is missing', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const nonExistent = path.join(os.tmpdir(), `tt-nonexistent-${nonce}.json`);
+    const out = runBatchedPs([
+      `$a = Read-Registry -RegistryPath '${nonExistent.replace(/\\/g, '\\\\')}'`,
+      `Write-Output ($a.Count)`,
+    ].join("\r\n"));
+    // Hashtable.Count on empty = 0
+    assertEqual(out.trim(), '0');
+  });
+
+  it('Read-Registry returns empty hashtable on malformed JSON (no throw)', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const badPath = path.join(os.tmpdir(), `tt-bad-${nonce}.json`);
+    fs.writeFileSync(badPath, '{ "not really json" ...broken', 'utf8');
+    try {
+      const out = runBatchedPs([
+        `$a = Read-Registry -RegistryPath '${badPath.replace(/\\/g, '\\\\')}'`,
+        `Write-Output ($a.Count)`,
+      ].join("\r\n"));
+      assertEqual(out.trim(), '0', 'malformed JSON must yield empty hashtable, not throw');
+    } finally { try { fs.unlinkSync(badPath); } catch {} }
+  });
+
+  it('Save-Registry writes UTF-8 with NO BOM (JS JSON.parse rejects BOM)', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const regPath = path.join(os.tmpdir(), `tt-bom-test-${nonce}.json`);
+    try {
+      runBatchedPs([
+        `$a = @{ aabbccdd = @{ index = 0; session_id = 'x'; claude_pid = 1; label = ''; pinned = $false; muted = $false; focus = $false; last_seen = 1000 } }`,
+        `Save-Registry -RegistryPath '${regPath.replace(/\\/g, '\\\\')}' -Assignments $a`,
+        `Write-Output done`,
+      ].join("\r\n"));
+      const buf = fs.readFileSync(regPath);
+      if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
+        throw new Error('Save-Registry wrote a UTF-8 BOM; JS JSON.parse would reject');
+      }
+      // Round-trip through JSON.parse to confirm shape is valid.
+      const parsed = JSON.parse(buf.toString('utf8'));
+      assertTruthy(parsed.assignments);
+      assertTruthy(parsed.assignments.aabbccdd);
+    } finally { try { fs.unlinkSync(regPath); } catch {} }
+  });
+
+  it('Write-SessionPidFile is a no-op when pid=0 (no file created)', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const sessionsDir = path.join(os.tmpdir(), `tt-sessions-pid0-${nonce}`);
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    try {
+      runBatchedPs([
+        `Write-SessionPidFile -SessionsDir '${sessionsDir.replace(/\\/g, '\\\\')}' -ClaudePid 0 -SessionId 'x' -Short 'aabbccdd' -Now 1000`,
+        `Write-Output done`,
+      ].join("\r\n"));
+      const files = fs.readdirSync(sessionsDir);
+      assertEqual(files.length, 0,
+        'pid=0 must NOT create a pid file (would collide across unknown-pid ghosts)');
+    } finally {
+      try { fs.rmSync(sessionsDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('Write-SessionPidFile creates $pid.json with session metadata', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const sessionsDir = path.join(os.tmpdir(), `tt-sessions-${nonce}`);
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    try {
+      runBatchedPs([
+        `Write-SessionPidFile -SessionsDir '${sessionsDir.replace(/\\/g, '\\\\')}' -ClaudePid 12345 -SessionId 'session-uuid' -Short 'aabbccdd' -Now 1776900000`,
+      ].join("\r\n"));
+      const file = path.join(sessionsDir, '12345.json');
+      assertTruthy(fs.existsSync(file), `expected ${file}`);
+      const content = JSON.parse(fs.readFileSync(file, 'utf8'));
+      assertEqual(content.session_id, 'session-uuid');
+      assertEqual(content.short, 'aabbccdd');
+      assertEqual(content.claude_pid, 12345);
+      assertEqual(content.ts, 1776900000);
+    } finally {
+      try { fs.rmSync(sessionsDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('Enter-RegistryLock + Exit-RegistryLock round-trip (same process acquires then releases)', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const regPath = path.join(os.tmpdir(), `tt-lock-${nonce}.json`);
+    fs.writeFileSync(regPath, '{"assignments":{}}', 'utf8');
+    try {
+      const out = runBatchedPs([
+        `$p = '${regPath.replace(/\\/g, '\\\\')}'`,
+        `$ok1 = Enter-RegistryLock -RegistryPath $p`,
+        `$lockExistsWhileHeld = Test-Path "$p.lock"`,
+        `Exit-RegistryLock -RegistryPath $p`,
+        `$lockExistsAfterRelease = Test-Path "$p.lock"`,
+        `Write-Output "$ok1|$lockExistsWhileHeld|$lockExistsAfterRelease"`,
+      ].join("\r\n"));
+      const [acquired, whileHeld, afterRelease] = out.trim().split('|');
+      assertEqual(acquired, 'True', 'first Enter-RegistryLock must acquire');
+      assertEqual(whileHeld, 'True', 'lock file must exist while held');
+      assertEqual(afterRelease, 'False', 'lock file must be removed on Exit');
+    } finally { try { fs.unlinkSync(regPath); } catch {} }
+  });
+
+  it('Enter-RegistryLock steals a stale lock (older than LockStaleMs=3000)', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const regPath = path.join(os.tmpdir(), `tt-stalelock-${nonce}.json`);
+    const lockPath = `${regPath}.lock`;
+    fs.writeFileSync(regPath, '{"assignments":{}}', 'utf8');
+    // Plant a pre-existing lock with a stale mtime (10 s old).
+    fs.writeFileSync(lockPath, 'stuck', 'utf8');
+    const tenSecAgo = new Date(Date.now() - 10_000);
+    fs.utimesSync(lockPath, tenSecAgo, tenSecAgo);
+    try {
+      const out = runBatchedPs([
+        `$p = '${regPath.replace(/\\/g, '\\\\')}'`,
+        `$acquired = Enter-RegistryLock -RegistryPath $p`,
+        `Exit-RegistryLock -RegistryPath $p`,
+        `Write-Output $acquired`,
+      ].join("\r\n"));
+      assertEqual(out.trim(), 'True',
+        'Enter-RegistryLock must steal a stale lock (10 s > LockStaleMs=3 s)');
+    } finally {
+      try { fs.unlinkSync(regPath); } catch {}
+      try { fs.unlinkSync(lockPath); } catch {}
+    }
+  });
+
+  it('unicode label survives full Read-Registry → Save-Registry round-trip', () => {
+    const nonce = Math.random().toString(36).slice(2);
+    const regPath = path.join(os.tmpdir(), `tt-unicode-${nonce}.json`);
+    const label = 'MATE.AIN 🚀 ブレイン';
+    const seed = {
+      assignments: {
+        aabbccdd: {
+          index: 3, session_id: 'u-uuid', claude_pid: 100,
+          label, pinned: true, muted: false, focus: false, last_seen: 1000,
+        },
+      },
+    };
+    fs.writeFileSync(regPath, JSON.stringify(seed), 'utf8');
+    try {
+      runBatchedPs([
+        `$p = '${regPath.replace(/\\/g, '\\\\')}'`,
+        `$a = Read-Registry -RegistryPath $p`,
+        `Save-Registry -RegistryPath $p -Assignments $a`,
+        `Write-Output done`,
+      ].join("\r\n"));
+      const after = JSON.parse(fs.readFileSync(regPath, 'utf8'));
+      assertEqual(after.assignments.aabbccdd.label, label,
+        'unicode label must survive PS round-trip byte-for-byte');
+    } finally { try { fs.unlinkSync(regPath); } catch {} }
+  });
 });
 
 describe('JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP', () => {
