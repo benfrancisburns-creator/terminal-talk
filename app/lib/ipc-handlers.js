@@ -140,12 +140,26 @@ function createIpcHandlers(deps) {
     // mutate entry -> persist. set-session-focus / remove-session /
     // set-session-muted additionally notify the renderer so other
     // open views stay in sync.
+    // Auto-pin rationale (applies to every mutation handler below):
+    // any explicit user touch on a session row is a "I care about this
+    // session" signal — the grace-window prune in
+    // ensureAssignmentsForFiles would otherwise strip labels / voice /
+    // include flags the moment the terminal's pid went stale past 4 h.
+    // Ben hit this overnight 2026-04-22→23: laptop stayed on, CLI pid
+    // rotated, entry fell outside 4 h grace, prune-then-recreate
+    // wiped the "TT 1" label he'd set. Pinning on ANY customisation
+    // makes entries survive pid rotation, sleep/wake, and CLI restart
+    // — user intent is persistent by default.
     ipcMain.handle('set-session-label', (_e, shortId, label) => {
       if (!allowMutation('set-session-label')) return null;
       if (!validShort(shortId)) return false;
       const all = loadAssignments();
       if (!all[shortId]) return false;
-      all[shortId].label = sanitiseLabel(label);
+      const clean = sanitiseLabel(label);
+      all[shortId].label = clean;
+      // Only pin when the label has actual content — clearing a label
+      // back to '' is a retraction of intent, not a new one.
+      if (clean) all[shortId].pinned = true;
       return saveAssignments(all);
     });
 
@@ -182,6 +196,7 @@ function createIpcHandlers(deps) {
         }
       }
       all[shortId].focus = focus;
+      if (focus) all[shortId].pinned = true;
       const ok = saveAssignments(all);
       const win = getWin();
       if (ok && win && !win.isDestroyed()) notifyQueue();
@@ -239,6 +254,7 @@ function createIpcHandlers(deps) {
       const all = loadAssignments();
       if (!all[shortId]) return false;
       all[shortId].muted = muted;
+      if (muted) all[shortId].pinned = true;
       const ok = saveAssignments(all);
       const win = getWin();
       if (ok && win && !win.isDestroyed()) notifyQueue();
@@ -256,6 +272,7 @@ function createIpcHandlers(deps) {
       } else {
         if (!validVoice(voiceId)) return false;
         all[shortId].voice = voiceId;
+        all[shortId].pinned = true;
       }
       return saveAssignments(all);
     });
@@ -274,6 +291,7 @@ function createIpcHandlers(deps) {
         delete all[shortId].speech_includes[key];
       } else {
         all[shortId].speech_includes[key] = value;
+        all[shortId].pinned = true;
       }
       if (Object.keys(all[shortId].speech_includes).length === 0) {
         delete all[shortId].speech_includes;

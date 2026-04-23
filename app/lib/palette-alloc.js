@@ -39,11 +39,21 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
     if (!busy.has(i)) return { index: i, evicted: null, reason: 'free' };
   }
 
-  // 2. All slots busy -> LRU eviction among non-pinned entries.
-  //    Order by last_seen ascending, then shortId ascending as a
-  //    deterministic tiebreak (so tests are stable).
+  // 2. All slots busy -> LRU eviction among entries with NO user intent.
+  //    An entry is protected from eviction if pinned OR has a label /
+  //    voice / muted / focus / speech_includes override — any of those
+  //    signals "I configured this, don't throw it away for a fresh
+  //    session." Eviction order within the candidate pool is
+  //    last_seen ascending, then shortId ascending (stable tiebreak).
+  const hasUserIntent = (e) => (
+    (e.label && String(e.label).trim().length > 0) ||
+    !!e.voice ||
+    e.muted === true ||
+    e.focus === true ||
+    (e.speech_includes && Object.keys(e.speech_includes).length > 0)
+  );
   const candidates = entries
-    .filter(([, e]) => e && e.pinned !== true)
+    .filter(([, e]) => e && e.pinned !== true && !hasUserIntent(e))
     .sort((a, b) => {
       const aLast = Number(a[1].last_seen) || 0;
       const bLast = Number(b[1].last_seen) || 0;

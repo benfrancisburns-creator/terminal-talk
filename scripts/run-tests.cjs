@@ -859,9 +859,72 @@ describe('PINNED SESSIONS NOT PRUNED', () => {
       }
     };
     fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
-    runStatusline('newnewne-1111-2222-3333-444444444444');
+    runStatusline('newnewne-1111-2222-3333-444444444444', 100003);
     const reg = readRegistry();
     if (!reg['pinpinpi']) throw new Error('pinned session was pruned');
+  });
+
+  it('a label-bearing entry with pinned=false survives grace-window prune', () => {
+    // Ben's overnight 2026-04-22→23 bug: a session with label "TT 1" but
+    // pinned=false (auto-pin not yet landed) got pruned once last_seen
+    // slipped past the 4 h grace window and the queue-scan recreated
+    // it with an empty label. isSessionLive now honours user intent
+    // (label / voice / muted / focus / speech_includes) alongside
+    // pinned, so historic entries from before auto-pin keep their
+    // labels across pid rotation.
+    const { createRequire } = require('node:module');
+    const req = createRequire(path.join(APP_DIR, '..', 'package.json'));
+    // Use the installed mirror so the running toolbar's isSessionLive
+    // matches the version under test. main.js isn't module.exports, so
+    // we parse its hasUserIntent + isSessionLive out of source and eval
+    // them — dodgy but contained to this behaviour test.
+    const mainSrc = fs.readFileSync(path.join(APP_DIR, 'main.js'), 'utf8');
+    const helperMatch = mainSrc.match(/function hasUserIntent\(entry\)\s*\{[\s\S]*?\n\}/);
+    const liveMatch = mainSrc.match(/function isSessionLive\(entry, now\)\s*\{[\s\S]*?\n\}/);
+    if (!helperMatch || !liveMatch) {
+      throw new Error('could not locate hasUserIntent/isSessionLive in main.js');
+    }
+    const SESSION_GRACE_SEC = 14400;
+    const isPidAlive = () => false;
+    // eslint-disable-next-line no-new-func
+    const isLive = new Function('entry', 'now', 'isPidAlive', 'SESSION_GRACE_SEC',
+      `${helperMatch[0]}\n${liveMatch[0]}\nreturn isSessionLive(entry, now);`);
+    const now = Math.floor(Date.now() / 1000);
+    const ancient = now - 999999;
+    // Labeled + not pinned + dead pid + ancient last_seen
+    if (!isLive({ label: 'TT 1', pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('labeled unpinned entry must be live under hasUserIntent');
+    }
+    // Voice override alone also counts
+    if (!isLive({ voice: 'shimmer', pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('voice-override unpinned entry must be live');
+    }
+    // muted / focus
+    if (!isLive({ muted: true, pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('muted unpinned entry must be live');
+    }
+    if (!isLive({ focus: true, pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('focused unpinned entry must be live');
+    }
+    // speech_includes
+    if (!isLive({ speech_includes: { urls: true }, pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('speech_includes-override unpinned entry must be live');
+    }
+    // Plain entry with no user intent and expired grace → NOT live
+    if (isLive({ pinned: false, claude_pid: 999999, last_seen: ancient },
+               now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('plain unpinned stale entry must NOT be live');
+    }
+    // Empty-string label still counts as no intent (retraction)
+    if (isLive({ label: '', pinned: false, claude_pid: 999999, last_seen: ancient },
+               now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('empty-label unpinned stale entry must NOT be live');
+    }
   });
   clearRegistry();
 });
@@ -2843,6 +2906,49 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
     assertEqual(r.index, 1);
   });
 
+  it('LRU eviction SKIPS entries with user intent (label / voice / muted / focus / speech_includes)', () => {
+    // The auto-pin in ipc-handlers.js should catch these via pinned=true,
+    // but historic entries from before auto-pin landed still carry
+    // user intent without the pin flag. Eviction must respect both.
+    const mk = (i, extra = {}) => ({
+      index: i, last_seen: 1000 + i, pinned: false, ...extra,
+    });
+    for (const [protectedAt, extra] of [
+      [0, { label: 'TT 1' }],
+      [0, { voice: 'shimmer' }],
+      [0, { muted: true }],
+      [0, { focus: true }],
+      [0, { speech_includes: { urls: true } }],
+    ]) {
+      const all = {};
+      for (let i = 0; i < 24; i++) {
+        all[`s${i.toString().padStart(7, '0')}`] = mk(i, i === protectedAt ? extra : {});
+      }
+      const r = allocatePaletteIndex('newshort', all, 24);
+      assertEqual(r.reason, 'lru');
+      if (r.evicted === 's0000000') {
+        throw new Error(`user-intent entry was evicted (extra=${JSON.stringify(extra)})`);
+      }
+      assertEqual(r.evicted, 's0000001');
+      assertEqual(r.index, 1);
+    }
+  });
+
+  it('LRU: label="" (retracted) is NOT user intent, evicts normally', () => {
+    // An empty label is not the same as "no label field" — it's an
+    // explicit retraction. Should not count as user intent.
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: false,
+        label: i === 0 ? '' : undefined,   // oldest has empty label
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000');   // evicted — '' is not intent
+  });
+
   it('all 24 slots pinned -> hash-collision fallback (no unique slot)', () => {
     const all = {};
     for (let i = 0; i < 24; i++) {
@@ -2887,9 +2993,18 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
     if (!/Sort-Object\s+LastSeen/i.test(src)) {
       throw new Error('session-registry.psm1 must LRU-evict when palette full (Sort-Object LastSeen missing)');
     }
-    // Pinned sessions must be skipped from eviction candidates.
-    if (!/pinned\s*-ne\s*\$true/.test(src)) {
-      throw new Error('session-registry.psm1 LRU eviction must exclude pinned entries');
+    // Pinned sessions must be skipped from eviction candidates. As of
+    // 2026-04-23 the LRU block also protects user-intent entries (label
+    // / voice / muted / focus / speech_includes); the pinned check lives
+    // inside a hasIntent bag. Accept either the historical "-ne $true"
+    // wording or the new "pinned -eq $true" intent-bag wording.
+    if (!/pinned\s*-(ne|eq)\s*\$true/.test(src)) {
+      throw new Error('session-registry.psm1 LRU eviction must gate on pinned');
+    }
+    // And the new user-intent guard so historic unpinned labeled entries
+    // survive eviction pressure on 25th-session boot.
+    if (!/\$entry\.label\s+-and/.test(src)) {
+      throw new Error('session-registry.psm1 LRU must skip entries with user intent (label check missing)');
     }
   });
 
@@ -4406,6 +4521,100 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'a\nb\tc'), true);
     assertEqual(deps._registry.aabbccdd.label, 'a b c');
+  });
+
+  // ---------------------------------------------------------------------
+  // Auto-pin behaviour. Any user customisation (label / focus / voice /
+  // muted / speech_includes) must set pinned=true so the grace-window
+  // prune in ensureAssignmentsForFiles can't strip it when the CLI pid
+  // goes stale. Ben hit this overnight 2026-04-22→23: laptop on, Claude
+  // Code CLI rotated pid, entry dropped out of 4 h grace, prune-then-
+  // recreate wiped the "TT 1" label. Each handler's positive path must
+  // pin; each retraction path (blank label, null voice, muted=false,
+  // focus=false, value=null on include) must NOT pin.
+  // ---------------------------------------------------------------------
+
+  it('set-session-label auto-pins on non-empty label', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'TT 1'), true);
+    assertEqual(deps._registry.aabbccdd.label, 'TT 1');
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-label does NOT pin when label is cleared to empty', () => {
+    // Clearing a label is a retraction of intent — don't leave a
+    // stale pin behind just because there used to be a label.
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false, label: 'old' } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', ''), true);
+    assertEqual(deps._registry.aabbccdd.label, '');
+    assertEqual(deps._registry.aabbccdd.pinned, false);
+  });
+
+  it('set-session-focus auto-pins when focus is turned ON', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-focus', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.focus, true);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-focus does NOT pin when focus is turned OFF', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false, focus: true } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-focus', 'aabbccdd', false), true);
+    assertEqual(deps._registry.aabbccdd.focus, false);
+    assertEqual(deps._registry.aabbccdd.pinned, false);
+  });
+
+  it('set-session-muted auto-pins when mute is turned ON', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.muted, true);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-muted does NOT pin when mute is turned OFF', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false, muted: true } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', false), true);
+    assertEqual(deps._registry.aabbccdd.muted, false);
+    assertEqual(deps._registry.aabbccdd.pinned, false);
+  });
+
+  it('set-session-voice auto-pins when a voice is set', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'en-GB-RyanNeural'), true);
+    assertEqual(deps._registry.aabbccdd.voice, 'en-GB-RyanNeural');
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-voice does NOT pin when voice is cleared (follow-global)', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false, voice: 'shimmer' } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
+    assertFalsy(deps._registry.aabbccdd.voice, 'voice should be deleted');
+    assertEqual(deps._registry.aabbccdd.pinned, false);
+  });
+
+  it('set-session-include auto-pins when a toggle is set true/false', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', true), true);
+    assertEqual(deps._registry.aabbccdd.speech_includes.urls, true);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-include does NOT pin when a toggle is cleared to null', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { pinned: false, speech_includes: { urls: true } } }
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', null), true);
+    assertEqual(deps._registry.aabbccdd.pinned, false);
   });
 
   it('set-session-label rejects invalid shortId', () => {

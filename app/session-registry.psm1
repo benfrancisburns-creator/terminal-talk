@@ -234,14 +234,24 @@ function Update-SessionAssignment {
         if (-not $busy.ContainsKey($i)) { $idx = $i; break }
     }
 
-    # Palette full -- LRU eviction among non-pinned entries. Matches the
-    # allocatePaletteIndex() helper in app/lib/palette-alloc.js so the
-    # statusline and the Electron UI always agree on the slot table.
+    # Palette full -- LRU eviction among entries with no user intent.
+    # An entry is protected from eviction if pinned OR if it carries
+    # any user customisation (label / voice / muted / focus /
+    # speech_includes). Matches allocatePaletteIndex() + hasUserIntent()
+    # in app/lib/palette-alloc.js so statusline + Electron UI always
+    # agree on the candidate pool.
     if ($null -eq $idx) {
         $candidates = @()
         foreach ($key in @($Assignments.Keys)) {
             $entry = $Assignments[$key]
-            if ($entry.pinned -ne $true) {
+            $hasIntent = $false
+            if ($entry.pinned -eq $true) { $hasIntent = $true }
+            elseif ($entry.label -and ([string]$entry.label).Trim().Length -gt 0) { $hasIntent = $true }
+            elseif ($entry.voice) { $hasIntent = $true }
+            elseif ($entry.muted -eq $true) { $hasIntent = $true }
+            elseif ($entry.focus -eq $true) { $hasIntent = $true }
+            elseif ($entry.speech_includes -and $entry.speech_includes.Count -gt 0) { $hasIntent = $true }
+            if (-not $hasIntent) {
                 $candidates += [pscustomobject]@{
                     Short = $key
                     LastSeen = [long]([int]$entry.last_seen)

@@ -1187,10 +1187,27 @@ function shortFromFile(name) {
 // (because its statusline hasn't fired), assign the lowest free index here.
 // Whichever writer (this or the statusline) wins, both agree on the outcome.
 // MUST stay in lock-step with the prune logic in app/statusline.ps1 + speak-response.ps1.
-// Session is considered LIVE if pinned OR PID alive OR last_seen within grace.
+// Session is considered LIVE if pinned OR has user-intent customisation OR
+// PID alive OR last_seen within grace.
+//
+// The user-intent branch (any of label / voice / muted / focus / non-empty
+// speech_includes) is a belt-and-braces guard on top of the auto-pin that
+// now happens in ipc-handlers.js. Historic registry entries written
+// before auto-pin landed (2026-04-23) may still have pinned=false with a
+// real label — treat those as live so overnight pid-rotation doesn't
+// strip them on the first prune pass after install.
 const SESSION_GRACE_SEC = 14400; // 4 hours
+function hasUserIntent(entry) {
+  if (entry.label && String(entry.label).trim().length > 0) return true;
+  if (entry.voice) return true;
+  if (entry.muted === true) return true;
+  if (entry.focus === true) return true;
+  if (entry.speech_includes && Object.keys(entry.speech_includes).length > 0) return true;
+  return false;
+}
 function isSessionLive(entry, now) {
   if (entry.pinned) return true;
+  if (hasUserIntent(entry)) return true;
   if (entry.claude_pid && isPidAlive(entry.claude_pid)) return true;
   if (entry.last_seen && (now - entry.last_seen) < SESSION_GRACE_SEC) return true;
   return false;
