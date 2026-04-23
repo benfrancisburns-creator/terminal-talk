@@ -32,6 +32,7 @@ function createIpcHandlers(deps) {
     getCFG,
     loadAssignments,
     getQueueFiles,
+    getQueueAllPaths,
     ensureAssignmentsForFiles,
     shortFromFile,
     isPidAlive,
@@ -87,9 +88,20 @@ function createIpcHandlers(deps) {
       } catch {}
     });
 
+    // Two lists, one poll:
+    //   files    — newest N (MAX_FILES) with stat metadata, drives the
+    //              dot-strip which caps its own render at MAX_VISIBLE_DOTS.
+    //   allPaths — every audio file in the queue dir (readdir only, no
+    //              stat cost), drives the tab-badge unread count so
+    //              "TT 1 67" stays honest past the dot-strip budget.
+    // Deleting a clip now shrinks both lists by one, so the badge
+    // actually decrements instead of the "delete 20, back to 20" loop.
     ipcMain.handle('get-queue', () => {
       const files = getQueueFiles();
-      return { files, assignments: ensureAssignmentsForFiles(files) };
+      const allPaths = typeof getQueueAllPaths === 'function'
+        ? getQueueAllPaths()
+        : files.map((f) => typeof f === 'string' ? f : (f && f.path));
+      return { files, allPaths, assignments: ensureAssignmentsForFiles(files) };
     });
 
     ipcMain.handle('get-assignments', () => loadAssignments());

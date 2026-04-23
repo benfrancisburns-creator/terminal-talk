@@ -137,20 +137,18 @@ let CFG = loadConfig();
   }
 }
 
-// Cap on the number of clips returned to the renderer by getQueueFiles.
-// Chosen to match the dot-strip's MAX_VISIBLE_DOTS = 40-ish budget while
-// leaving headroom for the session-run-gap spacers: the renderer slices
-// the newest 40 dots off the top anyway, so returning more here just
-// pays syscall cost for nothing.
+// Cap on the number of clips returned to the renderer by getQueueFiles
+// for dot-strip rendering. 50 gives MAX_VISIBLE_DOTS = 40 in renderer.js
+// some headroom so session-run-gap spacers don't squeeze the dot budget.
 //
-// Why 20 and not 40? Empirically the user cares about the recent past
-// -- older clips have already been played AND auto-pruned, OR the user
-// disabled auto-prune and is reviewing on purpose (in which case the
-// older clips are in the filesystem but the UI fits one horizon on the
-// strip regardless). Audit R33/R34: see docs/DESIGN-AUDIT.md §11 for
-// the rationale. If you bump this, also raise MAX_VISIBLE_DOTS in
-// renderer.js to match or the dots just get truncated client-side.
-const MAX_FILES = 20;
+// Pre-2026-04-23 this was 20, which meant the tab unread badge
+// silently capped at 20 and deletion appeared to be whack-a-mole: user
+// deletes 20 clips, next get-queue poll returns the next-newest 20,
+// badge stays at 20 even though they're making progress. Honest
+// accounting now flows through _queueWatcher.listPaths() (uncapped,
+// readdir-only, no stat cost) which the renderer uses for unread
+// counts independent of this dot-strip budget.
+const MAX_FILES = 50;
 const STALE_MS = 60 * 60 * 1000;
 
 if (!fs.existsSync(QUEUE_DIR)) fs.mkdirSync(QUEUE_DIR, { recursive: true });
@@ -207,6 +205,7 @@ const {
 } = require('./lib/queue-watcher');
 const _queueWatcher = createQueueWatcher({ queueDir: QUEUE_DIR, maxFiles: MAX_FILES });
 const getQueueFiles = _queueWatcher.list;
+const getQueueAllPaths = _queueWatcher.listPaths;
 
 function pruneOldFiles() {
   try {
@@ -627,8 +626,9 @@ function toggleWindow() {
 function notifyQueue() {
   if (win && !win.isDestroyed()) {
     const files = getQueueFiles();
+    const allPaths = getQueueAllPaths();
     const assignments = ensureAssignmentsForFiles(files);
-    win.webContents.send('queue-updated', { files, assignments });
+    win.webContents.send('queue-updated', { files, allPaths, assignments });
     // Auto-resurface for passive arrivals, but respect a user-explicit hide —
     // Ctrl+Shift+A / × close set userHiddenToolbar=true and new Claude Code
     // response clips shouldn't override that intent. Audio still plays.
@@ -1348,6 +1348,7 @@ createIpcHandlers({
   saveAssignments,
   saveConfig,
   getQueueFiles,
+  getQueueAllPaths,
   ensureAssignmentsForFiles,
   shortFromFile,
   isPidAlive,

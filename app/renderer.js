@@ -315,6 +315,12 @@ const staleSessionPoller = new window.TT_STALE_SESSION_POLLER({
 staleSessionPoller.start();
 
 let queue = [];
+// Uncapped list of every audio file path on disk. main.js ships this
+// alongside `files` (which is capped at MAX_FILES for dot-strip budget)
+// so tab unread badges can count the real backlog past the dot cap.
+// Falls back to `queue.map(f => f.path)` if main is running a pre-fix
+// build that doesn't emit allPaths.
+let allQueuePaths = [];
 const playedPaths = new Set();
 const heardPaths = new Set();
 const priorityPaths = new Set();
@@ -622,9 +628,14 @@ function renderDots() {
   });
 
   // Tabs always see the FULL queue (so per-tab unread counts stay
-  // accurate even while a non-All tab is selected).
+  // accurate even while a non-All tab is selected). allQueuePaths
+  // carries every on-disk audio path (uncapped) so the badge count
+  // reflects the real backlog past MAX_FILES — deleting a clip
+  // actually decrements the number you see instead of the old
+  // "delete 20, next 20 slide in, badge stays at 20" loop.
   tabs.update({
     queue,
+    allPaths: allQueuePaths,
     heardPaths,
     sessionAssignments,
     selectedTab,
@@ -648,6 +659,7 @@ async function deleteDot(p) {
   pendingQueue = pendingQueue.filter(x => x !== p);
   playedPaths.delete(p);
   queue = queue.filter(f => f.path !== p);
+  allQueuePaths = allQueuePaths.filter(x => x !== p);
   renderDots();
   await window.api.deleteFile(p);
 }
@@ -810,6 +822,7 @@ async function initialLoad() {
   const resp = await window.api.getQueue();
   const files = Array.isArray(resp) ? resp : (resp && resp.files) || [];
   sessionAssignments = (resp && resp.assignments) || {};
+  allQueuePaths = (resp && Array.isArray(resp.allPaths)) ? resp.allPaths : files.map((f) => f.path);
   const cutoff = Date.now() - STALE_MS;
   queue = files;
   // main.js returns newest-first (getQueueFiles sorts `b.mtime - a.mtime`).
@@ -842,6 +855,7 @@ window.api.onQueueUpdated((payload) => {
     sessionAssignments = payload.assignments;
     if (document.body.classList.contains('settings-open')) renderSessionsTable();
   }
+  allQueuePaths = (payload && Array.isArray(payload.allPaths)) ? payload.allPaths : files.map((f) => f.path);
   const prevPaths = new Set(queue.map(f => f.path));
   const newArrivals = files
     .filter(f => !prevPaths.has(f.path) && !playedPaths.has(f.path))

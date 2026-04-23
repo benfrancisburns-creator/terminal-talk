@@ -60,7 +60,20 @@ function createQueueWatcher({ queueDir, maxFiles, fs: fsDep = fs }) {
     } catch { return []; }
   }
 
-  return { list };
+  // Uncapped list of every audio file path in the queue dir, no stat
+  // syscalls. Used by the tab-badge unread counter so "TT 1 67" stays
+  // honest when the user has more unplayed clips than MAX_FILES. Dots
+  // are still bounded via list() — this is strictly a count-accuracy
+  // feed. Cost: one readdir per call, same as the first step of list().
+  function listPaths() {
+    try {
+      return fsDep.readdirSync(queueDir)
+        .filter((f) => isAudioFile(f))
+        .map((f) => path.join(queueDir, f));
+    } catch { return []; }
+  }
+
+  return { list, listPaths };
 }
 
 module.exports = { createQueueWatcher, isAudioFile, AUDIO_OR_PARTIAL_RE };

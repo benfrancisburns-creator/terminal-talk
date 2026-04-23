@@ -2089,6 +2089,37 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
 // entry hung around with its colour, and a "ghost" orange re-appeared from
 // stale queue files. These scenarios are the behavioural contract for the fix.
 // =============================================================================
+describe('DOT STRIP LAYOUT (left-aligned, packed)', () => {
+  // Ben's 2026-04-23 ask: dots should start from the left edge and sit
+  // fairly close together so as many fit as possible — reverted the
+  // 2026-04-22 space-evenly change that spread four dots across the
+  // whole bar. CSS gate so a future style edit can't silently restore
+  // the spread-out look.
+  const cssPath = path.join(__dirname, '..', 'app', 'styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  const dotsBlock = css.match(/\.dots\s*\{[\s\S]*?\n\}/);
+
+  it('.dots uses flex-start justification (packs from the left)', () => {
+    if (!dotsBlock) throw new Error('.dots block missing from styles.css');
+    if (!/justify-content:\s*flex-start/.test(dotsBlock[0])) {
+      throw new Error('.dots must be justify-content: flex-start to pack dots densely from the left');
+    }
+    if (/justify-content:\s*space-(evenly|between|around)/.test(dotsBlock[0])) {
+      throw new Error('.dots must NOT use space-evenly/between/around — dots were spreading across the full bar');
+    }
+  });
+
+  it('.dots uses a tight gap (≤ 5px) so maximum dots fit in the strip', () => {
+    if (!dotsBlock) throw new Error('.dots block missing from styles.css');
+    const gap = dotsBlock[0].match(/gap:\s*(\d+)px/);
+    if (!gap) throw new Error('.dots must declare an explicit px gap');
+    const gapPx = Number(gap[1]);
+    if (gapPx > 5) {
+      throw new Error(`.dots gap should be ≤ 5px for density (got ${gapPx}px)`);
+    }
+  });
+});
+
 describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
   const MODULE_PATH = path.join(APP_DIR, 'session-registry.psm1');
 
@@ -3419,6 +3450,74 @@ describe('TABS — unread count is derived, not stored', () => {
     if (a !== 1) throw new Error(`session-a should ignore unparseable, got ${a}`);
   });
 
+  // ---------------------------------------------------------------------
+  // Option-C "honest badge" contract (landed 2026-04-23): unreadCount
+  // now accepts a path-string list (uncapped, comes from main.js
+  // allPaths) as well as the legacy {path} object list. This is the
+  // core fix for Ben's "delete 20, pops back to 20" — badges count
+  // over the full on-disk list rather than the MAX_FILES-capped dot
+  // metadata feed.
+  // ---------------------------------------------------------------------
+
+  it('allPaths: string-list form counts correctly (new uncapped input shape)', () => {
+    const paths = [
+      'C:\\fake\\queue\\resp_aaaaaaaa_0.mp3',
+      'C:\\fake\\queue\\resp_aaaaaaaa_1.mp3',
+      'C:\\fake\\queue\\resp_bbbbbbbb_0.mp3',
+    ];
+    const heard = new Set();
+    if (unreadCount(paths, heard, stubClipPaths, 'all') !== 3) throw new Error('all count wrong');
+    if (unreadCount(paths, heard, stubClipPaths, 'aaaaaaaa') !== 2) throw new Error('per-session count wrong');
+    if (unreadCount(paths, heard, stubClipPaths, 'bbbbbbbb') !== 1) throw new Error('per-session count wrong');
+  });
+
+  it('allPaths: mixing string and {path} entries works (defensive normalisation)', () => {
+    const mixed = [
+      'C:\\fake\\queue\\resp_aaaaaaaa_0.mp3',
+      { path: 'C:\\fake\\queue\\resp_aaaaaaaa_1.mp3', mtime: 0 },
+    ];
+    const heard = new Set();
+    if (unreadCount(mixed, heard, stubClipPaths, 'aaaaaaaa') !== 2) {
+      throw new Error('mixed shape must count both entries');
+    }
+  });
+
+  it('allPaths: deleting a path from the full list decrements the count (no refill illusion)', () => {
+    // Simulates Ben's bug scenario: 67 unplayed clips on disk, dot-strip
+    // only rendered 20. Deleting a dot removed it from `queue` (the
+    // capped 20), badge stayed at 20 because next poll re-filled.
+    // Under allPaths the badge walks every on-disk path, so deletion
+    // actually decrements the displayed number.
+    const makePaths = (n) => Array.from({ length: n }, (_, i) =>
+      `C:\\fake\\queue\\resp_aaaaaaaa_${String(i).padStart(3, '0')}.mp3`);
+    const paths67 = makePaths(67);
+    const heard = new Set();
+    if (unreadCount(paths67, heard, stubClipPaths, 'aaaaaaaa') !== 67) {
+      throw new Error('fresh 67-path list should read 67');
+    }
+    const paths47 = paths67.slice(20); // 20 "deleted"
+    if (unreadCount(paths47, heard, stubClipPaths, 'aaaaaaaa') !== 47) {
+      throw new Error('after removing 20 from the full list the count must drop to 47');
+    }
+  });
+
+  it('allPaths: empty string-list yields 0 (does not crash on empty)', () => {
+    if (unreadCount([], new Set(), stubClipPaths, 'all') !== 0) throw new Error('empty → 0');
+  });
+
+  it('allPaths: null/undefined/non-string entries are skipped safely', () => {
+    const dirty = [
+      null,
+      undefined,
+      42,
+      '',
+      'C:\\fake\\queue\\resp_aaaaaaaa_0.mp3',
+    ];
+    if (unreadCount(dirty, new Set(), stubClipPaths, 'all') !== 1) {
+      throw new Error('dirty input must be filtered to the one real path');
+    }
+  });
+
   it('partitionSessions: fresh last_seen → active, old → stale', () => {
     const now = 1_700_000_000_000;
     const staleMs = 30 * 60 * 1000;
@@ -4355,8 +4454,24 @@ describe('EX6f-1 — ipc-handlers (read-only group)', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('get-queue'), {
       files: ['x.mp3', 'y.mp3'],
+      allPaths: ['x.mp3', 'y.mp3'],   // fallback when getQueueAllPaths not provided
       assignments: { count: 2 },
     });
+  });
+
+  it('get-queue emits getQueueAllPaths output when provided', () => {
+    // The honest-badge fix (2026-04-23): renderer badges count from
+    // allPaths (uncapped on-disk list), not the MAX_FILES-capped files
+    // array. Handler must pass allPaths through verbatim.
+    const deps = baseDeps({
+      getQueueFiles: () => [{ path: '/q/new.mp3' }],
+      getQueueAllPaths: () => ['/q/new.mp3', '/q/old1.mp3', '/q/old2.mp3'],
+      ensureAssignmentsForFiles: () => ({}),
+    });
+    createIpcHandlers(deps).register();
+    const out = deps.ipcMain.invoke('get-queue');
+    assertEqual(out.allPaths, ['/q/new.mp3', '/q/old1.mp3', '/q/old2.mp3']);
+    assertEqual(out.files.length, 1);
   });
 
   it('get-assignments delegates to loadAssignments', () => {
@@ -6607,6 +6722,43 @@ describe('EX6c — queue-watcher', () => {
     let caught = false;
     try { createQueueWatcher({ queueDir: '/x', maxFiles: 0 }); } catch { caught = true; }
     assertEqual(caught, true);
+  });
+
+  it('listPaths returns every audio file in the queue dir (uncapped, no stat)', () => {
+    // Feeds the tab-badge honest-count path. Must return all audio files
+    // regardless of maxFiles — that's what makes "delete 20, drop to 47"
+    // actually work. Must also not call statSync (verified via fake fs
+    // that throws if stat is hit).
+    const calls = { readdir: 0, stat: 0 };
+    const fakeFs = {
+      readdirSync: () => {
+        calls.readdir += 1;
+        return [
+          'a.mp3', 'b.mp3', 'c.mp3', 'd.mp3', 'e.mp3',
+          'f.wav', 'g.partial', 'h.txt', 'i.MP3',
+        ];
+      },
+      statSync: () => { calls.stat += 1; throw new Error('listPaths must not stat'); },
+    };
+    const watcher = createQueueWatcher({ queueDir: '/fake', maxFiles: 2, fs: fakeFs });
+    const paths = watcher.listPaths();
+    // 5 mp3 + 1 wav + 1 MP3 (case-insensitive) = 7 audio files
+    assertEqual(paths.length, 7);
+    assertEqual(calls.stat, 0);
+    // Each path is prefixed with queueDir.
+    for (const p of paths) {
+      if (!p.startsWith('/fake') && !p.startsWith('\\fake')) {
+        throw new Error(`listPaths must prepend queueDir; got ${p}`);
+      }
+    }
+  });
+
+  it('listPaths returns [] if readdir throws', () => {
+    const watcher = createQueueWatcher({
+      queueDir: '/fake', maxFiles: 10,
+      fs: { readdirSync: () => { throw new Error('ENOENT'); }, statSync: () => null },
+    });
+    assertEqual(watcher.listPaths(), []);
   });
 });
 
