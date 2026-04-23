@@ -9552,6 +9552,291 @@ describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
   });
 });
 
+// =============================================================================
+// PHASE 4 — MODULE 4: ipc-handlers.js DEEPER VALIDATOR COVERAGE
+//
+// EX6f-1/2/3/4 combined have ~61 tests covering the happy paths and core
+// rejection branches. This pass fills the adversarial input gaps:
+//   - validShort boundary variants (case / length / non-hex / non-string)
+//   - set-session-index numeric extremes (Infinity / negative / MAX_VALUE)
+//   - sanitiseLabel behaviour on control chars + oversized strings
+//   - set-session-voice falsy-variant clearing (null / '' / whitespace)
+//   - update-config with unusual payload shapes
+//   - remove-session with a missing QUEUE_DIR
+// =============================================================================
+describe('PHASE 4 #4 — ipc-handlers validator edge coverage', () => {
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+  const {
+    validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+
+  function makeFakeIpcMain() {
+    const handlers = new Map();
+    return {
+      handle(name, fn) { handlers.set(name, fn); },
+      invoke(name, ...args) {
+        const fn = handlers.get(name);
+        if (!fn) throw new Error(`no handler: ${name}`);
+        return fn({}, ...args);
+      },
+    };
+  }
+
+  function mutationDeps(overrides = {}) {
+    const registry = overrides.registry || {};
+    return {
+      ipcMain: makeFakeIpcMain(),
+      diag: () => {},
+      getCFG: () => (overrides.cfg || {}),
+      setCFG: (v) => { overrides.cfg = v; },
+      getWin: () => ({ isDestroyed: () => false }),
+      loadAssignments: () => JSON.parse(JSON.stringify(registry)),
+      saveAssignments: (all) => {
+        Object.keys(registry).forEach((k) => delete registry[k]);
+        Object.assign(registry, all);
+        return true;
+      },
+      saveConfig: () => true,
+      getQueueFiles: () => [],
+      ensureAssignmentsForFiles: () => ({}),
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: '/nope',
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      apiKeyStore: { get: () => null, set: () => {} },
+      redactForLog: (x) => x,
+      validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+      ...overrides,
+      _registry: registry,
+    };
+  }
+
+  // ---- validShort boundary variants: every mutation handler rejects ---
+  const BAD_SHORTS = [
+    ['uppercase hex (case-sensitive regex)', 'AABBCCDD'],
+    ['7 chars (one too short)',               'aabbccd'],
+    ['9 chars (one too long)',                'aabbccdde'],
+    ['contains a non-hex char (z)',           'aabbccdz'],
+    ['whitespace padded',                     ' aabbccdd'],
+    ['null',                                  null],
+    ['undefined',                             undefined],
+    ['number',                                123],
+    ['object',                                { x: 1 }],
+    ['empty string',                          ''],
+  ];
+  for (const [desc, short] of BAD_SHORTS) {
+    it(`set-session-label rejects bad shortId: ${desc}`, () => {
+      const deps = mutationDeps({ registry: { aabbccdd: { index: 0, label: '' } } });
+      createIpcHandlers(deps).register();
+      assertEqual(deps.ipcMain.invoke('set-session-label', short, 'x'), false);
+      assertEqual(deps._registry.aabbccdd.label, '',
+        'registry untouched when shortId rejected');
+    });
+  }
+
+  // ---- set-session-index numeric extremes ------------------------------
+  it('set-session-index with Infinity returns false (not finite)', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 3 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', Infinity), false);
+    assertEqual(deps._registry.aabbccdd.index, 3, 'registry unchanged on non-finite');
+  });
+
+  it('set-session-index with -Infinity returns false', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 3 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', -Infinity), false);
+  });
+
+  it('set-session-index with huge positive number clamps to 23', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 3 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 999999), true);
+    assertEqual(deps._registry.aabbccdd.index, 23);
+  });
+
+  it('set-session-index with huge negative number clamps to 0', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 5 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', -999999), true);
+    assertEqual(deps._registry.aabbccdd.index, 0);
+  });
+
+  it('set-session-index with boolean true coerces to 1 (finite Number(true))', () => {
+    // Number(true) = 1 — passes Number.isFinite. Whether this should be
+    // allowed is a product call. Lock in the current behaviour so any
+    // future reject-non-numeric tightening is intentional.
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 5 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.index, 1);
+  });
+
+  it('set-session-index with exact boundary 23 accepted', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 23), true);
+    assertEqual(deps._registry.aabbccdd.index, 23);
+  });
+
+  it('set-session-index with fractional 5.7 floors to 5', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', 5.7), true);
+    assertEqual(deps._registry.aabbccdd.index, 5);
+  });
+
+  // ---- sanitiseLabel behaviour in handler context ----------------------
+  it('set-session-label strips control chars (CR/LF/TAB) from label', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0, label: '' } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'a\nb\tc\rd'), true);
+    assertEqual(deps._registry.aabbccdd.label, 'a b c d');
+  });
+
+  it('set-session-label truncates labels > 60 chars', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0, label: '' } } });
+    createIpcHandlers(deps).register();
+    const long = 'x'.repeat(200);
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', long), true);
+    assertEqual(deps._registry.aabbccdd.label.length, 60);
+  });
+
+  it('set-session-label with non-string label (number) becomes empty', () => {
+    // sanitiseLabel returns '' for non-string input. Label gets cleared.
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0, label: 'previous' } } });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('set-session-label', 'aabbccdd', 42);
+    assertEqual(deps._registry.aabbccdd.label, '',
+      'non-string label treated as empty (sanitiseLabel contract)');
+  });
+
+  // ---- set-session-voice falsy-variant clearing ------------------------
+  it('set-session-voice with null clears an existing voice', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, voice: 'shimmer' } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
+    assertEqual(deps._registry.aabbccdd.voice, undefined,
+      'null voiceId must delete the voice field (follow global default)');
+  });
+
+  it('set-session-voice with empty string "" clears', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, voice: 'shimmer' } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', ''), true);
+    assertEqual(deps._registry.aabbccdd.voice, undefined);
+  });
+
+  it('set-session-voice with invalid voice name returns false', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, voice: 'shimmer' } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'not-a-real-voice'), false);
+    assertEqual(deps._registry.aabbccdd.voice, 'shimmer',
+      'invalid voice leaves existing voice unchanged');
+  });
+
+  // ---- set-session-include strict-boolean enforcement ------------------
+  it('set-session-include with string "true" rejected (not strict boolean)', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', 'true'), false);
+    assertFalsy(deps._registry.aabbccdd.speech_includes,
+      'no speech_includes written when value type rejected');
+  });
+
+  it('set-session-include with numeric 1 rejected (not strict boolean)', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { index: 0 } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', 1), false);
+  });
+
+  it('set-session-include with value=null clears an existing override', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, speech_includes: { urls: true } } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', null), true);
+    assertFalsy(deps._registry.aabbccdd.speech_includes,
+      'after clearing the only key, empty speech_includes is deleted entirely');
+  });
+
+  it('set-session-include with value=undefined clears (matches null)', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, speech_includes: { urls: true, code_blocks: true } } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', undefined), true);
+    // 'urls' gone, 'code_blocks' still there.
+    assertDeepEqual(deps._registry.aabbccdd.speech_includes, { code_blocks: true });
+  });
+
+  // ---- update-config edge cases ----------------------------------------
+  it('update-config handles deeply nested playback update without flattening siblings', () => {
+    const initial = {
+      voices: { edge_response: 'ryan' },
+      playback: { speed: 1.25, auto_prune_sec: 20 },
+    };
+    const deps = mutationDeps({ cfg: initial });
+    createIpcHandlers(deps).register();
+    // Update only playback.speed — voices + playback.auto_prune_sec must survive.
+    deps.ipcMain.invoke('update-config', { playback: { speed: 2.0 } });
+    const cfg = deps.getCFG();
+    assertEqual(cfg.playback.speed, 2.0);
+    assertEqual(cfg.playback.auto_prune_sec, 20,
+      'sibling nested keys must not be dropped by the merge');
+    assertEqual(cfg.voices.edge_response, 'ryan',
+      'sibling top-level sections must not be dropped');
+  });
+
+  // ---- remove-session with missing QUEUE_DIR ---------------------------
+  it('remove-session tolerates missing QUEUE_DIR (no purge attempted)', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { index: 0, label: 'dying' } },
+      // QUEUE_DIR intentionally undefined — the purge block must guard.
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), true);
+    assertFalsy(deps._registry.aabbccdd, 'entry removed from registry');
+  });
+
+  // ---- validVoice boundary coverage ------------------------------------
+  it('validVoice accepts the full edge-tts naming scheme', () => {
+    for (const v of [
+      'en-GB-RyanNeural',
+      'en-US-AriaNeural',
+      'fr-FR-DeniseNeural',
+      'zh-CN-XiaoxiaoNeural',
+      // OpenAI single-word ids
+      'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer',
+    ]) {
+      if (!validVoice(v)) throw new Error(`validVoice rejected "${v}"`);
+    }
+  });
+
+  it('validVoice rejects obvious injection attempts', () => {
+    for (const v of [
+      'en-GB-RyanNeural; rm -rf /',
+      '../../etc/passwd',
+      '',
+      null,
+      undefined,
+      42,
+      'x'.repeat(200),
+    ]) {
+      if (validVoice(v)) throw new Error(`validVoice accepted bad input: ${JSON.stringify(v)}`);
+    }
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');
