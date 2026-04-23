@@ -33,7 +33,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { spawn: defaultSpawn } = require('node:child_process');
 
 class TranscriptWatcher {
   constructor(opts = {}) {
@@ -49,6 +49,10 @@ class TranscriptWatcher {
       // against a synth_turn that hangs (lock steal triggers eventually).
       minSpawnGapMs = 400,
       diag = () => {},
+      // Injectable child_process.spawn for tests. Production passes the
+      // real node:child_process spawn; tests substitute a fake that
+      // returns a recorded-args handle without actually launching Python.
+      spawnFn = defaultSpawn,
     } = opts;
     this._sessionsDir = path.join(ttHome, 'sessions');
     this._claudeProjectsDir = claudeProjectsDir;
@@ -57,6 +61,7 @@ class TranscriptWatcher {
     this._pollIntervalMs = pollIntervalMs;
     this._minSpawnGapMs = minSpawnGapMs;
     this._diag = diag;
+    this._spawn = spawnFn;
 
     // Per-session state:
     //   inFlight   — child process handle currently running for this short
@@ -140,7 +145,7 @@ class TranscriptWatcher {
       '--mode', 'on-stream'];
     let proc;
     try {
-      proc = spawn(this._pythonExe, args, {
+      proc = this._spawn(this._pythonExe, args, {
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],
         detached: false,

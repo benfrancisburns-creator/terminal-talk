@@ -2267,6 +2267,567 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
 });
 
 // =============================================================================
+// SPEECH INCLUDES COMBINATORIAL SMOKE (audit 2026-04-23 Tier A #4)
+//
+// Seven toggles in the panel × per-session override × global default.
+// Ben's concern: "it's not just a case of testing one on and off;
+// you've got to test them in different variations because it could
+// conflict." These tests don't cover the full 128-combo matrix (that's
+// Phase 3), just the per-key isolation + a handful of combinations
+// that exercise known boundary pairs: inline_code × bullet_markers
+// (both touch backticks-in-list-items), headings × code_blocks (both
+// are line-scoped block strippers), image_alt × urls (both touch
+// parentheses).
+// =============================================================================
+describe('speech_includes combinatorial smoke', () => {
+  const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
+
+  // A canonical mixed input: exercises every key's feature at least
+  // once. `---` delimiters keep each section separately inspectable
+  // in test output when an assertion fails.
+  // Use `arr.filter(x)` as the inline-code sample. The short-identifier
+  // whitelist keeps clean prose-like tokens (`session_id`, `/clear`) but
+  // the parens disqualify, so we get reliably different output between
+  // inline_code=true and inline_code=false.
+  const KITCHEN_SINK = [
+    '# Heading text',
+    '',
+    'Plain paragraph with `arr.filter(x)` here.',
+    '',
+    '- First bullet item',
+    '- Second bullet item',
+    '',
+    '```python',
+    'def hello(): print("hi")',
+    '```',
+    '',
+    'Image: ![the alt text](http://img/thing.png)',
+    '',
+    'Naked URL: https://example.com/path',
+    '',
+    'Link: [click here](http://other/place)',
+  ].join('\n');
+
+  function on(...keys) {
+    const out = {};
+    for (const k of keys) out[k] = true;
+    return out;
+  }
+  function off(...keys) {
+    const out = {};
+    for (const k of keys) out[k] = false;
+    return out;
+  }
+
+  it('defaults: headings ON, everything else OFF — expected features appear/disappear', () => {
+    const out = stripForTTS(KITCHEN_SINK);
+    assertTruthy(out.includes('Heading text'), 'headings default ON — heading text must be present');
+    assertFalsy(out.includes('arr.filter'), 'inline_code default OFF — disqualified (parens) inline span must be stripped');
+    assertFalsy(out.includes('def hello'), 'code_blocks default OFF — code body must be stripped');
+    assertFalsy(out.includes('the alt text'), 'image_alt default OFF — alt text must be stripped');
+    assertFalsy(out.includes('example.com'), 'urls default OFF — bare URL must be stripped');
+    assertTruthy(out.includes('click here'), 'link text is always kept (URL stripped regardless)');
+  });
+
+  // --- Per-key isolation: toggle ONE key, verify exactly that feature changes -
+
+  it('isolation: code_blocks=true exposes the code body', () => {
+    const out = stripForTTS(KITCHEN_SINK, on('code_blocks'));
+    assertTruthy(out.includes('def hello'));
+  });
+
+  it('isolation: inline_code=true exposes the inline span content (even when disqualified)', () => {
+    const out = stripForTTS(KITCHEN_SINK, on('inline_code'));
+    assertTruthy(out.includes('arr.filter'),
+      'inline_code=true must keep the span content regardless of the whitelist heuristics');
+  });
+
+  it('isolation: inline_code=false — prose-like identifiers kept by whitelist, code-like stripped', () => {
+    // The whitelist (looksLikeInlineProse) preserves `session_id`,
+    // `/clear`, `pid=0` as prose; `foo()` and friends get stripped.
+    // This behaviour is deliberate — Ben hit the `/clear` message bug
+    // where stripping it turned explanatory sentences into nonsense.
+    const input = 'Run the `/clear` command; use `arr.filter(x)` too.';
+    const out = stripForTTS(input, off('inline_code'));
+    assertTruthy(out.includes('/clear'), 'whitelist must keep prose-like tokens');
+    assertFalsy(out.includes('arr.filter'), 'disqualified tokens with parens must be stripped');
+  });
+
+  it('isolation: urls=true keeps bare URLs in the spoken stream', () => {
+    const out = stripForTTS(KITCHEN_SINK, on('urls'));
+    assertTruthy(out.includes('example.com'));
+  });
+
+  it('isolation: headings=false drops the entire heading line', () => {
+    const out = stripForTTS(KITCHEN_SINK, off('headings'));
+    assertFalsy(out.includes('Heading text'),
+      'headings=false must drop the heading text, not just the # marker');
+  });
+
+  it('isolation: image_alt=true exposes the alt-text (never the URL)', () => {
+    const out = stripForTTS(KITCHEN_SINK, on('image_alt'));
+    assertTruthy(out.includes('the alt text'));
+    assertFalsy(out.includes('img/thing.png'),
+      'image URL must be dropped regardless of image_alt setting');
+  });
+
+  it('isolation: bullet_markers=true keeps the leading "- " markers', () => {
+    const out = stripForTTS(KITCHEN_SINK, on('bullet_markers'));
+    // Can't assert a literal "- " on a single line (whitespace
+    // normaliser collapses everything) but we CAN assert the bullet
+    // content didn't get the implicit period appended.
+    assertFalsy(/First bullet item\.\s/.test(out),
+      'bullet_markers=true must NOT add the implicit period that stripping applies');
+  });
+
+  it('isolation: bullet_markers=false strips markers and appends implicit period', () => {
+    const out = stripForTTS(KITCHEN_SINK, off('bullet_markers'));
+    // With markers stripped, each bullet becomes its own sentence
+    // (implicit period injected so downstream sentence-split sees
+    // proper boundaries).
+    assertTruthy(/First bullet item\./.test(out));
+    assertTruthy(/Second bullet item\./.test(out));
+  });
+
+  // --- Known boundary pairs (where a bug in one could mis-strip the other) ---
+
+  it('pair: inline_code=true + bullet_markers=true — backticks-in-list items stay intact', () => {
+    const input = '- Item with `inline` span\n- Another `one` here';
+    const out = stripForTTS(input, { ...on('inline_code'), ...on('bullet_markers') });
+    assertTruthy(out.includes('inline'));
+    assertTruthy(out.includes('one'));
+  });
+
+  it('pair: headings=false + code_blocks=false — both block strippers fire without interaction', () => {
+    const input = '# H1\nprose before fence\n```js\ncode();\n```\nprose after fence';
+    const out = stripForTTS(input, { ...off('headings'), ...off('code_blocks') });
+    assertFalsy(out.includes('H1'), 'heading dropped');
+    assertFalsy(out.includes('code()'), 'code-block body dropped');
+    assertTruthy(out.includes('prose before'));
+    assertTruthy(out.includes('prose after'),
+      'prose after the fence survives (code-block regex must terminate correctly)');
+  });
+
+  it('pair: image_alt=true + urls=false — alt stays, URL drops', () => {
+    const input = 'See ![my image](http://pic/x.png) and visit https://go.example';
+    const out = stripForTTS(input, { ...on('image_alt'), ...off('urls') });
+    assertTruthy(out.includes('my image'));
+    assertFalsy(out.includes('pic/x.png'));
+    assertFalsy(out.includes('go.example'));
+  });
+
+  it('pair: image_alt=false + urls=true — image fully gone, bare URL kept', () => {
+    const input = 'See ![my image](http://pic/x.png) and https://go.example';
+    const out = stripForTTS(input, { ...off('image_alt'), ...on('urls') });
+    assertFalsy(out.includes('my image'));
+    assertTruthy(out.includes('go.example'));
+  });
+
+  // --- Kitchen-sink all-on vs all-off ---
+
+  it('kitchen-sink all-on: every feature visible', () => {
+    const out = stripForTTS(KITCHEN_SINK, {
+      code_blocks: true, inline_code: true, urls: true,
+      headings: true, bullet_markers: true, image_alt: true, tool_calls: true,
+    });
+    assertTruthy(out.includes('Heading text'));
+    assertTruthy(out.includes('arr.filter'));
+    assertTruthy(out.includes('def hello'));
+    assertTruthy(out.includes('the alt text'));
+    assertTruthy(out.includes('example.com'));
+  });
+
+  it('kitchen-sink all-off: every toggleable feature stripped', () => {
+    const out = stripForTTS(KITCHEN_SINK, {
+      code_blocks: false, inline_code: false, urls: false,
+      headings: false, bullet_markers: false, image_alt: false, tool_calls: false,
+    });
+    assertFalsy(out.includes('Heading text'));
+    assertFalsy(out.includes('def hello'));
+    assertFalsy(out.includes('the alt text'));
+    assertFalsy(out.includes('example.com'));
+    assertFalsy(out.includes('arr.filter'),
+      'disqualified inline span (with parens) must be stripped when inline_code=false');
+  });
+
+  it('null/empty input — no crash regardless of toggles', () => {
+    assertEqual(stripForTTS(''), '');
+    assertEqual(stripForTTS(null), '');
+    assertEqual(stripForTTS(undefined), '');
+    assertEqual(stripForTTS('', on('code_blocks', 'urls')), '');
+  });
+
+  it('tool_calls flag does not affect stripForTTS output (Python-side only)', () => {
+    // Per text.js comment line ~31: JS stripForTTS keeps tool_calls in
+    // the DEFAULTS shape for config lock-step with Python but does not
+    // act on it. This test locks in that invariant — if someone adds a
+    // JS-side action for tool_calls without updating the Python mirror,
+    // we want to know.
+    const outA = stripForTTS(KITCHEN_SINK, { tool_calls: true });
+    const outB = stripForTTS(KITCHEN_SINK, { tool_calls: false });
+    assertEqual(outA, outB,
+      'tool_calls must not change stripForTTS output on the JS side');
+  });
+});
+
+// =============================================================================
+// TRANSCRIPT WATCHER — lifecycle + spawn gating. The module was shipping
+// with zero dedicated tests until the 2026-04-23 audit. Key invariants
+// to lock in:
+//   - start()/stop() are idempotent
+//   - no flag files → no spawn
+//   - flag + transcript present → one spawn, correct CLI args
+//   - inFlight guard: no second spawn while first is running
+//   - minSpawnGapMs rate limit respected
+//   - transcript path re-resolution when the file disappears
+// =============================================================================
+describe('TranscriptWatcher lifecycle (EX7f / audit 2026-04-23)', () => {
+  const { TranscriptWatcher } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'transcript-watcher.js')
+  );
+
+  // Fake child_process.spawn — records args, returns a handle that
+  // listens for 'exit' + exposes a .stderr .on() stub. Never touches
+  // the real filesystem or spawns a real Python.
+  function makeFakeSpawn() {
+    const calls = [];
+    const procs = [];
+    const fn = (exe, args, opts) => {
+      const exitListeners = [];
+      const errorListeners = [];
+      const stderrListeners = [];
+      const proc = {
+        _exited: false,
+        stderr: { on: (ev, cb) => { if (ev === 'data') stderrListeners.push(cb); } },
+        on: (ev, cb) => {
+          if (ev === 'exit')  exitListeners.push(cb);
+          if (ev === 'error') errorListeners.push(cb);
+        },
+        fireExit(code = 0) {
+          if (proc._exited) return;
+          proc._exited = true;
+          for (const cb of exitListeners) cb(code);
+        },
+      };
+      calls.push({ exe, args, opts });
+      procs.push(proc);
+      return proc;
+    };
+    return { fn, calls, procs };
+  }
+
+  // Ephemeral temp dir with sessions/ and .claude/projects/<sub>/ carved
+  // out. Each test gets its own so they don't collide or leak state.
+  function makeTempHome() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-watcher-'));
+    const sessionsDir = path.join(root, 'sessions');
+    const projectsDir = path.join(root, '.claude', 'projects', 'some-project');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.mkdirSync(projectsDir, { recursive: true });
+    return {
+      root,
+      sessionsDir,
+      projectsDir,
+      writeFlag(short) {
+        fs.writeFileSync(path.join(sessionsDir, `${short}-working.flag`), '123', 'utf8');
+      },
+      writeTranscript(sessionId) {
+        const p = path.join(projectsDir, `${sessionId}.jsonl`);
+        fs.writeFileSync(p, '{}\n', 'utf8');
+        return p;
+      },
+      cleanup() {
+        try { fs.rmSync(root, { recursive: true, force: true }); } catch {}
+      },
+    };
+  }
+
+  function makeWatcher(home, fakeSpawn, overrides = {}) {
+    return new TranscriptWatcher({
+      ttHome: home.root,
+      claudeProjectsDir: path.join(home.root, '.claude', 'projects'),
+      synthScript: '/fake/synth_turn.py',
+      pythonExe: 'python-fake',
+      pollIntervalMs: 10000,  // never let the real timer fire in tests
+      minSpawnGapMs: 400,
+      spawnFn: fakeSpawn.fn,
+      diag: () => {},
+      ...overrides,
+    });
+  }
+
+  it('start() is idempotent — second call does not re-arm', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      w.start();
+      w.start();  // no-op — already armed
+      assertEqual(w._armed, true);
+      w.stop();
+    } finally { home.cleanup(); }
+  });
+
+  it('stop() clears the pending timer and can be called twice', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      w.start();
+      w.stop();
+      assertEqual(w._armed, false);
+      assertEqual(w._pollTimer, null);
+      w.stop();  // idempotent
+    } finally { home.cleanup(); }
+  });
+
+  it('_readActiveShorts returns the 8-hex shortids from valid flag files', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      home.writeFlag('deadbeef');
+      // Malformed entries MUST be ignored so a stray file can't
+      // wake the watcher for a bogus session.
+      fs.writeFileSync(path.join(home.sessionsDir, 'not-a-flag.txt'), 'x');
+      fs.writeFileSync(path.join(home.sessionsDir, 'ZZZZZZZZ-working.flag'), 'x');  // non-hex
+      fs.writeFileSync(path.join(home.sessionsDir, 'aabbccd-working.flag'),  'x');  // only 7 chars
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      const out = w._readActiveShorts().sort();
+      assertEqual(out, ['aabbccdd', 'deadbeef']);
+    } finally { home.cleanup(); }
+  });
+
+  it('_readActiveShorts returns [] when sessions dir does not exist', () => {
+    const home = makeTempHome();
+    try {
+      fs.rmSync(home.sessionsDir, { recursive: true });
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      assertEqual(w._readActiveShorts(), []);
+    } finally { home.cleanup(); }
+  });
+
+  it('_findTranscript matches by shortId prefix inside claude projects', () => {
+    const home = makeTempHome();
+    try {
+      home.writeTranscript('aabbccdd-1234-5678-9abc-def012345678');
+      // A noise file that shouldn't match (wrong prefix)
+      home.writeTranscript('deadbeef-9999-8888-7777-111122223333');
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      const match = w._findTranscript('aabbccdd');
+      assertTruthy(match && match.endsWith('.jsonl'),
+        `expected transcript for aabbccdd, got ${match}`);
+      assertTruthy(match.includes('aabbccdd-1234'));
+      // Missing prefix → null.
+      assertEqual(w._findTranscript('ffffffff'), null);
+    } finally { home.cleanup(); }
+  });
+
+  it('_maybeSpawn does nothing when no transcript exists yet', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      // No transcript written — the flag is there but Claude Code
+      // hasn't produced the JSONL yet. Must not spawn.
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 0);
+    } finally { home.cleanup(); }
+  });
+
+  it('_maybeSpawn fires spawn with the expected CLI shape on first poll', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      const transcriptPath = home.writeTranscript(
+        'aabbccdd-1234-5678-9abc-def012345678'
+      );
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      const { exe, args } = spawner.calls[0];
+      assertEqual(exe, 'python-fake');
+      // Arg order matches synth_turn.py's CLI contract.
+      assertEqual(args[0], '-u');
+      assertEqual(args[1], '/fake/synth_turn.py');
+      assertEqual(args.indexOf('--session'),    2);
+      assertEqual(args.indexOf('--transcript'), 4);
+      assertEqual(args.indexOf('--mode'),       6);
+      assertEqual(args[7], 'on-stream');
+      assertEqual(args[5], transcriptPath);
+    } finally { home.cleanup(); }
+  });
+
+  it('_maybeSpawn skips a second spawn while the first is still running', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444444444444');
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner);
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      // Second poll immediately after — first synth still in-flight,
+      // must not spawn another.
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1, 'inFlight guard must suppress the second spawn');
+    } finally { home.cleanup(); }
+  });
+
+  it('after the first spawn exits, another spawn is allowed (rate-limit permitting)', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444444444444');
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, { minSpawnGapMs: 0 });
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      // Fire the child's 'exit' event — watcher's cleanup clears
+      // inFlight. With minSpawnGapMs=0, the very next poll can spawn
+      // again.
+      spawner.procs[0].fireExit(0);
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 2);
+    } finally { home.cleanup(); }
+  });
+
+  it('minSpawnGapMs rate-limits back-to-back polls on the same session', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444444444444');
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, { minSpawnGapMs: 999999 });
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      spawner.procs[0].fireExit(0);
+      // inFlight is now null, but lastSpawn was just recorded — the
+      // rate-limit guard must block a second spawn.
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1, 'rate-limit must suppress the second spawn');
+    } finally { home.cleanup(); }
+  });
+
+  it('when transcript disappears between polls, the cached path is nulled for re-resolution', () => {
+    const home = makeTempHome();
+    try {
+      home.writeFlag('aabbccdd');
+      const p = home.writeTranscript('aabbccdd-1111-2222-3333-444444444444');
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, { minSpawnGapMs: 0 });
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      spawner.procs[0].fireExit(0);
+      // Claude Code rotates the transcript; the cached path no
+      // longer exists on disk.
+      fs.unlinkSync(p);
+      w._maybeSpawn('aabbccdd');
+      // No new spawn — transcript is gone. State cleared.
+      assertEqual(spawner.calls.length, 1);
+      const state = w._state.get('aabbccdd');
+      assertEqual(state.transcript, null,
+        'cached transcript path must be cleared when file disappears so next tick re-resolves');
+    } finally { home.cleanup(); }
+  });
+});
+
+// =============================================================================
+// SCRAPE SUBPROCESS TIMEOUT (d4dddac) — the Stop hook must bound the
+// scrape subprocess at 4 s so Claude Code can't time out the whole
+// hook mid-scrape and skip `Stop: spawned synth_turn.py`. Before
+// d4dddac, the scrape used `& powershell.exe ...` which has no timeout
+// primitive; live observation showed 30-s scrapes killing the hook
+// and leaving NO audio (body or footer) for long turns.
+//
+// These are source-level checks against the installed hook. The
+// behavioural path (real subprocess + kill) needs a desktop session,
+// so it stays out of the harness — but the wiring is verifiable here.
+// =============================================================================
+describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
+  const respHookPath = path.join(INSTALL_DIR, 'hooks', 'speak-response.ps1');
+  const respHook = fs.readFileSync(respHookPath, 'utf8');
+
+  it('Stop hook uses System.Diagnostics.Process (not bare `& powershell.exe`)', () => {
+    // & ... has no timeout. Process.Start does.
+    if (!/System\.Diagnostics\.ProcessStartInfo/.test(respHook)) {
+      throw new Error('speak-response.ps1 must use System.Diagnostics.ProcessStartInfo for the scrape subprocess');
+    }
+    if (!/\[System\.Diagnostics\.Process\]::Start/.test(respHook)) {
+      throw new Error('speak-response.ps1 must call [System.Diagnostics.Process]::Start');
+    }
+  });
+
+  it('scrape subprocess has a 4-second WaitForExit budget', () => {
+    if (!/WaitForExit\s*\(\s*4000\s*\)/.test(respHook)) {
+      throw new Error('speak-response.ps1 must bound the scrape subprocess at WaitForExit(4000)');
+    }
+  });
+
+  it('timeout branch calls .Kill() on the subprocess', () => {
+    // Otherwise the child keeps running past the hook's lifetime,
+    // holding UIA handles + chewing CPU.
+    if (!/\.Kill\(\)/.test(respHook)) {
+      throw new Error('speak-response.ps1 must call .Kill() on the scrape subprocess in the timeout branch');
+    }
+  });
+
+  it('timeout branch logs a distinct message separate from "scrape empty"', () => {
+    // Operators need to tell "UIA ran but returned nothing" from
+    // "UIA hung and we killed it". Two different action items.
+    if (!/scrape timed out after 4s/.test(respHook)) {
+      throw new Error('speak-response.ps1 must log a distinct timeout message (not just "scrape empty")');
+    }
+    if (!/scrape empty/.test(respHook)) {
+      throw new Error('speak-response.ps1 must also keep the "scrape empty" log for the clean-no-match case');
+    }
+  });
+
+  it('scrape block runs BEFORE the spawn-synth_turn block (fall-through on timeout)', () => {
+    // After the 4s timeout fires, the hook must proceed to spawning
+    // synth_turn.py with an EMPTY footer phrase — the fallback path.
+    // Confirm textual ordering: scrape block is before the synth
+    // spawn.
+    // Match the actual Log call, not the comment prose that also
+    // contains the phrase. indexOf on raw strings would hit the
+    // comment first (line 96 in the current hook) and wrongly
+    // report scrape AFTER spawn.
+    const scrapeAt = respHook.search(/Log\s+"terminal footer scraped/);
+    const spawnAt  = respHook.search(/Log\s+"Stop:\s+spawned synth_turn\.py/);
+    if (scrapeAt < 0 || spawnAt < 0) {
+      throw new Error(`speak-response.ps1 missing required scrape or spawn Log() calls (scrape@${scrapeAt}, spawn@${spawnAt})`);
+    }
+    if (!(scrapeAt < spawnAt)) {
+      throw new Error(`scrape block must precede synth_turn spawn (scrape@${scrapeAt}, spawn@${spawnAt})`);
+    }
+  });
+
+  it('scrape block is inside try/catch so any PS exception still falls through', () => {
+    // The scrape block is wrapped in `try { ... } catch { Log ... }`.
+    // Without the catch, a typo or missing file would hard-kill the
+    // hook before reaching the synth_turn spawn — exactly the silent-
+    // death class of bug we just fixed. Confirm the scrape-fail log
+    // still exists (the catch branch).
+    if (!/terminal footer scrape failed/.test(respHook)) {
+      throw new Error('speak-response.ps1 scrape block must have a catch that logs "scrape failed" — prevents silent death on any unexpected exception');
+    }
+  });
+
+  it('elapsedSec guard skips the subprocess entirely when flag was never set', () => {
+    // First-ever invocation (or after a fresh install) has no working
+    // flag → elapsedSec=0. Skipping the scrape avoids paying the
+    // subprocess spawn cost for a case that can never match.
+    if (!/\$elapsedSec\s*-ge\s*1/.test(respHook)) {
+      throw new Error('speak-response.ps1 must skip scrape when elapsedSec < 1 (saves the subprocess spawn)');
+    }
+  });
+});
+
+// =============================================================================
 // PS SESSION-IDENTITY BEHAVIOUR — drive the real module with a temp registry
 // to prove the Update-SessionAssignment migration + preservation invariants.
 // Ben hit a visible bug on 2026-04-22 where /clear rotated session_id, the old
@@ -6792,6 +7353,180 @@ describe('EX7e — AudioPlayer', () => {
     player.unmount();
     assertFalsy(player._stallRecoveryTimer, 'stall timer cleared on unmount');
     assertFalsy(player._scrubDirTimer, 'scrub-dir timer cleared on unmount');
+  });
+
+  // ---------------------------------------------------------------
+  // Master volume (6244bfd). The slider writes a 0-100% value into
+  // config; AudioPlayer multiplies it into every clip's base volume.
+  // Heartbeat clips must stay at 0.45× master; body/tool at 1.0×
+  // master — the mix ratio has to hold at any master level.
+  // ---------------------------------------------------------------
+
+  it('setMasterVolume clamps out-of-range input', () => {
+    const { player } = makePlayer();
+    player.mount();
+    player.setMasterVolume(1.5);
+    assertEqual(player._masterVolume, 1.0);
+    player.setMasterVolume(-0.5);
+    assertEqual(player._masterVolume, 0);
+    player.setMasterVolume(0.6);
+    assertEqual(player._masterVolume, 0.6);
+    player.unmount();
+  });
+
+  it('setMasterVolume ignores NaN / non-numeric (keeps previous value)', () => {
+    const { player } = makePlayer();
+    player.mount();
+    player.setMasterVolume(0.5);
+    player.setMasterVolume(NaN);
+    assertEqual(player._masterVolume, 0.5, 'NaN must not overwrite a good value');
+    player.setMasterVolume('banana');
+    assertEqual(player._masterVolume, 0.5, 'string must not overwrite a good value');
+    player.unmount();
+  });
+
+  it('setMasterVolume applied to body clip gives master × 1.0', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.setMasterVolume(0.6);
+    player.playPath('/a.mp3', true, true);
+    // Body clip (not -H-), so volume = 1.0 × 0.6 = 0.6.
+    assertEqual(audio.volume, 0.6);
+    player.unmount();
+  });
+
+  it('setMasterVolume applied to heartbeat clip gives master × 0.45', () => {
+    // Filename matches the renderer's isHeartbeatClip regex:
+    //   /-H-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i
+    const hbPath = '/q/20260423T190000-H-0001-aef91e8e.mp3';
+    const queue = [{ path: hbPath, mtime: 1 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.setMasterVolume(0.8);
+    player.playPath(hbPath, true, true);
+    // Heartbeat → 0.45 × 0.8 = 0.36. Use toFixed tolerance since
+    // floating-point multiplication of 0.45 × 0.8 has trailing digits.
+    assertEqual(Number(audio.volume.toFixed(4)), 0.36);
+    player.unmount();
+  });
+
+  it('setMasterVolume during playback retargets the currently-playing clip', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    // Starts at master=1.0 → body clip at 1.0 × 1.0 = 1.0.
+    assertEqual(audio.volume, 1.0);
+    // Dragging the slider mid-clip. Should update immediately, not
+    // wait for the next playPath.
+    player.setMasterVolume(0.25);
+    assertEqual(audio.volume, 0.25);
+    player.unmount();
+  });
+
+  // ---------------------------------------------------------------
+  // HB4 — system-auto-pause / resume round-trip (a691e58). External
+  // app grabs the mic → playPath must refuse new arrivals unless the
+  // user explicitly clicks one → release should drain any queue that
+  // piled up during the dictation window.
+  // ---------------------------------------------------------------
+
+  it('systemAutoPause pauses a live clip and flags the state', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    audio.paused = false;  // play() resolves async; assert the state we need
+    player.systemAutoPause();
+    assertEqual(audio.paused, true);
+    assertEqual(player.isSystemAutoPaused(), true);
+    player.unmount();
+  });
+
+  it('systemAutoPause is a no-op when nothing is playing', () => {
+    const { player } = makePlayer();
+    player.mount();
+    player.systemAutoPause();
+    assertEqual(player.isSystemAutoPaused(), false,
+      'no clip loaded — flag must not arm');
+    player.unmount();
+  });
+
+  it('playPath refuses a new auto-play while systemAutoPaused', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }, { path: '/b.mp3', mtime: 2 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', false, false);
+    audio.paused = false;
+    player.systemAutoPause();
+    // A fresh arrival attempts auto-play. Must be refused so we
+    // don't talk over the user's dictation.
+    const accepted = player.playPath('/b.mp3', false, false);
+    assertEqual(accepted, false);
+    assertEqual(player.getCurrentPath(), '/a.mp3',
+      'currentPath unchanged when playPath refused');
+    player.unmount();
+  });
+
+  it('playPath accepts userClick=true even while systemAutoPaused', () => {
+    // User's explicit dot-click overrides the auto-pause — respect
+    // their intent if they choose to listen mid-dictation.
+    const queue = [{ path: '/a.mp3', mtime: 1 }, { path: '/b.mp3', mtime: 2 }];
+    const { player, audio } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', false, false);
+    audio.paused = false;
+    player.systemAutoPause();
+    const accepted = player.playPath('/b.mp3', true, true);
+    assertEqual(accepted, true);
+    assertEqual(player.getCurrentPath(), '/b.mp3');
+    player.unmount();
+  });
+
+  it('systemAutoResume resumes a mid-clip pause without draining the queue', () => {
+    const queue = [{ path: '/a.mp3', mtime: 1 }];
+    const { player, audio, calls } = makePlayer({ queue });
+    player.mount();
+    player.playPath('/a.mp3', true, true);
+    audio.paused = false;
+    player.systemAutoPause();
+    calls.playNext = 0;
+    player.systemAutoResume();
+    assertEqual(player.isSystemAutoPaused(), false);
+    assertEqual(calls.playNext, 0,
+      'mid-clip resume must NOT call onPlayNextPending — the paused clip is still the active one');
+    player.unmount();
+  });
+
+  it('systemAutoResume drains the pending queue when nothing was mid-clip', () => {
+    // The mic grab happened between clips (audio idle). Any clips
+    // that arrived during the window were refused by playPath; now
+    // that we're releasing, drain the pending queue so ordering is
+    // preserved.
+    const { player, calls } = makePlayer();
+    player.mount();
+    // Force the flag without a live clip (via direct state write —
+    // systemAutoPause itself refuses to arm in this case, but the
+    // mic-watcher wiring can still set _systemAutoPaused separately
+    // in some edge cases). Tested behaviour: regardless of HOW we
+    // got here, resume must drain.
+    player._systemAutoPaused = true;
+    calls.playNext = 0;
+    player.systemAutoResume();
+    assertEqual(player.isSystemAutoPaused(), false);
+    assertEqual(calls.playNext, 1);
+    player.unmount();
+  });
+
+  it('systemAutoResume is idempotent — safe to call when not paused', () => {
+    const { player, calls } = makePlayer();
+    player.mount();
+    calls.playNext = 0;
+    player.systemAutoResume();
+    assertEqual(calls.playNext, 0, 'not paused → no drain');
+    assertEqual(player.isSystemAutoPaused(), false);
+    player.unmount();
   });
 });
 
