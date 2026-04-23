@@ -74,16 +74,25 @@ try {
 # is within 3 s of our own measured elapsedSec, so a stale scrollback
 # footer from a prior turn can't leak into this turn's audio. Empty
 # return means "fall back to synth_turn's own computed phrase".
+#
+# Why a sub-process: Claude Code invokes this hook as
+# `powershell.exe -File ...` which defaults to MTA apartment. UIA's
+# RootElement requires STA — in MTA it silently terminates the
+# process with no catchable exception. Observed live 2026-04-23:
+# hook died between "cleared working flag" and any scrape log line.
+# The wrapper script launches a fresh PS with explicit -STA so UIA
+# runs in its required apartment; we read the phrase off stdout.
 $footerPhrase = ''
 try {
-    $scrapeModule = Join-Path $ttHome 'app\terminal-scrape.psm1'
-    if ($elapsedSec -ge 1 -and (Test-Path $scrapeModule)) {
-        Import-Module $scrapeModule -Force -ErrorAction SilentlyContinue
+    $scrapeHelper = Join-Path $ttHome 'app\scrape-footer.ps1'
+    if ($elapsedSec -ge 1 -and (Test-Path $scrapeHelper)) {
         $registryPathForScrape = Join-Path $ttHome 'session-colours.json'
-        $footerPhrase = Get-TerminalFooter `
+        $out = & powershell.exe -STA -NoProfile -ExecutionPolicy Bypass `
+            -File $scrapeHelper `
             -SessionShort $sessionShort `
             -RegistryPath $registryPathForScrape `
-            -ExpectedSec $elapsedSec
+            -ExpectedSec $elapsedSec 2>$null
+        if ($out) { $footerPhrase = [string]($out | Select-Object -First 1).Trim() }
         if ($footerPhrase) { Log "terminal footer scraped: '$footerPhrase'" }
         else               { Log "terminal footer scrape empty (fallback to computed phrase)" }
     }
