@@ -425,7 +425,16 @@ function scheduleAutoDelete(p, _wasManual = false) {
   // user has disabled auto-prune to let clips stack up for review, tool
   // narrations should still vanish because their entire purpose is
   // ambient noise for the current moment, not reviewable content.
-  if (!ephemeral && !autoPruneEnabled) return;
+  if (!ephemeral && !autoPruneEnabled) {
+    // Debug trace for the intermittent "body clips disappearing while
+    // auto-prune is OFF" bug. If this line ever DOESN'T appear for a
+    // body clip and the clip still vanishes, something OTHER than
+    // scheduleAutoDelete is unlinking it. If it DOES appear and the
+    // clip still vanishes, autoPruneEnabled has a stale read.
+    try { console.log('[scheduleAutoDelete] skip (body + prune off):', p.split(/[\\/]/).pop()); } catch {}
+    return;
+  }
+  try { console.log('[scheduleAutoDelete] schedule:', ephemeral ? 'EPHEMERAL' : 'body', 'path=' + p.split(/[\\/]/).pop(), 'autoPruneEnabled=' + autoPruneEnabled, 'autoPruneSec=' + autoPruneSec); } catch {}
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
   const delay = ephemeral
     ? EPHEMERAL_DELETE_DELAY_MS
@@ -433,6 +442,7 @@ function scheduleAutoDelete(p, _wasManual = false) {
   const t = setTimeout(async () => {
     deleteTimers.delete(p);
     if (audioPlayer.getCurrentPath() === p) return;
+    try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
     playedPaths.delete(p);
     heardPaths.delete(p);
     queue = queue.filter(f => f.path !== p);

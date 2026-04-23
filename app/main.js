@@ -1504,9 +1504,13 @@ function startMicWatcher() {
         if (!line || !win || win.isDestroyed()) continue;
         try {
           if (line.startsWith('MIC_CAPTURED')) {
+            diag(`mic-watcher: ${line}`);
             win.webContents.send('mic-captured-elsewhere');
           } else if (line.startsWith('MIC_RELEASED')) {
+            diag(`mic-watcher: ${line}`);
             win.webContents.send('mic-released');
+          } else {
+            diag(`mic-watcher(?): ${line}`);  // unexpected protocol line
           }
         } catch {}
       }
