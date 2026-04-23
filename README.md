@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the 24-arrangement session palette; speech bubble crossfades through phrases Claude Code says during a turn" width="420">
+</p>
+
+<p align="center">
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest"><img src="https://img.shields.io/github/v/release/benfrancisburns-creator/terminal-talk?color=c97b50&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Windows">
@@ -11,7 +15,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.4 beta · solo-maintained.** Works well on my machine, tested in CI (686 unit + 28 E2E green), but this is the first widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.5 beta · solo-maintained.** Works well on my machine, tested in CI (687 unit + 28 E2E green), but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 

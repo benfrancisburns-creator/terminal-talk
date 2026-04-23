@@ -93,6 +93,14 @@ section { padding: 80px 24px; }
 .hero { padding: 96px 24px 56px; text-align: center; }
 .hero img.banner { max-width: 720px; width: 100%; height: auto; }
 
+/* Animated mascot + speech bubble. The SVG ships its own CSS keyframes
+   (see docs/assets/mascot-animated.svg) so no JS is needed — the
+   landing page and the README render the exact same animation. 440 px
+   max-width keeps the mascot readable on mobile without crowding the
+   wordmark above. */
+.hero-mascot { margin: 6px auto 18px; max-width: 440px; width: 100%; height: auto; opacity: 0.95; }
+.hero-mascot img { width: 100%; height: auto; display: block; }
+
 /* ASCII hero — per-letter coloured block-art TERMINAL TALK, mascot, cloud.
    Mirrors the desktop wallpaper composition (docs/assets/wallpaper/). */
 .hero-ascii {
@@ -442,6 +450,10 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <div class="dot" style="background:#c97b50"></div>
       <div class="dot" style="background:#e0e0e0"></div>
     </div>
+  </div>
+
+  <div class="hero-mascot">
+    <img src="assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the 24-arrangement session palette; speech bubble crossfades through phrases Claude Code says during a turn — hey jarvis, Cooked for 49s, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s">
   </div>
 
   <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>

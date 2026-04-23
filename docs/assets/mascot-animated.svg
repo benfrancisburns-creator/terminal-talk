@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Terminal Talk animated mascot.
+
+     Same rectangular-pixel mascot the live toolbar renders (see
+     app/index.html #scrubberMascot), cycling through the 8 solid
+     palette colours + 4 split arrangements — exactly what users see
+     in the product when they have multiple Claude Code sessions
+     open. Speech bubble crossfades through 7 phrases Claude Code
+     actually says (spinner verbs, tool narrations, "cooked for X"
+     footer). Pure CSS animation via embedded <style>, no JS — works
+     in GitHub's README renderer.
+
+     Palette source: app/lib/tokens.json BASE_COLOURS.
+     Edit the @keyframes stops below to change the cycle.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of Claude Code phrases">
+  <style><![CDATA[
+    /* Colour-cycle via CSS custom properties on the root element.
+       Twelve 0.83s stops in a 10s loop: 8 solids for the base palette
+       showcase, then 4 split arrangements to hint at the multi-terminal
+       colour story. Primary and secondary animate on independent
+       keyframes — they're equal during solid stops, diverge on splits. */
+    svg {
+      color: #ff5e5e;
+      --mascot-secondary: #ff5e5e;
+      animation: cyclePrimary 10s steps(1, end) infinite,
+                 cycleSecondary 10s steps(1, end) infinite;
+    }
+
+    @keyframes cyclePrimary {
+      0%,   8.33%  { color: #ff5e5e; }  /* red */
+      8.33%, 16.66% { color: #ffa726; }  /* orange */
+      16.66%, 25%  { color: #ffd93d; }  /* yellow */
+      25%,   33.33% { color: #4ade80; }  /* green */
+      33.33%, 41.66% { color: #60a5fa; }  /* blue */
+      41.66%, 50%  { color: #ee2bbd; }  /* magenta */
+      50%,   58.33% { color: #c97b50; }  /* brown */
+      58.33%, 66.66% { color: #e0e0e0; }  /* bone */
+      66.66%, 75%  { color: #ff5e5e; }  /* red + green (hsplit) */
+      75%,   83.33% { color: #ffa726; }  /* orange + blue (hsplit) */
+      83.33%, 91.66% { color: #60a5fa; }  /* blue + red (vsplit) */
+      91.66%, 100% { color: #ee2bbd; }  /* magenta + orange (vsplit) */
+    }
+
+    @keyframes cycleSecondary {
+      0%,   8.33%  { --mascot-secondary: #ff5e5e; }
+      8.33%, 16.66% { --mascot-secondary: #ffa726; }
+      16.66%, 25%  { --mascot-secondary: #ffd93d; }
+      25%,   33.33% { --mascot-secondary: #4ade80; }
+      33.33%, 41.66% { --mascot-secondary: #60a5fa; }
+      41.66%, 50%  { --mascot-secondary: #ee2bbd; }
+      50%,   58.33% { --mascot-secondary: #c97b50; }
+      58.33%, 66.66% { --mascot-secondary: #e0e0e0; }
+      66.66%, 75%  { --mascot-secondary: #4ade80; }  /* red/GREEN split */
+      75%,   83.33% { --mascot-secondary: #60a5fa; }  /* orange/BLUE */
+      83.33%, 91.66% { --mascot-secondary: #ff5e5e; }  /* blue/RED */
+      91.66%, 100% { --mascot-secondary: #ffa726; }  /* magenta/ORANGE */
+    }
+
+    /* Speech-bubble phrase crossfade. Seven phrases sharing one 10s
+       cycle — each visible ~1.43s with 0.2s fade in / out. Because
+       SVG text content can't be animated in pure CSS, we stack 7
+       <text> elements and stagger their opacity keyframes. The
+       anonymous class names .p1..p7 map to the cycle position. */
+    .phrase { opacity: 0; animation: phraseFade 10s linear infinite; }
+    .phrase.p1 { animation-delay:  0s; }
+    .phrase.p2 { animation-delay:  1.43s; }
+    .phrase.p3 { animation-delay:  2.86s; }
+    .phrase.p4 { animation-delay:  4.29s; }
+    .phrase.p5 { animation-delay:  5.72s; }
+    .phrase.p6 { animation-delay:  7.15s; }
+    .phrase.p7 { animation-delay:  8.58s; }
+
+    @keyframes phraseFade {
+      0%    { opacity: 0; }
+      2%    { opacity: 1; }
+      12.5% { opacity: 1; }
+      14.5% { opacity: 0; }
+      100%  { opacity: 0; }
+    }
+
+    /* Respect the user's motion preference — GitHub respects these
+       preferences in README rendering on many platforms. */
+    @media (prefers-reduced-motion: reduce) {
+      svg { animation: none; color: #ff5e5e; --mascot-secondary: #ff5e5e; }
+      .phrase { animation: none; }
+      .phrase.p1 { opacity: 1; }
+    }
+  ]]></style>
+
+  <!-- Mascot, positioned on the left. Geometry mirrors the live toolbar's
+       #scrubberMascot rectangles exactly; only the outer transform
+       changes. Primary (top half + ear tops) uses currentColor so the
+       keyframed color propagates. Secondary (bottom half + ear
+       bottoms + legs) uses the mascot-secondary custom property. -->
+  <g transform="translate(30, 30)">
+    <!-- Body top -->
+    <rect x="13"  y="0"  width="114" height="44" fill="currentColor"/>
+    <!-- Body bottom -->
+    <rect x="13"  y="44" width="114" height="44" fill="var(--mascot-secondary)"/>
+    <!-- Left ear -->
+    <rect x="0"   y="36" width="13"  height="8"  fill="currentColor"/>
+    <rect x="0"   y="44" width="13"  height="18" fill="var(--mascot-secondary)"/>
+    <!-- Right ear -->
+    <rect x="127" y="36" width="13"  height="8"  fill="currentColor"/>
+    <rect x="127" y="44" width="13"  height="18" fill="var(--mascot-secondary)"/>
+    <!-- Four legs -->
+    <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
+    <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
+    <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
+    <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
+    <!-- Eyes -->
+    <rect x="36"  y="26" width="16"  height="16" fill="#3a3a3a"/>
+    <rect x="88"  y="26" width="16"  height="16" fill="#3a3a3a"/>
+    <!-- Smile -->
+    <rect x="44"  y="58" width="8"   height="6"  fill="#3a3a3a"/>
+    <rect x="88"  y="58" width="8"   height="6"  fill="#3a3a3a"/>
+    <rect x="44"  y="64" width="52"  height="6"  fill="#3a3a3a"/>
+  </g>
+
+  <!-- Speech bubble. Rounded-rect body + triangular tail pointing at
+       the mascot. Body is a soft dark grey so the white phrase text
+       reads at any palette colour. -->
+  <g transform="translate(205, 50)">
+    <rect x="0" y="0" width="180" height="60" rx="10" ry="10"
+          fill="#181a20" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+    <!-- Tail -->
+    <polygon points="-10,28 0,22 0,38" fill="#181a20" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+    <polygon points="-9,28 1,23 1,37" fill="#181a20"/>
+
+    <!-- Seven phrases crossfading. x=90, y=36 centres them both axes.
+         Mixed casing (lowercase wake word, Title-Case narrations) is
+         intentional — matches what the app actually emits. -->
+    <text class="phrase p1" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">hey jarvis</text>
+    <text class="phrase p2" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Cooked for 49s</text>
+    <text class="phrase p3" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Reading foo.py</text>
+    <text class="phrase p4" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Moonwalking</text>
+    <text class="phrase p5" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Running npm test</text>
+    <text class="phrase p6" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Brewed for 8m 4s</text>
+    <text class="phrase p7" x="90" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" fill="#e0e0e0">Sautéed for 1m 0s</text>
+  </g>
+</svg>
