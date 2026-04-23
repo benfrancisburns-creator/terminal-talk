@@ -115,7 +115,11 @@
         </div>
         <div class="row">
           <label for="autoPruneToggle">Auto-prune played clips</label>
-          <label class="toggle"><input type="checkbox" id="autoPruneToggle" checked><span class="toggle-slider"></span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="autoPruneToggle" class="pill-toggle-input" checked>
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
           <div class="prune-value">
             <input type="number" id="autoPruneSec" min="3" max="600" step="1" value="20">
             <span class="prune-suffix">s after play</span>
@@ -123,15 +127,27 @@
         </div>
         <div class="row">
           <label for="autoContinueToggle" title="When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. Off plays just the clicked clip.">Auto-continue after clicking</label>
-          <label class="toggle"><input type="checkbox" id="autoContinueToggle" checked><span class="toggle-slider"></span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="autoContinueToggle" class="pill-toggle-input" checked>
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
         </div>
         <div class="row">
           <label for="paletteVariantToggle" title="Switch the 8-colour session palette to Paul Tol's 'muted' scheme — proven distinguishable under deutan / protan / tritan colour-blindness (≈6% of men). Default palette stays for everyone else.">Colour-blind friendly palette</label>
-          <label class="toggle"><input type="checkbox" id="paletteVariantToggle"><span class="toggle-slider"></span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="paletteVariantToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
         </div>
         <div class="row">
           <label for="heartbeatToggle" title="When Claude Code is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Heartbeat ambient narration</label>
-          <label class="toggle"><input type="checkbox" id="heartbeatToggle" checked><span class="toggle-slider"></span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="heartbeatToggle" class="pill-toggle-input" checked>
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
         </div>
         <div class="row">
           <label>Troubleshooting</label>

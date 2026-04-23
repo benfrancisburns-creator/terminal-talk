@@ -92,6 +92,7 @@
           image_alt:      document.getElementById('incImageAlt'),
         },
       };
+      this._wirePillToggles();
       this._wireSpeedSlider();
       this._wireVolumeSlider();
       this._wireAutoPrune();
@@ -120,6 +121,65 @@
     }
 
     // ---- Wire-up (mount-time, idempotent) --------------------------
+
+    // Two-button On/Off pill replaces the old iOS-slider checkbox skin
+    // for panel toggles. The underlying <input type=checkbox> is still
+    // the source of truth so every _wireX() below keeps working without
+    // change — clicking a pill button flips input.checked, then fires
+    // a 'change' event so the existing handlers run. The 'active' class
+    // on the buttons is synced from the input's state.
+    //
+    // Uses the already-cached input refs rather than a document query
+    // so the JSDOM-less test harness (which stubs getElementById but
+    // not querySelectorAll) can still exercise mount().
+    // Fire the custom 'pill-sync' event on a checkbox input so any pill
+    // buttons paired with it refresh their active class. No-op on fake
+    // test DOM elements that don't implement dispatchEvent.
+    _syncPill(input) {
+      if (!input || typeof input.dispatchEvent !== 'function') return;
+      try { input.dispatchEvent(new Event('pill-sync')); } catch {}
+    }
+
+    _wirePillToggles() {
+      const inputs = [
+        this._el.pruneToggle,
+        this._el.continueToggle,
+        this._el.paletteToggle,
+        this._el.heartbeatToggle,
+      ];
+      for (const input of inputs) {
+        if (!input || !input.parentElement) continue;
+        const group = input.parentElement;
+        if (!group.querySelector) continue;  // test stub: skip pill UI
+        const onBtn  = group.querySelector('.tri-btn.on');
+        const offBtn = group.querySelector('.tri-btn.off');
+        const sync = () => {
+          if (onBtn)  onBtn.classList.toggle('active',  input.checked);
+          if (offBtn) offBtn.classList.toggle('active', !input.checked);
+        };
+        if (onBtn) this._on(onBtn, 'click', () => {
+          if (input.checked) return;
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          sync();
+        });
+        if (offBtn) this._on(offBtn, 'click', () => {
+          if (!input.checked) return;
+          input.checked = false;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          sync();
+        });
+        // Keep the pills in sync when code (populate functions) changes
+        // the input's .checked directly. 'change' fires only on user
+        // interaction; 'pill-sync' is a custom event the populate
+        // helpers dispatch after programmatic .checked writes so the
+        // pill visuals refresh without re-firing the IPC-writing
+        // change handlers.
+        this._on(input, 'change', sync);
+        this._on(input, 'pill-sync', sync);
+        sync();
+      }
+    }
 
     _wireSpeedSlider() {
       const { speedSlider, speedValue } = this._el;
@@ -288,7 +348,10 @@
       const secs = Math.max(3, Math.min(600, Number(cfg.playback && cfg.playback.auto_prune_sec) || 20));
       this._onAutoPruneSecChange(secs);
       this._onAutoPruneEnabledChange(enabled);
-      if (pruneToggle) pruneToggle.checked = enabled;
+      if (pruneToggle) {
+        pruneToggle.checked = enabled;
+        this._syncPill(pruneToggle);
+      }
       if (pruneSecInput) {
         pruneSecInput.value = String(secs);
         pruneSecInput.disabled = !enabled;
@@ -299,14 +362,20 @@
       const { continueToggle } = this._el;
       const enabled = cfg.playback && cfg.playback.auto_continue_after_click !== false;
       this._onAutoContinueChange(enabled);
-      if (continueToggle) continueToggle.checked = enabled;
+      if (continueToggle) {
+        continueToggle.checked = enabled;
+        this._syncPill(continueToggle);
+      }
     }
 
     _populatePaletteVariant(cfg) {
       const { paletteToggle } = this._el;
       const variant = (cfg.playback && cfg.playback.palette_variant) || 'default';
       document.body.dataset.paletteVariant = variant;
-      if (paletteToggle) paletteToggle.checked = variant === 'cb';
+      if (paletteToggle) {
+        paletteToggle.checked = variant === 'cb';
+        this._syncPill(paletteToggle);
+      }
     }
 
     _populateHeartbeat(cfg) {
@@ -315,6 +384,7 @@
       // Default true — matches DEFAULTS.heartbeat_enabled in main.js.
       const on = cfg.heartbeat_enabled !== false;
       heartbeatToggle.checked = on;
+      this._syncPill(heartbeatToggle);
     }
 
     _populateVoiceSelects(cfg) {

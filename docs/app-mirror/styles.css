@@ -172,23 +172,21 @@ html, body {
 .dots {
   display: flex;
   align-items: center;
-  /* User-requested (2026-04-22): previously `justify-content: flex-start`
-     bunched dots on the left half of the row leaving 50-75 % of the
-     visual space unused. `space-evenly` distributes dots across the
-     full width from the rewind button's horizontal to the close X's
-     horizontal — the "use the whole bottom row" ask. With few dots
-     they spread out, with many they stay compact. Ordering (oldest
-     left, newest right) preserved because flex items always render
-     in DOM order; only the inter-item spacing changes.
-     Session-run gaps (.dots-run-gap, flex-shrink:0) still respect
-     their explicit 12 px width so cluster-by-session is still legible
-     when multiple terminals are active. */
-  justify-content: space-evenly;
-  gap: 5px;
+  /* User-requested (2026-04-23): previously `space-evenly` (2026-04-22)
+     spread dots across the full bar width, so with only four clips
+     they'd sit miles apart from each other. Reverted to flex-start +
+     a tight gap so dots pack from the left edge at constant density
+     — "fit as many in as possible". At 14 px dot + 3 px gap each dot
+     consumes 17 px, giving ~39 visible dots across the strip (with
+     session-run gaps eating a little more room when multi-terminal).
+     Ordering (oldest left, newest right) is unchanged — flex items
+     render in DOM order regardless of justify-content. */
+  justify-content: flex-start;
+  gap: 3px;
   width: 100%;
-  /* No overflow:hidden — it was clipping the active dot's halo. Horizontal
-     overflow is rare (auto-prune keeps dot count low) and the bar's own
-     rounded edge + window bounds give natural visual clipping if it happens. */
+  /* No overflow:hidden — it was clipping the active dot's halo. The
+     renderer caps at MAX_VISIBLE_DOTS anyway, so the strip can't grow
+     past the bar's usable width under normal load. */
 }
 
 /* Spacer inserted between dot runs from different sessions. Small enough
@@ -662,6 +660,13 @@ body.settings-open .panel { display: block; }
   min-width: 160px;
   color: rgba(255, 255, 255, 0.7);
 }
+
+/* On/Off pill toggle — matches the Session-settings speech-includes
+ * style (.tri-ctrl + .tri-btn). The underlying <input type=checkbox>
+ * stays the source of truth; the two pill buttons just drive its
+ * checked state and reflect it visually via the .active class. */
+.pill-toggle { display: inline-flex; align-items: center; }
+.pill-toggle-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
 
 /* Compact iOS-style toggle switch for on/off panel controls. */
 .toggle {
