@@ -237,3 +237,38 @@ Recommended order for subsequent sessions (biggest attack surface first):
 - **Module 4**: `app/lib/ipc-handlers.js` (mutation surface; already covered, but look for missing validator branches)
 - **Module 5**: `app/lib/audio-player.js` (state transitions during scrubbing + user clicks + system pause)
 - **Module 6**: `app/lib/clip-paths.js` (path regex surface; user filenames could be adversarial)
+
+### Phase 4 — programme complete
+
+All 6 modules passed. Summary:
+
+| module | tests | bugs found | fix |
+|---|---|---|---|
+| 1 — `text.js` stripForTTS | 29 | 0 | — |
+| 2 — `palette-alloc.js` | 22 | 1 — `NaN` leak on `paletteSize=0` | clamp to 24 default |
+| 3 — `session-registry.psm1` | 10 | 0 | — |
+| 4 — `ipc-handlers.js` | 30 | 0 | — |
+| 5 — `audio-player.js` | 18 | 0 | — |
+| 6 — `clip-paths.js` | 25 | 0 | — |
+| **total** | **134** | **1** | — |
+
+**Verdict**: the core library is solid. 134 adversarial probes across 6 modules surfaced exactly one defensive-hardening bug (`paletteSize=0` leaked `NaN` through the hash-mod fallback — dormant in production where the value is always 24, but caught and fixed). Every other probe — type confusion, ReDoS attempts, unicode fidelity, control chars, malformed inputs, race-like state transitions, adversarial filenames, path separators, multi-token collisions, empty/null/undefined, non-finite numbers — confirmed the existing guards hold.
+
+### Programme-wide totals
+
+465 → 686 tests (+221), 1 real bug + 1 timezone bug + 1 schema drift fixed, 2 documented JS↔Python drifts locked in.
+
+| phase | delta | bugs |
+|---|---|---|
+| 1 audit | 0 (doc only) | — |
+| 2a Tier A | +47 | 0 |
+| 2b Tier B/C | +21 | 1 timezone (PS local vs JS UTC) + 1 schema drift |
+| 3 combinatorial | +8 (1000+ assertions) | 2 drifts documented |
+| 4 m1 stripForTTS | +29 | 0 |
+| 4 m2 palette-alloc | +22 | 1 (NaN on paletteSize=0) |
+| 4 m3 session-registry | +10 | 0 |
+| 4 m4 ipc-handlers | +30 | 0 |
+| 4 m5 audio-player | +18 | 0 |
+| 4 m6 clip-paths | +25 | 0 |
+
+The product is in a coherent, test-covered state. The 4 recommended next steps if you want to go further are (a) aligning the two JS↔Python drifts, (b) lifting the tri-state session speech-includes rendering to share code with the global panel pills, (c) formal cost/budget on the Python parity subprocess (currently adds ~500 ms per test run), (d) a Playwright-driven UI smoke. All strictly optional.

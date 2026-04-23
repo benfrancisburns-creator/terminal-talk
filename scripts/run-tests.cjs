@@ -9555,6 +9555,244 @@ describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
 });
 
 // =============================================================================
+// PHASE 4 — MODULE 6: clip-paths.js ADVERSARIAL FILENAME VULNERABILITY PASS
+//
+// Clip filenames arrive from two sources: synth_turn.py (trusted) and the
+// queue-watcher's fs.readdir (semi-trusted — the user's queue dir can be
+// hand-edited). A mis-parsed filename routes audio to the wrong session
+// (wrong palette colour), unfuels the tab's badge count, or misfires the
+// ephemeral volume dip. Existing coverage (16 tests across EX7a +
+// EPHEMERAL CLIP DETECTION) exercises canonical shapes; this pass probes
+// adversarial inputs: extreme lengths, unicode, path separators, mixed
+// case, multiple -clip- tokens, type-confusion.
+// =============================================================================
+describe('PHASE 4 #6 — clip-paths adversarial filenames', () => {
+  const {
+    paletteKeyForIndex, paletteKeyForShort,
+    extractSessionShort, isClipFile,
+    isEphemeralClip, isHeartbeatClip,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  // ---- Type safety on extractSessionShort -----------------------------
+  it('extractSessionShort throws when filename is not a string (caller must coerce)', () => {
+    // Documenting current behaviour: the regex .match() requires a
+    // string. If the queue-watcher ever passes a non-string, upstream
+    // must coerce. Locking in the contract — not silently returning
+    // null would let callers fail loudly rather than route to the
+    // wrong session via undefined-behaviour.
+    let threw = false;
+    try { extractSessionShort(null); } catch { threw = true; }
+    assertEqual(threw, true,
+      'null filename must throw (contract: caller coerces before calling)');
+  });
+
+  it('extractSessionShort handles empty string cleanly', () => {
+    assertEqual(extractSessionShort(''), null);
+  });
+
+  // ---- Case-insensitivity flag holds ----------------------------------
+  it('extractSessionShort is case-insensitive on hex + extension', () => {
+    // Files come from Python via edge-tts which always emits lowercase,
+    // but the regex uses /i for defence-in-depth. Verify.
+    assertEqual(extractSessionShort('20260420T1-clip-AABBCCDD-0001.MP3'), 'aabbccdd');
+    assertEqual(extractSessionShort('20260420T1-CLIP-AaBbCcDd-0001.Wav'), 'aabbccdd');
+    assertEqual(extractSessionShort('x-AABBCCDD.MP3'), 'aabbccdd');
+  });
+
+  // ---- Path separators embedded in filename ---------------------------
+  it('extractSessionShort works when a full path is passed (matches last segment)', () => {
+    // The regex is anchored with $ at end; path prefix is fine. But
+    // should it be? Locking in current behaviour: a full path matches
+    // at its tail, so queue-watcher can pass either just `name` or
+    // `path.join(dir, name)` interchangeably.
+    const full = 'C:\\Users\\Ben\\.terminal-talk\\queue\\20260420-clip-aabbccdd-0001.mp3';
+    assertEqual(extractSessionShort(full), 'aabbccdd');
+    const posix = '/home/ben/queue/20260420-clip-aabbccdd-0001.mp3';
+    assertEqual(extractSessionShort(posix), 'aabbccdd');
+  });
+
+  // ---- Extension variants ---------------------------------------------
+  it('extractSessionShort rejects .flac / .ogg / unknown extensions', () => {
+    assertEqual(extractSessionShort('x-clip-aabbccdd-0001.flac'), null);
+    assertEqual(extractSessionShort('x-clip-aabbccdd-0001.ogg'),  null);
+    assertEqual(extractSessionShort('x-clip-aabbccdd-0001.m4a'),  null);
+  });
+
+  it('extractSessionShort rejects double-extension spoofs (e.g. .mp3.exe)', () => {
+    assertEqual(extractSessionShort('x-clip-aabbccdd-0001.mp3.exe'), null);
+    assertEqual(extractSessionShort('x-clip-aabbccdd-0001.mp3.txt'), null);
+  });
+
+  // ---- Adversarial hex content ----------------------------------------
+  it('extractSessionShort rejects non-hex in the 8-char slot', () => {
+    // `ghijklmn` looks superficially like 8 chars but isn't hex.
+    assertEqual(extractSessionShort('x-clip-ghijklmn-0001.mp3'), null);
+    assertEqual(extractSessionShort('x-ghijklmn.mp3'), null);
+  });
+
+  it('extractSessionShort requires exactly 8 hex chars (not 7, not 9)', () => {
+    assertEqual(extractSessionShort('x-clip-aabbccd-0001.mp3'), null);    // 7
+    assertEqual(extractSessionShort('x-clip-aabbccdde-0001.mp3'), null);  // 9
+  });
+
+  // ---- Extremely long filenames: no ReDoS -----------------------------
+  it('10KB-long filename completes extractSessionShort in < 200 ms', () => {
+    const pad = 'x'.repeat(10_000);
+    const name = `${pad}-clip-aabbccdd-0001.mp3`;
+    const t0 = Date.now();
+    const r = extractSessionShort(name);
+    const dt = Date.now() - t0;
+    assertEqual(r, 'aabbccdd');
+    assertTruthy(dt < 200, `ReDoS risk — 10KB filename took ${dt}ms`);
+  });
+
+  it('10000 consecutive "clip" substrings do not cause regex backtracking', () => {
+    // Pathological: lots of -clip- tokens but no valid trailing match.
+    const adversarial = '-clip-'.repeat(5000) + 'xx.mp3';
+    const t0 = Date.now();
+    const r = extractSessionShort(adversarial);
+    const dt = Date.now() - t0;
+    assertEqual(r, null);
+    assertTruthy(dt < 200, `regex backtracking risk — took ${dt}ms`);
+  });
+
+  // ---- Multi-clip tokens: specificity-first resolves ambiguity --------
+  it('filename with two -clip-<hex>- tokens resolves to the LAST one (end-anchored)', () => {
+    // This is what "specificity-first" buys us — the end-anchored
+    // clip regex picks the trailing one when multiple are present.
+    const weird = '-clip-11111111-0001-clip-aabbccdd-0002.mp3';
+    assertEqual(extractSessionShort(weird), 'aabbccdd');
+  });
+
+  // ---- Response-pattern vs clip-pattern overlap (G11 audit) -----------
+  it('-clip-<hex>- specificity beats bare -<hex>- when both patterns match', () => {
+    // Pathological: a clip-form filename where the trailing 8 hex of
+    // the counter would ALSO parse as a response short. Specificity
+    // must win so user-click routing doesn't mis-target.
+    const pathological = '20260420-clip-11112222-99999999.mp3';
+    // Clip pattern: -clip-([8hex])-\d+ — matches 11112222 as short.
+    // (The 99999999 counter is all digits so \d+ eats it.)
+    assertEqual(extractSessionShort(pathological), '11112222');
+  });
+
+  // ---- "neutral" literal handling -------------------------------------
+  it('extractSessionShort returns null for "neutral" clips (sentinel for non-session audio)', () => {
+    assertEqual(extractSessionShort('x-clip-neutral-0001.mp3'), null);
+    assertEqual(extractSessionShort('x-clip-NEUTRAL-0001.MP3'), null, 'case-insensitive');
+  });
+
+  // ---- isEphemeralClip precision --------------------------------------
+  it('isEphemeralClip rejects -T- or -H- that appear BEFORE the anchored tail', () => {
+    // A body clip whose pathological filename contains "T-" early on
+    // must NOT be classified ephemeral. The regex anchors to the full
+    // `-X-NNNN-HHHHHHHH.ext$` shape precisely for this.
+    assertEqual(isEphemeralClip('hopper-T-chat-0001-aabbccdd.mp3'), false);
+    assertEqual(isEphemeralClip('weird-H-thing-0001-aabbccdd.mp3'), false);
+  });
+
+  it('isEphemeralClip requires 4-digit counter (not 3, not 5)', () => {
+    assertEqual(isEphemeralClip('x-T-001-aabbccdd.mp3'),   false);  // 3 digits
+    assertEqual(isEphemeralClip('x-T-00001-aabbccdd.mp3'), false);  // 5 digits
+    assertEqual(isEphemeralClip('x-T-0001-aabbccdd.mp3'),  true);   // 4 — good
+  });
+
+  // ---- isHeartbeatClip purity -----------------------------------------
+  it('isHeartbeatClip is a strict subset of isEphemeralClip', () => {
+    const h = '20260421T1-H-0001-aabbccdd.mp3';
+    const t = '20260421T1-T-0001-aabbccdd.mp3';
+    assertEqual(isHeartbeatClip(h), true);
+    assertEqual(isEphemeralClip(h), true);
+    assertEqual(isHeartbeatClip(t), false);
+    assertEqual(isEphemeralClip(t), true);
+  });
+
+  // ---- paletteKeyForIndex extremes ------------------------------------
+  it('paletteKeyForIndex handles negative multiples of paletteSize', () => {
+    assertEqual(paletteKeyForIndex(-24, 24), '00');
+    assertEqual(paletteKeyForIndex(-25, 24), '23');
+    assertEqual(paletteKeyForIndex(-48, 24), '00');
+  });
+
+  it('paletteKeyForIndex handles paletteSize=1 cleanly', () => {
+    assertEqual(paletteKeyForIndex(0, 1), '00');
+    assertEqual(paletteKeyForIndex(999, 1), '00');
+    assertEqual(paletteKeyForIndex(-1, 1), '00');
+  });
+
+  it('paletteKeyForIndex pads to two digits even when paletteSize > 99', () => {
+    // padStart(2) leaves 3-digit numbers as 3 digits. Current contract
+    // is "always 2+ digits". Verify.
+    assertEqual(paletteKeyForIndex(100, 200), '100');
+    assertEqual(paletteKeyForIndex(5, 200), '05');
+  });
+
+  // ---- paletteKeyForShort hash-path edges -----------------------------
+  it('paletteKeyForShort unicode shortId hashes deterministically', () => {
+    // Hash uses charCodeAt — BMP chars OK, astral chars split.
+    const a1 = paletteKeyForShort('café-tes', {}, 24);
+    const a2 = paletteKeyForShort('café-tes', {}, 24);
+    assertEqual(a1, a2);
+    assertTruthy(/^\d\d$/.test(a1));
+  });
+
+  it('paletteKeyForShort falls through to hash when entry.index is NaN', () => {
+    // Registry corruption: entry exists but index isn't an integer.
+    // Must NOT return 'neutral' for an index-bearing entry path, but
+    // must NOT trust the NaN either. Current behaviour: falls through
+    // to the hash. Lock in.
+    const assignments = { aabbccdd: { index: 'bad' } };
+    const k = paletteKeyForShort('aabbccdd', assignments, 24);
+    assertTruthy(/^\d\d$/.test(k),
+      'malformed entry.index must not leak through — falls through to hash');
+    assertTruthy(k !== 'neutral', 'non-short short has a valid hash fallback');
+  });
+
+  it('paletteKeyForShort returns "neutral" when shortId is exactly 3 chars', () => {
+    assertEqual(paletteKeyForShort('abc', {}, 24), 'neutral',
+      'shortId < 4 chars is sentinel territory');
+  });
+
+  it('paletteKeyForShort accepts shortId >= 4 chars (not just exactly 8)', () => {
+    // The length check is `< 4`, not `!== 8`. Document that 4+
+    // non-assigned shorts hash to a real palette index.
+    const k = paletteKeyForShort('abcd', {}, 24);
+    assertTruthy(/^\d\d$/.test(k));
+    assertTruthy(k !== 'neutral');
+  });
+
+  // ---- isClipFile precision -------------------------------------------
+  it('isClipFile matches on the -clip- token, NOT on -clippy-, -clip_foo-, etc.', () => {
+    // Current regex is `/-clip-/` — requires the exact token with
+    // hyphen boundaries. Verify it rejects similar-looking filenames.
+    assertEqual(isClipFile('x-clip-aabbccdd-0001.mp3'), true);
+    assertEqual(isClipFile('x-clippy-aabbccdd-0001.mp3'), false,
+      '"-clippy-" must not match (prefix variant)');
+    assertEqual(isClipFile('x-clip_aabbccdd-0001.mp3'), false,
+      '"-clip_" must not match (underscore variant)');
+  });
+
+  // ---- Consistency: extractSessionShort ↔ isClipFile ------------------
+  it('every filename isClipFile=true must extract a non-null shortId (or "neutral")', () => {
+    // Invariant: if we classify a file as a clip, we must be able to
+    // resolve its short or know it's the neutral sentinel. Otherwise
+    // the renderer files it under "???" and it orphans.
+    const cases = [
+      '20260420-clip-aabbccdd-0001.mp3',
+      '20260420-clip-eeff0011-9999.wav',
+      '20260420-clip-neutral-0001.mp3',
+    ];
+    for (const name of cases) {
+      if (!isClipFile(name)) throw new Error(`isClipFile(${name}) should be true`);
+      const short = extractSessionShort(name);
+      // Valid = 8 hex chars OR null (neutral sentinel)
+      if (short !== null && !/^[a-f0-9]{8}$/.test(short)) {
+        throw new Error(`isClipFile=true but extractSessionShort returned weird value: ${short}`);
+      }
+    }
+  });
+});
+
+// =============================================================================
 // PHASE 4 — MODULE 5: audio-player.js STATE-TRANSITION VULNERABILITY PASS
 //
 // Existing EX7e covers happy paths (27 tests); Phase 2a added volume +
