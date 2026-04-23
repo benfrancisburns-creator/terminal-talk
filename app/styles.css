@@ -661,6 +661,27 @@ body.settings-open .panel { display: block; }
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* 2-column grid for compact single-toggle rows. Used in the Playback
+ * section to pair the four short-label toggles (auto-continue,
+ * colour-blind, heartbeat, troubleshooting) so they take two rows
+ * instead of four. Labels inside the grid drop their min-width since
+ * each column is ~half the panel — the 160 px default would blow past
+ * the column edge. Audit 2026-04-23 Phase A. */
+.row-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  row-gap: 0;
+}
+.row-grid .row label {
+  min-width: 0;
+  flex: 1;
+}
+.row-grid .row .pill-toggle,
+.row-grid .row .text-btn {
+  flex-shrink: 0;
+}
+
 /* Inline sub-hint on a settings row label. Used on the auto-prune row
    to clarify the ephemeral-clip carve-out without cluttering the main
    label text. Drops to a second visual line under the primary label

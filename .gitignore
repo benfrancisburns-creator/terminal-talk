@@ -41,3 +41,9 @@ desktop.ini
 .sonarqube-token
 .scannerwork/
 .tmp-*.json
+
+# Internal development scaffolding — local-only; not public-facing.
+Claude Assesments/
+GHRC/
+.claude/
+iNPLAY IMAGES/
