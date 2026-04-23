@@ -74,7 +74,7 @@ try {
     $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else {
         [int](Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
     }
-    $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
+    $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
     Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid -SessionId $sessionId -Short $short -Now $nowSec
 } catch {}
 
@@ -112,7 +112,7 @@ function Get-EmojiForIndex($idx) {
 # another LIVE session. Entries are freed only when their claude_pid is dead
 # (terminal closed), so a long-idle session keeps its colour.
 $registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join-Path $env:USERPROFILE '.terminal-talk\session-colours.json' }
-$now = [long][double]::Parse((Get-Date -UFormat %s))
+$now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
 
 # Parent PID of this statusline script = Claude Code CLI process.
 # TT_FAKE_CLAUDE_PID is a test-only knob so the run-tests.cjs harness

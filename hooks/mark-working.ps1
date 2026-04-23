@@ -45,7 +45,13 @@ try {
     # Content is the epoch seconds of when the user submitted — gives
     # the toolbar (and watchdog) a way to prune stale markers without
     # guessing from mtime alone.
-    $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
+    # UTC-correct epoch seconds. `Get-Date -UFormat %s` returns LOCAL
+    # time on Windows PowerShell 5.1, which puts this flag's timestamp
+    # hours ahead or behind what the JS reader (Date.now()/1000, UTC)
+    # expects. Audit 2026-04-23 Phase 2b caught this via a 3600 s drift
+    # in BST. ToUnixTimeSeconds() is UTC by definition — fixes it once,
+    # for every PS version.
+    $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
     Set-Content -Path $flagPath -Value $nowSec -Encoding utf8 -NoNewline
     Log "flag set for $sessionShort"
 } catch {

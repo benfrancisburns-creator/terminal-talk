@@ -57,7 +57,7 @@ try {
     if (Test-Path $workingFlag) {
         try {
             $startSec = [long](Get-Content $workingFlag -Raw -Encoding utf8).Trim()
-            $nowSec = [long][double]::Parse((Get-Date -UFormat %s))
+            $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
             if ($startSec -gt 0 -and $nowSec -ge $startSec) {
                 $elapsedSec = [int]($nowSec - $startSec)
             }
@@ -136,7 +136,7 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     $registryPath = Join-Path $ttHome 'session-colours.json'
     $sessionsDir = Join-Path $ttHome 'sessions'
     if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
-    $now = [long][double]::Parse((Get-Date -UFormat %s))
+    $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
 
     # Shared session-registry module -- canonical Read / Touch-Or-Assign /
     # Write-Atomic + per-PID stamp. Replaces ~80 lines of duplication that

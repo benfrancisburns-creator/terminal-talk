@@ -285,6 +285,266 @@ describe('EDGE TTS WRAPPER', () => {
 });
 
 // =============================================================================
+// MARK-WORKING HOOK — UserPromptSubmit hook writes the session's
+// `-working.flag` that the heartbeat timer + transcript-watcher gate
+// on. No dedicated tests before audit 2026-04-23 Phase 2b. Each test
+// redirects USERPROFILE to a temp dir so the hook writes into an
+// isolated sandbox rather than the real install.
+// =============================================================================
+describe('MARK-WORKING HOOK (UserPromptSubmit)', () => {
+  const hookPath = path.join(__dirname, '..', 'hooks', 'mark-working.ps1');
+
+  function runMarkWorking(stdin, tempHome) {
+    const env = { ...process.env, USERPROFILE: tempHome };
+    const result = spawnSync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', hookPath],
+      { input: stdin, encoding: 'utf8', timeout: 10000, env }
+    );
+    return { stdout: result.stdout, stderr: result.stderr, code: result.status };
+  }
+
+  function makeTempHome() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-markworking-'));
+    // mkdir queue/ and sessions/ dirs so Log() can write its target
+    fs.mkdirSync(path.join(root, '.terminal-talk', 'queue'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.terminal-talk', 'sessions'), { recursive: true });
+    return {
+      root,
+      sessionsDir: path.join(root, '.terminal-talk', 'sessions'),
+      cleanup() {
+        try { fs.rmSync(root, { recursive: true, force: true }); } catch {}
+      },
+    };
+  }
+
+  it('writes flag file named <8hex>-working.flag with epoch-second content', () => {
+    const home = makeTempHome();
+    try {
+      const payload = JSON.stringify({
+        transcript_path: 'C:\\fake\\aabbccdd-1234-5678-9abc-def012345678.jsonl',
+      });
+      const r = runMarkWorking(payload, home.root);
+      assertEqual(r.code, 0, `exit=${r.code}; stderr=${r.stderr}`);
+      const flagPath = path.join(home.sessionsDir, 'aabbccdd-working.flag');
+      assertTruthy(fs.existsSync(flagPath), 'flag file must exist');
+      const content = fs.readFileSync(flagPath, 'utf8').replace(/^\uFEFF/, '').trim();
+      assertTruthy(/^\d+$/.test(content), `flag content should be epoch seconds digits, got "${content}"`);
+      const epoch = Number(content);
+      // Sanity: epoch is recent (within 60 s of "now").
+      const nowSec = Math.floor(Date.now() / 1000);
+      assertTruthy(Math.abs(nowSec - epoch) < 60,
+        `flag epoch ${epoch} drifts from now ${nowSec} by > 60s`);
+    } finally { home.cleanup(); }
+  });
+
+  it('lowercases uppercase sessionId to match the 8-hex pattern', () => {
+    const home = makeTempHome();
+    try {
+      const payload = JSON.stringify({
+        transcript_path: 'C:\\fake\\AABBCCDD-1234-5678-9abc-def012345678.jsonl',
+      });
+      runMarkWorking(payload, home.root);
+      const files = fs.readdirSync(home.sessionsDir);
+      assertEqual(files, ['aabbccdd-working.flag'],
+        'hook must lowercase the shortId when building the flag filename');
+    } finally { home.cleanup(); }
+  });
+
+  it('rejects non-hex shortId (path traversal guard) — no file written', () => {
+    const home = makeTempHome();
+    try {
+      const payload = JSON.stringify({
+        transcript_path: 'C:\\fake\\....4444-1111-2222-3333-444444444444.jsonl',
+      });
+      runMarkWorking(payload, home.root);
+      const files = fs.readdirSync(home.sessionsDir);
+      assertEqual(files.length, 0,
+        'non-hex first 8 chars must be rejected without writing ANY flag');
+    } finally { home.cleanup(); }
+  });
+
+  it('no-op on empty stdin (no flag written)', () => {
+    const home = makeTempHome();
+    try {
+      const r = runMarkWorking('', home.root);
+      assertEqual(r.code, 0);
+      assertEqual(fs.readdirSync(home.sessionsDir).length, 0);
+    } finally { home.cleanup(); }
+  });
+
+  it('no-op on malformed JSON (no flag written, no crash)', () => {
+    const home = makeTempHome();
+    try {
+      const r = runMarkWorking('not json at all', home.root);
+      // Hook's outer try/catch swallows the parse error; exits 0.
+      assertEqual(r.code, 0);
+      assertEqual(fs.readdirSync(home.sessionsDir).length, 0);
+    } finally { home.cleanup(); }
+  });
+
+  it('no-op on missing transcript_path', () => {
+    const home = makeTempHome();
+    try {
+      const r = runMarkWorking('{"other_key": "x"}', home.root);
+      assertEqual(r.code, 0);
+      assertEqual(fs.readdirSync(home.sessionsDir).length, 0);
+    } finally { home.cleanup(); }
+  });
+
+  it('creates the sessions dir if missing (first-run install)', () => {
+    const home = makeTempHome();
+    try {
+      // Remove the sessions dir that makeTempHome pre-created.
+      fs.rmSync(home.sessionsDir, { recursive: true });
+      const payload = JSON.stringify({
+        transcript_path: 'C:\\fake\\deadbeef-1111-2222-3333-444444444444.jsonl',
+      });
+      runMarkWorking(payload, home.root);
+      assertTruthy(fs.existsSync(home.sessionsDir),
+        'hook must create sessions dir on first run');
+      assertTruthy(fs.existsSync(path.join(home.sessionsDir, 'deadbeef-working.flag')));
+    } finally { home.cleanup(); }
+  });
+
+  it('normalises Unix-style /c/... transcript path to Windows C:\\...', () => {
+    const home = makeTempHome();
+    try {
+      const payload = JSON.stringify({
+        transcript_path: '/c/Users/ben/fake/cafef00d-1111-2222-3333-444444444444.jsonl',
+      });
+      const r = runMarkWorking(payload, home.root);
+      assertEqual(r.code, 0);
+      assertTruthy(fs.existsSync(path.join(home.sessionsDir, 'cafef00d-working.flag')),
+        'Unix-style /c/... must be normalised so the sessionId is extracted correctly');
+    } finally { home.cleanup(); }
+  });
+});
+
+// =============================================================================
+// CROSS-LANG EPOCH INVARIANT — PowerShell-written timestamps must agree
+// with JS readers. Historic `Get-Date -UFormat %s` returned LOCAL seconds
+// on Windows PowerShell 5.1, causing a timezone-offset drift when JS did
+// `Date.now() / 1000` to compare. Audit 2026-04-23 Phase 2b caught it:
+// BST (+1h) made working-flag timestamps look 3600 s in the future,
+// accidentally passing `now - ts <= 600` in the CURRENT timezone but
+// breaking elsewhere. Fix: `[DateTimeOffset]::Now.ToUnixTimeSeconds()`
+// which is UTC-correct by construction regardless of PS version.
+// =============================================================================
+describe('CROSS-LANG EPOCH INVARIANT — PS timestamps are UTC seconds', () => {
+  const PS_FILES = [
+    'hooks/mark-working.ps1',
+    'hooks/speak-response.ps1',
+    'app/statusline.ps1',
+  ];
+
+  for (const rel of PS_FILES) {
+    it(`${rel} uses ToUnixTimeSeconds (not Get-Date -UFormat %s)`, () => {
+      const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+      // Check non-comment lines only — the fix commentary legitimately
+      // MENTIONS the old invocation to explain why we're not using it.
+      const code = src.split('\n')
+        .filter(line => !/^\s*#/.test(line))
+        .join('\n');
+      if (/Get-Date\s+-UFormat\s+%s/i.test(code)) {
+        throw new Error(
+          `${rel}: \`Get-Date -UFormat %s\` is timezone-unsafe on Windows PowerShell 5.1 ` +
+          `(returns LOCAL seconds, not UTC). Use [DateTimeOffset]::Now.ToUnixTimeSeconds() ` +
+          `so cross-lang comparisons with JS Date.now()/1000 agree.`
+        );
+      }
+      if (!/\[DateTimeOffset\]::Now\.ToUnixTimeSeconds\(\)/.test(code)) {
+        throw new Error(`${rel}: missing [DateTimeOffset]::Now.ToUnixTimeSeconds() — can it read timestamps at all?`);
+      }
+    });
+  }
+});
+
+// =============================================================================
+// WAKE-WORD-LISTENER + KEY-HELPER Python scripts — source-level smoke
+// tests. Both are substantial Python programs that are hard to run
+// end-to-end in the harness (audio device needed for wake-word; stdin
+// loop + ctypes needed for key helper). Source-level checks lock in the
+// protocol contracts + key constants. Audit 2026-04-23 Phase 2b flagged
+// these modules as having zero coverage.
+// =============================================================================
+describe('wake-word-listener.py + key_helper.py source-level invariants', () => {
+  const wake = fs.readFileSync(path.join(__dirname, '..', 'app', 'wake-word-listener.py'), 'utf8');
+  const helper = fs.readFileSync(path.join(__dirname, '..', 'app', 'key_helper.py'), 'utf8');
+
+  it('wake-word-listener has byte-level Python syntax (no parse error)', () => {
+    const r = spawnSync('python', ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'wake-word-listener.py')],
+      { encoding: 'utf8', timeout: 10000 });
+    assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
+  });
+
+  it('key_helper has byte-level Python syntax (no parse error)', () => {
+    const r = spawnSync('python', ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'key_helper.py')],
+      { encoding: 'utf8', timeout: 10000 });
+    assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
+  });
+
+  it('wake-word-listener exposes --selftest so CI / install-sanity can exercise it without a mic', () => {
+    if (!/--selftest/.test(wake)) {
+      throw new Error('wake-word-listener.py must expose --selftest (headless model-load + stream-open + exit)');
+    }
+  });
+
+  it('wake-word-listener writes to the canonical ~/.terminal-talk/queue/_voice.log', () => {
+    // Downstream ops (install sanity, diagnostic sweep) grep this path.
+    // If the log location drifts, those integrations silently stop.
+    if (!/queue.*_voice\.log/.test(wake)) {
+      throw new Error('wake-word-listener.py must log to queue/_voice.log');
+    }
+  });
+
+  it('wake-word-listener applies an adaptive noise-floor gate (S2.3), not just raw THRESHOLD', () => {
+    // Stripping the noise-floor code would re-introduce the false-fire
+    // rate in busy rooms. Lock in that the EMA / noise-floor logic
+    // still exists.
+    if (!/noise[_-]?floor|ema|exponential/i.test(wake)) {
+      throw new Error('wake-word-listener.py must keep the S2.3 adaptive noise-floor gate');
+    }
+  });
+
+  it('key_helper supports all four commands in its protocol', () => {
+    // Protocol contract: ctrlc / fgtree / fgtree-bump / exit.
+    // Adding new commands is fine; removing any of these breaks the
+    // Electron-side preload bindings that depend on them.
+    for (const cmd of ['ctrlc', 'fgtree', 'fgtree-bump', 'exit']) {
+      // Commands are compared as strings in the helper's dispatcher.
+      // Quoted string match keeps us from matching substrings in
+      // function names (e.g. "exit" vs sys.exit).
+      const re = new RegExp(`['"]${cmd.replace('-', '\\-')}['"]`);
+      if (!re.test(helper)) {
+        throw new Error(`key_helper.py missing "${cmd}" in command dispatcher — protocol break`);
+      }
+    }
+  });
+
+  it('key_helper caches the process-tree snapshot (S2.2 — 500ms TTL)', () => {
+    // The cache exists to prevent re-enumerating all windows processes
+    // on back-to-back fgtree calls during one captureSelection. Without
+    // it, hey-jarvis → speakClipboard incurs ~50-100ms of per-call
+    // latency on Ben's box.
+    if (!/cache|CACHE|invalidate/i.test(helper)) {
+      throw new Error('key_helper.py must keep the S2.2 process-tree cache (cache + invalidate keywords)');
+    }
+  });
+
+  it('key_helper writes to the canonical ~/.terminal-talk/queue/_helper.log', () => {
+    if (!/_helper\.log/.test(helper)) {
+      throw new Error('key_helper.py must log to _helper.log for forensic replay (S2.2)');
+    }
+  });
+
+  it('key_helper emits "err <reason>" on unknown commands (not silent drop)', () => {
+    if (!/['"]err /.test(helper)) {
+      throw new Error('key_helper.py must reply "err <reason>" on unknown commands so main-side caller can differentiate fail from pending');
+    }
+  });
+});
+
+// =============================================================================
 // stripForTTS — pulled from the canonical app/lib/text.js module so we're
 // testing the ACTUAL shipping implementation, not a duplicate that has to
 // be kept in lock-step. Previously this file carried its own ~40-line
@@ -4828,6 +5088,24 @@ describe('D2-5 — config.schema.json parity with validator rules', () => {
     const prune = schema.properties.playback.properties.auto_prune_sec;
     assertEqual(prune.minimum, 1);
     assertEqual(prune.maximum, 600);
+  });
+
+  it('6244bfd playback.master_volume present in schema + validator with [0,1] bounds', () => {
+    // Master volume slider shipped 2026-04-23 (6244bfd). Validator rule
+    // added at the same time; schema was missing it — audit 2026-04-23
+    // Phase 2b caught the drift. Both layers must now carry it.
+    const mv = schema.properties.playback.properties.master_volume;
+    if (!mv) throw new Error('schema missing playback.master_volume');
+    assertEqual(mv.type, 'number');
+    assertEqual(mv.minimum, 0.0);
+    assertEqual(mv.maximum, 1.0);
+    assertEqual(mv.default, 1.0);
+    const { RULES } = require('../app/lib/config-validate');
+    const rule = RULES.find(r => r.path === 'playback.master_volume');
+    if (!rule) throw new Error('validator missing playback.master_volume rule');
+    assertEqual(rule.type, 'number');
+    assertEqual(rule.min, 0.0);
+    assertEqual(rule.max, 1.0);
   });
 
   it('v0.3.6 auto_continue_after_click present in schema + validator', () => {
