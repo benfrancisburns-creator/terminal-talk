@@ -157,6 +157,12 @@
       // resume-worthy) from user-initiated ones (stay paused).
       this._systemAutoPaused = false;
 
+      // User-adjustable master volume (settings panel → Playback → Volume).
+      // Multiplied into every clip's base volume so the heartbeat/body
+      // ratio (0.45 / 1.0) is preserved at any master level. Live-updated
+      // by setMasterVolume() so dragging the slider mid-clip is audible.
+      this._masterVolume = 1.0;
+
       // Scrubber + animation internal state.
       this._scrubberRafId = null;
       this._nextVerbEmitAt = 0;
@@ -185,6 +191,23 @@
     // — otherwise those clips pile up in the queue and all burst-play
     // the moment the user releases the dictation hotkey.
     isSystemAutoPaused() { return !!this._systemAutoPaused; }
+
+    // Master volume (0.0–1.0). Applies to every subsequent play AND the
+    // currently-playing clip if any. Heartbeat clips stay at 0.45× the
+    // master, body/tool clips at 1.0× the master, so the relative mix
+    // stays sane across the full range.
+    setMasterVolume(v) {
+      const clamped = Math.max(0, Math.min(1, Number(v)));
+      if (!Number.isFinite(clamped)) return;
+      this._masterVolume = clamped;
+      if (this._audio && this._audio.src) {
+        const fn = this._currentPath ? this._currentPath.split(/[\\/]/).pop() : '';
+        const isHeartbeat = !!fn && this._clipPaths
+          && typeof this._clipPaths.isHeartbeatClip === 'function'
+          && this._clipPaths.isHeartbeatClip(fn);
+        this._audio.volume = (isHeartbeat ? 0.45 : 1.0) * clamped;
+      }
+    }
 
     // System-initiated pause — call when another app grabs the mic
     // (Wispr Flow, Windows Voice Access, VoIP, etc.) via the main-side
@@ -247,7 +270,7 @@
       const isHeartbeat = !!fn && this._clipPaths
         && typeof this._clipPaths.isHeartbeatClip === 'function'
         && this._clipPaths.isHeartbeatClip(fn);
-      this._audio.volume = isHeartbeat ? 0.45 : 1.0;
+      this._audio.volume = (isHeartbeat ? 0.45 : 1.0) * this._masterVolume;
       this._audio.play().catch(() => {});
       this._markPlayed(p);
       if (manual) this._markHeard(p);

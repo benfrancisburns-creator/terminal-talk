@@ -13,6 +13,7 @@ const RULES = [
   { path: 'hotkeys',         type: 'object' },
   { path: 'playback',        type: 'object' },
   { path: 'playback.speed',  type: 'number', min: 0.25, max: 4.0 },
+  { path: 'playback.master_volume', type: 'number', min: 0.0, max: 1.0 },
   { path: 'playback.auto_prune', type: 'boolean' },
   { path: 'playback.auto_prune_sec', type: 'number', min: 1, max: 600 },
   { path: 'playback.auto_continue_after_click', type: 'boolean' },

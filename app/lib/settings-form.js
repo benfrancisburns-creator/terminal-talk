@@ -46,6 +46,7 @@
         openaiVoices = [],
         // Callbacks that update renderer module state when the form changes.
         onPlaybackSpeedChange = () => {},
+        onMasterVolumeChange = () => {},
         onAutoPruneEnabledChange = () => {},
         onAutoPruneSecChange = () => {},
         onAutoContinueChange = () => {},
@@ -54,6 +55,7 @@
       this._edgeVoices = edgeVoices;
       this._openaiVoices = openaiVoices;
       this._onPlaybackSpeedChange = onPlaybackSpeedChange;
+      this._onMasterVolumeChange = onMasterVolumeChange;
       this._onAutoPruneEnabledChange = onAutoPruneEnabledChange;
       this._onAutoPruneSecChange = onAutoPruneSecChange;
       this._onAutoContinueChange = onAutoContinueChange;
@@ -67,6 +69,8 @@
       this._el = {
         speedSlider:      document.getElementById('speedSlider'),
         speedValue:       document.getElementById('speedValue'),
+        volumeSlider:     document.getElementById('volumeSlider'),
+        volumeValue:      document.getElementById('volumeValue'),
         pruneToggle:      document.getElementById('autoPruneToggle'),
         pruneSecInput:    document.getElementById('autoPruneSec'),
         continueToggle:   document.getElementById('autoContinueToggle'),
@@ -89,6 +93,7 @@
         },
       };
       this._wireSpeedSlider();
+      this._wireVolumeSlider();
       this._wireAutoPrune();
       this._wireAutoContinue();
       this._wireReloadButton();
@@ -105,6 +110,7 @@
       const cfg = this.state && this.state.cfg;
       if (!cfg) return;
       this._populateSpeed(cfg);
+      this._populateVolume(cfg);
       this._populateAutoPrune(cfg);
       this._populateAutoContinue(cfg);
       this._populatePaletteVariant(cfg);
@@ -126,6 +132,26 @@
       this._on(speedSlider, 'change', async () => {
         const v = Math.max(0.5, Math.min(2.5, Number(speedSlider.value) / 100));
         await this._api.updateConfig({ playback: { speed: v } });
+      });
+    }
+
+    _wireVolumeSlider() {
+      // Master volume 0-100 on the slider, stored 0.0-1.0 in config.
+      // 'input' event applies live so dragging is audible mid-clip;
+      // 'change' persists once released so we don't spam updateConfig
+      // for every pixel of drag.
+      const { volumeSlider, volumeValue } = this._el;
+      if (!volumeSlider) return;
+      this._on(volumeSlider, 'input', () => {
+        const pct = Math.max(0, Math.min(100, Number(volumeSlider.value) || 0));
+        const v = pct / 100;
+        if (volumeValue) volumeValue.textContent = `${Math.round(pct)}%`;
+        this._onMasterVolumeChange(v);
+      });
+      this._on(volumeSlider, 'change', async () => {
+        const pct = Math.max(0, Math.min(100, Number(volumeSlider.value) || 0));
+        const v = pct / 100;
+        await this._api.updateConfig({ playback: { master_volume: v } });
       });
     }
 
@@ -239,6 +265,21 @@
       if (speedSlider) speedSlider.value = Math.round(speed * 100);
       if (speedValue) speedValue.textContent = `${speed.toFixed(2)}x`;
       this._onPlaybackSpeedChange(speed);
+    }
+
+    _populateVolume(cfg) {
+      const { volumeSlider, volumeValue } = this._el;
+      // Undefined master_volume means "legacy config from before this
+      // slider existed" → default to 1.0 (no attenuation). 0 is a valid
+      // user choice (fully muted) so we can't use `||`.
+      const raw = cfg.playback && cfg.playback.master_volume;
+      const v = (typeof raw === 'number' && Number.isFinite(raw))
+        ? Math.max(0, Math.min(1, raw))
+        : 1.0;
+      const pct = Math.round(v * 100);
+      if (volumeSlider) volumeSlider.value = pct;
+      if (volumeValue) volumeValue.textContent = `${pct}%`;
+      this._onMasterVolumeChange(v);
     }
 
     _populateAutoPrune(cfg) {

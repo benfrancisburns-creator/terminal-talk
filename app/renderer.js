@@ -1006,6 +1006,11 @@ const settingsForm = new window.TT_SETTINGS_FORM({
     currentPlaybackSpeed = v;
     if (audio) audio.playbackRate = v;
   },
+  onMasterVolumeChange: (v) => {
+    if (audioPlayer && typeof audioPlayer.setMasterVolume === 'function') {
+      audioPlayer.setMasterVolume(v);
+    }
+  },
   onAutoPruneEnabledChange: (on) => setAutoPruneEnabled(on),
   onAutoPruneSecChange: (n) => { autoPruneSec = n; },
   onAutoContinueChange: (on) => { autoContinueAfterClick = on; },
