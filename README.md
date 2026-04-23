@@ -19,7 +19,17 @@ Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signu
 
 **Try it in your browser (no install):** [live interactive toolbar demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [project landing page](https://benfrancisburns-creator.github.io/terminal-talk/)
 
-[Install](#install-windows) · [What it does](#what-it-does) · [What's offline](#whats-offline-and-what-isnt) · [UI states](#ui-states) · [Demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [Privacy](#privacy--security) · [Contributing](CONTRIBUTING.md)
+[Install](#install-windows) · [What it does](#what-it-does) · [What's offline](#whats-offline-and-what-isnt) · [UI states](#ui-states) · [Demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [Privacy](#privacy--security) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+
+### At a glance
+
+|  |  |
+|---|---|
+| 🎙️ **"Hey jarvis" → read highlighted text** — works in any app, offline wake-word | 🔊 **Auto-speaks Claude Code responses** — starts within ~2–3 s, not after the turn ends |
+| 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 📜 **Streaming audio** — transcript-watcher spawns synth as Claude types |
+| 🎚️ **Master volume + per-clip mix** — heartbeat stays ambient at any master level | 🔕 **Auto-pauses when you dictate** — Wispr / Voice Access / VoIP never get talked over |
+| 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **End-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
+| 💬 **Per-session voice + speech-includes** — 45 Edge voices + 6 OpenAI, 7 per-session toggles | 🛠️ **Tool-call narration** — _"Reading foo.py"_, _"Running npm"_ ephemeral audio |
 
 ---
 
@@ -326,7 +336,7 @@ What Terminal Talk does:
 |---|---|---|
 | Wake-word detection | **Local only** (CPU, no network) | openWakeWord runs entirely offline. Audio is processed in-process and discarded. |
 | TTS synthesis (free) | `speech.platform.bing.com` (Microsoft Edge TTS service) | The text being spoken is sent to Microsoft. Same endpoint Edge uses for "Read aloud." |
-| TTS synthesis (premium) | `api.openai.com/v1/audio/speech` | Only if you've configured an OpenAI key. The text being spoken is sent to OpenAI. |
+| TTS synthesis (premium) | `api.openai.com/v1/audio/speech` | Only if you've configured an OpenAI key. The text being spoken is sent to OpenAI. Keys are stored encrypted via [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage) (DPAPI on Windows, Keychain on Mac) at `~/.terminal-talk/openai_key.enc`; a user-ACL'd plaintext sidecar at `config.secrets.json` is written for the PS hooks that can't reach safeStorage. Neither is in `config.json` or git. |
 | Audio file storage | `~/.terminal-talk/queue/` | Local mp3/wav files. Auto-deleted 90s after manual play, or capped at 20 clips. |
 | Session registry | `~/.terminal-talk/session-colours.json` + `~/.terminal-talk/sessions/<pid>.json` | Local-only. Tracks colour assignments and a short-lived per-PID file used to map foreground window → session. |
 | Logs | `~/.terminal-talk/queue/_*.log` | Local-only diagnostic logs (toolbar, hook, voice listener). |
@@ -392,43 +402,77 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding new tests.
 
 ## How it works
 
+Three Claude Code integration points (hooks + statusline), a floating Electron toolbar, a Python synth orchestrator, and two polling sidecars keep audio aligned with what you see in the terminal.
+
 ```
-                 "hey jarvis"                  highlight + Ctrl+Shift+S
-                      │                                 │
-                      ▼                                 │
-         ┌───────────────────────┐                      │
-         │  wake-word-listener   │  openWakeWord, CPU   │
-         │       (Python)        │                      │
-         └──────────┬────────────┘                      │
-                    │ ctypes: Ctrl+Shift+S              │
-                    ▼                                   ▼
-         ┌─────────────────────────────────────────────────┐
-         │  Electron main (globalShortcut)                  │
-         │   ├─ sendCtrlC (via long-lived Python helper)    │
-         │   ├─ poll clipboard for selection                │
-         │   ├─ detectActiveSession (Win32 GetForeground +  │
-         │   │     process tree walk, falls back to "most   │
-         │   │     recently active session")                │
-         │   ├─ stripForTTS (honours speech_includes)       │
-         │   ├─ edge-tts (free, primary)                    │
-         │   └─ fallback: OpenAI TTS                        │
-         └─────────────────────────────────────────────────┘
-                    │
-                    ▼ writes .mp3/.wav
-         ┌──────────────────────────┐
-         │  ~/.terminal-talk/queue  │  fs.watch → renderer
-         └──────────┬───────────────┘
-                    ▼
-         Floating toolbar autoplays, marks dot, auto-deletes after 90s
+                       Claude Code turn lifecycle
+┌────────────────────────────────────────────────────────────────────┐
+│  UserPromptSubmit  →   PreToolUse (× N)    →    Stop    →    …    │
+│        │                    │                     │               │
+│        ▼                    ▼                     ▼               │
+│  mark-working.ps1    speak-on-tool.ps1     speak-response.ps1     │
+│  writes flag         ad-hoc synth for      clears flag, scrapes   │
+│                      in-progress text      footer, final synth    │
+└────────────────────────────────────────────────────────────────────┘
+        │                    │                     │
+        └────────────────────┼─────────────────────┘
+                             ▼
+        ┌────────────────────────────────────────┐
+        │  synth_turn.py   (per-turn orchestrator)│
+        │   • reads transcript.jsonl              │
+        │   • stripForTTS (honours speech_includes)│
+        │   • sentence-split + group              │
+        │   • parallel edge-tts / OpenAI synth    │
+        │   • writes .mp3 / .wav to queue/        │
+        └────────────────┬───────────────────────┘
+                         │
+┌────────────────────────┼────────────────────────────────────────┐
+│  transcript-watcher.js │  (polls 500 ms)                         │
+│   spawns synth_turn    │  ─ on-stream mode, mid-turn             │
+│   when working-flag    │  ─ starts audio within ~2-3 s of text   │
+│   file is present      │                                         │
+└────────────────────────┴────────────────────────────────────────┘
+                         │
+                         ▼ fs.watch
+        ┌──────────────────────────────────┐
+        │  ~/.terminal-talk/queue/          │
+        │  .mp3 / .wav / .flag / _*.log     │
+        └───────────────┬──────────────────┘
+                        │ queue-updated IPC
+                        ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  Electron toolbar   (floating, always-on-top)                      │
+│   • renderer.js ─ dot strip + tabs + mascot + scrubber             │
+│   • audio-player  ─ auto-play, master volume, ephemeral-clip mix   │
+│   • mic-watcher.ps1 sidecar ─ auto-pause on external mic capture   │
+│   • heartbeat timer ─ ambient verbs during silent-but-active gaps  │
+└────────────────────────────────────────────────────────────────────┘
 
-         Claude Code Stop hook (PowerShell) writes audio files into the same queue
-         using the session's resolved voice and merged speech_includes.
+                       "Hey jarvis" / Ctrl+Shift+S
+                                 │
+        ┌────────────────────────┴────────────────────────┐
+        ▼                                                 ▼
+┌──────────────────────┐                     ┌────────────────────────┐
+│ wake-word-listener   │                     │ Electron globalShortcut│
+│ (Python, openWakeWord│ ─ ctypes Ctrl+Shift+S ─► sendCtrlC via       │
+│  CPU, offline)       │                     │ key_helper.py           │
+└──────────────────────┘                     │  → poll clipboard       │
+                                             │  → detectActiveSession  │
+                                             │    (Win32 GetForeground │
+                                             │    + process tree walk) │
+                                             │  → stripForTTS          │
+                                             │  → synth → queue        │
+                                             └────────────────────────┘
 
-         Claude Code statusline (PowerShell) reads the colour registry and emits
-         the matching emoji + label per terminal.
+        Session registry ( ~/.terminal-talk/session-colours.json )
+        Single source of truth; written by the Stop hook (canonical)
+        + PS statusline (bookkeeping touches) + Electron (user edits).
+        File-locked JSON; PID-migration preserves colour + label + voice
+        through /clear; LRU eviction respects user intent (pinned OR
+        any label / voice / mute / focus / speech-includes override).
 ```
 
-The hook is the **single source of truth** for session colour assignment. The statusline reads the registry. The Electron main process reads the registry. No three-way race; one writer (with a fallback in the toolbar for sessions that haven't yet had a hook fire).
+The hook is the **single source of truth** for session colour assignment. The statusline reads the registry. The Electron main process reads the registry. The transcript-watcher's streaming synth + the PreToolUse hook's mid-turn synth share `partial_text_offsets` via per-session sync state so the same sentence is never synthesised twice.
 
 ---
 

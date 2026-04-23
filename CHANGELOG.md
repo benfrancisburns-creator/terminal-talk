@@ -4,8 +4,10 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased] — post-v0.4.0
 
-Audio-pipeline quality pass (NG / TN / HB initiatives) + assorted UX
-fixes surfaced by live use. Branch `main`; no tag cut yet.
+Audio-pipeline quality pass (NG / TN / HB initiatives), OpenAI
+premium-TTS UI, mic-aware auto-pause, terminal-footer scrape, plus
+a 221-test audit programme and assorted UX fixes surfaced by live
+use. Branch `main`; no tag cut yet.
 
 ### Added
 
@@ -29,13 +31,82 @@ fixes surfaced by live use. Branch `main`; no tag cut yet.
   per-session working flag; Stop hook clears it; heartbeat timer
   gates strictly on flag presence. Default on; toggle via
   `heartbeat_enabled` in config.json.
-- **Mascot session-colour recolour.** The scrubber mascot now
-  takes the playing session's primary palette colour for the
-  duration of its clips; falls back to the Claude-Code homage
-  orange at rest.
-- **Per-session tabs** (parallel-terminal work by Ben). Row above
-  the dot strip with per-session filter + unread counts.
+- **HB3 — quieter heartbeat mix.** Heartbeat clips carry an `H-`
+  filename prefix and play at 0.45× the master volume (body +
+  tool-narration clips stay at 1.0×), so ambient filler reads as
+  background rather than competing with real content. Ratio is
+  preserved across the full master-volume slider range.
+- **HB4 — mic-aware auto-pause.** A PowerShell sidecar
+  (`app/mic-watcher.ps1`) polls the Windows audio-capture registry
+  and pipes `MIC_CAPTURED` / `MIC_RELEASED` events to Electron.
+  Terminal Talk pauses whatever's playing when another app
+  (Wispr Flow, Windows Voice Access, VoIP) grabs the mic, and
+  resumes when released. Clips that arrive during the dictation
+  window queue up and drain in order after release — they never
+  burst all at once.
+- **Phase 2 transcript-watcher.** New `app/lib/transcript-watcher.js`
+  polls `~/.terminal-talk/sessions/*-working.flag` every 500 ms and
+  spawns `synth_turn.py --mode on-stream` against the matching
+  Claude Code JSONL transcript. Audio now starts landing within
+  ~2–3 s of Claude producing the first sentence, not waiting for
+  the Stop hook.
+- **Terminal-footer end-of-reply closer.** The Stop hook scrapes
+  the exact verb Claude Code prints to the TTY ("Brewed for 8m 49s",
+  "Sautéed for 1m 0s", "Cogitated for 24m 56s") via UI Automation
+  against the Windows Terminal buffer and speaks it at end-of-reply.
+  A parent-side 4-s `WaitForExit` guards the scrape subprocess so
+  slow UIA calls can't starve the Stop hook of its `synth_turn`
+  spawn window.
+- **Master volume slider.** New Settings › Playback control (0–100%)
+  that multiplies into every clip's base volume. Drags live during
+  playback. Heartbeat clips keep their 0.45× proportion at any master
+  level. Persists to `playback.master_volume` in config.json.
+- **OpenAI premium-TTS Settings panel.** Full in-UI flow for entering,
+  testing, and managing an OpenAI key. Key is stored encrypted via
+  Electron safeStorage (DPAPI on Win, Keychain on Mac) at
+  `openai_key.enc` with a user-ACL'd plaintext sidecar at
+  `config.secrets.json` for PS hooks that can't reach safeStorage.
+  `playback.tts_provider` (`"edge"` | `"openai"`) picks the primary
+  provider; the other auto-falls-back on failure. Includes:
+  - Password-masked key input row that hides once a valid key is
+    saved (compact "Change key / Clear" replacement row saves a
+    line of panel height).
+  - Collapsible section header with a chevron; auto-collapses once
+    a key is saved and the last Test passed.
+  - "Prefer OpenAI as primary" pill toggle — needs a saved key to
+    engage; flipping back clears gracefully.
+  - "Test voice" button that synthesises a short phrase via the
+    preferred provider and drops it in the queue — surfaces bad
+    keys / rate-limits / network issues end-to-end. On a failed
+    test, the input row auto-reveals and the section auto-expands
+    so the correction path is one click.
+- **On/Off pill toggles** replace the old iOS-slider checkbox
+  control for panel toggles (matches the tri-state pills used in
+  the per-session speech-includes grid). Consistent visual language
+  across the whole settings surface.
+- **2-column Playback grid.** The four single-toggle Playback rows
+  (auto-continue, colour-blind, heartbeat, reload) share two rows
+  instead of four — saves ~30% vertical space. Sliders + auto-prune
+  (which has a side seconds input) stay full-width.
+- **Mascot session-colour recolour.** The scrubber mascot takes the
+  playing session's primary palette colour for the duration of its
+  clips; falls back to the Claude-Code homage orange at rest.
+- **Per-session tabs.** Row above the dot strip with per-session
+  filter pills + unread-count badges. Auto-hides when only one
+  session is active; auto-appears when a second session produces
+  a clip.
 - **Renderer reload via Settings button + Ctrl+R** (EX3 extension).
+- **Short identifier-like inline code spoken.** Whitelist heuristic
+  preserves 30-char-max tokens without parens / language operators
+  (`session_id`, `/clear`, `main.js`, `pid=0`) through the inline-
+  code strip — they're prose, not code, and stripping them turned
+  explanatory sentences into nonsense.
+- **Prose-in-fences heuristic.** Un-tagged ```-fenced blocks are
+  evaluated against a syntax-signal regex set; prose-in-fences
+  (forward messages, quoted logs) is spoken even with
+  `code_blocks=false`. Language-tagged fences + code-signal-heavy
+  content still strip.
+- **Settings panel heartbeat + tool-call toggles + version readout.**
 
 ### Changed
 
@@ -45,10 +116,30 @@ fixes surfaced by live use. Branch `main`; no tag cut yet.
   `?` inside inline code, and duplication. Audio now tracks
   terminal prose 1:1. `extract_questions()` stays in the module
   for the test harness / future re-enable.
+- **Dot-strip layout — flex-start, tight 3 px gaps.** Was
+  `space-evenly` briefly; that spread 4 dots across the full bar
+  width. Now packs from the left at constant density, fitting ~39
+  visible dots across the 680-px strip. Ordering (oldest left,
+  newest right) unchanged.
+- **Session-registry `/clear` migration preserves full metadata.**
+  When Claude Code's `/clear` rotates session_id but keeps the
+  same CLI process, the registry now re-keys the existing entry
+  under the new short (matching on `claude_pid` within a 600-s
+  freshness window) so colour / label / voice / mute / focus /
+  speech-includes all survive the rotation.
+- **Ensure-assignments protects user intent from LRU eviction.**
+  Entries carrying any customisation (label, voice, muted, focus,
+  speech_includes override) can't be evicted even when unpinned.
+  Historic unpinned-but-labelled entries no longer get their colour
+  stolen the 25th time a new session boots.
 - **`uninstall.ps1` process hunt covers the rebrand.** First sweep
   now matches both `terminal-talk` and `electron` names; previously
   only `electron`, which silently missed the running toolbar after
   the commit-17bc677 rebrand.
+- **Config schema + validator expanded.** Five new keys land under
+  `playback.`: `master_volume`, `auto_prune_sec` (surfaced in JSON),
+  `auto_continue_after_click`, `palette_variant`, `tts_provider`.
+  `hotkeys.pause_resume` + `hotkeys.pause_only` now in the schema.
 
 ### Fixed — TTS sanitiser
 
@@ -75,14 +166,120 @@ fixes surfaced by live use. Branch `main`; no tag cut yet.
   `*` doesn't cross-line-pair with an unrelated stray (e.g. `app/*`
   glob patterns).
 
+### Fixed — audio pipeline
+
+- **Mid-turn text was silent.** `find_last_user_idx` in
+  `synth_turn.py` treated `tool_result` entries (they carry
+  `type: 'user'` in the JSONL) as real user prompts — so every
+  tool return jumped `turn_boundary` past the text Claude had just
+  written, and the transcript-watcher saw "no new assistant text"
+  for the rest of a multi-tool-call turn. Only the very first text
+  chunk of each turn was ever synthesised. Now filters out
+  `tool_result` entries; every intermediate text chunk speaks.
+- **Duplicate narration during concurrent synth.** `on-stop` no
+  longer re-synthesises the content `on-stream` already emitted —
+  slices pending text by `partial_text_offsets` so the same
+  sentences don't land twice, 3 seconds apart.
+- **Scrape subprocess silent-death.** The Stop hook's
+  `& powershell.exe -STA -File scrape-footer.ps1` call had no
+  timeout primitive, so a slow UIA traversal (20–30 s worst-case
+  under load) was killed by Claude Code's hook timeout BEFORE the
+  `Stop: spawned synth_turn.py` line fired — no audio that turn
+  (body OR footer). Switched to
+  `System.Diagnostics.Process::Start` with a 4-s `WaitForExit`
+  and `.Kill()` fall-through. Hook always reaches its synth spawn.
+- **UIA apartment mismatch.** Claude Code invokes the Stop hook as
+  `powershell.exe -File ...` which defaults to MTA. UIAutomation's
+  `RootElement` requires STA — under MTA the process silently
+  terminates. Scrape now runs in a fresh `-STA` sub-process so the
+  hook's own apartment no longer matters.
+- **Heartbeat flag gated on stale `last_seen` proxy.** Heartbeat
+  used to keep firing for minutes after a response ended, because
+  `last_seen` stayed fresh. Now gates strictly on the presence of
+  the working-flag file that `mark-working.ps1` writes and the
+  Stop hook clears.
+- **`ALLOWED_INCLUDE_KEYS` missed `tool_calls`.** UI exposed the
+  tool-call narration tri-pill but the IPC write-gate silently
+  rejected it — key never reached disk. Per-session override
+  looked like it persisted until the next `queue-updated` event
+  re-hydrated from disk. Added to the allow-list + cross-module
+  parity test.
+- **PowerShell timestamp drift.** `Get-Date -UFormat %s` returns
+  LOCAL seconds, not UTC, on Windows PowerShell 5.1. Flags and
+  `last_seen` values written by the hooks drifted 1 h under BST
+  from the JS readers that use `Date.now() / 1000` (UTC). Replaced
+  with `[DateTimeOffset]::Now.ToUnixTimeSeconds()` in all five
+  PS sites; cross-language invariant test locked in.
+- **Narration duplication under concurrent synth.** Serialised
+  concurrent `synth_turn.py` runs via the existing session lock
+  so two Python processes can't race on the same session's pending
+  text.
+- **Palette-alloc NaN leak.** `paletteSize=0` (or any non-finite
+  value) made the hash-mod fallback compute `sum % 0 = NaN`.
+  Dormant in production but a defensive hardening opportunity —
+  clamps to the 24 default now.
+- **Mic-gate arming race.** The `_systemAutoPaused` flag must arm
+  on `MIC_CAPTURED` regardless of whether audio was currently
+  playing; the earlier guard only armed mid-clip, so a clip
+  arriving during the dictation window slipped past `playPath`'s
+  refusal check.
+- **Intermittent stale working-queue flag.** Heartbeat could fire
+  briefly on startup against a stale flag left over from a
+  previous session kill; the worker-flag scan now treats any flag
+  older than 10 min as stale.
+- **Corrupt registry recovery.** When `session-colours.json` gets
+  corrupted, the pre-existing archive-and-reset path now keeps a
+  timestamped backup so forensic inspection is possible.
+
 ### Fixed — UX + renderer
 
 - Click-through state starts OFF on renderer load, preventing a
   reload deadlock where the toolbar became visible but uninteractive
   until app restart.
+- `setIgnoreMouseEvents` is reset to `false` on every reload so the
+  new renderer is clickable even if the previous one left it ON.
 - TN1 didn't fire during text-free tool chains — early-exit guard
   bypassed the tool-narration branch when `pending` text was empty.
   Now emits narrations regardless of whether new prose is pending.
+- `Ctrl+Shift+A` show/hide was a three-way state machine
+  (hidden / force-shown / normal) rather than a simple toggle —
+  rewired to respect explicit hide latches so passive arrivals
+  can't un-hide a user-initiated close.
+- Settings panel `max-height` calc now accounts for the last row so
+  the final control isn't clipped below the scroll threshold.
+
+### Tests
+
+- **+221 tests** across the 2026-04-23→24 audit programme
+  (Phases 2a, 2b, 3, and 4-modules-1–6), taking the suite from 465
+  to 686 unit + 28 E2E. 3 real bugs surfaced + fixed (PS timezone
+  drift, schema/validator `master_volume` drift, palette-alloc NaN
+  leak). 2 JS↔Python behaviour drifts documented as lock-in tests
+  (single-underscore italic emphasis, code-block content shielding).
+  Full programme details in `docs/` audit archive.
+- **Phase 3 combinatorial matrix** exercises all 128 permutations
+  of the 7 speech_includes toggles against the JS canonical
+  stripForTTS + a batched-subprocess Python parity check on 16
+  sampled combos.
+- **Phase 4 adversarial passes** on stripForTTS (29 probes),
+  palette-alloc (22), session-registry.psm1 (10), ipc-handlers
+  (30), audio-player state transitions (18), clip-paths
+  filename parsing (25).
+
+### Refactor
+
+- **EX6f series — IPC handlers factory.** Extracted all 22
+  `ipcMain.handle()` registrations from `app/main.js` into
+  `app/lib/ipc-handlers.js` factory (read-only → session-edit →
+  panel + config-mutation → file + test-only). Main.js lost ~500
+  lines of boilerplate; factory is unit-testable without an
+  Electron runtime.
+- **EX7 series — renderer components.** Extracted four major
+  surfaces from `app/renderer.js` into component classes with a
+  shared `Component` base (mount / unmount / lifecycle):
+  `StaleSessionPoller`, `DotStrip`, `SessionsTable`, `SettingsForm`,
+  `AudioPlayer`. Renderer.js is ~48% smaller; components are
+  individually unit-testable against a fake DOM.
 
 ## [0.4.0] — 2026-04-21
 
