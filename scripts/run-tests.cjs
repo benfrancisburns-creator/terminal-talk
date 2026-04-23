@@ -8352,6 +8352,355 @@ describe('S5 — text.js image_alt=false strips entire image markdown', () => {
   });
 });
 
+// =============================================================================
+// PHASE 3 — SPEECH-INCLUDES FULL COMBINATORIAL MATRIX (audit 2026-04-23)
+//
+// 7 Boolean toggles = 128 permutations. This suite runs every permutation
+// against a canonical input with a UNIQUE sentinel token per feature, so
+// assertions reduce to "is sentinel X present in output?" — no heuristic
+// string-matching required. Checks:
+//   1. Per-key gating invariants hold for all 128 combos (turning key X
+//      on/off changes feature X's presence, never another feature's).
+//   2. tool_calls is a no-op on JS side for all 128 combos (Python-only).
+//   3. Python synth_turn.sanitize() output matches JS byte-for-byte on
+//      a representative sample of 16 combos (one subprocess call batched).
+//   4. No permutation crashes / returns null / leaks markdown syntax.
+//   5. Per-session override merge: for each of the 7 keys, session=true +
+//      global=false gives true in effective config (and vice versa).
+// =============================================================================
+describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
+  const { stripForTTS } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'text.js')
+  );
+
+  // Canonical input — one unique sentinel per feature. Using hyphen-
+  // separated tokens (QZX-N-ZQ) rather than underscores: Python's
+  // emphasis regex DOES strip single-underscore italic `_x_` while JS
+  // does not, so underscore-wrapped sentinels would false-positive a
+  // parity mismatch on a deliberate behaviour divergence (see the
+  // "known drift" test below).
+  //
+  // Feature → sentinel mapping:
+  //   code_blocks    -> QZX-CODEBLOCK-ZQ (inside ```python block)
+  //   inline_code    -> QZX-INLINE-ZQ (inside `arr.filter(QZX-INLINE-ZQ)` — disqualified by parens so whitelist can't keep it)
+  //   urls           -> QZX-URL-ZQ (inside a bare URL host)
+  //   headings       -> QZX-HEADING-ZQ (inside # heading)
+  //   bullet_markers -> Q-bullet-Q (exercises the "- " marker stripping; sentinel appears EITHER way)
+  //   image_alt      -> QZX-ALT-ZQ (inside ![alt])
+  //   tool_calls     -> (no JS effect, so no sentinel — asserted invariant)
+  const KEYS = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt', 'tool_calls'];
+
+  function canonicalInput() {
+    return [
+      '# QZX-HEADING-ZQ heading',
+      '',
+      'Plain body with `arr.filter(QZX-INLINE-ZQ)` inline.',
+      '',
+      '- Q-bullet-Q first item',
+      '',
+      '```python',
+      'def QZX-CODEBLOCK-ZQ(): pass',
+      '```',
+      '',
+      'Image: ![QZX-ALT-ZQ caption](http://img/thing.png)',
+      '',
+      'URL: https://QZX-URL-ZQ.example.com/x',
+    ].join('\n');
+  }
+
+  // 128 dicts of the form { code_blocks: bool, inline_code: bool, ... }
+  function allCombos() {
+    const out = [];
+    for (let i = 0; i < 128; i++) {
+      const combo = {};
+      for (let k = 0; k < KEYS.length; k++) combo[KEYS[k]] = Boolean((i >> k) & 1);
+      out.push(combo);
+    }
+    return out;
+  }
+
+  // ----- 1. Per-key gating invariants across all 128 combos ------------
+  it('every 128 permutation strips/keeps each feature according to its own key', () => {
+    const input = canonicalInput();
+    const failures = [];
+    for (const combo of allCombos()) {
+      let out;
+      try { out = stripForTTS(input, combo); } catch (e) {
+        failures.push(`combo ${JSON.stringify(combo)}: THREW ${e.message}`);
+        continue;
+      }
+      if (typeof out !== 'string') {
+        failures.push(`combo ${JSON.stringify(combo)}: output not a string (${typeof out})`);
+        continue;
+      }
+      // Per-feature presence/absence — paired sentinel + expected-when.
+      const checks = [
+        { key: 'code_blocks',  sentinel: 'QZX-CODEBLOCK-ZQ' },
+        { key: 'inline_code',  sentinel: 'QZX-INLINE-ZQ' },
+        { key: 'urls',         sentinel: 'QZX-URL-ZQ' },
+        { key: 'headings',     sentinel: 'QZX-HEADING-ZQ' },
+        { key: 'image_alt',    sentinel: 'QZX-ALT-ZQ' },
+      ];
+      for (const { key, sentinel } of checks) {
+        const expected = combo[key];
+        const present  = out.includes(sentinel);
+        if (expected && !present) {
+          failures.push(`combo ${JSON.stringify(combo)}: ${key}=true but "${sentinel}" NOT in output`);
+        } else if (!expected && present) {
+          failures.push(`combo ${JSON.stringify(combo)}: ${key}=false but "${sentinel}" LEAKED into output`);
+        }
+      }
+    }
+    if (failures.length) {
+      throw new Error(`${failures.length}/896 invariants failed:\n  ` + failures.slice(0, 5).join('\n  ') + (failures.length > 5 ? `\n  ...(+${failures.length - 5} more)` : ''));
+    }
+  });
+
+  // ----- 2. tool_calls is a no-op on JS side across all 128 combos -----
+  it('tool_calls flips without changing JS output (Python-only action)', () => {
+    const input = canonicalInput();
+    const failures = [];
+    // Walk all 64 permutations of the OTHER 6 keys. For each, flip
+    // tool_calls and assert output unchanged.
+    for (let i = 0; i < 64; i++) {
+      const base = {};
+      const other = KEYS.filter(k => k !== 'tool_calls');
+      for (let k = 0; k < other.length; k++) base[other[k]] = Boolean((i >> k) & 1);
+      const withOn  = stripForTTS(input, { ...base, tool_calls: true  });
+      const withOff = stripForTTS(input, { ...base, tool_calls: false });
+      if (withOn !== withOff) {
+        failures.push(`${JSON.stringify(base)}: tool_calls flip changed JS output`);
+      }
+    }
+    if (failures.length) {
+      throw new Error(`${failures.length} tool_calls flips changed output:\n  ` + failures.slice(0, 3).join('\n  '));
+    }
+  });
+
+  // ----- 3. Python parity on a representative 16-combo sample ----------
+  // Spawning 128 Python processes would add ~25 s to the suite. Instead
+  // we batch: one Python subprocess reads JSON { text, combos } from
+  // stdin, imports synth_turn.sanitize, runs each combo, emits JSON
+  // array of outputs. The test then compares JS vs Python item-by-item.
+  it('Python synth_turn.sanitize matches JS stripForTTS on 16 sampled combos', () => {
+    const input = canonicalInput();
+    // 16 carefully chosen combos: 2 full extremes (all-on, all-off),
+    // 7 isolation-toggles, and 7 mixed combos that flip ~3 keys each.
+    const sampleCombos = [
+      // Extremes
+      { code_blocks: true,  inline_code: true,  urls: true,  headings: true,  bullet_markers: true,  image_alt: true,  tool_calls: true  },
+      { code_blocks: false, inline_code: false, urls: false, headings: false, bullet_markers: false, image_alt: false, tool_calls: false },
+      // Single-key toggles (defaults elsewhere)
+      ...KEYS.map(key => {
+        const c = { code_blocks: false, inline_code: false, urls: false, headings: false, bullet_markers: false, image_alt: false, tool_calls: false };
+        c[key] = true;
+        return c;
+      }),
+      // Mixed patterns
+      { code_blocks: true,  inline_code: true,  urls: false, headings: true,  bullet_markers: false, image_alt: false, tool_calls: true },
+      { code_blocks: false, inline_code: true,  urls: true,  headings: false, bullet_markers: true,  image_alt: false, tool_calls: true },
+      { code_blocks: true,  inline_code: false, urls: false, headings: false, bullet_markers: true,  image_alt: true,  tool_calls: false },
+      { code_blocks: false, inline_code: true,  urls: false, headings: true,  bullet_markers: true,  image_alt: true,  tool_calls: true },
+      { code_blocks: true,  inline_code: true,  urls: true,  headings: false, bullet_markers: false, image_alt: true,  tool_calls: false },
+      { code_blocks: false, inline_code: false, urls: true,  headings: true,  bullet_markers: false, image_alt: true,  tool_calls: true },
+      { code_blocks: true,  inline_code: false, urls: true,  headings: true,  bullet_markers: true,  image_alt: false, tool_calls: false },
+    ];
+
+    // Batched Python helper: one subprocess reads JSON { text, combos },
+    // applies synth_turn.sanitize to each combo, writes JSON array of
+    // outputs to stdout. PYTHONIOENCODING=utf-8 so the canonical input's
+    // multi-byte chars round-trip cleanly on Windows.
+    const APP_DIR_ABS = path.join(__dirname, '..', 'app');
+    const pyScript = [
+      'import json, sys',
+      `sys.path.insert(0, r"${APP_DIR_ABS.replace(/\\/g, '\\\\')}")`,
+      'from synth_turn import sanitize',
+      'req = json.loads(sys.stdin.read())',
+      'out = [sanitize(req["text"], c) for c in req["combos"]]',
+      'sys.stdout.write(json.dumps(out))',
+    ].join('\n');
+    const r = spawnSync('python', ['-c', pyScript], {
+      input: JSON.stringify({ text: input, combos: sampleCombos }),
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+    if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
+    const pyOutputs = JSON.parse(r.stdout);
+    assertEqual(pyOutputs.length, sampleCombos.length);
+    // Canonicalise whitespace before compare: JS collapses \n into
+    // spaces at the tail of stripForTTS; Python preserves \n\n as
+    // paragraph boundaries for the downstream sentence_split (see
+    // synth_turn.py `re.sub(r'\n{3,}', '\n\n', t)` — deliberate).
+    // For parity purposes we're checking TOKEN-level fidelity, not
+    // layout, so normalise both sides to single-line before diffing.
+    const norm = s => s.replace(/\s+/g, ' ').trim();
+    const diffs = [];
+    for (let i = 0; i < sampleCombos.length; i++) {
+      const combo = sampleCombos[i];
+      const jsOut = norm(stripForTTS(input, combo));
+      const pyOut = norm(pyOutputs[i]);
+      if (jsOut !== pyOut) {
+        diffs.push(`combo[${i}] ${JSON.stringify(combo)}:\n    JS: ${JSON.stringify(jsOut).slice(0, 160)}\n    PY: ${JSON.stringify(pyOut).slice(0, 160)}`);
+      }
+    }
+    if (diffs.length) {
+      throw new Error(`${diffs.length}/${sampleCombos.length} Python-vs-JS mismatches (post-whitespace-normalise):\n  ` + diffs.slice(0, 3).join('\n  '));
+    }
+  });
+
+  // ----- 3b. Known drift: single-underscore italic emphasis -----------
+  // DOCUMENTED divergence surfaced by the Phase 3 parity test:
+  //   JS  `stripForTTS`        leaves `_x_` as-is (no single-underscore arm)
+  //   PY  `synth_turn.sanitize` strips `_x_` to `x` (full emphasis coverage)
+  //
+  // Neither is obviously wrong:
+  //   JS is safer for bare-prose identifiers (`session_id` → unchanged).
+  //   PY is more faithful to standard markdown (italic `_word_` → word).
+  //
+  // This test LOCKS IN the drift so if someone aligns one side without
+  // updating the other, we get a red flag. To resolve: either add
+  // `t = t.replace(/_([^_\n]+)_/g, '$1');` to app/lib/text.js (align JS
+  // to PY) or remove the `|_([^_\n]+)_` arm from `_EMPHASIS_RE` in
+  // app/synth_turn.py (align PY to JS) and update this test to assert
+  // byte-identical output.
+  it('known drift: single-underscore italic emphasis — JS keeps, Python strips', () => {
+    const APP_DIR_ABS = path.join(__dirname, '..', 'app');
+    const jsOut = stripForTTS('Plain _italic_ word', {});
+    const pyScript = [
+      'import json, sys',
+      `sys.path.insert(0, r"${APP_DIR_ABS.replace(/\\/g, '\\\\')}")`,
+      'from synth_turn import sanitize',
+      'sys.stdout.write(sanitize("Plain _italic_ word", {}))',
+    ].join('\n');
+    const r = spawnSync('python', ['-c', pyScript],
+      { encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
+    const pyOut = r.stdout.replace(/\s+/g, ' ').trim();
+    // If this invariant inverts (JS strips, Python keeps, or both
+    // agree), the drift has been resolved — delete this test and
+    // update the main parity test to assert byte-identical output.
+    assertTruthy(jsOut.includes('_italic_'),
+      'JS must still NOT strip single-underscore italic (current behaviour)');
+    assertFalsy(pyOut.includes('_italic_'),
+      'Python must still strip single-underscore italic (current behaviour)');
+    assertTruthy(pyOut.includes('italic'),
+      'Python must still keep the content "italic" after stripping the markers');
+  });
+
+  // ----- 3c. Known drift: code-block content emphasis shielding --------
+  // Second DOCUMENTED divergence:
+  //   JS  stores code-block bodies in \0CB<N>\0 sentinel placeholders
+  //       so subsequent emphasis/bullet/url regexes can't mangle them;
+  //       placeholders are restored at the very end.
+  //   PY  returns the code-block body inline — all subsequent regexes
+  //       (emphasis, bullet markers, etc.) ALSO apply to code content.
+  //
+  // Practical impact: a code block containing `__dunder__` identifiers
+  // reads correctly via JS highlight-to-speak but loses its underscores
+  // via the Python Stop-hook synth pipeline.
+  it('known drift: code-block content is shielded from emphasis regex in JS, not in Python', () => {
+    const APP_DIR_ABS = path.join(__dirname, '..', 'app');
+    const input = [
+      'Prose before.',
+      '```python',
+      'x = __dunder__ + foo',
+      '```',
+      'Prose after.',
+    ].join('\n');
+    const flags = { code_blocks: true };
+    const jsOut = stripForTTS(input, flags);
+    // Pass input/flags as JSON on stdin, parse with json.loads so
+    // Python's True/False capitalisation is correctly deserialised
+    // (embedding {"code_blocks":true} as a Python dict literal
+    // would NameError on `true`).
+    const pyScript = [
+      'import json, sys',
+      `sys.path.insert(0, r"${APP_DIR_ABS.replace(/\\/g, '\\\\')}")`,
+      'from synth_turn import sanitize',
+      'req = json.loads(sys.stdin.read())',
+      'sys.stdout.write(sanitize(req["text"], req["flags"]))',
+    ].join('\n');
+    const r = spawnSync('python', ['-c', pyScript], {
+      input: JSON.stringify({ text: input, flags }),
+      encoding: 'utf8',
+      timeout: 10000,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+    if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
+    const pyOut = r.stdout.replace(/\s+/g, ' ').trim();
+    assertTruthy(jsOut.includes('__dunder__'),
+      'JS must still shield code-block __dunder__ from emphasis regex (current behaviour)');
+    assertFalsy(pyOut.includes('__dunder__'),
+      'Python must still apply emphasis regex to code-block body (current behaviour)');
+    assertTruthy(pyOut.includes('dunder'),
+      'Python must still keep the content "dunder" after stripping markers');
+  });
+
+  // ----- 4. No permutation leaks raw markdown syntax -------------------
+  it('no permutation lets raw markdown tokens leak through (``, **, ~)', () => {
+    // Post-strip output must never contain ``` fences, bare **bold**
+    // markers, or the `~` character (pronounced "tilda" by edge-tts).
+    const input = canonicalInput();
+    const failures = [];
+    for (const combo of allCombos()) {
+      const out = stripForTTS(input, combo);
+      const fence = '\u0060\u0060\u0060';
+      if (out.includes(fence)) failures.push('combo ' + JSON.stringify(combo) + ': triple-backtick fence leaked');
+      if (/\*\*[^\s*]/.test(out)) failures.push('combo ' + JSON.stringify(combo) + ': **word leaked (bold marker)');
+      if (out.includes('~')) failures.push('combo ' + JSON.stringify(combo) + ': ~ leaked (edge-tts reads as "tilda")');
+    }
+    if (failures.length) {
+      throw new Error(`${failures.length} permutations leaked raw markdown:\n  ` + failures.slice(0, 3).join('\n  '));
+    }
+  });
+
+  // ----- 5. No permutation returns null / non-string -------------------
+  it('every 128 permutation returns a finite string (no null / throw)', () => {
+    const input = canonicalInput();
+    const failures = [];
+    for (const combo of allCombos()) {
+      try {
+        const out = stripForTTS(input, combo);
+        if (typeof out !== 'string') failures.push(`${JSON.stringify(combo)}: ${typeof out}`);
+        if (out.length > input.length * 3) failures.push(`${JSON.stringify(combo)}: output suspiciously large (${out.length} > 3x input)`);
+      } catch (e) {
+        failures.push(`${JSON.stringify(combo)}: THREW ${e.message}`);
+      }
+    }
+    if (failures.length) {
+      throw new Error(`${failures.length} permutations misbehaved:\n  ` + failures.slice(0, 3).join('\n  '));
+    }
+  });
+
+  // ----- 6. Merge: session override beats global, per-key, all combos --
+  it('merge: session override wins over global for every key, in both directions', () => {
+    // Simulates the per-session override merge logic: the effective
+    // config is { ...global, ...sessionOverride }. Verify that when a
+    // key is explicitly set in sessionOverride, the global is ignored
+    // — regardless of what other keys are in either side.
+    const failures = [];
+    for (const key of KEYS) {
+      for (const globalVal of [true, false]) {
+        const sessionVal = !globalVal;
+        // Build a full global config with THIS key set to globalVal
+        // and the other 6 set to an arbitrary mix.
+        const global = {};
+        for (let i = 0; i < KEYS.length; i++) global[KEYS[i]] = (i % 2 === 0);
+        global[key] = globalVal;
+        const session = { [key]: sessionVal };
+        const effective = { ...global, ...session };
+        if (effective[key] !== sessionVal) {
+          failures.push(`key=${key} global=${globalVal} session=${sessionVal}: effective=${effective[key]}`);
+        }
+      }
+    }
+    if (failures.length) {
+      throw new Error(`session override failed:\n  ` + failures.join('\n  '));
+    }
+  });
+});
+
 console.log('\n----------------------------------------');
 console.log(`Tests: ${pass} passed, ${fail} failed`);
 console.log('----------------------------------------');

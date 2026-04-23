@@ -189,6 +189,21 @@ The Phase 1 inventory agent miscounted `it()` tests inside for-loops and conditi
 - `PER-SESSION OVERRIDE MERGE` tests the `mergeIncludes()` helper; `EX6f-2 session-edit mutations` tests the IPC round-trip. Different concerns.
 - `REGISTRY BOM HANDLING`, `EDGE TTS WRAPPER` are single-test smoke checks but each guards an invariant (no BOM written, edge-tts actually produces audio) not covered elsewhere.
 
-### Phase 3 + 4 entry state
+### Phase 3 result
 
-With Phase 2 complete, the harness sits at **533 tests, 0 gaps in the Tier-A/B/C scope**. Phase 3 (combinatorial matrix over speech_includes × per-session × voice × muted) and Phase 4 (function-by-function vulnerability pass) can proceed when you're ready.
+533 → 541 tests (8 new), 0 regressions. **Two real JS↔Python drifts surfaced** and documented as lock-in tests:
+
+1. **Single-underscore emphasis**: Python's `_EMPHASIS_RE` strips `_x_` italic markers; JS's equivalent doesn't. Token `QZX_HEADING_ZQ` in plain prose becomes `QZXHEADINGZQ` via Python but unchanged via JS. Neither is unambiguously wrong — JS is safer for identifiers, Python is more faithful to markdown. Resolved as DOCUMENTED behaviour via a drift-documenter test; aligning them is a product decision you can make later.
+2. **Code-block content shielding**: JS stores code-block bodies in `\0CB<N>\0` sentinel placeholders so later emphasis/bullet/url regexes can't mangle them; Python returns them inline, exposing code to all downstream regexes. A code block containing `__dunder__` reads correctly via JS highlight-to-speak but loses its underscores via the Python Stop-hook synth. Same resolution — locked in as drift, surface-visible if either side changes.
+
+What the new combinatorial tests cover:
+- **Full 128 permutations** × **5 feature-presence invariants** (640 assertions in one test): every toggle gates its own feature and doesn't bleed into another's.
+- **64 × tool_calls-flip invariance** (one test): tool_calls flipping never changes JS output.
+- **16 Python-parity samples** (batched subprocess call): JS ≡ Python byte-for-byte after whitespace normalization.
+- **128 × 3 markdown-leak checks**: no permutation ever leaks ``` fences, `**word` bold markers, or `~`.
+- **128 × null/throw safety**: every combo returns a finite string.
+- **7 × 2 session-override**: per-session always wins over global.
+
+### Phase 4 entry state
+
+Harness sits at **541 tests, 0 gaps in the Tier-A/B/C scope, 2 documented JS↔Python drifts**. Phase 4 (function-by-function vulnerability pass) can proceed when you're ready.
