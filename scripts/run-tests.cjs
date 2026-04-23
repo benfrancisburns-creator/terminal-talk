@@ -4325,8 +4325,10 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     // renderDots, one before the IPC unlink.
     // v0.5 — body grew past 900 chars when ephemeral-clip (T- prefix)
     // branching + comments were added; bump capture window to 2000.
+    // 2026-04-23 — bumped to 2500 after instrumentation log lines went
+    // in for the body-clip-disappears debug.
     const src = fs.readFileSync(rendererPath, 'utf8');
-    const block = src.match(/function scheduleAutoDelete[\s\S]{0,2000}\n\}/);
+    const block = src.match(/function scheduleAutoDelete[\s\S]{0,2500}\n\}/);
     if (!block) throw new Error('scheduleAutoDelete block not found');
     const count = (block[0].match(/audioPlayer\.getCurrentPath\(\)\s*===\s*p/g) || []).length;
     if (count < 2) {
@@ -9036,6 +9038,284 @@ describe('PHASE 4 #1 — stripForTTS vulnerability pass', () => {
     const dt = Date.now() - t0;
     assertTruthy(dt < 500, `50KB realistic input took ${dt}ms`);
     assertTruthy(out.length > 0);
+  });
+});
+
+// =============================================================================
+// PHASE 4 — MODULE 2: palette-alloc.js VULNERABILITY PASS
+//
+// allocatePaletteIndex() is called from every `ensureAssignmentsForFiles()`
+// pass (every queue-updated notification), and from the PowerShell
+// statusline.ps1 via session-registry.psm1. A crash here silently kills
+// the renderer's assignment propagation; a wrong result paints the wrong
+// colour on a session. Existing coverage tests happy paths; this pass
+// probes null/malformed inputs, extreme paletteSize, malformed entries
+// and determinism under mutation.
+// =============================================================================
+describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
+  const { allocatePaletteIndex } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'palette-alloc.js')
+  );
+
+  // ---- Type safety on assignments arg ---------------------------------
+  it('accepts null assignments without throwing', () => {
+    const r = allocatePaletteIndex('aabbccdd', null, 24);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('accepts undefined assignments without throwing', () => {
+    const r = allocatePaletteIndex('aabbccdd', undefined, 24);
+    assertEqual(r.index, 0);
+  });
+
+  it('accepts an empty object cleanly', () => {
+    const r = allocatePaletteIndex('aabbccdd', {}, 24);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  // ---- Malformed individual entries ------------------------------------
+  it('entries with null value are skipped without throw', () => {
+    // A corrupt registry entry ({ aabbccdd: null }) must not kill the
+    // allocator. Existing guard: `entry && Number.isFinite(...)`.
+    const all = { s0000000: null, s0000001: { index: 1, last_seen: 100 } };
+    const r = allocatePaletteIndex('newshort', all, 24);
+    // Index 0 is free (the null entry doesn't register as busy), so we
+    // get 'free' at index 0.
+    assertEqual(r.reason, 'free');
+    assertEqual(r.index, 0);
+  });
+
+  it('entries missing the index field are skipped', () => {
+    const all = { s0000000: { last_seen: 100 } };  // no index
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'free');
+    assertEqual(r.index, 0);
+  });
+
+  it('entries with NaN index are skipped (malformed registry)', () => {
+    const all = { s0000000: { index: 'not-a-number', last_seen: 100 } };
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'free');
+    assertEqual(r.index, 0);
+  });
+
+  it('entries with index > paletteSize are treated as busy at out-of-range slot (do not reserve any 0..23)', () => {
+    // Registry corruption / manual edit scenario: entry has index 99.
+    // allocatePaletteIndex tracks them in the busy map but they don't
+    // block any real 0..23 slot.
+    const all = { s0000000: { index: 99, last_seen: 100 } };
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('entries with negative index are treated as busy but don\'t block 0..23', () => {
+    const all = { s0000000: { index: -5, last_seen: 100 } };
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  // ---- paletteSize extremes --------------------------------------------
+  it('paletteSize=1 forces eviction fallback immediately on second allocation', () => {
+    const all = { s0000000: { index: 0, last_seen: 100 } };
+    const r = allocatePaletteIndex('newshort', all, 1);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000');
+    assertEqual(r.index, 0);
+  });
+
+  it('paletteSize=0 is clamped to the 24 default (no NaN leak through hash-mod)', () => {
+    // Phase 4 Module 2 caught this: paletteSize=0 made the hash-mod
+    // fallback compute `sum % 0 = NaN`, which then got written to disk
+    // and read by the renderer as `NaN`. CSS palette-class lookup
+    // then failed silently — session painted with no colour.
+    // Fixed via defensive `if (!Number.isFinite(paletteSize) || paletteSize < 1) paletteSize = 24;`
+    // at the top of allocatePaletteIndex. Re-asserted here.
+    const r = allocatePaletteIndex('aabbccdd', {}, 0);
+    assertEqual(typeof r, 'object');
+    assertEqual(typeof r.reason, 'string');
+    assertTruthy(Number.isFinite(r.index), `paletteSize=0 must not leak non-finite index: got ${r.index}`);
+    // Should behave as if paletteSize=24 was passed.
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  it('paletteSize=-5 clamped to 24 default', () => {
+    const r = allocatePaletteIndex('aabbccdd', {}, -5);
+    assertTruthy(Number.isFinite(r.index));
+    assertEqual(r.index, 0);
+  });
+
+  it('paletteSize=NaN clamped to 24 default', () => {
+    const r = allocatePaletteIndex('aabbccdd', {}, NaN);
+    assertTruthy(Number.isFinite(r.index));
+    assertEqual(r.index, 0);
+  });
+
+  it('paletteSize=1000 still allocates cleanly at lowest free', () => {
+    const r = allocatePaletteIndex('aabbccdd', {}, 1000);
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  // ---- Duplicate indices -----------------------------------------------
+  it('multiple entries sharing the same index — last one wins as busy (no crash)', () => {
+    // Registry bug scenario: two entries both claim index 5. Allocator
+    // should not loop / throw; index 5 is marked busy once.
+    const all = {
+      s0000000: { index: 5, last_seen: 100 },
+      s0000001: { index: 5, last_seen: 200 },
+    };
+    const r = allocatePaletteIndex('newshort', all, 24);
+    // 0..4 are free; 5 is busy; 6..23 are free. Lowest free = 0.
+    assertEqual(r.index, 0);
+    assertEqual(r.reason, 'free');
+  });
+
+  // ---- User-intent edge cases (protecting historic unpinned entries) --
+  it('label of whitespace-only (" ") is NOT user intent (trimmed to empty)', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: false,
+        label: i === 0 ? '   ' : '',  // whitespace-only label on LRU
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000',
+      'whitespace-only label must not count as user intent (.trim() is empty)');
+  });
+
+  it('speech_includes with every value false still counts as user intent (object non-empty)', () => {
+    // Even `{ urls: false }` is a deliberate override — the user set
+    // this session's urls to "explicitly off". Keeping it around is
+    // safer than auto-forgetting a deliberate mute.
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: false,
+        speech_includes: i === 0 ? { urls: false } : undefined,
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    if (r.evicted === 's0000000') {
+      throw new Error('speech_includes={urls:false} is intent and must not be evicted');
+    }
+    assertEqual(r.evicted, 's0000001');
+  });
+
+  it('voice of empty string ("") is NOT user intent', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: false,
+        voice: i === 0 ? '' : undefined,
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000',
+      'empty voice string must not count as user intent (!!v is false)');
+  });
+
+  it('all 24 slots have user intent (no pins but every slot has a label) -> hash-collision', () => {
+    // Phase-4 surfaced case: the ipc-handler auto-pin is new; historic
+    // registries can have 24 labeled-but-unpinned entries. With no
+    // eviction candidates, we MUST reach hash-collision, not throw.
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: false,
+        label: `terminal-${i}`,
+      };
+    }
+    const r = allocatePaletteIndex('aabbccdd', all, 24);
+    assertEqual(r.reason, 'hash-collision');
+    assertEqual(r.evicted, null);
+    assertTruthy(r.index >= 0 && r.index < 24);
+  });
+
+  // ---- Determinism + hash behaviour ------------------------------------
+  it('determinism: same inputs produce same outputs across 100 calls', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + (23 - i), pinned: false,   // reversed order
+      };
+    }
+    const first = allocatePaletteIndex('newshort', all, 24);
+    for (let k = 0; k < 100; k++) {
+      const r = allocatePaletteIndex('newshort', all, 24);
+      assertEqual(r.index,   first.index);
+      assertEqual(r.evicted, first.evicted);
+      assertEqual(r.reason,  first.reason);
+    }
+  });
+
+  it('empty shortId in hash-collision path gives a finite index', () => {
+    // sum of chars of '' is 0; 0 % 24 = 0. Valid.
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: true,
+      };
+    }
+    const r = allocatePaletteIndex('', all, 24);
+    assertEqual(r.reason, 'hash-collision');
+    assertEqual(r.index, 0);
+  });
+
+  it('10000-char shortId in hash-collision path still returns finite index', () => {
+    const adversarialShort = 'a'.repeat(10000);
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: true,
+      };
+    }
+    const r = allocatePaletteIndex(adversarialShort, all, 24);
+    assertEqual(r.reason, 'hash-collision');
+    assertTruthy(Number.isFinite(r.index));
+    assertTruthy(r.index >= 0 && r.index < 24);
+  });
+
+  it('non-ASCII shortId in hash-collision path handled cleanly', () => {
+    // shortId is normally 8 hex chars, but hash-mod uses charCodeAt which
+    // works on any BMP code point. Test with a unicode string.
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i, last_seen: 1000 + i, pinned: true,
+      };
+    }
+    const r = allocatePaletteIndex('café 🚀 test', all, 24);
+    assertEqual(r.reason, 'hash-collision');
+    assertTruthy(Number.isFinite(r.index));
+  });
+
+  // ---- Return-shape contract across every branch ----------------------
+  it('return shape is always { index, evicted, reason } with correct types', () => {
+    const cases = [
+      { label: 'free',  assignments: {} },
+      { label: 'lru',   assignments: (() => { const a = {}; for (let i=0;i<24;i++) a[`s${i.toString().padStart(7,'0')}`]={index:i,last_seen:i}; return a; })() },
+      { label: 'hash',  assignments: (() => { const a = {}; for (let i=0;i<24;i++) a[`s${i.toString().padStart(7,'0')}`]={index:i,last_seen:i,pinned:true}; return a; })() },
+    ];
+    for (const c of cases) {
+      const r = allocatePaletteIndex('aabbccdd', c.assignments, 24);
+      assertEqual(typeof r.index, 'number', `${c.label}: index`);
+      assertEqual(Number.isFinite(r.index), true, `${c.label}: index finite`);
+      assertEqual(typeof r.reason, 'string', `${c.label}: reason`);
+      if (r.reason === 'lru') {
+        assertEqual(typeof r.evicted, 'string', 'lru: evicted is a shortId string');
+      } else {
+        assertEqual(r.evicted, null, `${c.label}: evicted must be null when reason != lru`);
+      }
+    }
   });
 });
 

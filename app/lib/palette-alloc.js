@@ -26,6 +26,13 @@
  * }}
  */
 function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
+  // Defensive clamp — paletteSize is 24 in every production call site,
+  // but a bad caller (test harness, future refactor, corrupted config)
+  // passing 0 or negative would make the hash-mod fallback `x % 0 = NaN`
+  // and the renderer would read `index: NaN`, painting nothing and
+  // breaking the palette class CSS lookup. Audit 2026-04-23 Phase 4
+  // Module 2 caught this via a paletteSize=0 probe.
+  if (!Number.isFinite(paletteSize) || paletteSize < 1) paletteSize = 24;
   const entries = Object.entries(assignments || {});
   const busy = new Map();  // index -> shortId
   for (const [short, entry] of entries) {
