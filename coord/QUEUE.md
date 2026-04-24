@@ -40,9 +40,10 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   drop-in written. Closes WITH #1 since the test covers both. · AXIS=2,7 · OWNER=tt2
   STATUS=fix-drafted (ready to land in #1's fix commit) · ACTIVE=`ACTIVE/7-top-level-key-dropped-audit.md`
 
-- [ ] **#8 session-ids-missing-from-toolbar** — Ben observes (live, 2026-04-24T21:49): the 8-char
-  session IDs that normally appear in session rows / tabs have disappeared from the toolbar UI.
-  No idea why yet. Could be related to #1 (if `selected_tab` not persisting causes tab-row
-  miscount, sessions might not render) OR could be an independent renderer regression. **User-
-  hit.** Possibly connected to #1/#7 but likely separate axis; treat as its own item until TT1
-  review confirms. · AXIS=1,6 · OWNER=TBD · STATUS=queued
+- [ ] **#8 session labels / pinned / speech_includes wiped from registry** — Ben observed
+  "session IDs gone"; empirical diff of `session-colours.json` vs `.bak1` shows LABELS,
+  PINNED=true, and SPEECH_INCLUDES overrides all being silently wiped between saves. Same bug
+  CLASS as #1 but different file — JS-side session-registry write path is rebuilding entries
+  with subset/default values instead of preserving user state. **URGENT: Ben's live
+  customizations being wiped continuously.** · AXIS=1,2,7 · OWNER=tt2 (empirical) · STATUS=in-test
+  ACTIVE=`ACTIVE/8-session-ids-missing-from-toolbar.md`
