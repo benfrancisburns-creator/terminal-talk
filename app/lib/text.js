@@ -165,6 +165,11 @@ function stripForTTS(text, includes) {
   t = t.replace(/\*\*([^*\n]+)\*\*/g, '$1');
   t = t.replace(/__([^_\n]+)__/g, '$1');
   t = t.replace(/\*([^*\n]+)\*/g, '$1');
+  // D4 (#19): single-underscore emphasis `_word_` — present in Python's
+  // _EMPHASIS_RE, previously missing on JS side. Without this, prose
+  // like `this is _emphasized_ text` reaches TTS as "this is underscore
+  // emphasized underscore text". Mirrors Python's final alternation arm.
+  t = t.replace(/_([^_\n]+)_/g, '$1');
 
   if (!inc.bullet_markers) {
     // Common UI bullet glyphs: "●⎿▶▸►○·◦▪■□▫"

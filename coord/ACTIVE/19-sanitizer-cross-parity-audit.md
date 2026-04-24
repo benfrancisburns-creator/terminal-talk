@@ -161,9 +161,32 @@ describe('SANITIZER JS↔PY PARITY (#19)', () => {
 
 - [x] 13 code-signal regexes confirmed byte-identical
 - [x] Inline-code heuristics confirmed identical
-- [x] 3 real divergences found (D1 material, D2+D3 minor, D4 deferred)
+- [x] 4 real divergences found (D1 material, D2+D3 minor, D4 medium)
 - [x] Fix shapes drafted
 - [x] Regression test shape drafted
-- [ ] D1 fix lands as a real commit (JS uses /g + length)
-- [ ] D2+D3 alignment patch
-- [ ] D4 emphasis regex audit
+- [x] D1 shipped @ `439d8ea` — JS uses /g + length
+- [x] D2+D3 shipped @ `f9b098c` — URL www.X + heading regex parity
+- [x] D4 shipped — single-underscore emphasis arm added to JS. Known-
+      drift test @ scripts/run-tests.cjs:9635 converted to parity-
+      achieved assertion. **#19 fully closed.**
+
+## D4 details — [tt2 · 2026-04-25T04:00]
+
+**Finding:** JS `stripForTTS` emphasis handling has 5 regexes (triple `***`, triple `___`,
+double `**`, double `__`, single `*`) but is MISSING the single-underscore `_X_` arm that
+Python's `_EMPHASIS_RE` has.
+
+**Input that diverged:** `"this is _emphasized_ text"`
+- Python: strips underscores, output contains `"emphasized"` bare.
+- JS: kept the underscores, output reads as "underscore emphasized underscore" in TTS.
+
+**Fix:** added `t = t.replace(/_([^_\n]+)_/g, '$1');` as the 6th emphasis-strip. Mirrors
+Python's alternation arm exactly. Safe for bare snake_case (`session_id`) — `[^_\n]+`
+excludes internal underscores from the match.
+
+**Known side-effect (matches Python):** `_session_id_` with wrapping underscores gets
+partial-stripped (first `_session_` matches, then `id_` is orphan). Same behaviour as
+Python. Bare `session_id` unaffected. Acceptable tradeoff documented in the test.
+
+**Regression test:** D4 test in `SPEECH INCLUDES` group + the former known-drift test at
+`Phase 3` converted to parity-achieved assertion (both JS + Python strip). 831/831 green.

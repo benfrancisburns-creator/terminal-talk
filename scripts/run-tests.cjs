@@ -625,6 +625,14 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('  # my heading', { headings: false });
     if (out.includes('my heading')) throw new Error(`leading-ws heading leaked: "${out}"`);
   });
+  it('D4 (#19): strips single-underscore emphasis — parity with Python', () => {
+    // Pre-D4, JS was missing the _X_ arm that Python's _EMPHASIS_RE has.
+    // Prose like `this is _emphasized_` reached TTS as "this is underscore
+    // emphasized underscore" (reads literal underscore characters).
+    const out = stripForTTS('this is _emphasized_ text');
+    if (out.includes('_')) throw new Error(`single-underscore emphasis leaked: "${out}"`);
+    if (!out.includes('emphasized')) throw new Error(`emphasis content dropped: "${out}"`);
+  });
   it('keeps URLs when toggled on', () => {
     const out = stripForTTS('See https://example.com for info', { urls: true });
     if (!out.includes('example.com')) throw new Error(`URL stripped: "${out}"`);
@@ -9609,22 +9617,15 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
     }
   });
 
-  // ----- 3b. Known drift: single-underscore italic emphasis -----------
-  // DOCUMENTED divergence surfaced by the Phase 3 parity test:
-  //   JS  `stripForTTS`        leaves `_x_` as-is (no single-underscore arm)
-  //   PY  `synth_turn.sanitize` strips `_x_` to `x` (full emphasis coverage)
-  //
-  // Neither is obviously wrong:
-  //   JS is safer for bare-prose identifiers (`session_id` → unchanged).
-  //   PY is more faithful to standard markdown (italic `_word_` → word).
-  //
-  // This test LOCKS IN the drift so if someone aligns one side without
-  // updating the other, we get a red flag. To resolve: either add
-  // `t = t.replace(/_([^_\n]+)_/g, '$1');` to app/lib/text.js (align JS
-  // to PY) or remove the `|_([^_\n]+)_` arm from `_EMPHASIS_RE` in
-  // app/synth_turn.py (align PY to JS) and update this test to assert
-  // byte-identical output.
-  it('known drift: single-underscore italic emphasis — JS keeps, Python strips', () => {
+  // ----- 3b. Parity achieved: single-underscore italic emphasis -------
+  // Previously a documented drift: JS kept `_x_`, Python stripped. Closed
+  // by #19 D4 (2026-04-25) — JS now mirrors Python's `_EMPHASIS_RE` single-
+  // underscore arm. Both strip to the content. Known tradeoff: snake_case
+  // identifiers wrapped in underscores (`_session_id_`) get partial-stripped
+  // the same way Python does. Bare snake_case WITHOUT wrapping (`session_id`)
+  // is unaffected — `[^_\n]+` excludes internal underscores from the
+  // emphasis-content match.
+  it('D4 parity achieved: single-underscore italic emphasis — JS + Python both strip', () => {
     const APP_DIR_ABS = path.join(__dirname, '..', 'app');
     const jsOut = stripForTTS('Plain _italic_ word', {});
     const pyScript = [
@@ -9637,15 +9638,12 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
       { encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
     const pyOut = r.stdout.replace(/\s+/g, ' ').trim();
-    // If this invariant inverts (JS strips, Python keeps, or both
-    // agree), the drift has been resolved — delete this test and
-    // update the main parity test to assert byte-identical output.
-    assertTruthy(jsOut.includes('_italic_'),
-      'JS must still NOT strip single-underscore italic (current behaviour)');
+    assertFalsy(jsOut.includes('_italic_'),
+      'JS must strip single-underscore italic (D4 parity)');
     assertFalsy(pyOut.includes('_italic_'),
-      'Python must still strip single-underscore italic (current behaviour)');
-    assertTruthy(pyOut.includes('italic'),
-      'Python must still keep the content "italic" after stripping the markers');
+      'Python must strip single-underscore italic');
+    assertTruthy(jsOut.includes('italic') && pyOut.includes('italic'),
+      'Both sides must keep the content "italic" after stripping the markers');
   });
 
   // ----- 3c. Known drift: code-block content emphasis shielding --------
