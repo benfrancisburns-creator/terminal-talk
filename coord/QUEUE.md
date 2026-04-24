@@ -96,6 +96,13 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   vs response-speak to handle edge-case fences differently on the same text. Needs head-to-head
   comparison of the two regex sets. · AXIS=1,7 · OWNER=TBD · STATUS=queued
 
+- [ ] **#20 palette-allocation-audit** (Surface I) — audited: 5 invariants verified clean.
+  Palette allocator is well-designed (3-level free→LRU→hash-mod; hasUserIntent guard covers 6
+  fields; defensive size clamp). Surfaced a #8-adjacent lead: `sanitiseEntry` drop + fresh-alloc
+  recreate path is a candidate for the label-wipe pattern. Flagged in ACTIVE/8 for TT1's fix
+  draft. · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/20-palette-and-sorting-audit.md`
+
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
   window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
