@@ -44,27 +44,36 @@ function stripForTTS(text, includes) {
   // content silently drops LLM "handoff message" / "quoted log" blocks
   // that are prose-in-fences. Language-tagged fences are always real
   // code; un-tagged fences get a syntax-heuristic check.
+  // Each pattern carries /g so `String.match` returns ALL occurrences.
+  // D1 (#19): pre-parity, JS counted max 1 hit per pattern (single-match
+  // semantics) while Python's _looks_like_code counts via `findall` (all
+  // matches sum). So `"npm install\nnpm test"` tripped twice in Python
+  // (strip as code) but only once in JS (keep as prose) — same text
+  // producing different audio depending on whether it went through
+  // clipboard-speak or response-speak. Matching Python's aggressive-
+  // strip stance is the correct parity target (per the module-header
+  // comment: "Prefers false positives over false negatives").
   const CODE_SIGNALS = [
-    /\b(def|function|fn|class)\s+\w+\s*[({:<]/,
-    /^\s*(import|from|require|using|package)\s+[\w.]/m,
-    /^\s*(if|else|elif|for|while|try|except|catch|with|switch)\s*\(/m,
-    /^\s*(if|elif|else|for|while|try|except|with|def|class)\b[^.!?\n]{0,120}:\s*$/m,
-    /^\s*[#$>]\s+\S/m,
-    /^\s*(npm|yarn|pnpm|git|pip|pipx|apt|sudo|rm|mkdir|cd|ls|cp|mv|cat|echo|curl|wget|python|python3|node|ruby|go|cargo|rustc|java|javac|mvn|gradle|docker|podman|kubectl|helm|terraform|aws|gcloud|az|taskkill|chmod|chown|ssh|scp|rsync|tar|unzip|make|cmake|gcc|clang)\s+[-\w/]/m,
-    /\b(Get|Set|New|Remove|Test|Invoke|Start|Stop|Write|Read|Import|Export|Add|Copy|Move|Out)-[A-Z]\w+\s/,
-    /^\s*[{[]\s*$/m,
-    /^\s*"[\w.-]+":\s*(null|true|false|-?\d|"|{|\[)/m,
-    /=>\s*[\w({[]/,
-    /->\s*\w/,
-    /::\s*\w/,
-    /;\s*\n/,
+    /\b(def|function|fn|class)\s+\w+\s*[({:<]/g,
+    /^\s*(import|from|require|using|package)\s+[\w.]/gm,
+    /^\s*(if|else|elif|for|while|try|except|catch|with|switch)\s*\(/gm,
+    /^\s*(if|elif|else|for|while|try|except|with|def|class)\b[^.!?\n]{0,120}:\s*$/gm,
+    /^\s*[#$>]\s+\S/gm,
+    /^\s*(npm|yarn|pnpm|git|pip|pipx|apt|sudo|rm|mkdir|cd|ls|cp|mv|cat|echo|curl|wget|python|python3|node|ruby|go|cargo|rustc|java|javac|mvn|gradle|docker|podman|kubectl|helm|terraform|aws|gcloud|az|taskkill|chmod|chown|ssh|scp|rsync|tar|unzip|make|cmake|gcc|clang)\s+[-\w/]/gm,
+    /\b(Get|Set|New|Remove|Test|Invoke|Start|Stop|Write|Read|Import|Export|Add|Copy|Move|Out)-[A-Z]\w+\s/g,
+    /^\s*[{[]\s*$/gm,
+    /^\s*"[\w.-]+":\s*(null|true|false|-?\d|"|{|\[)/gm,
+    /=>\s*[\w({[]/g,
+    /->\s*\w/g,
+    /::\s*\w/g,
+    /;\s*\n/g,
   ];
   function looksLikeCode(body) {
     if (!body || !body.trim()) return false;
     let hits = 0;
     for (const re of CODE_SIGNALS) {
-      const m = body.match(re);
-      if (m) hits++;
+      const matches = body.match(re);
+      if (matches) hits += matches.length;
       if (hits >= 2) return true;
     }
     return false;
