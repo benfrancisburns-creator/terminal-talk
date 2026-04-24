@@ -47,3 +47,13 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   with subset/default values instead of preserving user state. **URGENT: Ben's live
   customizations being wiped continuously.** · AXIS=1,2,7 · OWNER=tt2 (empirical) · STATUS=in-test
   ACTIVE=`ACTIVE/8-session-ids-missing-from-toolbar.md`
+
+- [ ] **#9 orphan-python-on-toolbar-exit** — surfaced by #4 soak baseline: when electron exits,
+  its python children (wake-word-listener, edge-tts workers) are not killed. T+0 snapshot shows
+  14 python procs with 7 from prior boots still alive (up to 2 days 22h old). Zero-ish RSS
+  individually but accumulates handles+PIDs over long soaks and complicates cleanup. · AXIS=4,5
+  OWNER=TBD · STATUS=queued
+
+- [ ] **#10 `_voice.log` unbounded growth** — `_hook.log` rotates at 1 MB → `.1`; `_voice.log`
+  has no rotation (561 KB after ~2 days → ~10 MB/month). Low urgency but clear gap. Add same
+  size-capped rotation as `_hook.log`. · AXIS=5,6 · OWNER=TBD · STATUS=queued
