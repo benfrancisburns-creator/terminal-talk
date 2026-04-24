@@ -35,9 +35,14 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   "log coverage gaps" list, fix them. · AXIS=6 · OWNER=TBD · STATUS=queued
 
 - [ ] **#7 top-level-key-dropped-audit** — the same allowlist-merge bug surfaced on #1 for
-  `heartbeat_enabled` applies at least to `selected_tab` and `tabs_expanded` (both in the
-  validator's allowlist, neither in `ipc-handlers.js update-config` merge nor `config-store.js
-  load()` return literal). Audit ALL validator-accepted top-level keys for symmetric coverage on
-  write + read. Add a static test that fails if any validator-accepted key is absent from either
-  allowlist. Surfaced by TT1 during #1 review; kept out of #1 scope per protocol.
-  AXIS=2,7 · OWNER=TBD · STATUS=queued
+  `heartbeat_enabled` applies to `selected_tab` and `tabs_expanded` (validated; see ACTIVE
+  file). Audit complete: 3 of 4 top-level scalars fail the round-trip. Fix shape drafted, test
+  drop-in written. Closes WITH #1 since the test covers both. · AXIS=2,7 · OWNER=tt2
+  STATUS=fix-drafted (ready to land in #1's fix commit) · ACTIVE=`ACTIVE/7-top-level-key-dropped-audit.md`
+
+- [ ] **#8 session-ids-missing-from-toolbar** — Ben observes (live, 2026-04-24T21:49): the 8-char
+  session IDs that normally appear in session rows / tabs have disappeared from the toolbar UI.
+  No idea why yet. Could be related to #1 (if `selected_tab` not persisting causes tab-row
+  miscount, sessions might not render) OR could be an independent renderer regression. **User-
+  hit.** Possibly connected to #1/#7 but likely separate axis; treat as its own item until TT1
+  review confirms. · AXIS=1,6 · OWNER=TBD · STATUS=queued

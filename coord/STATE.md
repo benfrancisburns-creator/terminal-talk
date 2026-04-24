@@ -31,13 +31,21 @@ terminal. Full rule in `README.md § Perpetual motion`.
 See `QUEUE.md`. Initial seed: 6 items.
 
 **Active now:**
-- **#1 heartbeat-revert** — `fix-drafted` by TT1 (pending on `fix-pass`). Both bugs confirmed by
-  TT2 empirically (Bug A on live config.json; Bug B via source inspection). Awaiting TT1 fix
-  commit + then TT2 Devil's-advocate.
-- **#2 tinkering-audio-leak** — claimed by TT1 as reviewer per perpetual-motion rule.
-- **#4 24h-soak** — TT2 claiming as empirical-only work (tester-role-only; no reviewer needed).
-- **#7 top-level-key-dropped-audit** — queued; opened during #1 review for `selected_tab` +
-  `tabs_expanded` adjacent pattern.
+- **#1 heartbeat-revert** — TT1 drafting fix on `fix-pass`. TT2 verification rig RED against
+  broken code (empirical proof test catches bug). Awaiting fix; Devil's-advocate on deck.
+- **#2 tinkering-audio-leak** — TT1 reviewing (head-down in `synth_turn.py`).
+- **#4 24h-soak** — TT2 claimed; partial baseline captured (electron ×6 ≈ 620MB, python ×7,
+  no ~/.terminal-talk/logs/ dir!, session-colours.json.bak1 only). Full baseline + T+24h re-measure pending.
+- **#7 top-level-key-dropped-audit** — TT2 claimed, audit from source complete: 3 of 4
+  scalars drop (heartbeat_enabled, selected_tab, tabs_expanded). Fix lands with #1.
+- **#8 session-ids-missing-from-toolbar** — queued; Ben live-observation 21:49.
+
+## Findings surfaced this session
+
+- Observability gap: `~/.terminal-talk/logs/` directory does not exist on Ben's install — where
+  are logs going? (Candidate for #6 log-audit when that item opens.)
+- electron.exe has 6 concurrent processes at ~620MB total — within normal for Chromium multi-
+  process, but worth tracking in #4 over 24h.
 
 ## Invariants discovered this run
 
@@ -52,6 +60,7 @@ See `QUEUE.md`. Initial seed: 6 items.
 | 2026-04-24 21:35      | TT1 | ~50% | #1 review committed + pushed; #2 claimed per perpetual-motion |
 | 2026-04-24 21:38      | TT2 | 39%  | #1 Bug A + B empirically verified; #7 opened; TT1 cleared to draft |
 | 2026-04-24 21:42      | TT2 | 40%  | TT1 perpetual-motion protocol merged to main; claiming #4 (soak) |
+| 2026-04-24 21:49      | TT2 | 42%  | #7 audit done; #8 opened (toolbar session-IDs missing); partial #4 baseline |
 
 ## Pointers for a fresh session
 
