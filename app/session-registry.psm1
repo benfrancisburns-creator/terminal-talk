@@ -291,18 +291,38 @@ function Save-Registry {
     path. UTF-8 NO-BOM so JSON.parse() in app/main.js accepts the file.
     Silent on failure (registry write is best-effort; next invocation
     will retry from whatever persisted).
+
+    #6 G1 + G3 — when -LogPath is provided, appends one success/failure
+    line per write so the JS-side and PS-side writers share the same
+    attribution format. `Caller` identifies which hook/statusline
+    invoked the save (required for diagnosing #8 wipes — five different
+    writers touch session-colours.json).
     #>
     param(
         [Parameter(Mandatory = $true)] [string]$RegistryPath,
-        [Parameter(Mandatory = $true)] [hashtable]$Assignments
+        [Parameter(Mandatory = $true)] [hashtable]$Assignments,
+        [string]$Caller = 'unknown',
+        [string]$LogPath = ''
     )
+    $keys = 0
+    try { $keys = $Assignments.Keys.Count } catch { $keys = 0 }
     try {
         $tmp = "$RegistryPath.tmp"
         $jsonOut = (@{ assignments = $Assignments } | ConvertTo-Json -Depth 5)
         [IO.File]::WriteAllText($tmp, $jsonOut, [System.Text.UTF8Encoding]::new($false))
         Move-Item -Force $tmp $RegistryPath
+        if ($LogPath) {
+            $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            $line = "$ts save-registry ok from=$Caller keys=$keys"
+            try { Add-Content -Path $LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
+        }
     } catch {
-        # Best-effort. Next write will retry.
+        if ($LogPath) {
+            $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            $err = $_.Exception.Message -replace "[\r\n]+"," "
+            $line = "$ts save-registry fail from=$Caller err=$err"
+            try { Add-Content -Path $LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
+        }
     }
 }
 

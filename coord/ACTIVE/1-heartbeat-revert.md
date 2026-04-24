@@ -1,6 +1,6 @@
 # ACTIVE #1 — heartbeat toggle reverts from OFF → ON after ~30 min
 
-- **Status:** fix-drafting (TT1 on `fix-pass`; TT2 verification rig red-confirmed, awaiting fix to go green)
+- **Status:** merged to main @ `ad973d2` (2026-04-24T23:40) — live-install verification pending (Ben upgrades install → toggle survives re-open-Settings). Close-out after Ben confirms.
 - **Owner:** TT1 (reviewer + drafter), TT2 (tester + verification + Devil's-advocate on deck)
 - **Axes in play:** 1 (correctness), 2 (persistence)
 - **MAP page:** [`MAP/heartbeat-narration.md`](../MAP/heartbeat-narration.md)

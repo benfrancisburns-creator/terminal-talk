@@ -172,7 +172,7 @@ function createIpcHandlers(deps) {
       // Only pin when the label has actual content — clearing a label
       // back to '' is a retraction of intent, not a new one.
       if (clean) all[shortId].pinned = true;
-      return saveAssignments(all);
+      return saveAssignments(all, 'set-session-label');
     });
 
     ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
@@ -188,7 +188,7 @@ function createIpcHandlers(deps) {
       // silent mismatch between the UI state and persisted registry.
       all[shortId].index = Math.max(0, Math.min(23, Math.floor(n)));
       all[shortId].pinned = true;
-      return saveAssignments(all);
+      return saveAssignments(all, 'set-session-index');
     });
 
     // Exclusive focus flag — only one session can be focus at a time.
@@ -209,7 +209,7 @@ function createIpcHandlers(deps) {
       }
       all[shortId].focus = focus;
       if (focus) all[shortId].pinned = true;
-      const ok = saveAssignments(all);
+      const ok = saveAssignments(all, 'set-session-focus');
       const win = getWin();
       if (ok && win && !win.isDestroyed()) notifyQueue();
       return ok;
@@ -235,7 +235,7 @@ function createIpcHandlers(deps) {
       const all = loadAssignments();
       if (!all[shortId]) return false;
       delete all[shortId];
-      const ok = saveAssignments(all);
+      const ok = saveAssignments(all, 'remove-session');
       if (ok) {
         try {
           if (typeof shortFromFile === 'function' && QUEUE_DIR && fs.existsSync(QUEUE_DIR)) {
@@ -267,7 +267,7 @@ function createIpcHandlers(deps) {
       if (!all[shortId]) return false;
       all[shortId].muted = muted;
       if (muted) all[shortId].pinned = true;
-      const ok = saveAssignments(all);
+      const ok = saveAssignments(all, 'set-session-muted');
       const win = getWin();
       if (ok && win && !win.isDestroyed()) notifyQueue();
       return ok;
@@ -286,7 +286,7 @@ function createIpcHandlers(deps) {
         all[shortId].voice = voiceId;
         all[shortId].pinned = true;
       }
-      return saveAssignments(all);
+      return saveAssignments(all, 'set-session-voice');
     });
 
     // Per-session speech-includes override. value=true forces on,
@@ -308,7 +308,7 @@ function createIpcHandlers(deps) {
       if (Object.keys(all[shortId].speech_includes).length === 0) {
         delete all[shortId].speech_includes;
       }
-      return saveAssignments(all);
+      return saveAssignments(all, 'set-session-include');
     });
 
     // EX6f-3 — panel + config-mutation handlers.
@@ -482,7 +482,19 @@ function createIpcHandlers(deps) {
         else if (cur.window !== undefined) merged.window = cur.window;
         const ok = saveConfig(merged);
         setCFG(merged);
-        diag(`update-config OK: saved=${ok}, edge_response=${merged.voices.edge_response}`);
+        // #6 G2 — log honesty: enumerate which top-level keys from the
+        // partial were applied vs silently dropped. Pre-fix the line was
+        // `saved=true, edge_response=<voice>` which was factually correct
+        // about disk-write but opaque about the merge itself; a dropped
+        // allowlist key (the #1 / #3 / #7 pattern) produced the same line
+        // as a successful write. With `applied=[...]` and `dropped=[...]`
+        // any future allowlist drift is visible in one grep.
+        const partialKeys = Object.keys(partial).filter((k) => (
+          k !== 'openai_api_key' && partial[k] !== undefined
+        ));
+        const droppedKeys = partialKeys.filter((k) => merged[k] === undefined);
+        const appliedKeys = partialKeys.filter((k) => merged[k] !== undefined);
+        diag(`update-config OK: saved=${ok} applied=[${appliedKeys.join(',')}] dropped=[${droppedKeys.join(',')}]`);
         return merged;
       } catch (e) { diag(`update-config fail: ${e.message}`); return null; }
     });
