@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, clipboard, nativeTheme, safeStorage } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeImage, clipboard, nativeTheme, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -599,6 +599,59 @@ function forceOnTop() {
   if (!win || win.isDestroyed()) return;
   try { win.setAlwaysOnTop(true, 'floating'); } catch {}
   try { win.moveTop(); } catch {}
+}
+
+// System tray. Added 2026-04-24 to close POST-V4 open thread #1:
+// keyboard-hook apps like Wispr Flow can intercept our global
+// Ctrl+Shift+A before Electron sees it, leaving the user with no way
+// to show/hide the toolbar. The tray icon is independent of the
+// keyboard hook path — left-click toggles the window, right-click
+// opens a context menu with explicit Show/Hide + Quit. Works 100 %
+// regardless of any keyboard-shortcut conflict.
+let tray = null;
+
+function startTray() {
+  if (tray) return;
+  try {
+    // app/tray-icon.png ships alongside main.js; install.ps1's
+    // `Copy-Item -Recurse app/` copies the whole directory so the
+    // installed tree has the file at ~/.terminal-talk/app/tray-icon.png.
+    const iconPath = path.join(__dirname, 'tray-icon.png');
+    const img = nativeImage.createFromPath(iconPath);
+    if (img.isEmpty()) {
+      diag(`tray: icon file missing or empty at ${iconPath} — tray disabled`);
+      return;
+    }
+    tray = new Tray(img);
+    tray.setToolTip('Terminal Talk');
+    tray.on('click', () => {
+      try { toggleWindow(); } catch (e) { diag(`tray click: ${e.message}`); }
+    });
+    const buildMenu = () => Menu.buildFromTemplate([
+      {
+        label: (win && !win.isDestroyed() && win.isVisible()) ? 'Hide toolbar' : 'Show toolbar',
+        click: () => { try { toggleWindow(); } catch {} },
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit Terminal Talk',
+        click: () => { app.quit(); },
+      },
+    ]);
+    tray.on('right-click', () => {
+      try { tray.popUpContextMenu(buildMenu()); } catch (e) { diag(`tray right-click: ${e.message}`); }
+    });
+    diag('tray: started');
+  } catch (e) {
+    diag(`tray: start failed: ${e.message}`);
+    tray = null;
+  }
+}
+
+function stopTray() {
+  if (!tray) return;
+  try { tray.destroy(); } catch {}
+  tray = null;
 }
 
 function toggleWindow() {
@@ -1744,6 +1797,7 @@ app.whenReady().then(() => {
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
   startMicWatcher();
+  startTray();
 });
 
 app.on('will-quit', () => {
@@ -1753,6 +1807,7 @@ app.on('will-quit', () => {
   if (voiceProc) { try { voiceProc.kill(); } catch {} }
   if (keyHelper) { try { keyHelper.kill(); } catch {} }
   stopMicWatcher();
+  stopTray();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });

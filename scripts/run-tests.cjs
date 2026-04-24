@@ -4879,6 +4879,85 @@ describe('TABS — unread count is derived, not stored', () => {
 // pauses; the moment they release, TTS resumes from the exact same
 // point — no content lost, no audio bleeding over dictation.
 // =============================================================================
+// =============================================================================
+// TRAY ICON — closes POST-V4 open thread #1. Wispr Flow / any app using
+// a low-level keyboard hook can intercept globalShortcut before Electron
+// sees it, leaving Ctrl+Shift+A dead. The tray icon provides a mouse-
+// driven path to toggleWindow that's independent of the keyboard-shortcut
+// hook chain.
+// =============================================================================
+describe('TRAY ICON — always-available show/hide + context menu', () => {
+  const appDir = path.join(__dirname, '..', 'app');
+  const mainSrc = fs.readFileSync(path.join(appDir, 'main.js'), 'utf8');
+
+  it('app/tray-icon.png ships alongside main.js', () => {
+    const iconPath = path.join(appDir, 'tray-icon.png');
+    if (!fs.existsSync(iconPath)) {
+      throw new Error('app/tray-icon.png missing — Electron Tray(img) would start empty');
+    }
+    // Quick sanity on the header so we know it's a real PNG, not a zero-byte placeholder.
+    const head = fs.readFileSync(iconPath).slice(0, 8);
+    if (!(head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47)) {
+      throw new Error('app/tray-icon.png does not start with a PNG signature');
+    }
+  });
+
+  it('main.js imports Tray + nativeImage from electron', () => {
+    // Without these, new Tray(nativeImage.createFromPath(...)) throws.
+    if (!/Tray,\s+nativeImage/.test(mainSrc)) {
+      throw new Error('main.js must destructure { Tray, nativeImage } from electron');
+    }
+  });
+
+  it('main.js defines startTray + stopTray helpers', () => {
+    if (!/function startTray\(\)/.test(mainSrc)) {
+      throw new Error('main.js must define function startTray()');
+    }
+    if (!/function stopTray\(\)/.test(mainSrc)) {
+      throw new Error('main.js must define function stopTray()');
+    }
+  });
+
+  it('startTray wires both left-click (toggleWindow) and right-click (context menu)', () => {
+    if (!/tray\.on\(['"]click['"][\s\S]{0,200}toggleWindow/.test(mainSrc)) {
+      throw new Error('startTray must bind left-click to toggleWindow');
+    }
+    if (!/tray\.on\(['"]right-click['"]/.test(mainSrc)) {
+      throw new Error('startTray must bind right-click for the context menu');
+    }
+  });
+
+  it('context menu offers a Quit entry', () => {
+    if (!/label:\s*['"]Quit Terminal Talk['"][\s\S]{0,120}app\.quit\(\)/.test(mainSrc)) {
+      throw new Error('Tray context menu must offer "Quit Terminal Talk" → app.quit()');
+    }
+  });
+
+  it('startTray is called on app.whenReady; stopTray on will-quit', () => {
+    // Isolate the whenReady handler body (runs once at app start) and
+    // the will-quit handler body (runs once at shutdown). Grepping the
+    // whole file would false-match startTray's own definition; we want
+    // the call sites specifically.
+    const whenReady = mainSrc.match(/app\.whenReady\(\)\.then\(\s*\(\)\s*=>\s*\{[\s\S]*?\n\}\);?/);
+    if (!whenReady || !/\bstartTray\(\)/.test(whenReady[0])) {
+      throw new Error('main.js must call startTray() inside the app.whenReady() handler');
+    }
+    const willQuit = mainSrc.match(/app\.on\(['"]will-quit['"][\s\S]*?\n\}\);?/);
+    if (!willQuit || !/\bstopTray\(\)/.test(willQuit[0])) {
+      throw new Error('main.js must call stopTray() inside the will-quit handler');
+    }
+  });
+
+  it('startTray is tolerant when the icon file is missing (no crash)', () => {
+    // Missing icon must log + return, not throw. Otherwise a partial
+    // install (PNG missed by the robocopy pass, file-lock during copy)
+    // would turn the whole app unlaunchable.
+    if (!/img\.isEmpty\(\)[\s\S]{0,200}return/.test(mainSrc)) {
+      throw new Error('startTray must return early when img.isEmpty() — no crash on partial install');
+    }
+  });
+});
+
 describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   const appDir = path.join(__dirname, '..', 'app');
   const watcherRepo = path.join(appDir, 'mic-watcher.ps1');
