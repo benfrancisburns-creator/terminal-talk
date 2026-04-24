@@ -22,8 +22,8 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#4 24h-soak** — leave toolbar running overnight with representative activity (queued clips,
   session switches, mic events, heartbeat). Track: memory growth, `~/.terminal-talk/logs/` size,
-  orphan Python processes, orphan MP3 files, registry file integrity. · AXIS=5 · OWNER=TBD
-  STATUS=queued
+  orphan Python processes, orphan MP3 files, registry file integrity. · AXIS=5 · OWNER=tt2
+  STATUS=in-test · ACTIVE=`ACTIVE/4-24h-soak.md`
 
 - [ ] **#5 error-recovery-matrix** — deliberately break each external dependency and watch: edge-tts
   offline, OpenAI 401, mic held indefinitely by another app, disk full during synth, network drop

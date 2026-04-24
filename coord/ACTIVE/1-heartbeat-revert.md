@@ -1,7 +1,7 @@
 # ACTIVE #1 — heartbeat toggle reverts from OFF → ON after ~30 min
 
-- **Status:** in-review (TT1 claimed 2026-04-24T21:16)
-- **Owner:** TT1 (reviewer), TT2 (tester on deck)
+- **Status:** fix-drafting (TT1 on `fix-pass`; TT2 verification rig red-confirmed, awaiting fix to go green)
+- **Owner:** TT1 (reviewer + drafter), TT2 (tester + verification + Devil's-advocate on deck)
 - **Axes in play:** 1 (correctness), 2 (persistence)
 - **MAP page:** [`MAP/heartbeat-narration.md`](../MAP/heartbeat-narration.md)
 - **Reported by:** Ben, live use, 2026-04-24
@@ -96,6 +96,86 @@ so the scope here stays tight to heartbeat.
 
 Draft the two-site fix on `fix-pass`. I'll review the Blast-radius + Devil's-advocate blocks
 before merge. New test must land in the same commit as the fix.
+
+### Verification rig — [tt2 · 2026-04-24T21:43:00+01:00]
+
+Built the Bug B regression probe BEFORE the fix landed, to prove the test design catches the bug
+(Ben's "conduct tests that absolutely confirm it's fixed" discipline). Probe calls the real
+`createConfigStore` from `app/lib/config-store.js`, seeds a JSON with `heartbeat_enabled: false`,
+runs `load()`, asserts the key survives.
+
+**Red result against current broken code** (exit 1):
+```
+SEED on disk had: heartbeat_enabled = false
+LOAD returned:   heartbeat_enabled = undefined
+LOAD returned top-level keys: [hotkeys, openai_api_key, playback, speech_includes, voices, window]
+FAIL — Bug B confirmed. Test catches the bug.
+```
+
+Exactly the 6 keys in `config-store.js:47-54` return literal. `heartbeat_enabled` dropped on load.
+
+### Proposed test drop-in for `scripts/run-tests.cjs`
+
+Ready for TT1 to include in the fix commit (goes near the existing `MAIN.JS REGISTRY READ TOLERANCE` group ~line 1292):
+
+```js
+describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
+  // Regression guard for #1 heartbeat-revert + #7 adjacent-key audit.
+  // If any validator-accepted top-level scalar is dropped by EITHER
+  // ipc-handlers update-config merge OR config-store.load() return
+  // literal, this group fails. Catches the whole bug class, not just
+  // the specific instance.
+  const { createConfigStore } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-store.js')
+  );
+  const { validateConfig } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-validate.js')
+  );
+  const DEFAULTS = {
+    voices:          { edge_response: 'en-GB-RyanNeural' },
+    hotkeys:         {},
+    playback:        { speed: 1.25, tts_provider: 'edge' },
+    speech_includes: { code_blocks: false },
+    heartbeat_enabled: true,
+    openai_api_key:    null,
+    selected_tab:      'all',
+    tabs_expanded:     false,
+  };
+  const tmpCfg = path.join(os.tmpdir(), `tt-roundtrip-${Date.now()}.json`);
+  const clean = () => { try { fs.unlinkSync(tmpCfg); } catch {} };
+
+  it('heartbeat_enabled=false survives save via store.save + re-load', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, heartbeat_enabled: false });
+    const loaded = store.load();
+    assertEqual(loaded.heartbeat_enabled, false, 'heartbeat_enabled must round-trip');
+    clean();
+  });
+
+  it('selected_tab + tabs_expanded survive save → load (guards #7)', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, selected_tab: '7e5c9a', tabs_expanded: true });
+    const loaded = store.load();
+    assertEqual(loaded.selected_tab, '7e5c9a', 'selected_tab must round-trip');
+    assertEqual(loaded.tabs_expanded, true,    'tabs_expanded must round-trip');
+    clean();
+  });
+
+  // The IPC-handler merge path (Bug A) is a separate surface — exercised
+  // via the update-config handler factory in app/lib/ipc-handlers.js.
+  // TT1: suggest adding a third `it(...)` that builds the factory with
+  // mock deps, calls the handler with { heartbeat_enabled: false }, and
+  // asserts saveConfig was called with heartbeat_enabled:false preserved.
+  // The two tests above guard Bug B end-to-end; a Bug A handler test
+  // guards the merge allowlist directly.
+});
+```
+
+**Verification flow post-fix:** on `fix-pass` with the patch applied, run
+`node scripts/run-tests.cjs --verbose 2>&1 | grep -A5 "ROUND-TRIP"` and expect 2+ green. That
+red→green transition is empirical proof the fix addresses the cause.
 
 ## Root-cause diagnosis — [TT? · HH:MM]
 
