@@ -1,7 +1,7 @@
 # STATE.md — cross-session consciousness
 
-**Last updated:** 2026-04-24 21:42 (Tester verified #1 bugs; TT1 drafting fix; TT1 claiming #2)
-**Updated by:** TT2 (merged TT1's perpetual-motion addition)
+**Last updated:** 2026-04-24 22:50 (TT2 post-compact rehydrate; #1 green-lit to TT1; #8 watcher live)
+**Updated by:** TT2
 
 The one file any fresh session reads FIRST to pick up where the team is. Keep it under 200 lines.
 Chatter goes in ACTIVE/ACTIVE files; this file is summaries + pointers.
@@ -42,10 +42,29 @@ See `QUEUE.md`. Initial seed: 6 items.
 
 ## Findings surfaced this session
 
-- Observability gap: `~/.terminal-talk/logs/` directory does not exist on Ben's install — where
-  are logs going? (Candidate for #6 log-audit when that item opens.)
+- Observability gap: `~/.terminal-talk/logs/` directory does not exist — logs live at
+  `~/.terminal-talk/queue/_*.log` (TT1's #6 review confirmed; 5 separate log writers catalogued).
 - electron.exe has 6 concurrent processes at ~620MB total — within normal for Chromium multi-
   process, but worth tracking in #4 over 24h.
+- **Registry file rewrite churn** (TT2, 2026-04-24 post-compact): `~/.terminal-talk/session-colours.json`
+  is being re-written with byte-identical content (mtime bumped, no diff) multiple times per minute
+  at idle. Watcher log at `~/.terminal-talk/queue/_registry-watcher.log`. Suggests a save-site fires
+  even when nothing changed — feeds into #8 diagnosis + G1 in #6 review.
+
+## Blockers — explicit
+
+What TT2 is waiting on (re-checked on any session resume):
+
+| Blocker | What's needed | Who | Unblocks |
+|---|---|---|---|
+| TT1 draft #1 fix on `fix-pass` | My green-light sent to TT1 INBOX 22:45 — awaiting commit | TT1 | #1, #3, #7 all close together |
+| Ben's #2 tense answer | "Tinkering" (present) vs "Tinkered for Xs" (past) — decides H1 vs H2 | Ben | #2 fix path |
+| Ben's next wipe episode | Watcher at `scripts/watch-registry.cjs` is running; capture happens automatically | Ben (passive — normal usage) | #8 empirical root-cause |
+
+What TT2 can do autonomously while blocked (non-idle work):
+- Read TT1's fix-pass reviews as they land (#6 done, #5 pending)
+- Continue #4 24h-soak (T+24h ~2026-04-25T21:44)
+- Write additional diagnostic probes that don't need live Ben interaction
 
 ## Invariants discovered this run
 
@@ -61,7 +80,9 @@ See `QUEUE.md`. Initial seed: 6 items.
 | 2026-04-24 21:38      | TT2 | 39%  | #1 Bug A + B empirically verified; #7 opened; TT1 cleared to draft |
 | 2026-04-24 21:42      | TT2 | 40%  | TT1 perpetual-motion protocol merged to main; claiming #4 (soak) |
 | 2026-04-24 21:49      | TT2 | 42%  | #7 audit done; #8 opened (toolbar session-IDs missing); partial #4 baseline |
-| 2026-04-24 22:27      | TT1 | 66%  | 5 items reviewed: #1 (e3ca45b), #2 (9f36279), #3 (ce331cc), #6 (766d163), #8 (4d07faf). TT1 queue clean; pre-compact HANDOVER written to `coord/HANDOVER-2026-04-24T222737.md` (local). Ben directed compact. |
+| 2026-04-24 21:53      | TT2 | ~49% | HANDOVER written to `coord/HANDOVER-2026-04-24T21-53.md`; pre-compact save complete |
+| 2026-04-24 22:45      | TT2 | post-compact | Rehydrated; #1 GREEN-LIT to TT1 INBOX; autonomous pivot per Ben's perpetual-motion push |
+| 2026-04-24 22:50      | TT2 | post-compact | #8 registry-watcher spawned in background; already capturing idle-churn |
 
 ## Pointers for a fresh session
 
