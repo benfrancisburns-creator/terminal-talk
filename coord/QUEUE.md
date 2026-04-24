@@ -95,10 +95,14 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   invariant test that compares every `flags.get(k, fallback)` to `DEFAULT_SPEECH_INCLUDES[k]`
   by source inspection. **Surfaced by #13 audit.** · AXIS=7 · OWNER=TBD · STATUS=queued
 
-- [ ] **#19 sanitizer-cross-parity-audit** (Surface J follow-up) — JS `text.js::looksLikeCode`
-  vs Python `synth_turn.py::_looks_like_code` heuristics may diverge, causing clipboard-speak
-  vs response-speak to handle edge-case fences differently on the same text. Needs head-to-head
-  comparison of the two regex sets. · AXIS=1,7 · OWNER=TBD · STATUS=queued
+- [ ] **#19 sanitizer-cross-parity-audit** (Surface J follow-up) — audited end-to-end per
+  Ben B-5. **3 real divergences found:** D1 (material) — `looksLikeCode` counting: JS counts
+  max 1 per pattern, Python counts all `findall` matches, so `"npm install\nnpm test"` strips
+  in Python but keeps in JS. D2 (minor) — URL regex: Python matches bare `www.X`, JS doesn't.
+  D3 (minor) — heading regex: different strictness on hash count, leading ws, space-after-hash.
+  D4 (emphasis) unaudited. Fix shapes drafted; recommend make JS match Python (aggressive
+  strip) for parity. · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/19-sanitizer-cross-parity-audit.md`
 
 - [ ] **#20 palette-allocation-audit** (Surface I) — audited: 5 invariants verified clean.
   Palette allocator is well-designed (3-level free→LRU→hash-mod; hasUserIntent guard covers 6
