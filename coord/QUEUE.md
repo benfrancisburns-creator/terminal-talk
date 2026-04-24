@@ -64,14 +64,51 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   ephemeral). No new BROKEN states (pre-known #1/#3/#7 confirmed), 2 brittle. · AXIS=1,2,7
   OWNER=tt2 · STATUS=in-test · ACTIVE=`ACTIVE/11-settings-panel-audit.md`
 
-- [ ] **#12 voice-dispatch-audit** (Surface G per `PLAN-SYSTEMATIC-COVERAGE.md`) — per clip
-  type, is the correct voice used against the tts_provider setting? F1 from #11 suggests
-  incomplete validator here. · AXIS=1 · OWNER=TBD · STATUS=queued
+- [ ] **#12 voice-dispatch-audit** (Surface G per `PLAN-SYSTEMATIC-COVERAGE.md`) — completed:
+  ✗ G-V1 heartbeat ignores tts_provider (contradicts UI tooltip), ✗ G-V2 speakClipboard
+  ignores tts_provider (same), ~ G-V3 edge_question dead, ~ G-V4 edge_notification dead.
+  · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/12-voice-dispatch-audit.md`
 
-- [ ] **#13 speech-includes-filter-audit** (Surface J) — per sub-key, does a toggle actually
-  include/exclude that content from TTS synth? Needs code-path trace through sanitiser +
-  empirical probe with each sub-key set. · AXIS=1,2 · OWNER=TBD · STATUS=queued
+- [ ] **#15 heartbeat-voice-respect-provider** — `ipc-handlers.js:604,:616` always calls
+  `callEdgeTTS` for heartbeats regardless of `playback.tts_provider`. UI tooltip explicitly
+  promises heartbeats play in OpenAI's voice when the toggle is on. Fix: provider-aware
+  branch like `synth_turn.py::synthesize_parallel`. Test: stub both wrappers, assert correct
+  call path. **Surfaced by #12 audit.** · AXIS=1 · OWNER=TBD · STATUS=queued
 
-- [ ] **#14 playback-controls-audit** (Surface H) — play/pause, back10, fwd10, scrubber,
-  clearPlayed + their keyboard shortcuts. State transitions, correctness, no races. · AXIS=1
+- [ ] **#16 speakClipboard-respect-provider** — `main.js:1103-1117` always tries edge FIRST
+  with OpenAI as fallback, regardless of `tts_provider`. Same UI-contract violation as #15.
+  Fix: branch on `tts_provider` before the call. **Surfaced by #12 audit.** · AXIS=1
   OWNER=TBD · STATUS=queued
+
+- [ ] **#13 speech-includes-filter-audit** (Surface J) — completed: 4 of 6 sub-keys have
+  matching fallbacks; J-S1 latent drift (Python `flags.get` fallbacks for `image_alt` +
+  `bullet_markers` are True but DEFAULTS are False); J-S2 unaudited cross-sanitiser parity.
+  · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/13-speech-includes-filter-audit.md`
+
+- [ ] **#18 sanitizer-fallback-drift** — `app/synth_turn.py:652,:680` — `flags.get('image_alt', True)`
+  + `flags.get('bullet_markers', True)` don't match DEFAULTS (both False). Latent; fires only
+  if a caller passes partial flags. Fix: change fallbacks to False; add forcing-function
+  invariant test that compares every `flags.get(k, fallback)` to `DEFAULT_SPEECH_INCLUDES[k]`
+  by source inspection. **Surfaced by #13 audit.** · AXIS=7 · OWNER=TBD · STATUS=queued
+
+- [ ] **#19 sanitizer-cross-parity-audit** (Surface J follow-up) — JS `text.js::looksLikeCode`
+  vs Python `synth_turn.py::_looks_like_code` heuristics may diverge, causing clipboard-speak
+  vs response-speak to handle edge-case fences differently on the same text. Needs head-to-head
+  comparison of the two regex sets. · AXIS=1,7 · OWNER=TBD · STATUS=queued
+
+- [ ] **#20 palette-allocation-audit** (Surface I) — audited: 5 invariants verified clean.
+  Palette allocator is well-designed (3-level free→LRU→hash-mod; hasUserIntent guard covers 6
+  fields; defensive size clamp). Surfaced a #8-adjacent lead: `sanitiseEntry` drop + fresh-alloc
+  recreate path is a candidate for the label-wipe pattern. Flagged in ACTIVE/8 for TT1's fix
+  draft. · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/20-palette-and-sorting-audit.md`
+
+- [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
+  UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
+  window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
+
+- [ ] **#17 mic-aware-auto-pause-audit** (Surface D) — completed: no BROKEN, no BRITTLE. 10
+  invariants verified from source (two-flag split, initial-state emit, crash-recovery,
+  self-exclusion, etc.). Ben's earlier "Path C fixed" observation validated from code. One
+  test gap noted (invariant I2 guard). · AXIS=1,3 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/17-mic-aware-auto-pause-audit.md`
