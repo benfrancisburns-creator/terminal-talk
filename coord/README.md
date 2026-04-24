@@ -52,6 +52,49 @@ one analytically.
 8. **Close** — commit + push. Move ACTIVE → DONE. Update INDEX (new invariant + historical-bugs entry).
    Update MAP/<feature>.md with what was learned. Mark queue item `STATUS=done`.
 
+## Perpetual motion — never idle
+
+**Core rule: neither terminal waits on the other.** The item lifecycle above is a *per-item*
+flow, not a serialisation across items. As soon as a terminal finishes its part of an item and
+hands off, it **immediately** claims the next available `QUEUE.md` item matching its role.
+
+Any steady state where one terminal is "waiting for the other to respond" is a protocol
+failure. Handoff is asynchronous — the blocked terminal picks up the handoff whenever it next
+checks its INBOX or pulls the branch; meanwhile the other terminal is already deep in the next
+item.
+
+**Concrete applications of the rule:**
+
+- TT1 finishes a review block → writes to `INBOX/tt2.md` → **immediately claims the next queued
+  item** and starts its review pass. Does NOT wait for TT2's empirical verification. When TT2's
+  tester findings land in the existing ACTIVE file, TT1 picks that item back up at whatever
+  available moment — in parallel with whatever's in flight.
+- TT2 finishes empirical verification → writes to `INBOX/tt1.md` → **immediately moves to the
+  next item's test pass OR claims an empirical-role-only item** (live soak, error-recovery
+  matrix). Does NOT wait for the fix.
+- Devil's advocate blocks the PR push, not other work. When one item sits with `STATUS=in-verify`
+  awaiting the other terminal's devil's-advocate block, that item is parked; other items
+  progress.
+
+**Concurrency limits** — each terminal can have multiple items at different lifecycle stages
+concurrently. Cap total open items per terminal at **3** to avoid thrash. The ACTIVE file for
+each captures enough state that either terminal can rehydrate context in seconds on return.
+
+| Terminal | active `in-review` | active `in-test` | active `fix-drafted` | awaiting-handoff |
+|---|---|---|---|---|
+| TT1 reviewer | ≤ 2 | — | ≤ 1 | unbounded |
+| TT2 tester | — | ≤ 2 | — | unbounded |
+
+**Handoff protocol — the single invariant:** the LAST action in every work block is a message to
+the other terminal's INBOX (or a push to `fix-pass` / `main`). That message IS the handoff. The
+terminal **then immediately claims the next queued item** — that single action is what keeps the
+cycle perpetual. If a work block ends without an INBOX message, the handoff wasn't clean.
+
+**If `QUEUE.md` is empty for your role:** check whether any ACTIVE item has a block awaiting YOU
+that's been sitting unanswered — return to the oldest one first. Only if every ACTIVE item is
+genuinely `awaiting-handoff`-from-the-other-terminal is it legitimate to idle; in that narrow
+case, drop a one-liner in `coord/BEN.md` and wait on the other terminal or Ben.
+
 ## Locks and conflicts
 
 Before editing any file in `app/` or `scripts/`, drop a lock:

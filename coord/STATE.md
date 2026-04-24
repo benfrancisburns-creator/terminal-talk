@@ -1,7 +1,7 @@
 # STATE.md — cross-session consciousness
 
-**Last updated:** 2026-04-24 (scaffolded; no items in flight yet)
-**Updated by:** TT2
+**Last updated:** 2026-04-24 21:40 (TT1 #1 review committed; #2 review starting)
+**Updated by:** TT1
 
 The one file any fresh session reads FIRST to pick up where the team is. Keep it under 200 lines.
 Chatter goes in ACTIVE/ACTIVE files; this file is summaries + pointers.
@@ -14,27 +14,38 @@ Chatter goes in ACTIVE/ACTIVE files; this file is summaries + pointers.
 caught the original bug. Every commit that touches state passes a blast-radius check (see
 `README.md`).
 
+## Operating principle — perpetual motion
+
+**Neither terminal idles.** As soon as one hands off an item via INBOX/branch, it claims the
+next queued item. Handoff is async — the blocked terminal picks it up whenever it next checks
+INBOX, meanwhile the other terminal is already deep in the next item. Cap 3 open items per
+terminal. Full rule in `README.md § Perpetual motion`.
+
 ## Team
 
-- **TT2** — this terminal, tester. Main branch at `C:\Users\Ben\Desktop\terminal-talk\`.
-- **TT1** — other terminal, reviewer. Worktree at `C:\Users\Ben\Desktop\terminal-talk-tt1\` on
-  branch `fix-pass` (expected — set up on TT1's first session).
+- **TT2** — tester. Main branch at `C:\Users\Ben\Desktop\terminal-talk\`.
+- **TT1** — reviewer. Worktree at `C:\Users\Ben\Desktop\terminal-talk-tt1\` on branch `fix-pass`.
 
 ## Queue position
 
 See `QUEUE.md`. Initial seed: 6 items.
 
-**Active now:** *(none — awaiting TT1 online + first claim)*
+**Active now:**
+- **#1 heartbeat-revert** — `in-review` by TT1, awaiting TT2 empirical pass against Recipe A.
+  Reviewer findings committed in `e3ca45b` on `fix-pass`. Root cause found + empirically
+  confirmed against Ben's live config.json (key literally absent from disk).
+- **#2 tinkering-audio-leak** — claimed by TT1 next; review starting now per perpetual-motion rule.
 
 ## Invariants discovered this run
 
-*(none yet — items will add here as they close)*
+*(none closed yet — items will add here as they close)*
 
 ## Checkpoint log
 
 | Timestamp | Terminal | Context | Note |
 |---|---|---|---|
 | 2026-04-24 (scaffold) | TT2 | ~38% | coord/ tree created; waiting on TT1 kickoff |
+| 2026-04-24 21:35 | TT1 | ~50% | #1 review committed + pushed; #2 claimed, review in progress |
 
 ## Pointers for a fresh session
 
