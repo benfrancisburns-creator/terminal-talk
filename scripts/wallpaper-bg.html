@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Terminal Talk — wallpaper (background only)</title>
+<!-- Variant of scripts/wallpaper.html with the mascot + speech bubble
+     hidden via visibility: hidden (NOT display:none — we need them to
+     keep their layout space so the TALK row stays aligned with the
+     original). Rendered as docs/assets/wallpaper/terminal-talk-wallpaper-bg.png
+     and used as the base layer of the composite hero SVG, on top of
+     which pure-SVG animated mascot + cloud are drawn at the same
+     coordinates they'd have occupied here. -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 800px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(circle at 20% 25%, #26324a 0%, transparent 55%),
+      radial-gradient(circle at 80% 78%, #30203e 0%, transparent 55%),
+      #0e0f13;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    position: relative;
+  }
+
+  .center-stack {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+  }
+
+  pre.ascii {
+    font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Lucida Console', monospace;
+    font-size: 20px;
+    line-height: 1;
+    white-space: pre;
+    letter-spacing: 0;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    margin: 0;
+  }
+  pre.ascii .t,
+  pre.ascii .e,
+  pre.ascii .r,
+  pre.ascii .m,
+  pre.ascii .i,
+  pre.ascii .n,
+  pre.ascii .a,
+  pre.ascii .l,
+  pre.ascii .tlk-t,
+  pre.ascii .tlk-a,
+  pre.ascii .tlk-l,
+  pre.ascii .tlk-k { color: transparent; }
+
+  pre.ascii .t .face  { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+  pre.ascii .e .face  { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+  pre.ascii .r .face  { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+  pre.ascii .m .face  { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+  pre.ascii .i .face  { color: #60a5fa; text-shadow: 3px 3px 0 #3b6fc5, 6px 6px 0 #1e3a8a; }
+  pre.ascii .n .face  { color: #c084fc; text-shadow: 3px 3px 0 #8a54b8, 6px 6px 0 #581c87; }
+  pre.ascii .a .face  { color: #c97b50; text-shadow: 3px 3px 0 #8a5338, 6px 6px 0 #5a3621; }
+  pre.ascii .l .face  { color: #e0e0e0; text-shadow: 3px 3px 0 #8a8a8a, 6px 6px 0 #4b5563; }
+  pre.ascii .tlk-t .face { color: #ff5e5e; text-shadow: 3px 3px 0 #b34545, 6px 6px 0 #7a1e1e; }
+  pre.ascii .tlk-a .face { color: #ffa726; text-shadow: 3px 3px 0 #b37018, 6px 6px 0 #7a4a05; }
+  pre.ascii .tlk-l .face { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
+  pre.ascii .tlk-k .face { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
+
+  .talk-row {
+    display: flex;
+    align-items: center;
+    gap: 56px;
+  }
+  .mascot-pair {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    /* KEY DIFFERENCE vs wallpaper.html: hide the mascot + cloud so the
+       radial-gradient background shows through. Layout space preserved
+       so the TALK wordmark keeps the exact same x-position it has in
+       the full wallpaper — critical for the composite hero SVG to
+       overlay the animated mascot at the right screen coords. */
+    visibility: hidden;
+  }
+  .mascot-svg {
+    filter:
+      drop-shadow(3px 3px 0 #b36620)
+      drop-shadow(6px 6px 0 #7a3f0f);
+    margin-right: 6px;
+    margin-bottom: 6px;
+  }
+  .cloud-svg {
+    display: block;
+    filter:
+      drop-shadow(4px 4px 0 rgba(10,15,25,0.85))
+      drop-shadow(8px 8px 0 rgba(0,0,0,0.5));
+  }
+  .cloud-svg text {
+    font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+    font-weight: 700;
+    fill: #0e0f13;
+  }
+
+  .palette { display: flex; gap: 16px; }
+  .palette .dot {
+    width: 12px; height: 12px; border-radius: 50%; opacity: 0.55;
+  }
+  .tagline {
+    font-size: 13px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    font-weight: 300;
+  }
+</style>
+</head>
+<body>
+
+  <div class="center-stack">
+
+    <pre class="ascii"><span class="t"><span class="face">████████</span>╗</span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██████</span>╗ </span><span class="m"><span class="face">███</span>╗   <span class="face">███</span>╗</span><span class="i"><span class="face">██</span>╗</span><span class="n"><span class="face">███</span>╗   <span class="face">██</span>╗</span><span class="a"> <span class="face">█████</span>╗ </span><span class="l"><span class="face">██</span>╗</span>
+<span class="t">╚══<span class="face">██</span>╔══╝</span><span class="e"><span class="face">██</span>╔════╝</span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">████</span>╗ <span class="face">████</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">████</span>╗  <span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">█████</span>╗  </span><span class="r"><span class="face">██████</span>╔╝</span><span class="m"><span class="face">██</span>╔<span class="face">████</span>╔<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>╔<span class="face">██</span>╗ <span class="face">██</span>║</span><span class="a"><span class="face">███████</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">██</span>╔══╝  </span><span class="r"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="m"><span class="face">██</span>║╚<span class="face">██</span>╔╝<span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║╚<span class="face">██</span>╗<span class="face">██</span>║</span><span class="a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="l"><span class="face">██</span>║</span>
+<span class="t">   <span class="face">██</span>║   </span><span class="e"><span class="face">███████</span>╗</span><span class="r"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="m"><span class="face">██</span>║ ╚═╝ <span class="face">██</span>║</span><span class="i"><span class="face">██</span>║</span><span class="n"><span class="face">██</span>║ ╚<span class="face">████</span>║</span><span class="a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="l"><span class="face">███████</span>╗</span>
+<span class="t">   ╚═╝   </span><span class="e">╚══════╝</span><span class="r">╚═╝  ╚═╝</span><span class="m">╚═╝     ╚═╝</span><span class="i">╚═╝</span><span class="n">╚═╝  ╚═══╝</span><span class="a">╚═╝  ╚═╝</span><span class="l">╚══════╝</span></pre>
+
+    <div class="talk-row">
+      <pre class="ascii"><span class="tlk-t"><span class="face">████████</span>╗</span><span class="tlk-a"> <span class="face">█████</span>╗ </span><span class="tlk-l"><span class="face">██</span>╗     </span><span class="tlk-k"><span class="face">██</span>╗  <span class="face">██</span>╗</span>
+<span class="tlk-t">╚══<span class="face">██</span>╔══╝</span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>╗</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>║ <span class="face">██</span>╔╝</span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">███████</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">█████</span>╔╝ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>╔══<span class="face">██</span>║</span><span class="tlk-l"><span class="face">██</span>║     </span><span class="tlk-k"><span class="face">██</span>╔═<span class="face">██</span>╗ </span>
+<span class="tlk-t">   <span class="face">██</span>║   </span><span class="tlk-a"><span class="face">██</span>║  <span class="face">██</span>║</span><span class="tlk-l"><span class="face">███████</span>╗</span><span class="tlk-k"><span class="face">██</span>║  <span class="face">██</span>╗</span>
+<span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
+
+      <div class="mascot-pair">
+        <svg class="mascot-svg" width="134" height="114" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
+          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
+          <rect x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
+          <rect x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
+        </svg>
+
+        <svg class="cloud-svg" width="300" height="110" viewBox="0 0 30 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+          <rect x="4"  y="0" width="4" height="1" fill="white"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="palette">
+      <div class="dot" style="background:#ff5e5e"></div>
+      <div class="dot" style="background:#ffa726"></div>
+      <div class="dot" style="background:#ffd93d"></div>
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="dot" style="background:#60a5fa"></div>
+      <div class="dot" style="background:#c084fc"></div>
+      <div class="dot" style="background:#c97b50"></div>
+      <div class="dot" style="background:#e0e0e0"></div>
+    </div>
+
+    <div class="tagline">hands-free voice workflow for claude code</div>
+  </div>
+
+</body>
+</html>

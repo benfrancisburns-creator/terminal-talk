@@ -7,6 +7,7 @@ and a pixel-cloud speech bubble.
 ## Files
 
 - [`terminal-talk-wallpaper.png`](terminal-talk-wallpaper.png) — ready-to-use PNG (400 KB)
+- [`terminal-talk-wallpaper-bg.jpg`](terminal-talk-wallpaper-bg.jpg) — mascot-free variant, base64-embedded inside `docs/assets/terminal-talk-hero.svg` (the animated composite used in `README.md`). Regenerate with `node scripts/render-hero-background.cjs` after editing `scripts/wallpaper-bg.html`, then `node scripts/build-hero-svg.cjs`.
 - [`../../../scripts/wallpaper.html`](../../../scripts/wallpaper.html) — source HTML if you want to regenerate at a different resolution
 
 ## Set it as your desktop (Windows)

@@ -5,10 +5,10 @@
      app/index.html #scrubberMascot), cycling through the 8 solid
      palette colours + 4 split arrangements — exactly what users see
      in the product when they have multiple Claude Code sessions
-     open. Speech bubble crossfades through 7 phrases Claude Code
-     actually says (spinner verbs, tool narrations, "cooked for X"
-     footer). Pure CSS animation via embedded <style>, no JS — works
-     in GitHub's README renderer.
+     open. Pixelated cloud speech bubble (matching the desktop
+     wallpaper hero at docs/assets/wallpaper/) crossfades through 7
+     phrases Claude Code actually says. Pure CSS animation via
+     embedded <style>, no JS — works in GitHub's README renderer.
 
      Palette source: app/lib/tokens.json BASE_COLOURS.
      Edit the @keyframes stops below to change the cycle.
@@ -87,6 +87,17 @@
     }
   ]]></style>
 
+  <!-- Two-step chunky pixel drop shadow for the cloud, matching the
+       wallpaper hero's filter: drop-shadow(4,4) drop-shadow(8,8). Hard
+       stepped shadows (stdDeviation=0) keep the pixel-art feel; no
+       Gaussian softness. -->
+  <defs>
+    <filter id="cloud-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="4" dy="4" stdDeviation="0" flood-color="#0a0f19" flood-opacity="0.85"/>
+      <feDropShadow dx="8" dy="8" stdDeviation="0" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
   <!-- Mascot, positioned on the left. Geometry mirrors the live toolbar's
        #scrubberMascot rectangles. Two layers:
          1. SHADOW layer, same shapes offset (4, 4) down-right, filled
@@ -128,63 +139,46 @@
     <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
   </g>
 
-  <!-- Speech bubble — pixel-art retro style matching the wallpaper hero
-       (docs/assets/wallpaper/terminal-talk-wallpaper.png):
-         - solid white interior
-         - chunky stepped corners (no smooth rounding)
-         - offset dark drop-shadow down-right, implying an 8-bit "3D
-           button" raised look
-         - chisel-cut triangular tail pointing at the mascot.
-       shape-rendering="crispEdges" is already set on the root <svg>,
-       so each rect / path edge snaps to the pixel grid rather than
-       anti-aliasing — crucial for the stepped-corner look. -->
-  <g transform="translate(205, 48)">
-    <!-- Drop shadow: same stepped shape as the main body, offset down-
-         right by 4 px. Sits behind everything so the main bubble punches
-         out a white silhouette with a solid dark step on the bottom-right. -->
-    <path d="M 6,4 L 176,4 L 176,6 L 178,6 L 178,8 L 180,8 L 180,60 L 178,60 L 178,62 L 176,62 L 176,64 L 6,64 L 6,62 L 4,62 L 4,60 L 2,60 L 2,8 L 4,8 L 4,6 L 6,6 Z"
-          fill="#1a1a1a"/>
+  <!-- Pixelated cloud speech bubble — same 30×11 grid the wallpaper
+       hero uses (see scripts/wallpaper.html), scaled 6× so the cloud
+       body is 180×66 display px. Tail sticks out one unit to the left,
+       pointing back at the mascot. Two-step pixel drop shadow via the
+       cloud-shadow filter; text sits centred on the body interior. -->
+  <g transform="translate(190, 52)" filter="url(#cloud-shadow)">
+    <g transform="scale(6)">
+      <!-- Top puffs (bumpy cloud top) -->
+      <rect x="4"  y="0"  width="4"  height="1" fill="#ffffff"/>
+      <rect x="11" y="0"  width="5"  height="1" fill="#ffffff"/>
+      <rect x="19" y="0"  width="4"  height="1" fill="#ffffff"/>
+      <!-- Rising row — wider -->
+      <rect x="2"  y="1"  width="26" height="1" fill="#ffffff"/>
+      <!-- Main body -->
+      <rect x="1"  y="2"  width="28" height="7" fill="#ffffff"/>
+      <!-- Bottom contour -->
+      <rect x="2"  y="9"  width="26" height="1" fill="#ffffff"/>
+      <rect x="4"  y="10" width="4"  height="1" fill="#ffffff"/>
+      <rect x="12" y="10" width="5"  height="1" fill="#ffffff"/>
+      <!-- Tail (chunky pixel tail pointing back to mascot) -->
+      <rect x="0"  y="7"  width="1"  height="1" fill="#ffffff"/>
+      <rect x="0"  y="8"  width="1"  height="1" fill="#ffffff"/>
+    </g>
+  </g>
 
-    <!-- Tail shadow (the dark stepped arrow). -->
-    <path d="M -6,32 L 0,26 L 0,42 L -4,42 Z" fill="#1a1a1a"/>
-
-    <!-- Main bubble body: stepped-corner path. 2 px notches at all four
-         corners create the pixel-stair silhouette. Dark stroke + white
-         fill; stroke-width 2 gives a chunky outline. -->
-    <path d="M 4,0 L 172,0 L 172,2 L 174,2 L 174,4 L 176,4 L 176,56 L 174,56 L 174,58 L 172,58 L 172,60 L 4,60 L 4,58 L 2,58 L 2,56 L 0,56 L 0,4 L 2,4 L 2,2 L 4,2 Z"
-          fill="#ffffff" stroke="#1a1a1a" stroke-width="2"/>
-
-    <!-- Tail body: chisel-cut triangle with pixel-stepped outline. -->
-    <path d="M -8,30 L 1,22 L 1,38 L -2,38 Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="miter"/>
-    <!-- Whitewash where the tail meets the bubble border so the join
-         doesn't double-stroke a visible dark line up the bubble's left edge. -->
-    <rect x="0" y="24" width="2" height="12" fill="#ffffff"/>
-
-    <!-- Seven phrases crossfading. Centred at (88, 36) to sit inside
-         the slightly-asymmetric stepped rect. Branding phrase HEY JARVIS
-         uppercased to match the wallpaper; runtime narrations keep
-         mixed casing ("Reading foo.py", "Cooked for 49s") because
-         that's literally what Claude Code emits. -->
-    <text class="phrase p1" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" font-weight="700" fill="#1a1a1a" letter-spacing="1">HEY JARVIS</text>
-    <text class="phrase p2" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="14" font-weight="700" fill="#1a1a1a">Cooked for 49s</text>
-    <text class="phrase p3" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="14" font-weight="700" fill="#1a1a1a">Reading foo.py</text>
-    <text class="phrase p4" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="14" font-weight="700" fill="#1a1a1a">Moonwalking</text>
-    <text class="phrase p5" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="13" font-weight="700" fill="#1a1a1a">Running npm test</text>
-    <text class="phrase p6" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="14" font-weight="700" fill="#1a1a1a">Brewed for 8m 4s</text>
-    <text class="phrase p7" x="88" y="36" text-anchor="middle"
-          font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="13" font-weight="700" fill="#1a1a1a">Sautéed for 1m 0s</text>
+  <!-- Seven phrases crossfading inside the cloud body. Centred at
+       display (280, 92) — group translate (190, 52) plus cloud-grid
+       centre (15 × 6 = 90, 6.6 × 6 ≈ 40). Branding phrase HEY JARVIS
+       uppercased to match the wallpaper; runtime narrations keep
+       mixed casing ("Reading foo.py", "Cooked for 49s") because
+       that's literally what Claude Code emits. Rendered AFTER the
+       filtered cloud group so the filter doesn't double-drop-shadow
+       the text. -->
+  <g font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
+    <text class="phrase p1" x="280" y="92" font-size="16" letter-spacing="1">HEY JARVIS</text>
+    <text class="phrase p2" x="280" y="92" font-size="14">Cooked for 49s</text>
+    <text class="phrase p3" x="280" y="92" font-size="14">Reading foo.py</text>
+    <text class="phrase p4" x="280" y="92" font-size="14">Moonwalking</text>
+    <text class="phrase p5" x="280" y="92" font-size="13">Running npm test</text>
+    <text class="phrase p6" x="280" y="92" font-size="14">Brewed for 8m 4s</text>
+    <text class="phrase p7" x="280" y="92" font-size="13">Sautéed for 1m 0s</text>
   </g>
 </svg>

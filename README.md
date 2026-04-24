@@ -1,9 +1,5 @@
 <p align="center">
-  <img src="docs/assets/wallpaper/terminal-talk-wallpaper.png" alt="Terminal Talk — coloured ASCII wordmark, pixel mascot and HEY JARVIS speech bubble" width="900">
-</p>
-
-<p align="center">
-  <img src="docs/assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the 24-arrangement session palette; speech bubble crossfades through phrases Claude Code says during a turn" width="420">
+  <img src="docs/assets/terminal-talk-hero.svg" alt="Terminal Talk — coloured ASCII TERMINAL TALK wordmark with an animated pixel mascot cycling through the 8-colour session palette and a pixelated cloud speech bubble crossfading through phrases Claude Code says during a turn — HEY JARVIS, Cooked for 49s, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s" width="900">
 </p>
 
 <p align="center">
