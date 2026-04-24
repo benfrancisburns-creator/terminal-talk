@@ -32,28 +32,23 @@
 Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
 Add-Type -AssemblyName UIAutomationTypes  -ErrorAction SilentlyContinue
 
-# Palette tables mirror app/statusline.ps1 + app/lib/tokens.json.
-# If either moves, these three constants must move with them.
-Set-Variable -Scope Script -Name PaletteCodepoints -Option ReadOnly -Force -Value @(
-    0x1F534, 0x1F7E0, 0x1F7E1, 0x1F7E2, 0x1F535, 0x1F7E3, 0x1F7E4, 0x26AA
-)
-Set-Variable -Scope Script -Name HsplitPartner -Option ReadOnly -Force -Value @(3,4,5,0,1,2,7,6)
-Set-Variable -Scope Script -Name VsplitPartner -Option ReadOnly -Force -Value @(4,5,6,7,0,1,2,3)
-
-function _Get-Emoji([int]$idx) {
+# Statusline glyph tables. Post-v0.5 (option C), statusline.ps1 emits
+# ANSI-coloured block chars instead of emoji codepoints — ● for solids,
+# ▌ for horizontal splits (left-half fg, right-half bg), ▀ for vertical
+# splits (upper-half fg, lower-half bg). UIA's `DocumentRange.GetText`
+# strips ANSI and returns just the rendered glyph, so the signature we
+# match against the terminal buffer is the plain char + the session's
+# label. Scrape-by-emoji worked well for unlabelled sessions before
+# (8 distinct emoji codepoints); option C trades that for visual
+# consistency + exact palette colour match to the toolbar. Without a
+# label, the scrape can't uniquely locate an unlabelled session —
+# acceptable since footer-clip fallback is the "computed phrase".
+function _Get-StatuslineGlyph([int]$idx) {
     $i = $idx % 24
     if ($i -lt 0) { $i += 24 }
-    if ($i -lt 8) {
-        return [char]::ConvertFromUtf32($script:PaletteCodepoints[$i])
-    } elseif ($i -lt 16) {
-        $p = $i - 8
-        $s = $script:HsplitPartner[$p]
-        return [char]::ConvertFromUtf32($script:PaletteCodepoints[$p]) + [char]::ConvertFromUtf32($script:PaletteCodepoints[$s])
-    } else {
-        $p = $i - 16
-        $s = $script:VsplitPartner[$p]
-        return [char]::ConvertFromUtf32($script:PaletteCodepoints[$p]) + [char]::ConvertFromUtf32($script:PaletteCodepoints[$s])
-    }
+    if ($i -lt 8)  { return ([char]0x25CF).ToString() }  # ● BLACK CIRCLE
+    if ($i -lt 16) { return ([char]0x258C).ToString() }  # ▌ LEFT HALF BLOCK
+    return ([char]0x2580).ToString()                      # ▀ UPPER HALF BLOCK
 }
 
 function _Get-Signature([string]$RegistryPath, [string]$Short) {
@@ -64,8 +59,8 @@ function _Get-Signature([string]$RegistryPath, [string]$Short) {
         if (-not $entry) { return $null }
         $idx = [int]$entry.index
         $label = if ($entry.label) { [string]$entry.label } else { '' }
-        $emoji = _Get-Emoji $idx
-        if ($label) { return "$emoji $label" } else { return $emoji }
+        $glyph = _Get-StatuslineGlyph $idx
+        if ($label) { return "$glyph $label" } else { return $glyph }
     } catch { return $null }
 }
 

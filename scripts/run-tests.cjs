@@ -270,12 +270,29 @@ describe('STATUSLINE ASSIGNMENT', () => {
       assertEqual(after, before);
     });
 
-    it('emits valid UTF-8 emoji bytes', () => {
+    it('emits ANSI-wrapped block glyph (● / ▌ / ▀) with 24-bit fg', () => {
+      // Post-v0.5 (option C): statusline no longer emits emoji
+      // codepoints for arrangements — it emits ANSI 24-bit fg (+ bg for
+      // splits) wrapping one of three block chars. Output shape:
+      //   \x1b[38;2;R;G;Bm●\x1b[0m           (solid, idx 0-7)
+      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▌\x1b[0m (hsplit, idx 8-15)
+      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▀\x1b[0m (vsplit, idx 16-23)
       clearRegistry();
       const r = runStatusline('eeeeeeee-1111-2222-3333-444444444444');
-      const bytes = Buffer.from(r.stdout || '');
-      assertTruthy(bytes.length >= 3, 'emoji should be at least 3 bytes');
-      assertTruthy(bytes[0] >= 0xC0 || bytes[0] === 0xE2 || bytes[0] === 0xF0, 'first byte is UTF-8 multibyte start');
+      const out = r.stdout || '';
+      assertTruthy(out.startsWith('\x1b['),
+        `expected ANSI escape prefix, got: ${JSON.stringify(out.slice(0, 40))}`);
+      // ANSI ESC is U+001B. Build the regex via String.raw + RegExp
+      // to avoid an inline \x1b in a literal /regex/, which trips the
+      // ESLint no-control-regex rule.
+      const ESC = '\u001b';
+      const fgRe = new RegExp(ESC + '\\[38;2;\\d+;\\d+;\\d+');
+      assertTruthy(fgRe.test(out), 'expected 24-bit fg ANSI sequence');
+      assertTruthy(out.endsWith(ESC + '[0m') || out.includes(ESC + '[0m '),
+        'expected ANSI reset after glyph');
+      // One of the three block chars must be present.
+      assertTruthy(/[\u25CF\u258C\u2580]/.test(out),
+        `expected one of ● ▌ ▀, got: ${JSON.stringify(out)}`);
     });
   }
   clearRegistry();

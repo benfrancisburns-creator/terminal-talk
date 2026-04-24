@@ -82,27 +82,50 @@ try {
 $sum = 0
 foreach ($ch in $short.ToCharArray()) { $sum += [int]$ch }
 
-# Emoji code points: red, orange, yellow, green, blue, purple, brown, white.
-$codepoints = @(0x1F534, 0x1F7E0, 0x1F7E1, 0x1F7E2, 0x1F535, 0x1F7E3, 0x1F7E4, 0x26AA)
+# Palette hex (matches BASE_COLOURS in app/lib/tokens.json exactly —
+# red / orange / yellow / green / blue / magenta / brown / white).
+# Output uses ANSI 24-bit colour for exact parity with the toolbar
+# dots (`palette-classes.css`), so a session's statusline glyph looks
+# the same colour as its dot instead of drifting via emoji-font variance.
+$paletteHex = @('ff5e5e', 'ffa726', 'ffd93d', '4ade80', '60a5fa', 'ee2bbd', 'c97b50', 'e0e0e0')
+
 # 24 arrangement slots: 0-7 solid / 8-15 hsplit / 16-23 vsplit.
 # Must stay in lock-step with arrangementForIndex() in app/renderer.js.
-# Same partner tables as renderer.js -- complementary pairings for split arrangements.
+# Same partner tables as renderer.js -- complementary pairings for splits.
 $hsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
 $vsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
 
-function Get-EmojiForIndex($idx) {
+function _HexToRgb([string]$hex) {
+    "$([Convert]::ToInt32($hex.Substring(0,2),16));$([Convert]::ToInt32($hex.Substring(2,2),16));$([Convert]::ToInt32($hex.Substring(4,2),16))"
+}
+
+# Emit an ANSI-coloured glyph for the palette slot. Post-v0.5 (option C):
+#   - Solid (0-7):   ● with 24-bit fg = palette[idx]
+#   - Hsplit (8-15): ▌ with fg = primary, bg = secondary (left-half primary,
+#                    right-half secondary — one char wide, zero rendering gap)
+#   - Vsplit (16-23): ▀ with fg = primary, bg = secondary (upper half primary,
+#                     lower half secondary — also one char wide)
+# Replaces the legacy two-emoji concat for splits which rendered as two
+# glyphs in the terminal and couldn't convey the pairing visually.
+function Get-StatuslineGlyph($idx) {
     $i = $idx % 24
     if ($i -lt 0) { $i += 24 }
+    $ESC = [char]27
     if ($i -lt 8) {
-        return [char]::ConvertFromUtf32($codepoints[$i])
+        $rgb = _HexToRgb $paletteHex[$i]
+        return "${ESC}[38;2;${rgb}m●${ESC}[0m"
     } elseif ($i -lt 16) {
         $p = $i - 8
         $s = $hsplitPartner[$p]
-        return [char]::ConvertFromUtf32($codepoints[$p]) + [char]::ConvertFromUtf32($codepoints[$s])
+        $fg = _HexToRgb $paletteHex[$p]
+        $bg = _HexToRgb $paletteHex[$s]
+        return "${ESC}[38;2;${fg};48;2;${bg}m▌${ESC}[0m"
     } else {
         $p = $i - 16
         $s = $vsplitPartner[$p]
-        return [char]::ConvertFromUtf32($codepoints[$p]) + [char]::ConvertFromUtf32($codepoints[$s])
+        $fg = _HexToRgb $paletteHex[$p]
+        $bg = _HexToRgb $paletteHex[$s]
+        return "${ESC}[38;2;${fg};48;2;${bg}m▀${ESC}[0m"
     }
 }
 
@@ -148,7 +171,7 @@ try {
     if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }
 
-$emoji = Get-EmojiForIndex $idx
+$emoji = Get-StatuslineGlyph $idx
 $label = $assignments[$short].label
 # Prefixes give users an at-a-glance signal of state:
 #   🔇 muted   ⭐ focus (its clips play first)
