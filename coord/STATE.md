@@ -91,6 +91,7 @@ What TT2 can do autonomously while blocked (non-idle work):
 | 2026-04-25 00:55      | TT1 | post-compact | Batch 1 MERGED to main @ `8bc8a28` (TT2 DA PASS 00:35); #11 fix drafted on `fix-pass` @ `949296f` closing F1+F2+F3+F5+F6; 789/789; TT2 INBOX pinged |
 | 2026-04-25 01:05      | TT1 | post-compact | TT2 DA'ing #11; #15 reviewer pre-read committed @ `47ac8b7` (4 corrections + 2 extra tests for eventual fix draft); queued behind #11 merge |
 | 2026-04-25 01:35      | TT1 | post-compact | #11 MERGED to main @ `1df7245` (TT2 DA PASS 01:50); #15 heartbeat-voice-respect-provider drafted on `fix-pass` @ `239a505`; 795/795 (+5 new); TT2 INBOX pinged for DA |
+| 2026-04-25 02:15      | TT1 | escalation   | Ben reported another #8 wipe 00:05; bak1 (23:45) → current diff = labels + pinned + speech_includes lost, PIDs changed (delete-then-recreate). Batch 1 logging + #8 defensive guard DEPLOYED to live install, toolbar restarted, watcher respawned. Guard commit on `fix-pass` @ `55366e5`; 802/802 (+7 new). Guard is belt-and-braces — masks user-visible damage while root cause still open. |
 
 ## Pointers for a fresh session
 
