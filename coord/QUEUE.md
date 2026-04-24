@@ -22,8 +22,8 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#4 24h-soak** — leave toolbar running overnight with representative activity (queued clips,
   session switches, mic events, heartbeat). Track: memory growth, `~/.terminal-talk/logs/` size,
-  orphan Python processes, orphan MP3 files, registry file integrity. · AXIS=5 · OWNER=TBD
-  STATUS=queued
+  orphan Python processes, orphan MP3 files, registry file integrity. · AXIS=5 · OWNER=tt2
+  STATUS=in-test · ACTIVE=`ACTIVE/4-24h-soak.md`
 
 - [ ] **#5 error-recovery-matrix** — deliberately break each external dependency and watch: edge-tts
   offline, OpenAI 401, mic held indefinitely by another app, disk full during synth, network drop
@@ -33,3 +33,17 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 - [ ] **#6 log-audit** — review the last ~2 weeks of user-hit bugs. For each, ask: could we have
   diagnosed it from `~/.terminal-talk/logs/` alone? If not, what log line is missing? Produce a
   "log coverage gaps" list, fix them. · AXIS=6 · OWNER=TBD · STATUS=queued
+
+- [ ] **#7 top-level-key-dropped-audit** — the same allowlist-merge bug surfaced on #1 for
+  `heartbeat_enabled` applies to `selected_tab` and `tabs_expanded` (validated; see ACTIVE
+  file). Audit complete: 3 of 4 top-level scalars fail the round-trip. Fix shape drafted, test
+  drop-in written. Closes WITH #1 since the test covers both. · AXIS=2,7 · OWNER=tt2
+  STATUS=fix-drafted (ready to land in #1's fix commit) · ACTIVE=`ACTIVE/7-top-level-key-dropped-audit.md`
+
+- [ ] **#8 session labels / pinned / speech_includes wiped from registry** — Ben observed
+  "session IDs gone"; empirical diff of `session-colours.json` vs `.bak1` shows LABELS,
+  PINNED=true, and SPEECH_INCLUDES overrides all being silently wiped between saves. Same bug
+  CLASS as #1 but different file — JS-side session-registry write path is rebuilding entries
+  with subset/default values instead of preserving user state. **URGENT: Ben's live
+  customizations being wiped continuously.** · AXIS=1,2,7 · OWNER=tt2 (empirical) · STATUS=in-test
+  ACTIVE=`ACTIVE/8-session-ids-missing-from-toolbar.md`

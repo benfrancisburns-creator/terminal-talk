@@ -1,7 +1,7 @@
 # ACTIVE #1 — heartbeat toggle reverts from OFF → ON after ~30 min
 
-- **Status:** in-review
-- **Owner:** tt1
+- **Status:** fix-drafting (TT1 on `fix-pass`; TT2 verification rig red-confirmed, awaiting fix to go green)
+- **Owner:** TT1 (reviewer + drafter), TT2 (tester + verification + Devil's-advocate on deck)
 - **Axes in play:** 1 (correctness), 2 (persistence)
 - **MAP page:** [`MAP/heartbeat-narration.md`](../MAP/heartbeat-narration.md)
 - **Reported by:** Ben, live use, 2026-04-24
@@ -11,192 +11,171 @@
 > "I'm setting the heartbeat narration to off and then half an hour later I'm going back into the
 > settings and it's back to on again."
 
-## Reproduction recipe — [tt1 · 2026-04-24T21:20:00+01:00]
+## Reproduction recipe
 
-Deterministic. The "~30 min" in the symptom is coincidental; the revert triggers on the **next
-Settings-panel open** after the toggle, which is usually just whenever Ben goes back in. Stepwise:
+*(To be written by TT1 reviewer. Must be deterministic — commands + wait times + observations, not
+"click around and see what happens".)*
 
-### Recipe A — minimum-steps reproduction (no timers needed)
+## Reviewer findings — [TT? · HH:MM]
+
+*(TT1 fills in: code-path map from the toggle click to disk write, known state surfaces that hold
+`heartbeat_enabled`, and any path that could write to those surfaces AFTER the user toggle.
+Hypotheses ranked.)*
+
+## Tester findings — [tt2 · 2026-04-24T21:38:00+01:00]
+
+### Empirical confirmation of Bug A (live install, zero disruption required)
+
+Ben's live `config.json` already exhibits the symptom — didn't even need to run Recipe A's
+TRIGGER block to produce the evidence:
 
 ```
-# PREP
-1. Close the toolbar if running:
-      taskkill /F /IM electron.exe ; taskkill /F /IM terminal-talk.exe
-2. Baseline config: make heartbeat_enabled observable on disk.
-      python -c "import json,pathlib; p=pathlib.Path.home()/'.terminal-talk/config.json'; \
-                 c=json.loads(p.read_text()); c['heartbeat_enabled']=True; \
-                 p.write_text(json.dumps(c, indent=2))"
-3. Confirm on-disk state:
-      grep heartbeat_enabled ~/.terminal-talk/config.json
-      (expected: "heartbeat_enabled": true,)
-4. Launch toolbar (normal shortcut).
+$ grep -c heartbeat_enabled ~/.terminal-talk/config.json
+0
 
-# TRIGGER
-5. Open Settings panel. Observe heartbeat toggle: should be ON.
-6. Click toggle OFF. Wait 500 ms.
-7. Close Settings panel.
-8. Re-read config.json:
-      grep heartbeat_enabled ~/.terminal-talk/config.json
-
-# OBSERVE
-9. EXPECTED (bug present): grep returns EMPTY. The key is gone from disk.
-   VS INTENDED: grep returns "heartbeat_enabled": false,
-
-10. Re-open Settings panel.
-11. Observe the heartbeat toggle: shows ON again.
-    (Because step 8 left config.json without the key, loadSettings reads it as undefined,
-     _populateHeartbeat runs `cfg.heartbeat_enabled !== false` which is `true !== false` = true.)
-
-12. Wait any amount of time. 0 seconds works. Bug is ALREADY present — no 30 min needed.
+$ python -c "import json,pathlib; print(sorted(json.loads((pathlib.Path.home()/'.terminal-talk/config.json').read_text()).keys()))"
+['hotkeys', 'openai_api_key', 'playback', 'speech_includes', 'voices']
 ```
 
-**Faster-than-30-min confirmation:** `grep heartbeat_enabled ~/.terminal-talk/config.json`
-immediately after step 7 shows the key missing. The "30 minutes" in the user-visible symptom is
-just "the next time Ben happened to open Settings". There is no hidden timer rewriting the file.
+Exactly the 5 top-level keys `ipc-handlers.js:456-462` hardcodes into `merged`. `heartbeat_enabled`
+absent. Neither `selected_tab` nor `tabs_expanded` present either — same pattern.
 
-### Recipe B — confirms the hypothesis by BYPASSING the bug path
+**Ben's toggle is being silently dropped at the write path every time he flips it.** Bug A
+confirmed on the live system, not a lab reproduction.
 
-Skip the IPC — write `heartbeat_enabled: false` directly to config.json via a hand-edit, restart
-the toolbar, open Settings. Toggle SHOULD show OFF. If this ALSO shows ON (bug B below), the read
-path is compounding the write-path bug.
+### Empirical confirmation of Bug B (source inspection)
 
-### Empirical confirmation BEFORE any fix — [tt1 · 2026-04-24T21:20:00+01:00]
+Ran head on `app/lib/config-store.js` — the return literal inside `load()` at lines 47–54
+explicitly lists 6 preserved top-level keys:
 
-Ben's CURRENT live config at `C:\Users\Ben\.terminal-talk\config.json` already exhibits the bug:
-file ends at `"openai_api_key": null` with NO `heartbeat_enabled` key present. Direct evidence
-that the write path has been silently dropping it at least since the last Settings-panel
-interaction.
+```js
+return {
+  voices: { ...defaults.voices, ...(parsed.voices || {}) },
+  hotkeys: { ...defaults.hotkeys, ...(parsed.hotkeys || {}) },
+  playback: { ...defaults.playback, ...(parsed.playback || {}) },
+  speech_includes: { ...defaults.speech_includes, ...(parsed.speech_includes || {}) },
+  window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
+  openai_api_key: parsed.openai_api_key ?? null,
+};
+```
 
-## Reviewer findings — [tt1 · 2026-04-24T21:20:00+01:00]
+`heartbeat_enabled`, `selected_tab`, `tabs_expanded` — all absent from the return literal. Even
+if bug A were fixed and the write path persisted `heartbeat_enabled: false` to disk, this
+read-side return would drop it before reaching the rest of the app. Bug B confirmed from source.
 
-### Code-path map (toggle click → disk write)
+Skipped a runtime probe — the return literal is byte-level evidence; a dynamic test would only
+echo it. A regression-guarding test belongs in the `## New test` block below, not as Tester
+evidence.
 
-1. **UI binding** — `app/lib/settings-form.js:307-311` `_wireHeartbeatToggle`.
-   On the heartbeat-toggle checkbox `change` event:
-   ```js
-   await this._api.updateConfig({ heartbeat_enabled: on });
-   if (window.TT_CONFIG_SNAPSHOT) window.TT_CONFIG_SNAPSHOT.heartbeat_enabled = on;
-   ```
-   Writes a partial with exactly one top-level key: `{ heartbeat_enabled: true|false }`.
+### "~30 min" timing
 
-2. **IPC boundary** — `app/preload.js:23`:
-   `updateConfig: (partial) => ipcRenderer.invoke('update-config', partial)`.
-   Passes `partial` through contextBridge unchanged.
+Confirmed red herring per TT1 H4. The revert surfaces at *next Settings-panel open*, any time
+after the toggle. Ben's 30-min figure is just how long he tends to wait before re-opening
+Settings. No interval, no timer, no background rewrite — I re-checked `app/main.js` for any
+setInterval touching `heartbeat_enabled` or `CFG`: only the 3 s openai-invalid flag poll, which
+writes only `openai_api_key` and `playback.tts_provider`. None touch heartbeat.
 
-3. **Main handler** — `app/lib/ipc-handlers.js:448-468` `handle('update-config')`.
-   The critical code:
-   ```js
-   const cur = getCFG();
-   const merged = {
-     voices:          { ...cur.voices,          ...(partial.voices          || {}) },
-     hotkeys:         { ...cur.hotkeys,         ...(partial.hotkeys         || {}) },
-     playback:        { ...cur.playback,        ...(partial.playback        || {}) },
-     speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
-     openai_api_key:  null,
-   };
-   const ok = saveConfig(merged);
-   setCFG(merged);
-   ```
-   **`merged` is built with exactly 5 explicit top-level keys. `heartbeat_enabled` is not one of
-   them** — so even when the partial carries `heartbeat_enabled: false`, the merge silently
-   drops it before reaching disk. **Bug site A.**
+### Verdict on TT1's fix shape
 
-4. **Disk write** — `app/lib/config-store.js:55-68` `save(cfg)`.
-   Atomic `.tmp` + rename. Writes whatever object it's given, faithfully. Not a bug site; it
-   does exactly what it's asked — persist `merged`, which is already missing the key.
+Agree on both sites. Narrow per-key preservation (`partial.x !== undefined ? partial.x : cur.x`)
+rather than broad `{...cur, ...partial}` is correct: it keeps the validator's allowlist effective
+as a gate against unvalidated keys sneaking through. Same for the read side.
 
-5. **Round-trip on re-load** — `app/lib/config-store.js:45-52` `load()`.
-   ```js
-   return {
-     voices:          { ...defaults.voices,          ...(parsed.voices          || {}) },
-     hotkeys:         { ...defaults.hotkeys,         ...(parsed.hotkeys         || {}) },
-     playback:        { ...defaults.playback,        ...(parsed.playback        || {}) },
-     speech_includes: { ...defaults.speech_includes, ...(parsed.speech_includes || {}) },
-     window:          parsed.window ...,
-     openai_api_key:  parsed.openai_api_key ?? null,
-   };
-   ```
-   **Same allowlist shape on the READ side** — even if bug site A were fixed and
-   `heartbeat_enabled: false` made it onto disk, `load()` would still drop it coming back in.
-   **Bug site B.** Both must be fixed.
+The new round-trip test in `scripts/run-tests.cjs` (propose group `CONFIG PERSISTENCE ROUND-TRIP`)
+must assert the scalar `heartbeat_enabled: false` survives `saveConfig → loadConfig`. That one
+assertion catches both sites; if either drops the key, the test fails.
 
-6. **Settings-panel re-populate** — `app/lib/settings-form.js:650-657` `_populateHeartbeat`.
-   ```js
-   const on = cfg.heartbeat_enabled !== false;
-   heartbeatToggle.checked = on;
-   ```
-   `undefined !== false` is `true`, so when the key is missing (as it always is on disk after
-   bug A drops it), the toggle renders ON. Not a bug site — the `!== false` defaulting is the
-   intentional DEFAULTS policy — but it's what surfaces the lower bug to the user.
+### Adjacent pattern (out-of-scope for #1, now item #7)
 
-### State surfaces that hold `heartbeat_enabled`
+Opened QUEUE `#7 top-level-key-dropped-audit` per TT1's flag. `selected_tab` and `tabs_expanded`
+are in the validator's allowlist but absent from both the write-path merge (Bug A's shape) and
+the read-path return (Bug B's shape). Same class of bug, different keys. Deserves its own item
+so the scope here stays tight to heartbeat.
 
-Audited via `rg '\bheartbeat_enabled\b' app/`:
+### Go-ahead for TT1
 
-| # | Surface | File · line | Lifetime | Written by |
-|---|---|---|---|---|
-| S1 | `DEFAULTS.heartbeat_enabled` | `app/main.js:99` | process lifetime, const | hardcoded `true` |
-| S2 | `CFG.heartbeat_enabled` (main-side live config) | `app/main.js:137` + reassigned via `setCFG` | process lifetime | `loadConfig()` at boot, `setCFG(merged)` in update-config |
-| S3 | `config.json` on disk — `heartbeat_enabled` key | `~/.terminal-talk/config.json` | persistent | `saveConfig(cfg)` — currently NEVER includes the key because of A |
-| S4 | `window.TT_CONFIG_SNAPSHOT.heartbeat_enabled` (renderer mirror) | set by `loadSettings()` and by settings-form line 310 | renderer process lifetime | refreshed from CFG on every Settings-panel open |
-| S5 | config-validate RULES table entry | `app/lib/config-validate.js:30` | const | — (validator only, allows key but doesn't preserve it) |
+Draft the two-site fix on `fix-pass`. I'll review the Blast-radius + Devil's-advocate blocks
+before merge. New test must land in the same commit as the fix.
 
-Validator (S5) correctly lists `heartbeat_enabled` as a legal top-level boolean, so a hand-edited
-config.json with `"heartbeat_enabled": false` parses as valid. The validator is not the bug.
+### Verification rig — [tt2 · 2026-04-24T21:43:00+01:00]
 
-### Hypotheses ranked
+Built the Bug B regression probe BEFORE the fix landed, to prove the test design catches the bug
+(Ben's "conduct tests that absolutely confirm it's fixed" discipline). Probe calls the real
+`createConfigStore` from `app/lib/config-store.js`, seeds a JSON with `heartbeat_enabled: false`,
+runs `load()`, asserts the key survives.
 
-| # | Hypothesis | Verdict | Evidence |
-|---|---|---|---|
-| H1 | `update-config` IPC merge drops `heartbeat_enabled` because the allowlist has exactly 5 top-level keys and `heartbeat_enabled` isn't one of them | **CONFIRMED** | `ipc-handlers.js:456-462` — key literally not in the merge object; Ben's live `config.json` lacks the key despite him having toggled it |
-| H2 | `config-store.load()` drops `heartbeat_enabled` on READ for the same allowlist reason | **CONFIRMED** | `config-store.js:45-52` — same shape, 6 explicit keys, `heartbeat_enabled` absent. Compound with H1; fixing only H1 leaves the next app-restart re-reverting |
-| H3 | Some background process (self-cleanup watchdog, orphan sweep, openai-invalid-flag watcher) rewrites `config.json` on a timer, clobbering the key | **UNLIKELY** | Grep for `saveConfig(` shows 6 sites; all are user-initiated flows (update-config, label/index/voice set, explicit migration, openai key-invalid auto-unset). None are timer-driven rewrites of unrelated keys |
-| H4 | The ~30-min timing points at a `setInterval` refresh that overrides renderer state | **FALSE** | No interval touches `heartbeat_enabled`. The "~30 min" is just "how long until Ben next opened Settings". The bug manifests immediately on re-open, any time after toggle |
-| H5 | Renderer `loadSettings()` races with in-flight `update-config`, re-reading stale CFG | **RULED OUT** | `loadSettings` calls `get-config` which returns the CFG set by `setCFG(merged)` — same broken `merged`. No race needed; the bug is in the merge shape itself |
+**Red result against current broken code** (exit 1):
+```
+SEED on disk had: heartbeat_enabled = false
+LOAD returned:   heartbeat_enabled = undefined
+LOAD returned top-level keys: [hotkeys, openai_api_key, playback, speech_includes, voices, window]
+FAIL — Bug B confirmed. Test catches the bug.
+```
 
-**Compound diagnosis:** H1 is the write-side silent drop. H2 is the symmetric read-side drop that
-would re-introduce the bug even if H1 were fixed (anyone hand-editing `config.json` to persist
-`heartbeat_enabled: false` would see it lost at next load). Both must be patched.
+Exactly the 6 keys in `config-store.js:47-54` return literal. `heartbeat_enabled` dropped on load.
 
-### Pattern — adjacent keys at identical risk
+### Proposed test drop-in for `scripts/run-tests.cjs`
 
-Same bug shape applies to **two more top-level keys** the validator accepts (`config-validate.js`)
-but that neither `update-config` nor `config-store.load()` round-trips:
+Ready for TT1 to include in the fix commit (goes near the existing `MAIN.JS REGISTRY READ TOLERANCE` group ~line 1292):
 
-- `selected_tab` (line 32)
-- `tabs_expanded` (line 33)
+```js
+describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
+  // Regression guard for #1 heartbeat-revert + #7 adjacent-key audit.
+  // If any validator-accepted top-level scalar is dropped by EITHER
+  // ipc-handlers update-config merge OR config-store.load() return
+  // literal, this group fails. Catches the whole bug class, not just
+  // the specific instance.
+  const { createConfigStore } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-store.js')
+  );
+  const { validateConfig } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-validate.js')
+  );
+  const DEFAULTS = {
+    voices:          { edge_response: 'en-GB-RyanNeural' },
+    hotkeys:         {},
+    playback:        { speed: 1.25, tts_provider: 'edge' },
+    speech_includes: { code_blocks: false },
+    heartbeat_enabled: true,
+    openai_api_key:    null,
+    selected_tab:      'all',
+    tabs_expanded:     false,
+  };
+  const tmpCfg = path.join(os.tmpdir(), `tt-roundtrip-${Date.now()}.json`);
+  const clean = () => { try { fs.unlinkSync(tmpCfg); } catch {} };
 
-If either is ever user-settable via UI + `updateConfig` partial, it'll silently fail persistence
-the same way. **Out of scope for #1** — flagging so TT2 can open a follow-up QUEUE item (`#7
-top-level-key-dropped-audit`) rather than expanding this item's scope.
+  it('heartbeat_enabled=false survives save via store.save + re-load', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, heartbeat_enabled: false });
+    const loaded = store.load();
+    assertEqual(loaded.heartbeat_enabled, false, 'heartbeat_enabled must round-trip');
+    clean();
+  });
 
-### Proposed fix shape (draft — not yet committed code)
+  it('selected_tab + tabs_expanded survive save → load (guards #7)', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, selected_tab: '7e5c9a', tabs_expanded: true });
+    const loaded = store.load();
+    assertEqual(loaded.selected_tab, '7e5c9a', 'selected_tab must round-trip');
+    assertEqual(loaded.tabs_expanded, true,    'tabs_expanded must round-trip');
+    clean();
+  });
 
-Two parallel changes, both minimal, both preserve byte-for-byte behaviour for the five already-
-handled sub-objects:
+  // The IPC-handler merge path (Bug A) is a separate surface — exercised
+  // via the update-config handler factory in app/lib/ipc-handlers.js.
+  // TT1: suggest adding a third `it(...)` that builds the factory with
+  // mock deps, calls the handler with { heartbeat_enabled: false }, and
+  // asserts saveConfig was called with heartbeat_enabled:false preserved.
+  // The two tests above guard Bug B end-to-end; a Bug A handler test
+  // guards the merge allowlist directly.
+});
+```
 
-- **Write (A):** `ipc-handlers.js` — add an explicit line preserving the scalar:
-  `heartbeat_enabled: (partial.heartbeat_enabled !== undefined ? partial.heartbeat_enabled : cur.heartbeat_enabled)`. Narrow form — explicit per-key handling — is safer than a broad
-  `{ ...cur, ...partial }` refactor because the validator's allowlist keeps unvalidated keys from
-  sneaking through.
-- **Read (B):** `config-store.js:load()` — add
-  `heartbeat_enabled: typeof parsed.heartbeat_enabled === 'boolean' ? parsed.heartbeat_enabled : defaults.heartbeat_enabled`.
-  Preserves the "invalid → defaults" contract.
-
-Test to add (required before close per protocol): a new group `CONFIG PERSISTENCE ROUND-TRIP` in
-`scripts/run-tests.cjs` that calls `saveConfig({ heartbeat_enabled: false, ...other })` then
-`loadConfig()` and asserts the loaded object still has `heartbeat_enabled === false`. Minimal,
-deterministic, catches both bug sites in one assertion.
-
-## Tester findings — [TT? · HH:MM]
-
-*(TT2 fills in: run Recipe A against live install, confirm `grep heartbeat_enabled config.json`
-returns empty after the toggle-off step. Also try Recipe B to isolate bug A vs bug B.)*
-
-## Tester findings — [TT? · HH:MM]
-
-*(TT2 fills in: real `config.json` contents at each step of the recipe, any log lines observed,
-exact timing of the revert if it can be triggered faster than 30 min.)*
+**Verification flow post-fix:** on `fix-pass` with the patch applied, run
+`node scripts/run-tests.cjs --verbose 2>&1 | grep -A5 "ROUND-TRIP"` and expect 2+ green. That
+red→green transition is empirical proof the fix addresses the cause.
 
 ## Root-cause diagnosis — [TT? · HH:MM]
 
