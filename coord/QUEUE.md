@@ -111,6 +111,19 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   unavailable (disk-clutter, not security). · AXIS=1,3,8 · OWNER=tt2 · STATUS=audit-done
   ACTIVE=`ACTIVE/21-openai-key-flow-audit.md`
 
+- [ ] **#22 window-dock-audit** (Surface L) — audited: 6 invariants verified clean.
+  Pure-geometry module, 79 LoC, no side effects. Edge-snap threshold + overshoot tie-break
+  + bar-centre rescue all well-considered. Adjacent check: the `window.x/y/dock racy` strand
+  of #3 appears resolved by TT1's #1 fix (update-config merge now preserves `window`).
+  · AXIS=1 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/22-window-dock-audit.md`
+
+- [ ] **#23 tab-filter-audit** (Surface F) — audited: 4 invariants clean via #1 fix +
+  existing stale-session guard. Tab selection + expanded state now persist correctly. Default
+  `'all'` provides safe fallback. Deeper renderDots filter-bucket audit deferred (separate
+  surface not in PLAN). · AXIS=1,2 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/23-tab-filter-audit.md`
+
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
   window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
