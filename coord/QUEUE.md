@@ -47,3 +47,31 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   with subset/default values instead of preserving user state. **URGENT: Ben's live
   customizations being wiped continuously.** · AXIS=1,2,7 · OWNER=tt2 (empirical) · STATUS=in-test
   ACTIVE=`ACTIVE/8-session-ids-missing-from-toolbar.md`
+
+- [ ] **#9 orphan-python-on-toolbar-exit** — surfaced by #4 soak baseline: when electron exits,
+  its python children (wake-word-listener, edge-tts workers) are not killed. T+0 snapshot shows
+  14 python procs with 7 from prior boots still alive (up to 2 days 22h old). Zero-ish RSS
+  individually but accumulates handles+PIDs over long soaks and complicates cleanup. · AXIS=4,5
+  OWNER=TBD · STATUS=queued
+
+- [ ] **#10 `_voice.log` unbounded growth** — `_hook.log` rotates at 1 MB → `.1`; `_voice.log`
+  has no rotation (561 KB after ~2 days → ~10 MB/month). Low urgency but clear gap. Add same
+  size-capped rotation as `_hook.log`. · AXIS=5,6 · OWNER=TBD · STATUS=queued
+
+- [ ] **#11 settings-panel-audit** — systematic feature-by-feature audit of all 17 panel
+  controls. Surfaced F1 (voice validator coverage gap: 3 UI keys unvalidated), F2 (speech_includes
+  sub-keys unvalidated), F3 (2 dead validator declarations), F4 (OpenAI section collapse state
+  ephemeral). No new BROKEN states (pre-known #1/#3/#7 confirmed), 2 brittle. · AXIS=1,2,7
+  OWNER=tt2 · STATUS=in-test · ACTIVE=`ACTIVE/11-settings-panel-audit.md`
+
+- [ ] **#12 voice-dispatch-audit** (Surface G per `PLAN-SYSTEMATIC-COVERAGE.md`) — per clip
+  type, is the correct voice used against the tts_provider setting? F1 from #11 suggests
+  incomplete validator here. · AXIS=1 · OWNER=TBD · STATUS=queued
+
+- [ ] **#13 speech-includes-filter-audit** (Surface J) — per sub-key, does a toggle actually
+  include/exclude that content from TTS synth? Needs code-path trace through sanitiser +
+  empirical probe with each sub-key set. · AXIS=1,2 · OWNER=TBD · STATUS=queued
+
+- [ ] **#14 playback-controls-audit** (Surface H) — play/pause, back10, fwd10, scrubber,
+  clearPlayed + their keyboard shortcuts. State transitions, correctness, no races. · AXIS=1
+  OWNER=TBD · STATUS=queued

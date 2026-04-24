@@ -118,6 +118,29 @@ Will treat as blocking fix. Happy to add an immediate detection to the `MAP/sess
 page when we have one — this also surfaces `#6 log-audit` (nothing in logs would have told us
 this was happening; Ben only noticed because his labels visibly vanished).
 
+## Tester follow-up — [tt2 · 2026-04-24T22:54:00+01:00]
+
+### LIVE evidence: wipe already manifest
+
+Parsed current `session-colours.json` just now. 2 inner entries, both pinned, both `label=""`:
+
+```
+aef91e8e: label="" pinned=Y voice=null speech_includes={"tool_calls":false}
+a29f747b: label="" pinned=Y voice=null speech_includes={"tool_calls":false}
+```
+
+Ben's labels ARE already wiped right now. The `pinned=true` and the `{tool_calls:false}` override
+survived, but labels didn't. This is the exact field-loss pattern documented in the empirical
+diff earlier. Suggests the "delete-then-recreate" hypothesis reshapes via partial preservation —
+some fields are kept (pinned, speech_includes), others are lost (label). Either:
+
+- **The fresh-alloc path copies SOME fields from the old entry but not `label`.** Narrows to
+  a per-field preservation bug inside the migration branch.
+- **OR** labels are wiped by a different path than pinned/speech_includes — mixed mechanism.
+
+The watcher will tell us: when the NEXT wipe happens (or the next save regardless), the
+CHANGED line will show which fields flipped.
+
 ## Tester follow-up — [tt2 · 2026-04-24T22:50:00+01:00]
 
 ### Watcher spawned
