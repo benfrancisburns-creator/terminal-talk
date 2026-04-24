@@ -18,7 +18,7 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 - [ ] **#3 settings-persistence-full-audit** — systematic pass: every toggle, every slider, every
   text field in the Settings panel. Toggle · reload window · restart app · reboot PC. Verify state
   survives each. Find all classes-of-bug like #1 not just the specific instance. · AXIS=2,7
-  OWNER=TBD · STATUS=queued
+  OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/3-settings-persistence-full-audit.md`
 
 - [ ] **#4 24h-soak** — leave toolbar running overnight with representative activity (queued clips,
   session switches, mic events, heartbeat). Track: memory growth, `~/.terminal-talk/logs/` size,
