@@ -42,7 +42,14 @@ function createConfigStore({ configPath, defaults, validator, logger }) {
       }
       return defaults;
     }
-    return {
+    // Symmetric with the write path (`update-config` in app/lib/ipc-
+    // handlers.js). The return literal below must preserve every
+    // validator-accepted top-level scalar key, else a hand-edited
+    // config.json can carry a key that's dropped on next load — the
+    // exact shape of #1 (heartbeat_enabled), #3 (round-trip audit)
+    // and #7 (selected_tab/tabs_expanded). Defaults fill in missing
+    // keys so downstream code can still trust the shape.
+    const out = {
       voices: { ...defaults.voices, ...(parsed.voices || {}) },
       hotkeys: { ...defaults.hotkeys, ...(parsed.hotkeys || {}) },
       playback: { ...defaults.playback, ...(parsed.playback || {}) },
@@ -50,6 +57,13 @@ function createConfigStore({ configPath, defaults, validator, logger }) {
       window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
       openai_api_key: parsed.openai_api_key ?? null,
     };
+    if (parsed.heartbeat_enabled !== undefined) out.heartbeat_enabled = parsed.heartbeat_enabled;
+    else if (defaults.heartbeat_enabled !== undefined) out.heartbeat_enabled = defaults.heartbeat_enabled;
+    if (parsed.selected_tab !== undefined) out.selected_tab = parsed.selected_tab;
+    else if (defaults.selected_tab !== undefined) out.selected_tab = defaults.selected_tab;
+    if (parsed.tabs_expanded !== undefined) out.tabs_expanded = parsed.tabs_expanded;
+    else if (defaults.tabs_expanded !== undefined) out.tabs_expanded = defaults.tabs_expanded;
+    return out;
   }
 
   function save(cfg) {

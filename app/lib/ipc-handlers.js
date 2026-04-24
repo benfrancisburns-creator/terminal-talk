@@ -453,13 +453,33 @@ function createIpcHandlers(deps) {
           apiKeyStore.set(partial.openai_api_key);
         }
         const cur = getCFG();
+        // Narrow per-key preservation for top-level scalar keys in the
+        // validator's RULES table. Prior to this fix the merge built a
+        // new object with a hardcoded allowlist (5 keys), silently
+        // dropping `heartbeat_enabled`, `selected_tab`, `tabs_expanded`
+        // on every write — see #1, #3, #7. Pattern: if the caller
+        // supplied the key in `partial`, use it; else keep the current
+        // value; else omit (saveConfig writes JSON, so `undefined`
+        // cleanly drops). `config-store.load()` has symmetric
+        // preservation on the read side.
+        const keepScalar = (key) => (
+          partial[key] !== undefined ? partial[key] : cur[key]
+        );
         const merged = {
           voices: { ...cur.voices, ...(partial.voices || {}) },
           hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
           playback: { ...cur.playback, ...(partial.playback || {}) },
           speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
+          heartbeat_enabled: keepScalar('heartbeat_enabled'),
+          selected_tab:      keepScalar('selected_tab'),
+          tabs_expanded:     keepScalar('tabs_expanded'),
           openai_api_key: null,
         };
+        // `window` is written by a separate `save-window-position` handler
+        // and must survive update-config. Preserve if present in either
+        // partial or current.
+        if (partial.window !== undefined) merged.window = partial.window;
+        else if (cur.window !== undefined) merged.window = cur.window;
         const ok = saveConfig(merged);
         setCFG(merged);
         diag(`update-config OK: saved=${ok}, edge_response=${merged.voices.edge_response}`);
