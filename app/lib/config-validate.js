@@ -7,9 +7,21 @@
 
 const RULES = [
   { path: 'voices',          type: 'object' },
-  { path: 'voices.edge_response',  type: 'string', maxLen: 80 },
-  { path: 'voices.edge_question',  type: 'string', maxLen: 80 },
-  { path: 'voices.edge_notification', type: 'string', maxLen: 80 },
+  // F1 (#11): voice keys that the UI writes + runtime consumes. Each
+  // Settings dropdown routes through `update-config`; bad hand-edits
+  // (empty string, > 80 chars, non-string) would otherwise land in
+  // callEdgeTTS / callOpenAITTS / speak-response.ps1 and either crash
+  // the synth or produce silent audio.
+  { path: 'voices.edge_response', type: 'string', maxLen: 80 },
+  { path: 'voices.edge_clip',     type: 'string', maxLen: 80 },
+  { path: 'voices.openai_response', type: 'string', maxLen: 80 },
+  { path: 'voices.openai_clip',     type: 'string', maxLen: 80 },
+  // F3 (#11): `voices.edge_question` + `voices.edge_notification`
+  // removed 2026-04-25 — zero runtime consumers across app/ + hooks/.
+  // questions-first extraction was retired 2026-04-22 (synth_turn.py);
+  // speak-notification.ps1 reads edge_response, not edge_notification.
+  // Keeping them in RULES was a vestigial no-op that documentation
+  // (README + config.schema.json) continued to advertise to users.
   { path: 'hotkeys',         type: 'object' },
   { path: 'playback',        type: 'object' },
   { path: 'playback.speed',  type: 'number', min: 0.25, max: 4.0 },
@@ -25,6 +37,20 @@ const RULES = [
   // tts-helper.psm1) default to 'edge' for any unrecognised value.
   { path: 'playback.tts_provider', type: 'string', maxLen: 16 },
   { path: 'speech_includes', type: 'object' },
+  // F2 (#11): every sub-key in DEFAULTS.speech_includes (main.js) now
+  // has a corresponding validator rule. Prior to this the parent object
+  // was declared but sub-keys could hold any value — a partial write of
+  // `{ speech_includes: { urls: 'yes' }}` would merge + pass validation
+  // and the sanitiser's truthy-check would enable URL speech despite the
+  // non-boolean value. All 7 sub-keys enumerate here (including
+  // `tool_calls`, exposed via per-session override in renderer.js).
+  { path: 'speech_includes.code_blocks',    type: 'boolean' },
+  { path: 'speech_includes.inline_code',    type: 'boolean' },
+  { path: 'speech_includes.urls',           type: 'boolean' },
+  { path: 'speech_includes.headings',       type: 'boolean' },
+  { path: 'speech_includes.bullet_markers', type: 'boolean' },
+  { path: 'speech_includes.image_alt',      type: 'boolean' },
+  { path: 'speech_includes.tool_calls',     type: 'boolean' },
   // HB1 — heartbeat toggle. Default true in DEFAULTS; users disable
   // via settings or by writing false to config.json.
   { path: 'heartbeat_enabled', type: 'boolean' },

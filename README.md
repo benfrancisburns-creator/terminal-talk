@@ -258,12 +258,10 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
 ```json
 {
   "voices": {
-    "edge_clip":         "en-GB-SoniaNeural",
-    "edge_response":     "en-GB-RyanNeural",
-    "edge_question":     "en-GB-SoniaNeural",
-    "edge_notification": "en-GB-RyanNeural",
-    "openai_clip":       "shimmer",
-    "openai_response":   "onyx"
+    "edge_clip":       "en-GB-SoniaNeural",
+    "edge_response":   "en-GB-RyanNeural",
+    "openai_clip":     "shimmer",
+    "openai_response": "onyx"
   },
   "hotkeys": {
     "toggle_window":    "Control+Shift+A",

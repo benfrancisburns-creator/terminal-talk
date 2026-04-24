@@ -1724,6 +1724,149 @@ describe('REGISTRY LOGGING (#6 Batch 1 — G1 G2 G3)', () => {
   });
 });
 
+describe('SETTINGS PANEL ↔ VALIDATOR COVERAGE (#11)', () => {
+  // Enforces the invariant "validator RULES ≡ keys the UI writes + keys
+  // the runtime reads". Four tests total: two forward (TT2's proposed
+  // shape — UI keys covered by RULES, RULES keys written by UI), two
+  // backward (TT1's additions — RULES keys consumed at runtime, and
+  // DEFAULTS.speech_includes sub-keys covered by RULES). Any future
+  // drift on any of those axes fails on the next CI run.
+  const { RULES } = require(path.join(__dirname, '..', 'app', 'lib', 'config-validate.js'));
+  const settingsFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8'
+  );
+  const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const APP_DIR_REPO = path.join(__dirname, '..', 'app');
+  const HOOKS_DIR_REPO = path.join(__dirname, '..', 'hooks');
+  const listSources = (dir) => {
+    const out = [];
+    const walk = (d) => {
+      for (const name of fs.readdirSync(d)) {
+        const full = path.join(d, name);
+        const st = fs.statSync(full);
+        if (st.isDirectory()) walk(full);
+        else if (/\.(js|cjs|mjs|ps1|psm1|psd1|py)$/.test(name)) out.push(full);
+      }
+    };
+    walk(dir);
+    return out;
+  };
+  const readAllSrc = () => {
+    const files = [...listSources(APP_DIR_REPO), ...listSources(HOOKS_DIR_REPO)];
+    const blob = {};
+    for (const f of files) blob[f] = fs.readFileSync(f, 'utf8');
+    return blob;
+  };
+
+  it('every UI-written voice key has a RULES entry (F1 guard)', () => {
+    // settings-form.js wires the 4 voice dropdowns via a small tuple
+    // table at ~L325-328: `[el, 'edge_response'], [el, 'edge_clip'],
+    // [el, 'openai_response'], [el, 'openai_clip']`. Each must map to
+    // a `voices.<name>` RULES entry.
+    const uiVoiceKeys = new Set();
+    const rx = /\[this\._el\.\w+,\s*'(edge_\w+|openai_\w+)'\]/g;
+    let m;
+    while ((m = rx.exec(settingsFormSrc)) !== null) uiVoiceKeys.add(m[1]);
+    // Spot-check we actually captured something — if settings-form.js
+    // is refactored such that this regex stops matching, we'd silently
+    // pass with an empty set. Guard against that.
+    if (uiVoiceKeys.size < 4) {
+      throw new Error(`expected ≥ 4 UI voice keys, extracted ${[...uiVoiceKeys].join(',')} — regex drift?`);
+    }
+    const rulesVoiceKeys = new Set(
+      RULES.filter((r) => r.path.startsWith('voices.')).map((r) => r.path.slice('voices.'.length))
+    );
+    const missing = [...uiVoiceKeys].filter((k) => !rulesVoiceKeys.has(k));
+    if (missing.length > 0) {
+      throw new Error(`UI writes voice keys not in RULES: [${missing.join(',')}] — add to config-validate.js (F1)`);
+    }
+  });
+
+  it('every UI-written speech_includes sub-key has a RULES entry (F2 guard)', () => {
+    // settings-form.js wires the 6 checkboxes at L111-116; renderer.js
+    // adds `tool_calls` as a per-session override (L984-985). The set
+    // of user-writeable sub-keys is the union (7 keys).
+    const uiSubKeys = new Set();
+    const rxFormKeys = /(code_blocks|inline_code|urls|headings|bullet_markers|image_alt)\s*:/g;
+    let m;
+    while ((m = rxFormKeys.exec(settingsFormSrc)) !== null) uiSubKeys.add(m[1]);
+    // tool_calls enters via the per-session override dropdown + the
+    // VALID_INCLUDE_KEYS + ALLOWED_INCLUDE_KEYS allowlists.
+    if (/ALLOWED_INCLUDE_KEYS[\s\S]*?tool_calls/.test(fs.readFileSync(
+        path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'), 'utf8'))) {
+      uiSubKeys.add('tool_calls');
+    }
+    if (uiSubKeys.size < 7) {
+      throw new Error(`expected ≥ 7 speech_includes sub-keys, extracted ${[...uiSubKeys].join(',')} — regex drift?`);
+    }
+    const rulesSubKeys = new Set(
+      RULES.filter((r) => r.path.startsWith('speech_includes.'))
+           .map((r) => r.path.slice('speech_includes.'.length))
+    );
+    const missing = [...uiSubKeys].filter((k) => !rulesSubKeys.has(k));
+    if (missing.length > 0) {
+      throw new Error(`user-writeable speech_includes sub-keys not in RULES: [${missing.join(',')}] — add to config-validate.js (F2)`);
+    }
+  });
+
+  it('every RULES path has ≥ 1 runtime consumer in app/ or hooks/ (F3/F5 guard)', () => {
+    // Forcing function against dead declarations. For each RULES entry,
+    // search for the leaf name (last dot-segment) across every source
+    // file in app/ + hooks/ EXCLUDING config-validate.js and
+    // config.schema.json (which are the declaration surface, not a
+    // consumer). If no non-declaration consumer exists, the key is
+    // vestigial — remove from RULES.
+    const blob = readAllSrc();
+    const exemptFiles = new Set([
+      path.join(APP_DIR_REPO, 'lib', 'config-validate.js'),
+    ]);
+    // Parent-only rules (object-typed, top-level) are inherently
+    // structural — skip them, since their "consumer" is the nested
+    // merge in config-store + ipc-handlers.
+    const skipPaths = new Set(['voices', 'hotkeys', 'playback', 'speech_includes']);
+    const dead = [];
+    for (const rule of RULES) {
+      if (skipPaths.has(rule.path)) continue;
+      const leaf = rule.path.split('.').pop();
+      let found = false;
+      for (const [file, src] of Object.entries(blob)) {
+        if (exemptFiles.has(file)) continue;
+        // Word-boundary search to avoid accidental substring matches.
+        const rx = new RegExp(`\\b${leaf.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+        if (rx.test(src)) { found = true; break; }
+      }
+      if (!found) dead.push(rule.path);
+    }
+    if (dead.length > 0) {
+      throw new Error(`RULES paths with zero runtime consumers (dead declarations): [${dead.join(', ')}] — remove from config-validate.js + config.schema.json + README (F3/F5/F6)`);
+    }
+  });
+
+  it('DEFAULTS.speech_includes sub-keys are all validator-covered (#11 bidirectional)', () => {
+    // Backward guard: adding a key to DEFAULTS.speech_includes in
+    // main.js without a matching RULES entry would let bad hand-edits
+    // for that key slip through validation on load. Iterates the
+    // actual DEFAULTS block and asserts every sub-key is declared.
+    const m = mainJsSrc.match(/speech_includes:\s*\{([\s\S]*?)\n\s*\}/);
+    if (!m) throw new Error('could not locate speech_includes block in main.js DEFAULTS');
+    const defaultsKeys = new Set();
+    const keyRx = /(\w+)\s*:\s*(?:true|false)/g;
+    let km;
+    while ((km = keyRx.exec(m[1])) !== null) defaultsKeys.add(km[1]);
+    if (defaultsKeys.size < 7) {
+      throw new Error(`expected ≥ 7 DEFAULTS.speech_includes keys, extracted ${[...defaultsKeys].join(',')} — regex drift?`);
+    }
+    const rulesSubKeys = new Set(
+      RULES.filter((r) => r.path.startsWith('speech_includes.'))
+           .map((r) => r.path.slice('speech_includes.'.length))
+    );
+    const missing = [...defaultsKeys].filter((k) => !rulesSubKeys.has(k));
+    if (missing.length > 0) {
+      throw new Error(`DEFAULTS.speech_includes keys not in RULES: [${missing.join(',')}] — extend config-validate.js`);
+    }
+  });
+});
+
 describe('HARDENING: input validation', () => {
   it('main.js loadAssignments drops non-hex registry keys', () => {
     const evil = {

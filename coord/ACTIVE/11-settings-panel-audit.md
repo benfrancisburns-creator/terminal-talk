@@ -1,7 +1,7 @@
 # ACTIVE #11 — Settings panel systematic audit
 
-- **Status:** in-test (audit delivered)
-- **Owner:** TT2
+- **Status:** fix-drafted — TT1 on `fix-pass`; Ben resolved F5=remove; awaiting TT2 Devil's-advocate
+- **Owner:** TT2 (audit) + TT1 (fix draft, Devil's-advocate pending)
 - **Axes in play:** 1 (correctness), 2 (persistence), 7 (invariant)
 - **Opened:** 2026-04-24T23:10
 - **Method:** feature-by-feature contract audit — not interrogation of Ben's memory.

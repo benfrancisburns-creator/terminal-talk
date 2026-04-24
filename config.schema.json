@@ -12,8 +12,6 @@
       "properties": {
         "edge_clip": { "type": "string", "maxLength": 80, "description": "Voice for highlight-to-speak clips." },
         "edge_response": { "type": "string", "maxLength": 80, "description": "Voice for Claude response playback." },
-        "edge_question": { "type": "string", "maxLength": 80, "description": "Voice for permission prompts." },
-        "edge_notification": { "type": "string", "maxLength": 80 },
         "openai_clip": { "type": "string", "maxLength": 80, "description": "Used only when openai_api_key is set (premium fallback)." },
         "openai_response": { "type": "string", "maxLength": 80 }
       }
