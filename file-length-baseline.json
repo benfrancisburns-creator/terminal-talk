@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 10370,
+    "scripts/run-tests.cjs": 10375,
     "app/main.js": 1758,
     "app/synth_turn.py": 1483,
     "app/renderer.js": 1170,
@@ -12,7 +12,7 @@
     "app/lib/settings-form.js": 679,
     "app/lib/ipc-handlers.js": 661,
     "docs/ui-kit/mock-ipc.js": 575,
-    "hooks/speak-response.ps1": 452,
+    "hooks/speak-response.ps1": 454,
     "app/lib/sessions-table.js": 446,
     "app/session-registry.psm1": 340,
     "app/lib/tabs.js": 289,
