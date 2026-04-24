@@ -606,6 +606,25 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('See https://example.com for info');
     if (out.includes('example.com')) throw new Error(`URL leaked: "${out}"`);
   });
+  it('D2 (#19): strips bare www.X domains by default — JS↔Python parity', () => {
+    // Pre-parity, JS only matched http(s):// URLs; Python _URL_RE also
+    // matched bare `www.X`. Same input produced different audio across
+    // clipboard-speak (JS, kept) vs response-speak (Python, stripped).
+    const out = stripForTTS('go to www.example.com for details');
+    if (out.includes('www.example.com')) throw new Error(`bare www.X leaked: "${out}"`);
+  });
+  it('D3 (#19): strips heading WITHOUT space after # when headings=false — parity with Python', () => {
+    // Pre-parity, JS required `\s+` after hashes ('# heading') so
+    // `#notaheading` was kept as prose when headings=false. Python
+    // allowed no-space. Default headings=true uses a different branch
+    // (strip just the # marks, keep text) so we test the false path.
+    const out = stripForTTS('#notaheading_content', { headings: false });
+    if (out.includes('notaheading_content')) throw new Error(`no-space heading leaked: "${out}"`);
+  });
+  it('D3 (#19): strips heading WITH leading whitespace when headings=false — parity with Python', () => {
+    const out = stripForTTS('  # my heading', { headings: false });
+    if (out.includes('my heading')) throw new Error(`leading-ws heading leaked: "${out}"`);
+  });
   it('keeps URLs when toggled on', () => {
     const out = stripForTTS('See https://example.com for info', { urls: true });
     if (!out.includes('example.com')) throw new Error(`URL stripped: "${out}"`);

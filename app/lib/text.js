@@ -136,11 +136,22 @@ function stripForTTS(text, includes) {
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
   // Bare URLs: strip or keep per-toggle.
-  if (!inc.urls) t = t.replace(/https?:\/\/\S+/g, ' ');
+  // D2 (#19): include bare `www.X` domains in the URL strip, matching
+  // Python's _URL_RE. Pre-parity, JS only matched http(s)://; Python
+  // ALSO matched bare www.*, so `"go to www.example.com"` with
+  // urls=false produced different audio depending on whether
+  // clipboard-speak (JS, kept) or response-speak (Python, stripped)
+  // processed it. Case-insensitive mirrors Python's re.IGNORECASE flag.
+  if (!inc.urls) t = t.replace(/https?:\/\/\S+|www\.\S+/gi, ' ');
 
   // Headings. When stripped, drop the whole line so the heading text
   // isn't spoken; when kept, drop the leading # hashes but keep the text.
-  if (!inc.headings) t = t.replace(/^#+\s+.*$/gm, ' ');
+  // D3 (#19): heading regex parity with Python's _HEADING_LINE_RE.
+  //   - `{1,6}` (strict CommonMark) instead of `+` (any count)
+  //   - allow leading whitespace (Python allows)
+  //   - make the space-after-# optional (Python does) so `#notaheading`
+  //     strips consistently with Python
+  if (!inc.headings) t = t.replace(/^\s*#{1,6}\s*.*$/gm, ' ');
   else               t = t.replace(/^#+\s*/gm, '');
 
   // Markdown emphasis — marks gone, inner text kept, every time.
