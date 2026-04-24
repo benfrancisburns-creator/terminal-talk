@@ -33,3 +33,11 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 - [ ] **#6 log-audit** — review the last ~2 weeks of user-hit bugs. For each, ask: could we have
   diagnosed it from `~/.terminal-talk/logs/` alone? If not, what log line is missing? Produce a
   "log coverage gaps" list, fix them. · AXIS=6 · OWNER=TBD · STATUS=queued
+
+- [ ] **#7 top-level-key-dropped-audit** — the same allowlist-merge bug surfaced on #1 for
+  `heartbeat_enabled` applies at least to `selected_tab` and `tabs_expanded` (both in the
+  validator's allowlist, neither in `ipc-handlers.js update-config` merge nor `config-store.js
+  load()` return literal). Audit ALL validator-accepted top-level keys for symmetric coverage on
+  write + read. Add a static test that fails if any validator-accepted key is absent from either
+  allowlist. Surfaced by TT1 during #1 review; kept out of #1 scope per protocol.
+  AXIS=2,7 · OWNER=TBD · STATUS=queued

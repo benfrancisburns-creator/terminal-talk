@@ -24,7 +24,7 @@ caught the original bug. Every commit that touches state passes a blast-radius c
 
 See `QUEUE.md`. Initial seed: 6 items.
 
-**Active now:** #1 heartbeat-revert — TT1 reviewing (ETA 15–25 min for recipe), TT2 on deck for empirical testing.
+**Active now:** #1 heartbeat-revert — both bugs confirmed (A = write-side allowlist drop, B = symmetric read-side drop). Awaiting TT1 fix draft on `fix-pass`. New QUEUE item #7 opened for the adjacent-key audit (selected_tab, tabs_expanded same class).
 
 ## Invariants discovered this run
 
@@ -36,6 +36,7 @@ See `QUEUE.md`. Initial seed: 6 items.
 |---|---|---|---|
 | 2026-04-24 (scaffold) | TT2 | ~38% | coord/ tree created; waiting on TT1 kickoff |
 | 2026-04-24 21:21      | TT2 | 37%  | TT1 online, claimed #1, handshake replied, standing down 20 min |
+| 2026-04-24 21:38      | TT2 | 39%  | TT1 review block in; Bug A + B empirically confirmed; #7 opened; awaiting fix draft |
 
 ## Pointers for a fresh session
 
