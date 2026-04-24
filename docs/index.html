@@ -95,11 +95,8 @@ section { padding: 80px 24px; }
 
 /* Animated mascot + speech bubble. The SVG ships its own CSS keyframes
    (see docs/assets/mascot-animated.svg) so no JS is needed — the
-   landing page and the README render the exact same animation. 440 px
-   max-width keeps the mascot readable on mobile without crowding the
-   wordmark above. */
-.hero-mascot { margin: 6px auto 18px; max-width: 440px; width: 100%; height: auto; opacity: 0.95; }
-.hero-mascot img { width: 100%; height: auto; display: block; }
+   landing page and the README render the exact same animation. Sits
+   inside .mascot-pair in the TALK row; see .mascot-animated below. */
 
 /* ASCII hero — per-letter coloured block-art TERMINAL TALK, mascot, cloud.
    Mirrors the desktop wallpaper composition (docs/assets/wallpaper/). */
@@ -155,30 +152,16 @@ section { padding: 80px 24px; }
 .hero-ascii .tlk-l .face { color: #22d3ee; text-shadow: 3px 3px 0 #158ea5, 6px 6px 0 #0a5a68; }
 .hero-ascii .tlk-k .face { color: #4ade80; text-shadow: 3px 3px 0 #2d8a50, 6px 6px 0 #14532d; }
 .talk-row { display: flex; align-items: center; gap: 44px; flex-wrap: wrap; justify-content: center; }
-.mascot-pair { display: flex; align-items: center; gap: 20px; }
-.mascot-svg {
-  /* Sized to match TALK row height (6 × 20px = 120). Hard two-step
-     shadow only — the previous ambient glow pushed the visible bottom
-     past TALK's baseline. Margin reserves the 6px shadow offset so
-     the layout box is exactly 120, aligning with TALK. */
-  filter:
-    drop-shadow(3px 3px 0 #b36620)
-    drop-shadow(6px 6px 0 #7a3f0f);
-  margin-right: 6px;
-  margin-bottom: 6px;
-}
-.cloud-svg {
+.mascot-pair { display: flex; align-items: center; }
+.mascot-animated {
+  /* 400 × 180 viewBox → at 420 px wide renders 189 px tall, a touch
+     taller than the TALK row (120 px) so the speech bubble clears the
+     letter tops. width: 100% + max-width keeps it fluid on narrow
+     viewports where .talk-row wraps. */
+  width: 100%;
+  max-width: 420px;
+  height: auto;
   display: block;
-  /* Pixel-chunky drop shadow behind the speech bubble, matching the
-     mascot's hard-shadow style for visual consistency. */
-  filter:
-    drop-shadow(4px 4px 0 rgba(10,15,25,0.85))
-    drop-shadow(8px 8px 0 rgba(0,0,0,0.5));
-}
-.cloud-svg text {
-  font-family: 'Cascadia Mono', 'Cascadia Code', 'Consolas', monospace;
-  font-weight: 700;
-  fill: #0e0f13;
 }
 .hero-palette { display: flex; gap: 14px; }
 .hero-palette .dot { width: 11px; height: 11px; border-radius: 50%; opacity: 0.55; }
@@ -405,33 +388,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 <span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
 
       <div class="mascot-pair">
-        <svg class="mascot-svg" width="134" height="114" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-          <rect x="13"  y="0"  width="114" height="88" fill="#ff8c1a"/>
-          <rect x="0"   y="36" width="13"  height="26" fill="#ff8c1a"/>
-          <rect x="127" y="36" width="13"  height="26" fill="#ff8c1a"/>
-          <rect x="19"  y="88" width="16" height="32" fill="#ff8c1a"/>
-          <rect x="46"  y="88" width="16" height="32" fill="#ff8c1a"/>
-          <rect x="79"  y="88" width="16" height="32" fill="#ff8c1a"/>
-          <rect x="106" y="88" width="16" height="32" fill="#ff8c1a"/>
-          <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
-          <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
-          <rect x="44" y="58" width="8"  height="6" fill="#3a3a3a"/>
-          <rect x="88" y="58" width="8"  height="6" fill="#3a3a3a"/>
-          <rect x="44" y="64" width="52" height="6" fill="#3a3a3a"/>
-        </svg>
-        <svg class="cloud-svg" width="260" height="96" viewBox="0 0 30 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-          <rect x="4"  y="0" width="4" height="1" fill="white"/>
-          <rect x="11" y="0" width="5" height="1" fill="white"/>
-          <rect x="19" y="0" width="4" height="1" fill="white"/>
-          <rect x="2"  y="1" width="26" height="1" fill="white"/>
-          <rect x="1"  y="2" width="28" height="7" fill="white"/>
-          <rect x="2"  y="9"  width="26" height="1" fill="white"/>
-          <rect x="4"  y="10" width="4"  height="1" fill="white"/>
-          <rect x="12" y="10" width="5"  height="1" fill="white"/>
-          <rect x="0"  y="7" width="1" height="1" fill="white"/>
-          <rect x="0"  y="8" width="1" height="1" fill="white"/>
-          <text x="15" y="6.6" font-size="2.1" text-anchor="middle">HEY JARVIS</text>
-        </svg>
+        <img class="mascot-animated" src="assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the session palette; speech bubble crossfades through phrases Claude Code says during a turn — HEY JARVIS, Cooked for 49s, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s">
       </div>
     </div>
 
@@ -450,10 +407,6 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <div class="dot" style="background:#c97b50"></div>
       <div class="dot" style="background:#e0e0e0"></div>
     </div>
-  </div>
-
-  <div class="hero-mascot">
-    <img src="assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the 24-arrangement session palette; speech bubble crossfades through phrases Claude Code says during a turn — hey jarvis, Cooked for 49s, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s">
   </div>
 
   <p class="lede">Claude's replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
