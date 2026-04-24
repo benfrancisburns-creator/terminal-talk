@@ -61,6 +61,7 @@ See `QUEUE.md`. Initial seed: 6 items.
 | 2026-04-24 21:38      | TT2 | 39%  | #1 Bug A + B empirically verified; #7 opened; TT1 cleared to draft |
 | 2026-04-24 21:42      | TT2 | 40%  | TT1 perpetual-motion protocol merged to main; claiming #4 (soak) |
 | 2026-04-24 21:49      | TT2 | 42%  | #7 audit done; #8 opened (toolbar session-IDs missing); partial #4 baseline |
+| 2026-04-24 22:27      | TT1 | 66%  | 5 items reviewed: #1 (e3ca45b), #2 (9f36279), #3 (ce331cc), #6 (766d163), #8 (4d07faf). TT1 queue clean; pre-compact HANDOVER written to `coord/HANDOVER-2026-04-24T222737.md` (local). Ben directed compact. |
 
 ## Pointers for a fresh session
 
