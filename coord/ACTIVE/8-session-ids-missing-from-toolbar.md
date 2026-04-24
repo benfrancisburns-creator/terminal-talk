@@ -118,12 +118,44 @@ Will treat as blocking fix. Happy to add an immediate detection to the `MAP/sess
 page when we have one — this also surfaces `#6 log-audit` (nothing in logs would have told us
 this was happening; Ben only noticed because his labels visibly vanished).
 
+## Tester follow-up — [tt2 · 2026-04-24T22:50:00+01:00]
+
+### Watcher spawned
+
+Script at `scripts/watch-registry.cjs` running in background. Polls `session-colours.json` mtime
+every 500ms, logs to `~/.terminal-talk/queue/_registry-watcher.log`. Captures per-entry diff
+(label / pinned / voice / speech_includes / claude_pid / index / last_seen) on every mutation.
+
+**Already captured (within 2 min of start, app at idle):**
+
+```
+[22:32:48] SNAPSHOT 1 entries size=1245
+[22:32:54] TOUCH (mtime bumped, content identical) size=1245
+[22:32:55] TOUCH (mtime bumped, content identical) size=1245
+```
+
+TOUCH events are the file being re-written with byte-identical content — a save-site is firing
+without any state change. This is consistent with TT1's #6 review finding **G1 — registry writes
+are silent on success** (we can see the file move but not who wrote it or why). Adds evidence
+to the idle-churn angle: if something is re-saving the file several times per minute even when
+the user didn't touch anything, the window for the delete-then-recreate sequence to fire is
+**much wider** than we thought.
+
+### What I'm monitoring for
+
+- **MUTATION** lines with `CHANGED <short>: <before> -> <after>` when Ben's labels/pinned/
+  speech_includes flip from set → empty. That's the smoking gun.
+- **ADDED / REMOVED** pairs separated by seconds — the delete-then-recreate pattern in action.
+- High-frequency TOUCH at the time of a wipe — tells us the wipe is write-site-triggered rather
+  than parse-recovery-triggered.
+
 ## Close-out checklist
 
 - [x] Empirical evidence captured (`.bak1` vs current diff)
 - [x] Bug class identified (same as #1, different file)
-- [ ] TT1 reviews JS-side write paths
-- [ ] Root cause identified
-- [ ] Fix + regression test
+- [x] TT1 reviews JS-side write paths (`4d07faf` — every write-site audited clean)
+- [x] Real-time watcher running (captures next wipe automatically, no Ben action needed)
+- [ ] Root cause identified — awaiting empirical MUTATION capture during a wipe episode
+- [ ] Fix + regression test (TT1 has `SESSION REGISTRY ROUND-TRIP` 4-scenario test staged)
 - [ ] Verify via live install: set label "foo" on a session, do anything that triggers a
       registry write, confirm "foo" survives
