@@ -87,6 +87,7 @@ What TT2 can do autonomously while blocked (non-idle work):
 | 2026-04-24 23:32      | TT2 | post-compact | Devil's-advocate PASS on #1 (3 Q's + 3 latent risks); cleared to merge; #11 settings-panel audit opened + PLAN-SYSTEMATIC-COVERAGE drafted |
 | 2026-04-24 23:40      | TT1 | post-compact | Merged `fix-pass` → `main` @ `ad973d2`; #1/#3/#7 landed; live-install verification pending; claiming #6 Batch 1 (G1+G2+G3) as next fix-drafted slot |
 | 2026-04-24 23:55      | TT1 | post-compact | #6 Batch 1 (G1+G2+G3) drafted on `fix-pass` @ `87c73c1`; 8 new REGISTRY LOGGING tests; 785/785 full suite; TT2 INBOX pinged for Devil's-advocate |
+| 2026-04-25 00:10      | TT1 | post-compact | #11 reviewer pass on `fix-pass` @ `0f14c4f`: F1/F3/F4 confirmed; F2 undercount (7 sub-keys not 6); F5/F6/F7 opened; awaiting Ben F5 resolution + TT2 Batch 1 pass |
 
 ## Pointers for a fresh session
 
