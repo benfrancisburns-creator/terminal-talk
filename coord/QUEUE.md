@@ -32,7 +32,7 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#6 log-audit** — review the last ~2 weeks of user-hit bugs. For each, ask: could we have
   diagnosed it from `~/.terminal-talk/logs/` alone? If not, what log line is missing? Produce a
-  "log coverage gaps" list, fix them. · AXIS=6 · OWNER=TBD · STATUS=queued
+  "log coverage gaps" list, fix them. · AXIS=6 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/6-log-audit.md`
 
 - [ ] **#7 top-level-key-dropped-audit** — the same allowlist-merge bug surfaced on #1 for
   `heartbeat_enabled` applies to `selected_tab` and `tabs_expanded` (validated; see ACTIVE
