@@ -42,6 +42,7 @@ const NEEDS_INSTALL = new Set([
   // than fail with "module missing" / ENOENT for powershell.exe.
   'PS SESSION-IDENTITY BEHAVIOUR',
   'MARK-WORKING HOOK (UserPromptSubmit)',
+  'PS ↔ JS REGISTRY LOCK CROSS-COMPAT',
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -1284,6 +1285,115 @@ describe('REGISTRY LOCK (v0.3.3)', () => {
     withRegistryLock(tmpReg, () => { order.push('a'); });
     withRegistryLock(tmpReg, () => { order.push('b'); });
     assertEqual(order, ['a', 'b']);
+  });
+
+  cleanup();
+});
+
+describe('PS ↔ JS REGISTRY LOCK CROSS-COMPAT', () => {
+  // POST-V4 thread #3. The static tests in "PS SESSION-REGISTRY MODULE
+  // IS CANONICAL" already confirm that session-registry.psm1 exposes
+  // Enter-RegistryLock / Exit-RegistryLock and that all three PS writers
+  // (statusline.ps1, hooks/speak-response.ps1, hooks/speak-on-tool.ps1)
+  // wrap their Read-Update-Save triplet with the pair. What they DON'T
+  // verify is that the sentinel files are actually byte-compatible
+  // between JS and PS — same filename, same staleness constants, same
+  // "this file means locked" semantics. Without that, the two sides
+  // could be using identical-looking-but-non-interoperable mechanisms
+  // and the race the lock was introduced to prevent would still fire.
+  //
+  // Test 1 (static): constants on both sides agree. LockStaleMs /
+  // LockAcquireMs / LockPollMs in the PS module must equal LOCK_STALE_MS
+  // / ACQUIRE_TIMEOUT_MS / POLL_BACKOFF_MS from registry-lock.js —
+  // otherwise a sentinel held by one side could be treated as stale
+  // by the other after a mismatched timeout.
+  //
+  // Test 2 (runtime): PS writes the sentinel, JS tries to acquire, JS
+  // falls through. Proves the sentinel file PS creates is visible to
+  // JS's O_EXCL acquire primitive (i.e. both sides race on the same
+  // inode + same `.lock` filename convention, not some PS-only spot).
+  const { withRegistryLock } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')
+  );
+  const psModulePath = path.join(APP_DIR, 'session-registry.psm1');
+  const tmpReg = path.join(os.tmpdir(), `tt-cross-lock-${Date.now()}.json`);
+  const tmpLock = tmpReg + '.lock';
+  const cleanup = () => {
+    try { fs.unlinkSync(tmpReg); } catch {}
+    try { fs.unlinkSync(tmpLock); } catch {}
+  };
+
+  // PS-safe path escaping: single-quoted PowerShell strings are literal
+  // except for `'` which escapes to `''`. Backslashes stay as-is.
+  const psLiteral = (p) => p.replace(/'/g, "''");
+
+  // -ExecutionPolicy Bypass so the test doesn't silently degrade on
+  // machines where scripts are disabled for the CurrentUser / LocalMachine
+  // scope. Without this, Import-Module throws PSSecurityException,
+  // Enter-RegistryLock stays undefined, $acquired ends up $null (falsy),
+  // and the first test would falsely "pass" by reading TIMED_OUT for the
+  // wrong reason. -NonInteractive keeps PS from prompting for policy.
+  const PS_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive',
+                   '-ExecutionPolicy', 'Bypass', '-Command'];
+
+  const runPs = (script) => {
+    const r = spawnSync('powershell.exe', [...PS_ARGS, script],
+      { encoding: 'utf8', timeout: 10000 });
+    if (r.error) throw new Error(`powershell spawn failed: ${r.error.message}`);
+    if (r.stderr && r.stderr.trim()) {
+      throw new Error(`powershell stderr: ${r.stderr.trim()}`);
+    }
+    return r.stdout.trim();
+  };
+
+  it('PS lock constants match JS registry-lock.js (same sentinel semantics)', () => {
+    // If the PS LockStaleMs / LockAcquireMs / LockPollMs ever drift from
+    // the JS LOCK_STALE_MS / ACQUIRE_TIMEOUT_MS / POLL_BACKOFF_MS, the
+    // two sides would still both write a sentinel but disagree on when
+    // it goes stale, how long to wait for it, and how often to retry.
+    // Then a "held" lock from one side could be stolen by the other
+    // after a mismatched timeout — silently re-opening the race.
+    const { _internals } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')
+    );
+    const out = runPs(
+      `Import-Module '${psLiteral(psModulePath)}' -Force; ` +
+      `$mod = Get-Module session-registry; ` +
+      `& $mod { Write-Output ([string]$script:LockStaleMs + ',' + [string]$script:LockAcquireMs + ',' + [string]$script:LockPollMs) }`
+    );
+    const [psStale, psAcquire, psPoll] = out.split(',').map(Number);
+    assertEqual(psStale,   _internals.LOCK_STALE_MS,       'LockStaleMs ≠ LOCK_STALE_MS');
+    assertEqual(psAcquire, _internals.ACQUIRE_TIMEOUT_MS,  'LockAcquireMs ≠ ACQUIRE_TIMEOUT_MS');
+    assertEqual(psPoll,    _internals.POLL_BACKOFF_MS,     'LockPollMs ≠ POLL_BACKOFF_MS');
+  });
+
+  it('JS withRegistryLock falls through while PS holds a fresh sentinel', () => {
+    cleanup();
+    // PS "holds" by acquiring and exiting without releasing. The
+    // sentinel stays on disk with mtime=now. JS acquire must time out
+    // after 500ms and fall through unlocked (per registry-lock.js
+    // philosophy: "a stuck lock shouldn't freeze the toolbar").
+    const out = runPs(
+      `Import-Module '${psLiteral(psModulePath)}' -Force; ` +
+      `$acquired = Enter-RegistryLock -RegistryPath '${psLiteral(tmpReg)}'; ` +
+      `if ($acquired) { Write-Output 'HELD' } else { Write-Output 'FAILED' }`
+    );
+    if (out !== 'HELD') {
+      throw new Error(`PS acquire did not succeed: stdout=${JSON.stringify(out)}`);
+    }
+    assertEqual(fs.existsSync(tmpLock), true);
+    // Refresh mtime so it's unambiguously fresh (PS startup took
+    // ~1–2s; within stale threshold but closer to the edge).
+    const now = Date.now() / 1000;
+    fs.utimesSync(tmpLock, now, now);
+    // JS wrapper runs fn even when acquire fails; check that the
+    // return value still flows, and — critically — that the sentinel
+    // was NOT released (JS didn't hold it, so the `if (held) release`
+    // guard must have suppressed the unlink).
+    const fallthrough = withRegistryLock(tmpReg, () => 'fell-through');
+    assertEqual(fallthrough, 'fell-through');
+    assertEqual(fs.existsSync(tmpLock), true);
+    cleanup();
   });
 
   cleanup();
@@ -8250,15 +8360,12 @@ describe('EX7e — AudioPlayer', () => {
     // The mic grab happened between clips (audio idle). Any clips
     // that arrived during the window were refused by playPath; now
     // that we're releasing, drain the pending queue so ordering is
-    // preserved.
+    // preserved. Use the real capture flow — systemAutoPause owns
+    // _micCaptured (the mediaSession-owned _systemAutoPaused is
+    // orthogonal and not touched by this path).
     const { player, calls } = makePlayer();
     player.mount();
-    // Force the flag without a live clip (via direct state write —
-    // systemAutoPause itself refuses to arm in this case, but the
-    // mic-watcher wiring can still set _systemAutoPaused separately
-    // in some edge cases). Tested behaviour: regardless of HOW we
-    // got here, resume must drain.
-    player._systemAutoPaused = true;
+    player.systemAutoPause();
     calls.playNext = 0;
     player.systemAutoResume();
     assertEqual(player.isSystemAutoPaused(), false);

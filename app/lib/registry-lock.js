@@ -75,4 +75,4 @@ function withRegistryLock(registryPath, fn) {
   }
 }
 
-module.exports = { withRegistryLock, _internals: { acquire, release, LOCK_STALE_MS, ACQUIRE_TIMEOUT_MS } };
+module.exports = { withRegistryLock, _internals: { acquire, release, LOCK_STALE_MS, ACQUIRE_TIMEOUT_MS, POLL_BACKOFF_MS } };
