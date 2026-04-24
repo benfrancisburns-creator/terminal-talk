@@ -15,46 +15,45 @@
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of Claude Code phrases">
   <style><![CDATA[
-    /* Colour-cycle via CSS custom properties on the root element.
-       Twelve 0.83s stops in a 10s loop: 8 solids for the base palette
-       showcase, then 4 split arrangements to hint at the multi-terminal
-       colour story. Primary and secondary animate on independent
-       keyframes — they're equal during solid stops, diverge on splits. */
+    /* Colour-cycle via two CSS custom properties on the root element.
+       Eight 1.25s stops in a 10s loop, one per base palette colour
+       (matches app/lib/tokens.json BASE_COLOURS). Body rects use
+       currentColor; shadow rects use var(--mascot-shadow) and cycle
+       in sync with a pre-darkened variant of the active colour, so
+       the 3D-pixel drop shadow stays thematically correct on every
+       stop (dark red under red, dark mustard under yellow, etc.). */
     svg {
-      color: #ff5e5e;
-      --mascot-secondary: #ff5e5e;
-      animation: cyclePrimary 10s steps(1, end) infinite,
-                 cycleSecondary 10s steps(1, end) infinite;
+      color: #ffa726;                /* start on orange — matches wallpaper hero */
+      --mascot-shadow: #a85e00;
+      animation: cycleBody 10s steps(1, end) infinite,
+                 cycleShadow 10s steps(1, end) infinite;
     }
 
-    @keyframes cyclePrimary {
-      0%,   8.33%  { color: #ff5e5e; }  /* red */
-      8.33%, 16.66% { color: #ffa726; }  /* orange */
-      16.66%, 25%  { color: #ffd93d; }  /* yellow */
-      25%,   33.33% { color: #4ade80; }  /* green */
-      33.33%, 41.66% { color: #60a5fa; }  /* blue */
-      41.66%, 50%  { color: #ee2bbd; }  /* magenta */
-      50%,   58.33% { color: #c97b50; }  /* brown */
-      58.33%, 66.66% { color: #e0e0e0; }  /* bone */
-      66.66%, 75%  { color: #ff5e5e; }  /* red + green (hsplit) */
-      75%,   83.33% { color: #ffa726; }  /* orange + blue (hsplit) */
-      83.33%, 91.66% { color: #60a5fa; }  /* blue + red (vsplit) */
-      91.66%, 100% { color: #ee2bbd; }  /* magenta + orange (vsplit) */
+    @keyframes cycleBody {
+      0%,   12.5% { color: #ff5e5e; }  /* red */
+      12.5%, 25%  { color: #ffa726; }  /* orange */
+      25%,   37.5% { color: #ffd93d; } /* yellow */
+      37.5%, 50%  { color: #4ade80; }  /* green */
+      50%,   62.5% { color: #60a5fa; } /* blue */
+      62.5%, 75%  { color: #ee2bbd; }  /* magenta */
+      75%,   87.5% { color: #c97b50; } /* brown */
+      87.5%, 100% { color: #e0e0e0; }  /* bone */
     }
 
-    @keyframes cycleSecondary {
-      0%,   8.33%  { --mascot-secondary: #ff5e5e; }
-      8.33%, 16.66% { --mascot-secondary: #ffa726; }
-      16.66%, 25%  { --mascot-secondary: #ffd93d; }
-      25%,   33.33% { --mascot-secondary: #4ade80; }
-      33.33%, 41.66% { --mascot-secondary: #60a5fa; }
-      41.66%, 50%  { --mascot-secondary: #ee2bbd; }
-      50%,   58.33% { --mascot-secondary: #c97b50; }
-      58.33%, 66.66% { --mascot-secondary: #e0e0e0; }
-      66.66%, 75%  { --mascot-secondary: #4ade80; }  /* red/GREEN split */
-      75%,   83.33% { --mascot-secondary: #60a5fa; }  /* orange/BLUE */
-      83.33%, 91.66% { --mascot-secondary: #ff5e5e; }  /* blue/RED */
-      91.66%, 100% { --mascot-secondary: #ffa726; }  /* magenta/ORANGE */
+    @keyframes cycleShadow {
+      /* Each stop is a hand-picked darker tint of the body colour,
+         NOT a mechanical brightness() filter — the reference
+         wallpaper's shadow reads as dark-brown-orange under orange,
+         dark-mustard under yellow, etc. Keeps the retro feel
+         consistent across the full palette. */
+      0%,   12.5% { --mascot-shadow: #9c2020; }  /* dark red */
+      12.5%, 25%  { --mascot-shadow: #a85e00; }  /* dark orange-brown */
+      25%,   37.5% { --mascot-shadow: #8c6f00; } /* dark mustard */
+      37.5%, 50%  { --mascot-shadow: #166534; }  /* dark green */
+      50%,   62.5% { --mascot-shadow: #1e40af; } /* dark blue */
+      62.5%, 75%  { --mascot-shadow: #86188f; }  /* dark magenta */
+      75%,   87.5% { --mascot-shadow: #5d2f14; } /* dark brown */
+      87.5%, 100% { --mascot-shadow: #6b7280; }  /* slate (bone shadow) */
     }
 
     /* Speech-bubble phrase crossfade. Seven phrases sharing one 10s
@@ -82,75 +81,110 @@
     /* Respect the user's motion preference — GitHub respects these
        preferences in README rendering on many platforms. */
     @media (prefers-reduced-motion: reduce) {
-      svg { animation: none; color: #ff5e5e; --mascot-secondary: #ff5e5e; }
+      svg { animation: none; color: #ffa726; --mascot-shadow: #a85e00; }
       .phrase { animation: none; }
       .phrase.p1 { opacity: 1; }
     }
   ]]></style>
 
   <!-- Mascot, positioned on the left. Geometry mirrors the live toolbar's
-       #scrubberMascot rectangles exactly; only the outer transform
-       changes. Primary (top half + ear tops) uses currentColor so the
-       keyframed color propagates. Secondary (bottom half + ear
-       bottoms + legs) uses the mascot-secondary custom property. -->
-  <g transform="translate(30, 30)">
-    <!-- Body top -->
-    <rect x="13"  y="0"  width="114" height="44" fill="currentColor"/>
-    <!-- Body bottom -->
-    <rect x="13"  y="44" width="114" height="44" fill="var(--mascot-secondary)"/>
-    <!-- Left ear -->
-    <rect x="0"   y="36" width="13"  height="8"  fill="currentColor"/>
-    <rect x="0"   y="44" width="13"  height="18" fill="var(--mascot-secondary)"/>
-    <!-- Right ear -->
-    <rect x="127" y="36" width="13"  height="8"  fill="currentColor"/>
-    <rect x="127" y="44" width="13"  height="18" fill="var(--mascot-secondary)"/>
-    <!-- Four legs -->
-    <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
-    <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
-    <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
-    <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-secondary)"/>
-    <!-- Eyes -->
-    <rect x="36"  y="26" width="16"  height="16" fill="#3a3a3a"/>
-    <rect x="88"  y="26" width="16"  height="16" fill="#3a3a3a"/>
-    <!-- Smile -->
-    <rect x="44"  y="58" width="8"   height="6"  fill="#3a3a3a"/>
-    <rect x="88"  y="58" width="8"   height="6"  fill="#3a3a3a"/>
-    <rect x="44"  y="64" width="52"  height="6"  fill="#3a3a3a"/>
+       #scrubberMascot rectangles. Two layers:
+         1. SHADOW layer, same shapes offset (4, 4) down-right, filled
+            with the mascot-shadow custom property. Rendered first so
+            the body overlays it, leaving only the bottom-right offset
+            visible as the classic 8-bit 3D pixel drop shadow seen in
+            the wallpaper hero (docs/assets/wallpaper/).
+         2. BODY layer, same shapes filled with currentColor, which
+            animates through the 8 palette colours.
+       Face (eyes + smile) sits above both, always black. -->
+  <g transform="translate(30, 28)">
+    <!-- 1. Shadow layer (rendered behind). -->
+    <g transform="translate(4, 4)">
+      <rect x="13"  y="0"  width="114" height="88" fill="var(--mascot-shadow)"/>
+      <rect x="0"   y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="127" y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+    </g>
+    <!-- 2. Body layer (rendered on top). Single-colour body matching
+         the reference image — no top/bottom split here; the in-app
+         mascot handles multi-session splits separately via its own
+         mascot-secondary variable. -->
+    <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
+    <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="19"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="46"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="79"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="106" y="88" width="16"  height="32" fill="currentColor"/>
+    <!-- Eyes + smile — always dark charcoal so they read on any body
+         colour (including bone). -->
+    <rect x="36"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="88"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="44"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="88"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
   </g>
 
-  <!-- Speech bubble. Rounded-rect body + triangular tail pointing at
-       the mascot. Body is a soft dark grey so the white phrase text
-       reads at any palette colour. -->
-  <g transform="translate(205, 50)">
-    <rect x="0" y="0" width="180" height="60" rx="10" ry="10"
-          fill="#181a20" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
-    <!-- Tail -->
-    <polygon points="-10,28 0,22 0,38" fill="#181a20" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
-    <polygon points="-9,28 1,23 1,37" fill="#181a20"/>
+  <!-- Speech bubble — pixel-art retro style matching the wallpaper hero
+       (docs/assets/wallpaper/terminal-talk-wallpaper.png):
+         - solid white interior
+         - chunky stepped corners (no smooth rounding)
+         - offset dark drop-shadow down-right, implying an 8-bit "3D
+           button" raised look
+         - chisel-cut triangular tail pointing at the mascot.
+       shape-rendering="crispEdges" is already set on the root <svg>,
+       so each rect / path edge snaps to the pixel grid rather than
+       anti-aliasing — crucial for the stepped-corner look. -->
+  <g transform="translate(205, 48)">
+    <!-- Drop shadow: same stepped shape as the main body, offset down-
+         right by 4 px. Sits behind everything so the main bubble punches
+         out a white silhouette with a solid dark step on the bottom-right. -->
+    <path d="M 6,4 L 176,4 L 176,6 L 178,6 L 178,8 L 180,8 L 180,60 L 178,60 L 178,62 L 176,62 L 176,64 L 6,64 L 6,62 L 4,62 L 4,60 L 2,60 L 2,8 L 4,8 L 4,6 L 6,6 Z"
+          fill="#1a1a1a"/>
 
-    <!-- Seven phrases crossfading. x=90, y=36 centres them both axes.
-         Mixed casing (lowercase wake word, Title-Case narrations) is
-         intentional — matches what the app actually emits. -->
-    <text class="phrase p1" x="90" y="36" text-anchor="middle"
+    <!-- Tail shadow (the dark stepped arrow). -->
+    <path d="M -6,32 L 0,26 L 0,42 L -4,42 Z" fill="#1a1a1a"/>
+
+    <!-- Main bubble body: stepped-corner path. 2 px notches at all four
+         corners create the pixel-stair silhouette. Dark stroke + white
+         fill; stroke-width 2 gives a chunky outline. -->
+    <path d="M 4,0 L 172,0 L 172,2 L 174,2 L 174,4 L 176,4 L 176,56 L 174,56 L 174,58 L 172,58 L 172,60 L 4,60 L 4,58 L 2,58 L 2,56 L 0,56 L 0,4 L 2,4 L 2,2 L 4,2 Z"
+          fill="#ffffff" stroke="#1a1a1a" stroke-width="2"/>
+
+    <!-- Tail body: chisel-cut triangle with pixel-stepped outline. -->
+    <path d="M -8,30 L 1,22 L 1,38 L -2,38 Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="miter"/>
+    <!-- Whitewash where the tail meets the bubble border so the join
+         doesn't double-stroke a visible dark line up the bubble's left edge. -->
+    <rect x="0" y="24" width="2" height="12" fill="#ffffff"/>
+
+    <!-- Seven phrases crossfading. Centred at (88, 36) to sit inside
+         the slightly-asymmetric stepped rect. Branding phrase HEY JARVIS
+         uppercased to match the wallpaper; runtime narrations keep
+         mixed casing ("Reading foo.py", "Cooked for 49s") because
+         that's literally what Claude Code emits. -->
+    <text class="phrase p1" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">hey jarvis</text>
-    <text class="phrase p2" x="90" y="36" text-anchor="middle"
+          font-size="16" font-weight="700" fill="#1a1a1a" letter-spacing="1">HEY JARVIS</text>
+    <text class="phrase p2" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Cooked for 49s</text>
-    <text class="phrase p3" x="90" y="36" text-anchor="middle"
+          font-size="14" font-weight="700" fill="#1a1a1a">Cooked for 49s</text>
+    <text class="phrase p3" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Reading foo.py</text>
-    <text class="phrase p4" x="90" y="36" text-anchor="middle"
+          font-size="14" font-weight="700" fill="#1a1a1a">Reading foo.py</text>
+    <text class="phrase p4" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Moonwalking</text>
-    <text class="phrase p5" x="90" y="36" text-anchor="middle"
+          font-size="14" font-weight="700" fill="#1a1a1a">Moonwalking</text>
+    <text class="phrase p5" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Running npm test</text>
-    <text class="phrase p6" x="90" y="36" text-anchor="middle"
+          font-size="13" font-weight="700" fill="#1a1a1a">Running npm test</text>
+    <text class="phrase p6" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Brewed for 8m 4s</text>
-    <text class="phrase p7" x="90" y="36" text-anchor="middle"
+          font-size="14" font-weight="700" fill="#1a1a1a">Brewed for 8m 4s</text>
+    <text class="phrase p7" x="88" y="36" text-anchor="middle"
           font-family="ui-monospace, Menlo, Consolas, monospace"
-          font-size="16" fill="#e0e0e0">Sautéed for 1m 0s</text>
+          font-size="13" font-weight="700" fill="#1a1a1a">Sautéed for 1m 0s</text>
   </g>
 </svg>
