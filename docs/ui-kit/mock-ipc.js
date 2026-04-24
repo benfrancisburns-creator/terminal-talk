@@ -550,11 +550,18 @@
   // mock-ipc.js runs BEFORE renderer.js (ordering in index.html).
   // Renderer.js calls getQueue() on boot, so the initial state lands
   // through that path — the event fire is for SUBSEQUENT updates.
-  window.addEventListener('load', () => {
+  //
+  // `load` has often already fired by the time mock-ipc.js runs — the
+  // kit-bootstrap flow is async (fetch app-mirror/index.html → splice
+  // body → load scripts sequentially), so window.load can complete
+  // before this script even parses. addEventListener on an event
+  // that's already fired never runs. Gate on document.readyState and
+  // run the boot actions immediately when we're late; otherwise wait
+  // for load as before. Without this, seed.panelOpen silently no-ops
+  // and screenshots of the settings-panel seeds render the collapsed
+  // toolbar instead of the open panel.
+  const runBoot = () => {
     mountChrome();
-    // Nudge once after boot so any hydration the renderer did is re-synced
-    // with our state — covers the race where renderer's initial getQueue()
-    // resolved before our listeners were wired.
     setTimeout(notifyQueue, 50);
 
     if (seed.panelOpen) {
@@ -573,5 +580,14 @@
         if (chevron) chevron.click();
       }, 300);
     }
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    // Late-load path: window.load has already fired; run immediately on
+    // next microtask so the current synchronous init (window.api wiring)
+    // finishes before renderer sees a queue notify.
+    setTimeout(runBoot, 0);
+  } else {
+    window.addEventListener('load', runBoot);
+  }
 })();

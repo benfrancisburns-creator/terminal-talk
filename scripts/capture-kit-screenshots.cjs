@@ -105,7 +105,12 @@ async function capture() {
   // grows for the panel-open seeds; Playwright's `fullPage` option
   // renders just the content's bounding box.
   const page = await browser.newPage({
-    viewport: { width: 720, height: 800 },
+    // Height 1600 gives the settings panel (~900–1100 px tall when fully
+    // expanded with OpenAI + Sessions sections) room to render without
+    // overflowing the viewport — Playwright's bounding-box API returns
+    // 0-height rects for elements past the visible viewport, which
+    // previously chopped panel screenshots down to the toolbar alone.
+    viewport: { width: 720, height: 1600 },
     deviceScaleFactor: 2,   // 2× retina so screenshots look crisp on GitHub
   });
 
@@ -120,19 +125,29 @@ async function capture() {
       // mascot rAF).
       await page.waitForSelector('#bar', { state: 'visible', timeout: 5000 });
       await page.waitForTimeout(800);
-      // Screenshot the bar wrapper (covers both collapsed + panel-open
-      // states without capturing the purple kit-chrome background).
-      const bar = page.locator('#bar');
-      const box = await bar.boundingBox();
-      if (!box) throw new Error('#bar has no bounding box');
+      // Screenshot #bar + #panel as a single region. The settings panel
+      // is a SIBLING of #bar (not a child — see app/index.html), so
+      // clipping to #bar alone silently drops the whole panel whenever
+      // panelOpen is set on the seed. Compute the union of both boxes
+      // and screenshot that; for non-panel seeds, #panel is display:none
+      // and has no bounding box, so we fall back to #bar alone.
+      const barBox   = await page.locator('#bar').boundingBox();
+      if (!barBox) throw new Error('#bar has no bounding box');
+      const panelBox = await page.locator('#panel').boundingBox();
+      const x1 = Math.min(barBox.x, panelBox ? panelBox.x : barBox.x);
+      const y1 = Math.min(barBox.y, panelBox ? panelBox.y : barBox.y);
+      const x2 = Math.max(barBox.x + barBox.width,
+                          panelBox ? panelBox.x + panelBox.width : barBox.x + barBox.width);
+      const y2 = Math.max(barBox.y + barBox.height,
+                          panelBox ? panelBox.y + panelBox.height : barBox.y + barBox.height);
       // Pad 10px around so the bar's glow shadow isn't clipped.
       await page.screenshot({
         path: path.join(OUT_DIR, file),
         clip: {
-          x: Math.max(0, box.x - 10),
-          y: Math.max(0, box.y - 10),
-          width: box.width + 20,
-          height: box.height + 20,
+          x: Math.max(0, x1 - 10),
+          y: Math.max(0, y1 - 10),
+          width: (x2 - x1) + 20,
+          height: (y2 - y1) + 20,
         },
       });
       console.log(`  ✓ ${file.padEnd(40)} ← seed=${seed}`);
