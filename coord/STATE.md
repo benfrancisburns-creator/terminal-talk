@@ -90,6 +90,7 @@ What TT2 can do autonomously while blocked (non-idle work):
 | 2026-04-25 00:10      | TT1 | post-compact | #11 reviewer pass on `fix-pass` @ `0f14c4f`: F1/F3/F4 confirmed; F2 undercount (7 sub-keys not 6); F5/F6/F7 opened; awaiting Ben F5 resolution + TT2 Batch 1 pass |
 | 2026-04-25 00:55      | TT1 | post-compact | Batch 1 MERGED to main @ `8bc8a28` (TT2 DA PASS 00:35); #11 fix drafted on `fix-pass` @ `949296f` closing F1+F2+F3+F5+F6; 789/789; TT2 INBOX pinged |
 | 2026-04-25 01:05      | TT1 | post-compact | TT2 DA'ing #11; #15 reviewer pre-read committed @ `47ac8b7` (4 corrections + 2 extra tests for eventual fix draft); queued behind #11 merge |
+| 2026-04-25 01:35      | TT1 | post-compact | #11 MERGED to main @ `1df7245` (TT2 DA PASS 01:50); #15 heartbeat-voice-respect-provider drafted on `fix-pass` @ `239a505`; 795/795 (+5 new); TT2 INBOX pinged for DA |
 
 ## Pointers for a fresh session
 
