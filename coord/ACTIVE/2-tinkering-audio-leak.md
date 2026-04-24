@@ -1,7 +1,7 @@
 # ACTIVE #2 — spinner-verb audio leaks into transcript narration
 
-- **Status:** in-review
-- **Owner:** tt1
+- **Status:** RECOMMENDED CLOSE — Path C was the real bug, already fixed; Path A is rare race; Path B is by-design footer
+- **Owner:** tt2 (code investigation complete)
 - **Axes in play:** 1 (correctness), 6 (observability)
 - **MAP page:** [`MAP/heartbeat-narration.md`](../MAP/heartbeat-narration.md)
 - **Reported by:** Ben, live use, 2026-04-24
@@ -223,12 +223,76 @@ NOT quiet-and-ephemeral.)*
 - **Tests at silent-regression risk:** *(to be filled)*
 - **Settings / flag files possibly affected:** *(to be filled)*
 
-## Causality
+## Causality — [tt2 · 2026-04-25T02:20 — CODE-INVESTIGATION RESULT]
 
-- **Root cause:** *(not symptom)*
-- **How did this escape prior review?**
-- **Is the fix addressing the cause or the symptom?**
-- **Smallest fix that addresses the cause:**
+Traced both TT1-proposed paths plus the Path C (dictation overlap) scenario Ben originally
+experienced. Conclusion: **#2 should close as fixed-by-Path-C-mic-pause-work + Path A is a
+narrow race + Path B is by-design footer (opt-out candidate).**
+
+### Path A — heartbeat clip leaks during body playback
+
+**Code trace:**
+- `app/lib/heartbeat.js:147` — `if (isQueueActive) return { type: 'reset-silent', … };`
+- `app/renderer.js:160-169` — `isQueueActive()` returns true if audio is playing OR there
+  are fresh-unheard-unmuted queue items within the last 60 s.
+
+So: once a body clip lands in the queue (isQueueActive=true), decideHeartbeatAction resets
+the silent timer. Heartbeat won't emit again until 5 s of continuous silence.
+
+**Race window:** heartbeat tick fires between (a) user pressing Enter and (b) body clip
+arriving. If the user's last-seen clip was >60 s ago (isQueueActive=false) AND silence >
+initialMs (5 s) AND last-heartbeat > intervalMs (8 s), `decideHeartbeatAction` emits.
+
+This produces ONE heartbeat clip (at 45% volume, H-prefix) that plays just BEFORE the body
+clip. NOT during body playback — by that point, isQueueActive=true and heartbeat is gated.
+
+**Severity:** low. One quiet "Tinkering" before body audio arrives is tolerable UX. If Ben
+observed it as disruptive, the fix is either:
+- Extend `ACTIVE_FRESH_MS` gating to "any queue activity within last 10 s" (closes race)
+- Gate heartbeat on "time since last user-input" (needs new IPC to track Enter-press)
+
+### Path B — end-of-turn footer "Tinkered for X seconds"
+
+**Code trace:**
+- `app/synth_turn.py:1186-1244` — `PAST_TENSE_VERBS` + `format_elapsed_phrase` build a
+  body-text clip like `"Tinkered for 45 seconds"` appended at Stop hook.
+- Plays at full volume as body audio. By design (mirrors Claude Code's terminal spinner
+  "Cooked for 49s" footer).
+
+**This is the design, not a bug.** If Ben wants to turn it off, that's a feature request
+→ new QUEUE item: "add `playback.footer_enabled` toggle". Not #2's scope.
+
+### Path C — heartbeat during dictation (Wispr/mic-captured state)
+
+**This was the actual bug Ben reported.** Fix shipped 2026-04-23 via HB4 split into
+`_micCaptured` + `_systemAutoPaused` two-flag model. Verified clean in Surface D audit
+(#17).
+
+**Ben confirmed** during this session: *"Path C was a problem I had but then we fixed
+that. Now everything's paused while I'm dictating, which is great."*
+
+### "Tinkering" vs "Tinkered" — present vs past
+
+Ben's original report used "Tinkering" (present continuous). But:
+- **Present-continuous verbs** (`Tinkering`, `Moonwalking`) only come from
+  `heartbeat.js SPINNER_VERBS` on the JS side, played as low-volume H-prefix clips.
+- **Past-tense verbs** (`Tinkered`, `Moonwalked`) only come from
+  `synth_turn.py PAST_TENSE_VERBS` in the end-of-turn footer, played at full volume.
+
+Python never synthesises present-continuous verbs. JS never synthesises past-tense verbs.
+The two systems are cleanly separated. So:
+- "Tinkering at full volume during body" is IMPOSSIBLE via any normal code path.
+- "Tinkering at low volume between turns" is expected heartbeat behaviour.
+- "Tinkered for Xs at end of turn" is the by-design footer.
+
+### Final diagnosis
+
+- **Root cause (of original #2 report):** Path C mic-pause. Fixed. Verified.
+- **Is there anything else observably broken?** No. Path A is a narrow race with low-
+  severity output. Path B is by-design.
+- **Smallest fix:** none required. Close #2. Open a follow-up (optional) to
+  add a `playback.footer_enabled` toggle if Ben wants to silence the end-of-turn footer,
+  and optionally tighten Path A's race window.
 
 ## Devil's advocate — [OTHER TERMINAL · HH:MM]
 

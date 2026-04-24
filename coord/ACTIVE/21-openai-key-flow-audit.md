@@ -127,5 +127,8 @@ sweep `.enc` once per boot. Non-urgent.
 - [x] 8 invariants verified (I1-I8)
 - [x] 2 minor findings (K-1 narrow race, K-2 disk-clutter)
 - [x] No BROKEN findings
-- [ ] Decide on K-1 fix: accept as known risk vs apply flag-consume-first reorder
-- [ ] Decide on K-2 cleanup: accept as-is vs opportunistic delete
+- [x] **K-1 FIX APPLIED 2026-04-25T02:30** — `app/main.js:1654-1671` reordered so flag
+      consume fires BEFORE `apiKeyStore.set('')`. Narrows the ~5 ms race to effectively
+      nil on happy path; full race-close would need compare-and-swap. Per Ben's
+      B-3 decision.
+- [ ] K-2 cleanup (disk-clutter) — accept as-is for now; opportunistic delete deferred.

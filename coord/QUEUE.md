@@ -11,9 +11,13 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 - [ ] **#1 heartbeat-revert** — toggle heartbeat narration OFF in Settings; ~30 min later it's back
   ON when you re-open Settings. **User-hit regression.** · AXIS=1,2 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/1-heartbeat-revert.md`
 
-- [ ] **#2 tinkering-audio-leak** — spinner verbs ("Tinkering", "Moonwalking", "Fingling", …) are
-  audibly leaking into real transcript narration instead of being ephemeral spinner audio.
-  **User-hit.** · AXIS=1,6 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/2-tinkering-audio-leak.md`
+- [x] **#2 tinkering-audio-leak** — RECOMMEND CLOSE (2026-04-25). Code investigation:
+  Path C (heartbeat during Wispr dictation) was the actual bug; fixed 2026-04-23 via HB4
+  two-flag split (verified in Surface D audit #17). Path A (heartbeat just before body
+  arrives) is a narrow race with low-severity output. Path B (footer "Tinkered for Xs")
+  is by-design. Python never synths present-continuous verbs; JS never synths past-tense
+  — impossible to hear "Tinkering" at full body volume via any normal path.
+  · AXIS=1,6 · OWNER=tt2 · STATUS=recommend-close · ACTIVE=`ACTIVE/2-tinkering-audio-leak.md`
 
 - [ ] **#3 settings-persistence-full-audit** — systematic pass: every toggle, every slider, every
   text field in the Settings panel. Toggle · reload window · restart app · reboot PC. Verify state
@@ -123,6 +127,17 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   `'all'` provides safe fallback. Deeper renderDots filter-bucket audit deferred (separate
   surface not in PLAN). · AXIS=1,2 · OWNER=tt2 · STATUS=audit-done
   ACTIVE=`ACTIVE/23-tab-filter-audit.md`
+
+- [ ] **#24 tool_calls-global-checkbox** (Ben B-2 decision) — add a 7th global Settings
+  checkbox for `speech_includes.tool_calls`. Mirrors the existing 6 checkboxes so users
+  don't have to toggle it per-session. TT1 lane when #15/#16 land. · AXIS=1 · OWNER=TBD
+  STATUS=queued
+
+- [ ] **#25 openai-section-collapse-default** (Ben B-4 decision) — OpenAI Settings section
+  should default to collapsed on every panel open, regardless of whether it was expanded
+  during a previous panel session. Current `_openaiCollapseDecided` flag in settings-form.js
+  is per-instance; need to reset it on every panel open (or remove it) so the collapse
+  decision re-applies every time. · AXIS=1 · OWNER=TBD · STATUS=queued
 
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
