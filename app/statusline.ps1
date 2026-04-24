@@ -166,7 +166,12 @@ try {
     $assignments = Read-Registry -RegistryPath $registryPath
     $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
                                      -SessionId $sessionId -ClaudePid $claudePid -Now $now
-    Save-Registry -RegistryPath $registryPath -Assignments $assignments
+    # #6 G1 + G3 — attribute every save + log to _hook.log so wipe-class
+    # bugs (#8) have a writer-by-writer trail. Log path mirrors the
+    # convention used by the hook scripts.
+    $registryLogPath = Join-Path $env:USERPROFILE '.terminal-talk\queue\_hook.log'
+    Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                  -Caller 'statusline' -LogPath $registryLogPath
 } finally {
     if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }

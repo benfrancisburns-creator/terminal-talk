@@ -1251,7 +1251,7 @@ function loadAssignments() {
         // Also write back to primary so subsequent readers (PS
         // statusline, hook scripts) see the recovered state without
         // having to implement the same backup-walk logic.
-        writeAssignments(b, { skipBackup: true });
+        writeAssignments(b, { skipBackup: true, caller: 'backup-recovery' });
         return b;
       }
     }
@@ -1259,8 +1259,38 @@ function loadAssignments() {
   return primary;
 }
 
+// #6 G1 + G3 — compute the registry-write delta so every successful save
+// can attribute who wrote what to the log. Best-effort: a missing or
+// malformed registry is treated as empty prior state. Returns
+// { count, added:[...], removed:[...], changed:[...] } — short-IDs only.
+function _registryWriteDelta(newAll) {
+  let oldAll = {};
+  try {
+    let raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
+      oldAll = parsed.assignments;
+    }
+  } catch { /* missing or parse-failure — treat prior state as empty */ }
+  const oldKeys = Object.keys(oldAll);
+  const newKeys = Object.keys(newAll);
+  const newSet = new Set(newKeys);
+  const oldSet = new Set(oldKeys);
+  const added = newKeys.filter((k) => !oldSet.has(k));
+  const removed = oldKeys.filter((k) => !newSet.has(k));
+  const changed = [];
+  for (const k of newKeys) {
+    if (!oldSet.has(k)) continue;
+    if (JSON.stringify(oldAll[k]) !== JSON.stringify(newAll[k])) changed.push(k);
+  }
+  return { count: newKeys.length, added, removed, changed };
+}
+
 function writeAssignments(all, opts) {
   const skipBackup = !!(opts && opts.skipBackup);
+  const caller = (opts && opts.caller) || 'unknown';
+  const delta = _registryWriteDelta(all);
   try {
     // Rotate backups: .bak2 → .bak3, .bak1 → .bak2, current → .bak1.
     // Then write the new primary atomically. Order matters — we only
@@ -1280,8 +1310,9 @@ function writeAssignments(all, opts) {
     const tmp = COLOURS_REGISTRY + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
     fs.renameSync(tmp, COLOURS_REGISTRY);
+    diag(`write-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
     return true;
-  } catch (e) { diag(`writeAssignments fail: ${e.message}`); return false; }
+  } catch (e) { diag(`writeAssignments fail from=${caller}: ${e.message}`); return false; }
 }
 
 function isPidAlive(pid) {
@@ -1365,7 +1396,7 @@ function ensureAssignmentsForFiles(files) {
     diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason})`);
   }
 
-  if (changed) writeAssignments(all);
+  if (changed) writeAssignments(all, { caller: 'ensure-for-files' });
   return all;
 }
 
@@ -1414,14 +1445,21 @@ function allowMutation(name) {
   return false;
 }
 
-function saveAssignments(all) {
+function saveAssignments(all, caller = 'unknown') {
+  // #6 G1 + G3 — delta + caller attribution on every registry save.
+  // Prior behaviour was silent-on-success: any label/pinned/includes
+  // wipe (see #8) was invisible in `_toolbar.log` unless the user
+  // noticed the UI regression. New log line is emitted WITHIN the lock
+  // so entries appear serialised against concurrent writers.
+  const delta = _registryWriteDelta(all);
   return withRegistryLock(COLOURS_REGISTRY, () => {
     try {
       const tmp = COLOURS_REGISTRY + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
       fs.renameSync(tmp, COLOURS_REGISTRY);
+      diag(`save-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
       return true;
-    } catch (e) { diag(`saveAssignments fail: ${e.message}`); return false; }
+    } catch (e) { diag(`saveAssignments fail from=${caller}: ${e.message}`); return false; }
   });
 }
 

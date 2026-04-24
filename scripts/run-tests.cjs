@@ -1555,6 +1555,175 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
   });
 });
 
+describe('REGISTRY LOGGING (#6 Batch 1 — G1 G2 G3)', () => {
+  // Per #6 log-audit: registry writes used to be silent on success and
+  // the update-config success log was dishonest about dropped keys.
+  // Each fix gets both a structural source-grep (cheap, fails fast if
+  // someone rewrites the log line) and, where the factory deps allow,
+  // a unit-level assertion that the behaviour holds end-to-end.
+  const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8');
+  const psRegistrySrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8');
+
+  it('G1 — main.js saveAssignments logs on success with caller + delta fields', () => {
+    if (!/function\s+saveAssignments\s*\(\s*all\s*,\s*caller\s*=/.test(mainJsSrc)) {
+      throw new Error('saveAssignments signature must accept (all, caller = ...) — see #6 G1');
+    }
+    if (!/save-registry ok from=\$\{caller\}\s+keys=\$\{delta\.count\}/.test(mainJsSrc)) {
+      throw new Error('saveAssignments success path must emit `save-registry ok from=<caller> keys=<n>` — see #6 G1');
+    }
+    if (!/added=\[/.test(mainJsSrc) || !/removed=\[/.test(mainJsSrc) || !/changed=\[/.test(mainJsSrc)) {
+      throw new Error('save-registry log must include added/removed/changed short-ID arrays — see #6 G1');
+    }
+  });
+
+  it('G1 — main.js writeAssignments accepts opts.caller + logs on success', () => {
+    if (!/writeAssignments\s*\(\s*all\s*,\s*opts\s*\)/.test(mainJsSrc)) {
+      throw new Error('writeAssignments signature unchanged from (all, opts) — see #6 G1');
+    }
+    if (!/const\s+caller\s*=\s*\(opts\s*&&\s*opts\.caller\)\s*\|\|\s*'unknown'/.test(mainJsSrc)) {
+      throw new Error('writeAssignments must read caller from opts.caller with default unknown — see #6 G1');
+    }
+    if (!/write-registry ok from=\$\{caller\}/.test(mainJsSrc)) {
+      throw new Error('writeAssignments success path must emit `write-registry ok from=<caller>` — see #6 G1');
+    }
+  });
+
+  it('G3 — every saveAssignments call site passes a caller string', () => {
+    // Zero call sites without a caller arg. Match `saveAssignments(ident)` (1 arg)
+    // as the failure mode.
+    const bareCalls = [];
+    const rx = /\bsaveAssignments\s*\(([^)]*)\)/g;
+    let m;
+    while ((m = rx.exec(ipcSrc)) !== null) {
+      const args = m[1].trim();
+      // 1-arg call (no comma) → missing caller. Skip multiline defs.
+      if (args && !args.includes(',')) bareCalls.push(args);
+    }
+    if (bareCalls.length > 0) {
+      throw new Error(`saveAssignments callsites missing caller string: ${bareCalls.join(' | ')} — see #6 G3`);
+    }
+  });
+
+  it('G3 — every writeAssignments call site in main.js passes opts.caller', () => {
+    // Find `writeAssignments(<args>)` and filter function-definition line.
+    const rx = /\bwriteAssignments\s*\(([^)]*)\)/g;
+    const bareCalls = [];
+    let m;
+    while ((m = rx.exec(mainJsSrc)) !== null) {
+      const args = m[1];
+      if (args.startsWith('all, opts')) continue;  // function definition
+      if (!/caller:/.test(args)) bareCalls.push(args);
+    }
+    if (bareCalls.length > 0) {
+      throw new Error(`writeAssignments callsites missing caller in opts: ${bareCalls.join(' | ')} — see #6 G3`);
+    }
+  });
+
+  it('G2 — update-config success log emits applied + dropped key arrays', () => {
+    if (!/applied=\[\$\{appliedKeys\.join/.test(ipcSrc)) {
+      throw new Error('update-config log must emit applied=[<keys>] — see #6 G2');
+    }
+    if (!/dropped=\[\$\{droppedKeys\.join/.test(ipcSrc)) {
+      throw new Error('update-config log must emit dropped=[<keys>] — see #6 G2');
+    }
+    // And must NOT still emit the dishonest pre-fix `saved=${ok}, edge_response=` line.
+    if (/saved=\$\{ok\},\s*edge_response=/.test(ipcSrc)) {
+      throw new Error('update-config still has the pre-fix dishonest success line — remove it, #6 G2');
+    }
+  });
+
+  it('G2 — update-config handler flags unknown partial keys as dropped (end-to-end)', () => {
+    const { createIpcHandlers } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+    );
+    const capturedLines = [];
+    const handlers = {};
+    const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
+    const curCfg = {
+      voices: {}, hotkeys: {}, playback: {}, speech_includes: {},
+      heartbeat_enabled: true, selected_tab: 'all', tabs_expanded: false,
+      openai_api_key: null,
+    };
+    createIpcHandlers({
+      ipcMain,
+      diag: (line) => capturedLines.push(line),
+      callEdgeTTS: () => {},
+      getAppVersion: () => '0.0.0-test',
+      getCFG: () => curCfg,
+      loadAssignments: () => ({}),
+      getQueueFiles: () => [],
+      getQueueAllPaths: () => [],
+      ensureAssignmentsForFiles: () => {},
+      shortFromFile: () => null,
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: os.tmpdir(),
+      getWin: () => null,
+      saveAssignments: () => true,
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      validShort: () => true,
+      validVoice: () => true,
+      sanitiseLabel: (s) => s,
+      ALLOWED_INCLUDE_KEYS: new Set(),
+      setCFG: () => {},
+      saveConfig: () => true,
+      apiKeyStore: { set: () => {}, get: () => null },
+      redactForLog: (x) => x,
+      setApplyingDock: () => {},
+      testMode: true,
+      QUEUE_DIR: os.tmpdir(),
+      isPathInside: () => true,
+      getWatchdog: () => null,
+      getWatchdogIntervalMs: () => 0,
+    }).register();
+    // Known key survives → applied. Unknown key → dropped.
+    handlers['update-config']({}, { heartbeat_enabled: false, foo_bar: 42 });
+    const okLine = capturedLines.find((l) => l.startsWith('update-config OK:'));
+    if (!okLine) throw new Error('no update-config OK diag line captured');
+    if (!/applied=\[[^\]]*heartbeat_enabled/.test(okLine)) {
+      throw new Error(`applied=[...] must contain heartbeat_enabled — got: ${okLine}`);
+    }
+    if (!/dropped=\[[^\]]*foo_bar/.test(okLine)) {
+      throw new Error(`dropped=[...] must contain foo_bar — got: ${okLine}`);
+    }
+  });
+
+  it('G1 + G3 — PS Save-Registry exposes -Caller + -LogPath params and logs both paths', () => {
+    if (!/\[string\]\$Caller\s*=\s*'unknown'/.test(psRegistrySrc)) {
+      throw new Error('Save-Registry must expose -Caller parameter with default unknown — see #6 G1/G3');
+    }
+    if (!/\[string\]\$LogPath\s*=\s*''/.test(psRegistrySrc)) {
+      throw new Error('Save-Registry must expose -LogPath parameter — see #6 G1');
+    }
+    if (!/save-registry ok from=\$Caller keys=\$keys/.test(psRegistrySrc)) {
+      throw new Error('Save-Registry success path must emit `save-registry ok from=$Caller keys=$keys` — see #6 G1');
+    }
+    if (!/save-registry fail from=\$Caller/.test(psRegistrySrc)) {
+      throw new Error('Save-Registry failure path must emit `save-registry fail from=$Caller` — see #6 G1');
+    }
+  });
+
+  it('G3 — every PS Save-Registry call site passes -Caller + -LogPath', () => {
+    const callers = [
+      { file: 'app/statusline.ps1',       caller: 'statusline' },
+      { file: 'hooks/speak-on-tool.ps1',  caller: 'speak-on-tool' },
+      { file: 'hooks/speak-response.ps1', caller: 'speak-response' },
+    ];
+    for (const { file, caller } of callers) {
+      const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      // Accept a 3-line invocation using PowerShell `\n` line continuations.
+      const rx = new RegExp(
+        String.raw`Save-Registry[^\n]*(?:\n[^\n]*){0,3}-Caller\s+['"]` + caller + String.raw`['"][\s\S]{0,200}-LogPath`
+      );
+      if (!rx.test(src)) {
+        throw new Error(`${file} — Save-Registry call must pass -Caller '${caller}' + -LogPath — see #6 G3`);
+      }
+    }
+  });
+});
+
 describe('HARDENING: input validation', () => {
   it('main.js loadAssignments drops non-hex registry keys', () => {
     const evil = {

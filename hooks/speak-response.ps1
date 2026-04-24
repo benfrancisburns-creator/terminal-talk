@@ -151,7 +151,11 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
         $assignments = Read-Registry -RegistryPath $registryPath
         $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
                                           -SessionId $sessionId -ClaudePid $claudePid -Now $now
-        Save-Registry -RegistryPath $registryPath -Assignments $assignments
+        # #6 G1 + G3 — writer attribution. speak-response runs on Stop
+        # (end-of-turn) + Notification; tag its writes so they're
+        # distinguishable from the other four registry writers.
+        Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                      -Caller 'speak-response' -LogPath $logFile
     } finally {
         if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
     }

@@ -71,7 +71,11 @@ try {
     $assignments = Read-Registry -RegistryPath $registryPath
     $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
                                       -SessionId $sessionId -ClaudePid $claudePid -Now $now
-    Save-Registry -RegistryPath $registryPath -Assignments $assignments
+    # #6 G1 + G3 — writer attribution. speak-on-tool fires on PreToolUse,
+    # so tagging its writes distinguishes pre-tool saves from statusline-
+    # triggered saves + the two speak-response (Stop/Notification) writers.
+    Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                  -Caller 'speak-on-tool' -LogPath $logFile
 } finally {
     if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }
