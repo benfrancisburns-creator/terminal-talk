@@ -133,11 +133,23 @@ $patterns = @(
     (Join-Path $appDir 'lib\*.js'),
     (Join-Path $hooksDir '*.ps1')
 )
+# Hashing helper — direct .NET SHA256 instead of Get-FileHash. Observed
+# on Windows PowerShell 5.1 (Ben, 2026-04-21): `Get-FileHash` invoked
+# inside this ForEach-Object pipeline intermittently fails with "the
+# term 'Get-FileHash' is not recognized" — runspace module-autoload
+# race. Works fine under pwsh 7+. System.Security.Cryptography.SHA256
+# is available on every Windows PS version since 2.0, no autoload.
+# Files are < 50 KB so ReadAllBytes is fine — no stream needed.
+function Get-Sha256Hex([string]$path) {
+    $bytes = [IO.File]::ReadAllBytes($path)
+    $hashBytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+    return [BitConverter]::ToString($hashBytes).Replace('-', '').ToLower()
+}
 $manifestCount = 0
 foreach ($pattern in $patterns) {
     Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
         $rel = $_.FullName.Substring($installDir.Length).TrimStart('\', '/').Replace('\', '/')
-        $sha = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
+        $sha = Get-Sha256Hex $_.FullName
         $manifest.files[$rel] = $sha
         $manifestCount++
     }

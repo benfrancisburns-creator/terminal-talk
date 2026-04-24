@@ -32,6 +32,7 @@ const FILES = [
   // the kit tries to boot.
   'lib/clip-paths.js',
   'lib/component.js',
+  'lib/heartbeat.js',
   'lib/stale-session-poller.js',
   'lib/dot-strip.js',
   'lib/tabs.js',

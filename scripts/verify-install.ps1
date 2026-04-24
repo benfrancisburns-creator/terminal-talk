@@ -60,7 +60,11 @@ foreach ($prop in $files.PSObject.Properties) {
         $missing += $rel
         continue
     }
-    $actualSha = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash.ToLower()
+    # Direct .NET SHA256 — see install.ps1 Get-Sha256Hex for why
+    # we dodge Get-FileHash on Windows PowerShell 5.1.
+    $bytes = [IO.File]::ReadAllBytes($fullPath)
+    $hashBytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+    $actualSha = [BitConverter]::ToString($hashBytes).Replace('-', '').ToLower()
     if ($actualSha -ne $expectedSha) {
         $changed += [pscustomobject]@{
             Path     = $rel
