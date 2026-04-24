@@ -24,7 +24,7 @@ caught the original bug. Every commit that touches state passes a blast-radius c
 
 See `QUEUE.md`. Initial seed: 6 items.
 
-**Active now:** *(none — awaiting TT1 online + first claim)*
+**Active now:** #1 heartbeat-revert — TT1 reviewing (ETA 15–25 min for recipe), TT2 on deck for empirical testing.
 
 ## Invariants discovered this run
 
@@ -35,6 +35,7 @@ See `QUEUE.md`. Initial seed: 6 items.
 | Timestamp | Terminal | Context | Note |
 |---|---|---|---|
 | 2026-04-24 (scaffold) | TT2 | ~38% | coord/ tree created; waiting on TT1 kickoff |
+| 2026-04-24 21:21      | TT2 | 37%  | TT1 online, claimed #1, handshake replied, standing down 20 min |
 
 ## Pointers for a fresh session
 

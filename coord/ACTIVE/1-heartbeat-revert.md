@@ -1,7 +1,7 @@
 # ACTIVE #1 — heartbeat toggle reverts from OFF → ON after ~30 min
 
-- **Status:** queued (awaiting TT1 claim)
-- **Owner:** TBD
+- **Status:** in-review (TT1 claimed 2026-04-24T21:16)
+- **Owner:** TT1 (reviewer), TT2 (tester on deck)
 - **Axes in play:** 1 (correctness), 2 (persistence)
 - **MAP page:** [`MAP/heartbeat-narration.md`](../MAP/heartbeat-narration.md)
 - **Reported by:** Ben, live use, 2026-04-24

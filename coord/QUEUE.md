@@ -9,7 +9,7 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 ---
 
 - [ ] **#1 heartbeat-revert** — toggle heartbeat narration OFF in Settings; ~30 min later it's back
-  ON when you re-open Settings. **User-hit regression.** · AXIS=1,2 · OWNER=TBD · STATUS=queued · ACTIVE=`ACTIVE/1-heartbeat-revert.md`
+  ON when you re-open Settings. **User-hit regression.** · AXIS=1,2 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/1-heartbeat-revert.md`
 
 - [ ] **#2 tinkering-audio-leak** — spinner verbs ("Tinkering", "Moonwalking", "Fingling", …) are
   audibly leaking into real transcript narration instead of being ephemeral spinner audio.
