@@ -118,12 +118,153 @@ Will treat as blocking fix. Happy to add an immediate detection to the `MAP/sess
 page when we have one — this also surfaces `#6 log-audit` (nothing in logs would have told us
 this was happening; Ben only noticed because his labels visibly vanished).
 
+## Reviewer audit — [tt1 · 2026-04-24T22:20:00+01:00]
+
+### Every write path to `session-colours.json`, audited
+
+**JS side (5 surfaces):**
+
+| # | Site | Pattern | Field-preservation? |
+|---|---|---|---|
+| J1 | `main.js:1368` `ensureAssignmentsForFiles` | prune (isSessionLive) then fresh-alloc for new shorts | **Preserves** existing entries; only TOUCHES entries flagged not-live. **New-alloc creates defaults** (label='', pinned=false, no speech_includes) — expected for genuinely-new shorts |
+| J2 | `main.js:1254` `loadAssignments` backup-recovery writeback | `writeAssignments(b, { skipBackup: true })` with b = backup's _parseRegistryFile output | Preserves — sanitiseEntry input → sanitiseEntry output is identity for well-formed entries |
+| J3 | `main.js:saveWindowPosition` → `saveConfig` | doesn't touch registry | N/A |
+| J4 | `ipc-handlers.js` set-session-label / index / focus / muted / voice / include (6 handlers) | direct mutation: `all[shortId].X = newValue` then saveAssignments | **Preserves** — single-field assignment, other fields untouched |
+| J5 | `ipc-handlers.js:232` remove-session | `delete all[shortId]` then saveAssignments + queue-file purge | **Preserves** remaining entries |
+
+**PS side (3 surfaces, all going through `session-registry.psm1`):**
+
+| # | Site | Pattern | Field-preservation? |
+|---|---|---|---|
+| P1 | `statusline.ps1:164-172` | `Enter-Lock → Read → Update-SessionAssignment → Save → Exit-Lock` | Depends on which Update branch fires (below) |
+| P2 | `speak-response.ps1:149-156` | same triplet | same |
+| P3 | `speak-on-tool.ps1:69-77` | same triplet | same |
+
+**`Update-SessionAssignment` branches** (`session-registry.psm1:155-284`):
+
+| Branch | Line | Field-preservation? |
+|---|---|---|
+| Existing-short hit | 183-188 | **Preserves** — mutates last_seen/session_id/claude_pid in place, other fields stay |
+| PID-migration hit | 216-223 | **Preserves** — `$migrated = $Assignments[$oldShort]` is a hashtable reference; mutate three fields, re-key to new short. All other fields carried over |
+| Fresh-allocation | 274-283 | **Creates defaults** — `label=''`, `pinned=$false`, `muted=$false`, `focus=$false`, no speech_includes. Expected for genuinely-new shorts |
+| LRU-eviction → fresh | 243-271 | **Evicts some OTHER entry** (with no user-intent), then fresh-allocates (defaults) |
+
+**Round-trip integrity:**
+
+- `Read-Registry` (`session-registry.psm1:101-153`) — explicitly preserves label, pinned, muted, focus, last_seen, voice, speech_includes for ALL existing fields.
+- `Save-Registry` (`session-registry.psm1:287-307`) — `ConvertTo-Json -Depth 5` on the hashtable, no field filtering.
+- `sanitiseEntry` (`main.js:1149-1176`) — preserves label, voice, speech_includes when well-typed; strict `pinned: e.pinned === true` check which correctly handles JSON boolean `true`.
+
+### What that audit tells us
+
+**No direct code path in the read/write triplets visibly wipes label/pinned/speech_includes** for
+an existing entry. The only patterns that produce default-value entries are:
+
+1. **Fresh-allocation in Update-SessionAssignment** (PS) when a truly new short appears.
+2. **Fresh-allocation in ensureAssignmentsForFiles** (JS) when a queue file references a short
+   not in the current `all` object.
+
+The evidence in Ben's diff (pinned changing from `true` → `false` while session shorts are
+preserved) is consistent with **the entries being DELETED and re-created** via path 1 or 2 above,
+NOT modified in place. Which means something upstream pruned the entries first.
+
+### The culprit — most likely scenarios, ranked
+
+| # | Hypothesis | Evidence | Next test |
+|---|---|---|---|
+| **H1** | `/clear` in Claude Code rotates the short (first 8 hex of session_id) outside the PidMigrateWindowSec (10 min). Old pinned entry sits stale. New short gets fresh-allocated in PS with defaults. Eventually the old short's claude_pid dies, 4h grace expires, ensureAssignmentsForFiles prunes the old pinned-true entry by... wait, pinned=true should survive prune. Unless last_seen updates on old entry stopped when CLI reused its PID for the new short and the PID-migration hit, but fresh-alloc ALSO ran because the migration window had passed | **PARTIAL** | Check if Ben ran `/clear` between 21:35 and 22:40 after >10 min of idle. Check `hooks.log` for PS hook timestamps |
+| **H2** | PID-reuse race — `isPidAlive` in main.js returns true when Windows reused the same PID for an unrelated process, keeps an entry alive that should've been pruned. Conversely, an entry whose PID was reused could trip the migration branch on a NEW terminal and get its fields stolen by that new session | UNCONFIRMED | Look at each current entry's claude_pid against Ben's actual Claude CLI PIDs in Task Manager at the moment of the write |
+| **H3** | Backup-recovery path (`loadAssignments:1246-1258`) fires because primary parses as empty, recovers from `.bak1`, writes back via `writeAssignments(b, { skipBackup: true })`. But if primary WASN'T empty — just missing one entry — no recovery fires, and the half-wiped state persists | UNCONFIRMED | Audit whether `primary.length == 0` is the right check or should be "any valid entry present" |
+| H4 | A bug I haven't found in the read/write code | Possible | Would need a live `inotifywait`-style file watcher to capture the exact sequence of reads/writes that preceded a user-customization-wipe |
+
+### What TT2 should try next (if context permits before compact)
+
+1. **Real-time registry watch during a customization-wipe:**
+   ```
+   # Terminal 1 (background watcher):
+   while true; do
+     if [ "$(stat -c %Y ~/.terminal-talk/session-colours.json 2>/dev/null)" != "$PREV" ]; then
+       PREV=$(stat -c %Y ~/.terminal-talk/session-colours.json)
+       echo "=== CHANGE at $(date +%T.%3N) ==="
+       cat ~/.terminal-talk/session-colours.json | python -c "import json,sys; d=json.load(sys.stdin); \
+         print(json.dumps({k: {'label':v.get('label',''), 'pinned':v.get('pinned'), 'pid':v.get('claude_pid')} for k,v in d['assignments'].items()}, indent=2))"
+     fi
+     sleep 0.5
+   done
+   ```
+   Let it run. Have Ben set a label "TESTWIPE" on one session. Then do whatever he usually does
+   (submit prompts, switch sessions, `/clear`, etc). The watcher will log every mutation. The
+   PRECEDING mutation before TESTWIPE vanishes is the culprit code path.
+
+2. **Also capture hook log** at `~/.terminal-talk/queue/_hook.log` (or wherever PS hooks log
+   per mark-working.ps1:18) — correlates which PS hook ran when.
+
+3. **Check PID-migration-window overflow:** `_hook.log` has timestamps; compute time between
+   consecutive hook fires for the SAME claude_pid. If any gap > 600 sec, /clear-after-idle
+   would create a fresh entry.
+
+### Fix proposal — regardless of which hypothesis fires
+
+The test that would have caught this class of bug:
+
+```js
+// scripts/run-tests.cjs — SESSION REGISTRY ROUND-TRIP group
+describe('SESSION REGISTRY ROUND-TRIP (preserve user intent)', () => {
+  it('write entry with every field set → round-trip through save→load preserves all', () => {
+    const entry = {
+      index: 3, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      claude_pid: 12345, label: 'mateain brain', pinned: true,
+      muted: false, focus: false, last_seen: 1776986918,
+      voice: 'en-GB-RyanNeural',
+      speech_includes: { tool_calls: false, urls: true }
+    };
+    // saveAssignments({ aaaaaaaa: entry }) then loadAssignments()
+    // assert every field unchanged.
+  });
+
+  it('create entry, then ensureAssignmentsForFiles round-trips without wiping user intent', () => {
+    // Seed pinned+labelled entry. Run ensureAssignmentsForFiles with
+    // a queue file referencing a DIFFERENT short. Assert the original
+    // entry is unchanged — no fields stripped.
+  });
+
+  it('PID-migration preserves label+pinned+speech_includes', () => {
+    // Seed entry with user-intent. Invoke Update-SessionAssignment
+    // with a NEW short but same claude_pid within migration window.
+    // Assert migrated entry has all original intent fields.
+  });
+
+  it('Update-SessionAssignment fresh-alloc does NOT touch existing entries', () => {
+    // Seed entry A with labels + speech_includes.
+    // Invoke Update for a completely new short (outside migration window).
+    // Assert entry A is unchanged; new entry has defaults (expected).
+  });
+});
+```
+
+Any future write path that loses a user-intent field fails these tests.
+
+### Fix shape — AFTER empirical narrowing
+
+Depends on which hypothesis fires. But in all cases the fix is likely:
+
+- **If H1 (PidMigrateWindowSec expiry):** Increase migration window OR remove the freshness gate
+  for *pinned* entries specifically. "If the new PID matches any pinned entry, migrate regardless
+  of last_seen age."
+- **If H2 (PID reuse):** Add a secondary identity check (session_id prefix match, or a stable
+  CLI instance ID).
+- **If H3 (backup-recovery partial miss):** Change the "primary empty" check to "every validator-
+  approved pinned entry from backup is present in primary".
+
 ## Close-out checklist
 
 - [x] Empirical evidence captured (`.bak1` vs current diff)
 - [x] Bug class identified (same as #1, different file)
-- [ ] TT1 reviews JS-side write paths
-- [ ] Root cause identified
-- [ ] Fix + regression test
-- [ ] Verify via live install: set label "foo" on a session, do anything that triggers a
-      registry write, confirm "foo" survives
+- [x] TT1 reviews JS-side write paths — **done; no direct wipe found in any single code path**
+- [x] **Code-path audit complete** — all 5 JS + 3 PS write sites preserve fields in place; the
+  wipe must come from a **delete-then-recreate sequence** across multiple hook fires
+- [ ] Root cause identified — **HYPOTHESIS H1 (PID-migration window expiry) most likely**;
+  need real-time registry-watch evidence (recipe above) to confirm
+- [ ] Fix + regression test — `SESSION REGISTRY ROUND-TRIP` test group staged above
+- [ ] Verify via live install: set label "TESTWIPE", watch registry file, identify triggering
+      hook fire
