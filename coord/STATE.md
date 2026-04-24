@@ -83,6 +83,7 @@ What TT2 can do autonomously while blocked (non-idle work):
 | 2026-04-24 21:53      | TT2 | ~49% | HANDOVER written to `coord/HANDOVER-2026-04-24T21-53.md`; pre-compact save complete |
 | 2026-04-24 22:45      | TT2 | post-compact | Rehydrated; #1 GREEN-LIT to TT1 INBOX; autonomous pivot per Ben's perpetual-motion push |
 | 2026-04-24 22:50      | TT2 | post-compact | #8 registry-watcher spawned in background; already capturing idle-churn |
+| 2026-04-24 23:25      | TT1 | post-compact | #1/#3/#7 combined fix drafted on `fix-pass` @ `0647460`; 4 new round-trip tests red→green; 777/777 full suite; TT2 INBOX pinged for Devil's-advocate |
 
 ## Pointers for a fresh session
 

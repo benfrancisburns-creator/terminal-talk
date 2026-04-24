@@ -1415,6 +1415,146 @@ describe('MAIN.JS REGISTRY READ TOLERANCE', () => {
   clearRegistry();
 });
 
+describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
+  // Regression guard for #1 heartbeat-revert + #3 settings-persistence-full-
+  // audit + #7 top-level-key-dropped-audit. Three separate user-hit bugs;
+  // same root cause. The write-side merge in ipc-handlers.js update-config
+  // and the read-side return in config-store.js load() BOTH carried
+  // hardcoded top-level-key allowlists. Any validator-accepted scalar NOT
+  // in both allowlists was silently dropped on every save+load round-trip.
+  //
+  // This group iterates the validator's RULES table — the single source of
+  // truth for legal top-level keys. If a new scalar is added to RULES but
+  // either allowlist isn't updated, these tests fail on the next CI run.
+  const { createConfigStore } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-store.js')
+  );
+  const { validateConfig, RULES } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'config-validate.js')
+  );
+  const DEFAULTS = {
+    voices:          { edge_response: 'en-GB-RyanNeural' },
+    hotkeys:         {},
+    playback:        { speed: 1.25, tts_provider: 'edge' },
+    speech_includes: { code_blocks: false },
+    heartbeat_enabled: true,
+    openai_api_key:    null,
+    selected_tab:      'all',
+    tabs_expanded:     false,
+  };
+  const tmpCfg = path.join(os.tmpdir(), `tt-roundtrip-${Date.now()}.json`);
+  const clean = () => { try { fs.unlinkSync(tmpCfg); } catch {} };
+
+  it('heartbeat_enabled=false survives save → load (#1)', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, heartbeat_enabled: false });
+    const loaded = store.load();
+    assertEqual(loaded.heartbeat_enabled, false, 'heartbeat_enabled must round-trip through save+load');
+    clean();
+  });
+
+  it('selected_tab + tabs_expanded survive save → load (#7)', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({ ...DEFAULTS, selected_tab: '7e5c9a', tabs_expanded: true });
+    const loaded = store.load();
+    assertEqual(loaded.selected_tab, '7e5c9a', 'selected_tab must round-trip');
+    assertEqual(loaded.tabs_expanded, true,    'tabs_expanded must round-trip');
+    clean();
+  });
+
+  it('every validator-accepted top-level scalar survives save → load (#3, RULES-driven)', () => {
+    // Forcing function: iterates the validator's RULES table. If a future
+    // commit adds a new top-level scalar key (boolean/string/number) but
+    // forgets to extend the config-store.load() return literal, this test
+    // fails. openai_api_key is skipped because the update-config handler
+    // routes it through apiKeyStore; the store itself preserves it.
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    const topLevelScalars = RULES.filter((r) => {
+      if (r.path.includes('.')) return false;  // nested
+      const types = Array.isArray(r.type) ? r.type : [r.type];
+      return !types.includes('object');
+    });
+    const probe = { ...DEFAULTS };
+    const expected = {};
+    for (const r of topLevelScalars) {
+      // Pick a non-default value that passes the rule so the round-trip
+      // distinguishes "key preserved" from "default filled in".
+      const types = Array.isArray(r.type) ? r.type : [r.type];
+      let v;
+      if (types.includes('boolean')) v = DEFAULTS[r.path] === true ? false : true;
+      else if (types.includes('string') && r.path === 'openai_api_key') continue;  // special
+      else if (types.includes('string')) v = 'rt-probe';
+      else if (types.includes('number')) v = ((r.min ?? 0) + (r.max ?? 1)) / 2;
+      else continue;
+      probe[r.path] = v;
+      expected[r.path] = v;
+    }
+    store.save(probe);
+    const loaded = store.load();
+    for (const [k, v] of Object.entries(expected)) {
+      assertEqual(loaded[k], v, `validator-accepted scalar "${k}" dropped by store.load() — extend config-store.js return literal`);
+    }
+    clean();
+  });
+
+  it('update-config merge preserves heartbeat_enabled (#1 Bug A)', () => {
+    // Site A guard. The previous merge in ipc-handlers.js:456-462 built a
+    // new object with exactly 5 hardcoded top-level keys; heartbeat_enabled
+    // was silently dropped before saveConfig saw it. Rebuild just enough of
+    // the factory environment to invoke the handler and assert the merged
+    // object that reaches saveConfig carries heartbeat_enabled.
+    const { createIpcHandlers } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+    );
+    const handlers = {};
+    const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
+    const currentCfg = { ...DEFAULTS };
+    let savedArg = null;
+    let setCfgArg = null;
+    createIpcHandlers({
+      ipcMain,
+      diag: () => {},
+      callEdgeTTS: () => {},
+      getAppVersion: () => '0.0.0-test',
+      getCFG: () => currentCfg,
+      loadAssignments: () => ({}),
+      getQueueFiles: () => [],
+      getQueueAllPaths: () => [],
+      ensureAssignmentsForFiles: () => {},
+      shortFromFile: () => null,
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: os.tmpdir(),
+      getWin: () => null,
+      saveAssignments: () => true,
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      validShort: () => true,
+      validVoice: () => true,
+      sanitiseLabel: (s) => s,
+      ALLOWED_INCLUDE_KEYS: new Set(),
+      setCFG: (c) => { setCfgArg = c; },
+      saveConfig: (c) => { savedArg = c; return true; },
+      apiKeyStore: { set: () => {}, get: () => null },
+      redactForLog: (x) => x,
+      setApplyingDock: () => {},
+      testMode: true,
+      QUEUE_DIR: os.tmpdir(),
+      isPathInside: () => true,
+      getWatchdog: () => null,
+      getWatchdogIntervalMs: () => 0,
+    }).register();
+    if (!handlers['update-config']) throw new Error('update-config handler not registered');
+    handlers['update-config']({}, { heartbeat_enabled: false });
+    if (!savedArg) throw new Error('saveConfig never invoked');
+    assertEqual(savedArg.heartbeat_enabled, false, 'update-config merge must carry heartbeat_enabled into saveConfig');
+    assertEqual(setCfgArg.heartbeat_enabled, false, 'update-config merge must carry heartbeat_enabled into setCFG');
+  });
+});
+
 describe('HARDENING: input validation', () => {
   it('main.js loadAssignments drops non-hex registry keys', () => {
     const evil = {

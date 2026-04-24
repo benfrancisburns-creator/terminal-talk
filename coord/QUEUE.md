@@ -13,12 +13,12 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#2 tinkering-audio-leak** — spinner verbs ("Tinkering", "Moonwalking", "Fingling", …) are
   audibly leaking into real transcript narration instead of being ephemeral spinner audio.
-  **User-hit.** · AXIS=1,6 · OWNER=TBD · STATUS=queued
+  **User-hit.** · AXIS=1,6 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/2-tinkering-audio-leak.md`
 
 - [ ] **#3 settings-persistence-full-audit** — systematic pass: every toggle, every slider, every
   text field in the Settings panel. Toggle · reload window · restart app · reboot PC. Verify state
   survives each. Find all classes-of-bug like #1 not just the specific instance. · AXIS=2,7
-  OWNER=TBD · STATUS=queued
+  OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/3-settings-persistence-full-audit.md`
 
 - [ ] **#4 24h-soak** — leave toolbar running overnight with representative activity (queued clips,
   session switches, mic events, heartbeat). Track: memory growth, `~/.terminal-talk/logs/` size,
@@ -32,7 +32,7 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#6 log-audit** — review the last ~2 weeks of user-hit bugs. For each, ask: could we have
   diagnosed it from `~/.terminal-talk/logs/` alone? If not, what log line is missing? Produce a
-  "log coverage gaps" list, fix them. · AXIS=6 · OWNER=TBD · STATUS=queued
+  "log coverage gaps" list, fix them. · AXIS=6 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/6-log-audit.md`
 
 - [ ] **#7 top-level-key-dropped-audit** — the same allowlist-merge bug surfaced on #1 for
   `heartbeat_enabled` applies to `selected_tab` and `tabs_expanded` (validated; see ACTIVE

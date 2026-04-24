@@ -177,30 +177,89 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
 `node scripts/run-tests.cjs --verbose 2>&1 | grep -A5 "ROUND-TRIP"` and expect 2+ green. That
 red→green transition is empirical proof the fix addresses the cause.
 
-## Root-cause diagnosis — [TT? · HH:MM]
+## Root-cause diagnosis — [TT1 · 23:15]
 
-*(Whoever finds it writes a paragraph: what actually causes the revert. Must identify the write
-that clobbers the user's OFF setting, not just "config gets rewritten".)*
+Two hardcoded top-level-key allowlists — one on the write path
+(`app/lib/ipc-handlers.js` `update-config` handler, the merged-object
+literal) and one on the read path (`app/lib/config-store.js` `load()`
+return literal) — did not include `heartbeat_enabled`. Every Settings
+toggle click funnelled `partial = { heartbeat_enabled: on }` through the
+write-side merge, which rebuilt the persisted config from 5 hardcoded
+keys and dropped the new one before `saveConfig`. Symmetric drop on
+load. The validator (`config-validate.js RULES`) correctly accepted the
+key but no code read from RULES, so it was a silent knowledge gap
+between "keys the validator allows" and "keys the merge/load preserve".
 
-## Fix proposal — [TT? · HH:MM]
+Same defect shape on `selected_tab` and `tabs_expanded` — see #7.
 
-*(Code diff / PR link.)*
+## Fix proposal — [TT1 · 23:15]
 
-## Blast-radius check — [TT? · HH:MM]
+Commit: *(this commit)* on `fix-pass`. Three files:
 
-- **Files touched:** *(to be filled)*
-- **Features depending on those files (from MAP):** *(to be filled)*
-- **Invariants spanning those files (from INDEX):** *(to be filled)*
-- **Tests that MUST still pass:** *(to be filled)*
-- **Tests at silent-regression risk:** *(to be filled)*
-- **Settings / flag files possibly affected:** *(to be filled)*
+- `app/lib/ipc-handlers.js` lines ~456-472 — narrow per-key preservation
+  for the three scalar keys (+ window rescued from the same drop) via a
+  tiny `keepScalar(key)` helper. No broad spread that would let
+  unvalidated keys leak into disk; gate still effective.
+- `app/lib/config-store.js` lines ~45-60 — symmetric per-key
+  preservation on load, with `defaults` fallback so downstream code can
+  still trust the shape.
+- `scripts/run-tests.cjs` — new `describe('CONFIG PERSISTENCE ROUND-TRIP')`
+  group with 4 tests: Bug B heartbeat, Bug B selected_tab+tabs_expanded,
+  RULES-driven iteration (forcing function), and a Bug A handler test
+  that stubs `ipcMain` to assert the merge reaches `saveConfig` with the
+  key intact.
+
+Pre-fix: all 4 tests RED against the broken code (proof the rig catches
+the bug). Post-fix: all 4 GREEN, full suite 777/777.
+
+## Blast-radius check — [TT1 · 23:15]
+
+- **Files touched:** `app/lib/ipc-handlers.js`, `app/lib/config-store.js`,
+  `scripts/run-tests.cjs`.
+- **Features depending on those files (from MAP/INDEX):**
+  - `heartbeat-narration` (renderer → speak-heartbeat IPC gated on
+    `CFG.heartbeat_enabled`)
+  - tab selection + expand/collapse (`renderer.js:549`)
+  - window position save/restore (already rescued via window branch)
+  - every Settings form field (speech_includes, voices, playback,
+    hotkeys, master_volume, palette_variant, tts_provider, ...). All of
+    those route through the same `update-config` merge.
+- **Invariants spanning those files:**
+  - Config round-trip: every validator-accepted key must survive
+    save→load. New invariant enforced by the RULES-driven test.
+  - Atomic write semantics in `config-store.save()` — untouched.
+- **Tests that MUST still pass:** all existing `config-validate`,
+  `PALETTE PARITY`, `VOICE LIST VALIDATION`, `SPEECH INCLUDES`, and
+  `AUTO-CONTINUE AFTER CLICK` groups rely on config-store behaviour. Ran
+  full suite post-fix: 777/777 passed.
+- **Tests at silent-regression risk:** none — the new `keepScalar`
+  helper is a narrow per-key conditional, not a blanket spread. Unknown
+  top-level keys still do not survive (desired; preserves the validator
+  as a boundary).
+- **Settings / flag files possibly affected:** `~/.terminal-talk/config.json`.
+  First load on fixed code will include `heartbeat_enabled: true`
+  (DEFAULTS fallback) since Ben's live file lacks the key. Subsequent
+  toggles persist correctly. No migration script needed.
 
 ## Causality
 
-- **Root cause:** *(not symptom)*
-- **How did this escape prior review?**
-- **Is the fix addressing the cause or the symptom?**
-- **Smallest fix that addresses the cause:**
+- **Root cause:** hardcoded top-level-key allowlists diverged from the
+  validator's `RULES` table. Adding a new validated scalar required
+  three separate edits (RULES + write allowlist + read allowlist) with
+  no forcing function. The fix restores symmetry between the three and
+  adds a RULES-driven regression test so future additions fail loudly
+  rather than silently drop.
+- **How did this escape prior review?** The key was added to RULES
+  (commit introducing heartbeat) but the two allowlists were not
+  touched — reviewer saw the validator accept the key and assumed round-
+  trip was intact. No test covered the full write→load cycle.
+- **Is the fix addressing the cause or the symptom?** Cause. The symptom
+  is "toggle reverts"; the cause is the allowlist gap. We're closing
+  the gap and installing a RULES-driven test as a forcing function.
+- **Smallest fix that addresses the cause:** this commit. A larger
+  durable refactor (Fix-shape C: replace both allowlists with RULES
+  iteration) would remove the coupling entirely; filed as follow-up
+  rather than expanding scope here.
 
 ## Devil's advocate — [TT2 · 2026-04-24T23:32]
 
