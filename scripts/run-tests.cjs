@@ -36,7 +36,12 @@ const NEEDS_INSTALL = new Set([
   'JS ↔ PYTHON DEFAULTS ARE IN LOCK-STEP',
   'STRIP-FOR-TTS PARITY (JS canonical vs Python + PS mirrors)',
   'PS SESSION-REGISTRY MODULE IS CANONICAL',
-  'PS TTS-HELPER MODULE IS CANONICAL'
+  'PS TTS-HELPER MODULE IS CANONICAL',
+  // These spawn `powershell.exe` and only run against the installed
+  // module tree. Linux CI nodes have neither — skip cleanly rather
+  // than fail with "module missing" / ENOENT for powershell.exe.
+  'PS SESSION-IDENTITY BEHAVIOUR',
+  'MARK-WORKING HOOK (UserPromptSubmit)',
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');

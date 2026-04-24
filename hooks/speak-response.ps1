@@ -180,9 +180,11 @@ $inc = @{
 if (Test-Path $configPath) {
     try {
         $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
-        if ($cfg.voices.edge_clip) { $edgeClipVoice = $cfg.voices.edge_clip }
+        # edge_clip + openai_clip are applied by the highlight-to-speak
+        # / question / notification hooks, not the response hook — reads
+        # removed here to avoid the PSScriptAnalyzer assigned-but-never-
+        # used warning. Response-path voices kept.
         if ($cfg.voices.edge_response) { $edgeResponseVoice = $cfg.voices.edge_response }
-        if ($cfg.voices.openai_clip) { $openaiClipVoice = $cfg.voices.openai_clip }
         if ($cfg.voices.openai_response) { $openaiResponseVoice = $cfg.voices.openai_response }
         # D2: OpenAI key used to live under $cfg.openai_api_key here. It's
         # now read via Resolve-OpenAiApiKey below, which walks
