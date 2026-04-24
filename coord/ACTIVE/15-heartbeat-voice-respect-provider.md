@@ -125,13 +125,88 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider', () => {
 });
 ```
 
+## TT1 pre-read notes — [tt1 · 2026-04-25T01:05]
+
+Source-verified TT2's fix shape before I draft. Landing direction is correct; four small
+corrections to incorporate into the actual commit.
+
+### Verified against current source
+
+- **Line numbers:** `ipc-handlers.js:616` is the handler opener; `:648` is the actual
+  `await callEdgeTTS(verb, voice, outPath)` call (TT2's `:604,:616` was approximate —
+  immaterial since the diff lands on the whole block).
+- **`callOpenAITTS` signature:** `(apiKey, input, voice, outPath)` at `main.js:814`.
+  Matches TT2's test stub positionally. ✓
+- **`heartbeatInFlight` guard** at `:615` / `:634`: single-flight latch. Fix must keep
+  the latch set across BOTH provider attempts, reset only in `finally`. TT2's
+  `if (!(await trySynth(first))) { await trySynth(second); }` pattern preserves this if
+  the `try/finally` at `:634-:659` wraps it.
+- **UI contract** at `app/index.html:203`: confirmed — promises heartbeat plays in
+  OpenAI's voice when "Prefer OpenAI" is on.
+
+### Corrections to TT2's fix shape
+
+1. **`apiKeyStore.get()` is SYNC, not async.** Verified at `ipc-handlers.js:349, :372`
+   (both existing call sites use `const k = apiKeyStore.get()`). TT2's shape used
+   `const apiKey = await apiKeyStore.get()` — harmless (await on a non-Promise
+   resolves to the value) but inconsistent with the rest of the file. Drop the await.
+
+2. **Voice-key choice design call — `edge_clip` vs `edge_response`.** TT2's shape uses
+   `edge_clip || edge_response` (+ openai symmetric). Current shipped code uses
+   `edge_response` unconditionally for heartbeats. Users who've tuned `edge_response`
+   have been hearing heartbeats in it; switching to `edge_clip` post-fix will change
+   their heartbeat voice even if they didn't change Settings. Two valid positions:
+   - **TT2's (semantic correctness):** heartbeats are short ephemeral clips → use clip
+     voice. Aligns with the Settings panel "Clip voice" dropdown's semantic group.
+   - **Alternative (behavioural stability):** preserve `edge_response` first, fall back
+     to `edge_clip`, keep existing listeners' voice consistent.
+
+   **TT1 decision:** TT2's is correct. The current use of `edge_response` for
+   heartbeats is itself a bug of the same class (wrong voice key, same way the provider
+   branch is missing). Fixing both in one commit is cleaner than splitting. Worth
+   noting in the commit body so users who notice a voice change post-update have a
+   documented "why".
+
+3. **Observability — log the provider + voice chosen.** Consistent with #6 Batch 1's
+   philosophy: the existing `diag('heartbeat: "${verb}" → ${filename}")` line should
+   extend to include `provider=${first} voice=${voice}`. Makes post-fix live behaviour
+   visible in `_toolbar.log` without any extra observation plumbing. Very small — one
+   diag-line change.
+
+4. **Error handling on synth-throw.** TT2's `trySynth` swallows with `catch { return
+   false; }` — no diag. Current heartbeat code doesn't log synth errors either
+   (fire-and-forget ephemeral clip semantics), so matching that is fine. BUT: if both
+   providers fail in sequence, the user hears nothing and has no log trace. Suggest:
+   `catch (e) { diag(`heartbeat: ${which} synth failed: ${e.message}`); return false; }`
+   — 2 lines, only fires on actual failure (not on the normal first-try-edge path).
+
+### Test-suite additions beyond TT2's 3
+
+TT2's 3 tests cover edge-first, openai-first, openai→edge fallback. Two blind spots
+worth adding:
+
+- **Test 4 — provider=openai + no API key → edge used.** If key is missing,
+  `trySynth('openai')` returns false immediately; handler must still produce a clip via
+  edge. Protects against the regression "OpenAI preferred but key revoked/missing".
+- **Test 5 — heartbeat_enabled=false short-circuits BEFORE any synth.** Existing
+  `:633` check. Easy to accidentally reorder when adding provider logic; guard
+  explicitly with an assert that `callEdgeTTS` + `callOpenAITTS` are both zero-called
+  when the flag is off.
+
+### Fix draft estimate
+
+3 files (ipc-handlers.js + the new test block + the ACTIVE close-out). ~40 LoC in the
+handler, ~120 LoC of tests (TT2's 3 + my 2). ETA 15 min actual once TT2 clears #11 and
+frees my fix-drafted slot.
+
 ## Close-out checklist
 
 - [x] Bug-class identified (UI/code contract mismatch)
 - [x] File:line pointers recorded
 - [x] Fix shape drafted
 - [x] Regression test drop-in staged
-- [ ] TT1 implements fix on `fix-pass` (dedicated branch per blast-radius discipline)
+- [x] TT1 pre-read done — 4 corrections + 2 extra tests queued
+- [ ] TT1 implements fix on `fix-pass` (next fix-drafted slot after #11 merges)
 - [ ] TT2 verifies RED→GREEN flip
 - [ ] Devil's-advocate block filled
 - [ ] Merge + close
