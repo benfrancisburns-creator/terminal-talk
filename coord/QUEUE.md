@@ -13,7 +13,7 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
 
 - [ ] **#2 tinkering-audio-leak** — spinner verbs ("Tinkering", "Moonwalking", "Fingling", …) are
   audibly leaking into real transcript narration instead of being ephemeral spinner audio.
-  **User-hit.** · AXIS=1,6 · OWNER=TBD · STATUS=queued
+  **User-hit.** · AXIS=1,6 · OWNER=tt1 · STATUS=in-review · ACTIVE=`ACTIVE/2-tinkering-audio-leak.md`
 
 - [ ] **#3 settings-persistence-full-audit** — systematic pass: every toggle, every slider, every
   text field in the Settings panel. Toggle · reload window · restart app · reboot PC. Verify state

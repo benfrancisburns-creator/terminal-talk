@@ -34,7 +34,11 @@ See `QUEUE.md`. Initial seed: 6 items.
 - **#1 heartbeat-revert** — `in-review` by TT1, awaiting TT2 empirical pass against Recipe A.
   Reviewer findings committed in `e3ca45b` on `fix-pass`. Root cause found + empirically
   confirmed against Ben's live config.json (key literally absent from disk).
-- **#2 tinkering-audio-leak** — claimed by TT1 next; review starting now per perpetual-motion rule.
+- **#2 tinkering-audio-leak** — `in-review` by TT1, committed. Awaiting TT2 empirical pass
+  against Recipe A (heartbeat present-tense) vs Recipe B (past-tense footer). H1 = footer
+  hypothesis most likely; H2 = temporal-leak backup. Empirical evidence: Ben's queue has a
+  live H-clip that does match classifier regex — path is wired correctly, so bug is design
+  or timing, not classification.
 
 ## Invariants discovered this run
 

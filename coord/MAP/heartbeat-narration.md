@@ -47,6 +47,25 @@ Confirmed from `rg '\bheartbeat_enabled\b' app/` + `rg 'heartbeatEnabled' app/`:
    *(This is precisely what #1 is flagging is broken.)*
 2. Heartbeat never fires while `AudioPlayer._systemAutoPaused` is true (mic-gate respect).
 3. Heartbeat never fires after real response audio has started and before the turn ends.
+4. Every heartbeat clip filename matches `/-H-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i` → classified as
+   heartbeat by `clip-paths.isHeartbeatClip` → plays at `0.45 × master_volume`. Verified
+   empirically during #2 review — regex matches Ben's live heartbeat clip.
+
+## Related / confusable features
+
+**Present-tense spinner verbs vs past-tense end-of-turn footer — DISTINCT PATHS:**
+
+- **Path A (heartbeat):** `app/lib/heartbeat.js SPINNER_VERBS` — present-continuous verbs
+  (`"Tinkering"`, `"Moonwalking"`). Routed through `speak-heartbeat` IPC, H-prefix filename,
+  0.45 vol, ephemeral.
+- **Path B (end-of-turn footer):** `app/synth_turn.py PAST_TENSE_VERBS` — past-tense forms
+  (`"Tinkered"`, `"Moonwalked"`, `"Sautéed"`). Rendered by `format_elapsed_phrase` as
+  `"<Verb> for N seconds"`. **Body clip**, no prefix, full volume, persists on dot strip.
+
+These can sound aurally similar at TTS playback — `-ed` suffix can land close to `-ing` for some
+voices — which is relevant to item #2. When someone reports "I heard 'Tinkering' in my transcript",
+the first diagnostic question is whether they heard the present-tense verb (Path A bug) or the
+past-tense footer (Path B — works as designed, user wants opt-out).
 
 ## Settings that affect it
 
