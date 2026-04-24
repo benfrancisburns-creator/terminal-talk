@@ -1,0 +1,1294 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+  user-select: none;
+  /* Tell Chromium the UI is dark so native <select> dropdowns render dark. */
+  color-scheme: dark;
+}
+
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px;
+  padding: 6px 14px 8px 14px;
+  background: rgba(24, 26, 32, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: none;
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-app-region: drag;
+  transition: height .22s ease, padding .22s ease, opacity .22s ease;
+  overflow: hidden;
+}
+
+/* Collapsed: bar shrinks to a slim hover-target. Content hidden but the
+   strip stays visible enough to find — the old 35% opacity was too faint,
+   users couldn't see where to hover. Window stays the same size (114 px)
+   but becomes click-through via setIgnoreMouseEvents so the area below
+   the strip doesn't block interaction with other apps. */
+.bar.collapsed {
+  height: 14px;
+  padding: 0;
+  opacity: 0.9;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(24, 26, 32, 0.9);
+}
+.bar.collapsed .bar-top,
+.bar.collapsed .dots-row,
+.bar.collapsed .tabs-row {
+  display: none;
+}
+.bar.collapsed:hover {
+  opacity: 1;
+}
+
+.bar-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+}
+
+.bar-top > * { -webkit-app-region: no-drag; }
+.dots-row { -webkit-app-region: no-drag; }
+.tabs-row { -webkit-app-region: no-drag; }
+
+/* Tabs — per-session filter for the dot strip. Row sits above .dots-row.
+   A hidden tabs row (single-session case) collapses to zero height so
+   single-session users see no visual change from pre-tabs layout. */
+.tabs-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  min-height: 0;   /* zero when .tabs is empty */
+}
+.tabs-row:empty,
+.tabs-row:has(.tabs:empty) { display: none; }
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 4px 0;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs:empty { display: none; }
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  /* Uniform chip: solid black base, white text, coloured dot carries
+     the session identity. Selected state bumps the border instead of
+     tinting the background — keeps every tab visually consistent. */
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.tab:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.tab.selected {
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+.tab.stale {
+  opacity: 0.55;
+  filter: saturate(0.55);
+}
+.tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: rgba(201, 123, 80, 0.85);
+  color: #1a0c04;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.tab.selected .tab-badge {
+  background: #c97b50;
+}
+.tab-overflow {
+  opacity: 0.75;
+}
+.tab:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+/* Full-width dot strip on the bottom row. Up to ~30 standard dots; if
+   more arrive the row clips at the right edge (auto-prune usually keeps
+   count well under that). Oldest left, newest right — matches playback
+   order so the row reads naturally.
+   Height includes breathing room above and below so the active dot's
+   pulse glow isn't clipped. */
+.dots-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 44px;
+  padding: 0 4px;
+  overflow: visible;
+}
+.dots {
+  display: flex;
+  align-items: center;
+  /* User-requested (2026-04-23): previously `space-evenly` (2026-04-22)
+     spread dots across the full bar width, so with only four clips
+     they'd sit miles apart from each other. Reverted to flex-start +
+     a tight gap so dots pack from the left edge at constant density
+     — "fit as many in as possible". At 14 px dot + 3 px gap each dot
+     consumes 17 px, giving ~39 visible dots across the strip (with
+     session-run gaps eating a little more room when multi-terminal).
+     Ordering (oldest left, newest right) is unchanged — flex items
+     render in DOM order regardless of justify-content. */
+  justify-content: flex-start;
+  gap: 3px;
+  width: 100%;
+  /* No overflow:hidden — it was clipping the active dot's halo. The
+     renderer caps at MAX_VISIBLE_DOTS anyway, so the strip can't grow
+     past the bar's usable width under normal load. */
+}
+
+/* Spacer inserted between dot runs from different sessions. Small enough
+   that single-run timelines don't look fragmented, large enough to read
+   as "different speaker" at a glance. Flex shrink is off so the gap keeps
+   its width even when many dots compete for space. */
+.dots-run-gap {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+/* D2-9 — utility class replacing the previous `element.style.display = 'none'`
+   and inline `style="display:none"` sites. Using a class keeps the CSP
+   style-src directive 'self' only (no unsafe-inline needed). */
+.hidden { display: none !important; }
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, background 0.3s ease, box-shadow 0.2s ease;
+}
+
+.dot:hover {
+  filter: brightness(1.2);
+  transform: scale(1.2);
+}
+
+/* Currently playing: same size as the other dots, just a pulsing halo
+   around it. No scaling so the row doesn't jump when playback advances. */
+.dot.active {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 6px rgba(255, 255, 255, 0.25);
+  animation: activePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes activePulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 5px rgba(255, 255, 255, 0.2); }
+  50%      { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55), 0 0 8px rgba(255, 255, 255, 0.4); }
+}
+
+/* Heard: user has manually played -> fades to white, then auto-deletes */
+.dot.heard {
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: none;
+  animation: none;
+}
+
+/* R6.3: placeholder dot while speakClipboard is synthesising -- tells
+   the user TT heard their hey-jarvis / hotkey BEFORE the first real
+   clip has time to land in the queue. Same footprint as a real dot so
+   the row doesn't reflow when it swaps out. */
+.dot.pending-synth {
+  background: rgba(255, 255, 255, 0.35);
+  cursor: default;
+  animation: synthPulse 1.1s ease-in-out infinite;
+}
+@keyframes synthPulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.9); }
+  50%      { opacity: 1;    transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.pending-synth { animation: none; opacity: 0.75; }
+}
+
+/* Highlight-to-speak clip: show "J" for Jarvis centered on the dot.
+   Colour is inherited from the dot's background (session colour or neutral);
+   heard clips flip to black text on white so the J stays legible. */
+.dot.clip {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 1px; /* optical centering of the J's descender */
+}
+
+.dot.clip.heard {
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.icon-btn:active {
+  transform: scale(0.93);
+}
+
+.icon-btn.play {
+  background: rgba(79, 163, 255, 0.18);
+  color: #9ccaff;
+  width: 32px;
+  height: 32px;
+}
+
+.icon-btn.play:hover {
+  background: rgba(79, 163, 255, 0.3);
+  color: #fff;
+}
+
+.icon-btn.close {
+  background: transparent;
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 2px;
+}
+
+.icon-btn.close:hover {
+  background: rgba(255, 70, 70, 0.18);
+  color: #ff6b6b;
+}
+
+/* The scrubber is a native <input type="range"> for all pointer handling.
+   Its thumb is invisible; an SVG mascot sits on top (positioned by
+   renderer.js via .style.left) so we can animate individual rects. */
+.scrubber-wrap {
+  flex: 1;
+  min-width: 140px;
+  position: relative;
+  height: 18px;             /* tall enough to host the mascot */
+  display: flex;
+  align-items: center;
+  margin: 0 4px;
+}
+
+#scrubber {
+  flex: 1;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* Native thumb is invisible but keeps the full hit-target area so
+   mouse drag / click-to-seek still work. The visible mascot is the
+   sibling <svg class="scrubber-mascot"> positioned on top of it. */
+#scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.scrubber-mascot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 20px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(1px 1px 0 rgba(179, 102, 32, 0.9));
+  background: transparent;
+  pointer-events: none;     /* clicks pass through to the input underneath */
+  overflow: visible;        /* legs can translate outside the original box */
+  /* Default orange — the Claude Code homage colour. When a clip is
+     playing, JS sets data-palette on the mascot and palette-classes.css
+     overrides `color` to the session's primary colour. The SVG rects
+     use fill: currentColor so all body/ears/legs follow automatically. */
+  color: #ff8c1a;
+  transition: filter 0.15s ease, transform 0.25s ease, color 0.25s ease;
+}
+
+.scrubber-wrap:hover .scrubber-mascot {
+  filter: drop-shadow(1px 1px 0 rgba(179, 102, 32, 0.9)) drop-shadow(0 0 6px rgba(255, 140, 26, 0.5));
+}
+
+/* Neutralise the generic `[data-palette="NN"]` background rules in
+   palette-classes.css — for solid indices it'd paint the SVG canvas the
+   session colour; for split indices it'd paint a linear-gradient, giving
+   a half-and-half-square look instead of the character mascot. The
+   higher-specificity `.scrubber-mascot[data-palette]` (0,2,0) wins
+   against the bare `[data-palette="NN"]` (0,1,0). Split sessions still
+   recolour via the sibling `.scrubber-mascot[data-palette] { color }`
+   rules in palette-classes.css which set fill through currentColor. */
+.scrubber-mascot[data-palette] { background: transparent; }
+
+/* --- JARVIS BADGE ------------------------------------------------------
+   Shown in place of the mascot when the currently-playing clip came from
+   highlight-to-speak ("hey jarvis" / Ctrl+Shift+S), not a Claude Code
+   response. Keeps the mascot reserved for Claude Code content so the
+   visual identity doesn't blur. Positioned by the same JS math as the
+   mascot so the thumb lines up exactly on the scrubber rail.
+   -------------------------------------------------------------------- */
+.scrubber-jarvis {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(0, 0, 0, 0.78);
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px rgba(79, 163, 255, 0.45), 0 2px 4px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.02em;
+  padding-bottom: 1px;
+}
+.scrubber-wrap.jarvis-mode .scrubber-mascot { display: none; }
+.scrubber-wrap.jarvis-mode .scrubber-jarvis { display: flex; }
+
+/* --- WALK CYCLE ---------------------------------------------------------
+   Each leg bobs on its own track — legs 1+3 up while 2+4 down, then
+   swap. The whole mascot body ALSO bobs up/down 2 px on the same 0.34 s
+   cycle, giving him that scurrying-bug look. Bob keyframes preserve
+   the base translate(-50%, -50%) centering (otherwise the mascot
+   would snap to its anchor). Skipped when he's flipped angry — the
+   backward-rotation rule wins there so he doesn't fight itself.
+   -------------------------------------------------------------------- */
+.scrubber-wrap.walking:not(.scrubbing-backward) .scrubber-mascot {
+  animation: tt-body-bob 0.34s ease-in-out infinite;
+}
+@keyframes tt-body-bob {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, calc(-50% - 2px)); }
+}
+.scrubber-wrap.walking .scrubber-mascot .leg {
+  transform-origin: center 100%;
+  animation: tt-walk 0.34s ease-in-out infinite;
+}
+.scrubber-wrap.walking .scrubber-mascot .leg-1,
+.scrubber-wrap.walking .scrubber-mascot .leg-3 {
+  animation-name: tt-walk-a;
+}
+.scrubber-wrap.walking .scrubber-mascot .leg-2,
+.scrubber-wrap.walking .scrubber-mascot .leg-4 {
+  animation-name: tt-walk-b;
+}
+@keyframes tt-walk-a {
+  0%, 100% { transform: translateY(0)    scaleY(1); }
+  50%      { transform: translateY(-6px) scaleY(0.72); }
+}
+@keyframes tt-walk-b {
+  0%, 100% { transform: translateY(-6px) scaleY(0.72); }
+  50%      { transform: translateY(0)    scaleY(1); }
+}
+
+/* --- DRAG SWEEPS --------------------------------------------------------
+   When the user is scrubbing, legs sweep in the direction of drag to sell
+   the motion. Forward drag → legs skew right (he's being hauled rightward
+   through time). Backward drag → mascot flips 180° so his face is upside-
+   down (angry) AND legs swing left. The two sweep keyframes offset
+   odd/even legs so it reads as a run, not a rigid pose.
+   -------------------------------------------------------------------- */
+.scrubber-wrap.scrubbing .scrubber-mascot .leg {
+  transform-origin: center 0;  /* hinge at top so legs pivot from the body */
+  animation-duration: 0.18s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+/* Forward drag — face stays upright, legs sweep rightward */
+.scrubber-wrap.scrubbing-forward .scrubber-mascot .leg-1,
+.scrubber-wrap.scrubbing-forward .scrubber-mascot .leg-3 {
+  animation-name: tt-sweep-fwd-a;
+}
+.scrubber-wrap.scrubbing-forward .scrubber-mascot .leg-2,
+.scrubber-wrap.scrubbing-forward .scrubber-mascot .leg-4 {
+  animation-name: tt-sweep-fwd-b;
+}
+@keyframes tt-sweep-fwd-a {
+  0%, 100% { transform: translateY(0)   rotate(-22deg); }
+  50%      { transform: translateY(-4px) rotate(18deg); }
+}
+@keyframes tt-sweep-fwd-b {
+  0%, 100% { transform: translateY(-4px) rotate(18deg); }
+  50%      { transform: translateY(0)   rotate(-22deg); }
+}
+
+/* Backward drag — legs sweep leftward. Same pattern, mirrored. */
+.scrubber-wrap.scrubbing-backward .scrubber-mascot .leg-1,
+.scrubber-wrap.scrubbing-backward .scrubber-mascot .leg-3 {
+  animation-name: tt-sweep-back-a;
+}
+.scrubber-wrap.scrubbing-backward .scrubber-mascot .leg-2,
+.scrubber-wrap.scrubbing-backward .scrubber-mascot .leg-4 {
+  animation-name: tt-sweep-back-b;
+}
+@keyframes tt-sweep-back-a {
+  0%, 100% { transform: translateY(0)   rotate(22deg); }
+  50%      { transform: translateY(-4px) rotate(-18deg); }
+}
+@keyframes tt-sweep-back-b {
+  0%, 100% { transform: translateY(-4px) rotate(-18deg); }
+  50%      { transform: translateY(0)   rotate(22deg); }
+}
+
+/* --- SPINNER-VERB CLOUDS ------------------------------------------------
+   As the mascot walks, Claude-Code-style thinking verbs (Moonwalking,
+   Cerebrating, Ruminating, Flibbertigibbeting, ~90 total) bubble up
+   from above his head as little white pixel-clouds every ~1 s, drift
+   upward while swaying gently left-right (like wisps of steam or small
+   clouds being carried on slow air), and fade. Each cloud is centred
+   horizontally on the mascot at spawn time; once airborne, it floats
+   freely and the mascot keeps walking — he's leaving thoughts in the
+   sky behind him.
+   -------------------------------------------------------------------- */
+.scrubber-trail-word {
+  position: absolute;
+  top: -10px;               /* spawn above the rail, puffs get room to breathe */
+  font-family: 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0e0f13;           /* dark ink, matches wallpaper bubble text */
+  /* The actual pixelated cloud silhouette from the wallpaper — the same
+     9 rectangles that make up the HEY JARVIS bubble — used as a
+     stretchable background. preserveAspectRatio='none' lets it stretch
+     horizontally to fit any word length while keeping the stepped top
+     and bottom puff silhouette. Drop-shadow filter gives the subtle
+     backdrop shadow so they read as floating with depth, not flat. */
+  background: transparent url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 11' preserveAspectRatio='none' shape-rendering='crispEdges'><rect x='4' y='0' width='4' height='1' fill='white'/><rect x='13' y='0' width='5' height='1' fill='white'/><rect x='22' y='0' width='4' height='1' fill='white'/><rect x='2' y='1' width='26' height='1' fill='white'/><rect x='1' y='2' width='28' height='7' fill='white'/><rect x='2' y='9' width='26' height='1' fill='white'/><rect x='4' y='10' width='4' height='1' fill='white'/><rect x='13' y='10' width='5' height='1' fill='white'/><rect x='22' y='10' width='4' height='1' fill='white'/></svg>") center/100% 100% no-repeat;
+  padding: 6px 9px 5px;     /* puffs eat into padding — text sits in body */
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45)) drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.25));
+  animation: tt-verb-cloud 1.9s ease-out forwards;
+  will-change: opacity, transform;
+}
+
+/* translate(-50%, …) on X keeps each cloud centred on the mascot's
+   x-coordinate (set as `left` in renderer.js). Y drifts upward;
+   X sways left then right as it rises, like a cloud being carried by
+   slow-moving air. Fade-in fast at the start so the word reads
+   immediately, long trail-off on the way up. */
+@keyframes tt-verb-cloud {
+  0%   { opacity: 0;                                          transform: translate(-50%, 2px); }
+  12%  { opacity: 0.95;                                       transform: translate(-50%, -4px); }
+  40%  { opacity: 0.85; transform: translate(calc(-50% - 4px), -10px); }
+  70%  { opacity: 0.6;  transform: translate(calc(-50% + 4px), -16px); }
+  100% { opacity: 0;                                          transform: translate(-50%, -22px); }
+}
+
+/* The scrubber-wrap + bar-top both need overflow:visible so the
+   clouds bleed upward out of the 18 px rail area and float over the
+   bar-top region without being clipped. */
+.scrubber-wrap { overflow: visible; }
+.bar-top       { overflow: visible; }
+
+/* --- ANGRY / UPSIDE-DOWN -----------------------------------------------
+   Only triggered by backward drag — not just any time the scrubber value
+   moves backward. 180° rotation flips smile into frown, eyes drop below
+   the body, legs waggle at the top. Transition makes it read as "he
+   tipped over", not a jump cut. -------------------------------------- */
+.scrubber-wrap.scrubbing-backward .scrubber-mascot {
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+#time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  min-width: 78px;
+  text-align: right;
+  letter-spacing: 0.01em;
+}
+
+/* --- Settings panel (expandable) --- */
+.panel {
+  display: none;
+  margin: 0 6px 6px;
+  padding: 0 0 12px;
+  background: rgba(24, 26, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(140%);
+  /* Bar chrome above the panel measures ~140 px in expanded mode with
+     the tabs row visible: margin 6 + padding 6 + bar-top 36 + gap 4 +
+     tabs-row 30 + gap 4 + dots-row 44 + padding 8 + margin 6. Previous
+     values were 72 (undersized by 38) → 120 (pre-tabs) → 150 (post-
+     tabs, leaves 10 px of sub-pixel-rounding safety). */
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+body.settings-open .panel { display: block; }
+
+.panel-inner { padding: 14px 16px; }
+
+.panel-section {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.panel-section header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+}
+
+/* Collapsible section header. Click to toggle visibility of the
+ * section-body beneath. Used in the OpenAI (premium) section — once
+ * a user has saved a working key they don't need to see the settings
+ * every time, so we collapse by default in that state. Chevron
+ * rotates to indicate expand/collapse. */
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.section-toggle:hover { color: rgba(255, 255, 255, 0.85); }
+.section-toggle .chevron { transition: transform .15s ease; }
+.section-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+.panel-section.collapsed .section-body { display: none; }
+
+/* Inline hint shown where the password input used to sit, when the
+ * key is saved but we're hiding its value. */
+.panel-hint-inline {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  flex: 1;
+}
+
+.panel-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 8px;
+}
+
+/* "Installed version: v0.4.0" line in the About panel. Monospace for
+   the version value so v0.4.0-rc.1 etc. don't look weirdly spaced,
+   and a subtle colour so it reads as metadata not narrative. */
+.version-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.version-value {
+  font-family: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.panel .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.panel .row label {
+  min-width: 160px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* 2-column grid for compact single-toggle rows. Used in the Playback
+ * section to pair the four short-label toggles (auto-continue,
+ * colour-blind, heartbeat, troubleshooting) so they take two rows
+ * instead of four. Labels inside the grid drop their min-width since
+ * each column is ~half the panel — the 160 px default would blow past
+ * the column edge. Audit 2026-04-23 Phase A. */
+.row-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  row-gap: 0;
+}
+.row-grid .row label {
+  min-width: 0;
+  flex: 1;
+}
+.row-grid .row .pill-toggle,
+.row-grid .row .text-btn {
+  flex-shrink: 0;
+}
+
+/* Inline sub-hint on a settings row label. Used on the auto-prune row
+   to clarify the ephemeral-clip carve-out without cluttering the main
+   label text. Drops to a second visual line under the primary label
+   when the row width allows, smaller + dimmer so it reads as a quiet
+   aside rather than a standalone setting. */
+.panel .row label .hint-sub {
+  display: block;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 400;
+  margin-top: 1px;
+  line-height: 1.2;
+}
+
+/* OpenAI (premium) section — Settings panel. Same row/label grid as the
+   Playback rows; adds a masked key input, a status dot, and the test
+   result inline text. Kept self-contained so the existing panel layout
+   doesn't need any generic rule changes. */
+.panel-section header .panel-header-sub {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.openai-key-input {
+  flex: 1 1 auto;
+  min-width: 140px;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.5px;
+}
+.openai-key-input:focus {
+  outline: none;
+  border-color: rgba(201, 123, 80, 0.55);
+}
+.openai-key-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.openai-key-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+.openai-key-status .status-dot[data-state="set"] {
+  background: #5bd16a;
+  box-shadow: 0 0 4px rgba(91, 209, 106, 0.6);
+}
+.openai-key-status .status-dot[data-state="unset"] {
+  background: rgba(255, 255, 255, 0.18);
+}
+/* Greyed-out "Prefer OpenAI" toggle when no key is saved. */
+.pill-toggle.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.openai-test-result {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.openai-test-result[data-state="ok"]   { color: #5bd16a; }
+.openai-test-result[data-state="err"]  { color: #e26b6b; }
+.openai-test-result[data-state="busy"] { color: rgba(255, 255, 255, 0.8); }
+.text-btn.danger {
+  color: #e26b6b;
+}
+.text-btn.danger:hover {
+  background: rgba(226, 107, 107, 0.12);
+}
+
+/* On/Off pill toggle — matches the Session-settings speech-includes
+ * style (.tri-ctrl + .tri-btn). The underlying <input type=checkbox>
+ * stays the source of truth; the two pill buttons just drive its
+ * checked state and reflect it visually via the .active class. */
+.pill-toggle { display: inline-flex; align-items: center; }
+.pill-toggle-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+
+/* Compact iOS-style toggle switch for on/off panel controls. */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  min-width: 34px;
+  margin: 0;
+  cursor: pointer;
+}
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  transition: background .15s ease;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .15s ease;
+}
+.toggle input:checked + .toggle-slider {
+  background: rgba(201, 123, 80, 0.85);  /* copper accent from design system */
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* Auto-prune seconds input + suffix pairing. */
+.prune-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.prune-value input[type="number"] {
+  width: 48px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: right;
+  color-scheme: dark;
+}
+.prune-value input[type="number"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.prune-suffix { color: rgba(255, 255, 255, 0.55); }
+
+.panel .row select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  /* Force per-element dark scheme so the popup options render dark too. */
+  color-scheme: dark;
+}
+/* Native dropdown popup options. Chromium honours these in most builds. */
+select option, .panel .row select option, .session-row select option {
+  background-color: #1f2128;
+  color: #ffffff;
+}
+select option:checked, .panel .row select option:checked {
+  background-color: #2c3245;
+  color: #ffffff;
+}
+
+.panel .row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  -webkit-appearance: none;
+}
+.panel .row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.panel .readout {
+  min-width: 48px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkbox-row {
+  flex-wrap: wrap;
+  gap: 14px !important;
+}
+.checkbox-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: unset !important;
+  cursor: pointer;
+}
+.checkbox-row input[type="checkbox"] {
+  accent-color: #4FA3FF;
+}
+
+/* Sessions table */
+.sessions-table { display: flex; flex-direction: column; gap: 4px; }
+.session-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.session-row {
+  display: grid;
+  grid-template-columns: 18px 24px 90px 1fr 180px 26px 26px 22px;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.chevron {
+  width: 18px !important;
+  height: 18px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.5);
+}
+.chevron:hover { color: #fff; background: rgba(255,255,255,0.08) !important; }
+
+/* Mute toggle button — compact icon in the last column of the row. */
+.mute-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: transparent; border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.mute-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.mute-btn.muted {
+  background: rgba(255,94,94,0.14);
+  border-color: rgba(255,94,94,0.35);
+  color: #ff8080;
+}
+.mute-btn.muted:hover { background: rgba(255,94,94,0.22); }
+.session-block.session-muted { opacity: 0.55; }
+.session-block.session-muted .mute-btn { opacity: 1; }
+
+/* Focus toggle — star button (same compact scale as mute). Outlined when
+   inactive, filled gold when active so the state is unmistakable at a
+   glance. Row also gets a subtle gold tint when focused. */
+.focus-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  font-size: 14px; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.focus-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.focus-btn.focused {
+  background: rgba(255,215,61,0.18);
+  border-color: rgba(255,215,61,0.5);
+  color: #ffd93d;
+}
+.focus-btn.focused:hover { background: rgba(255,215,61,0.28); }
+
+.session-block.session-focused {
+  box-shadow: inset 0 0 0 1px rgba(255,215,61,0.28);
+  background: rgba(255,215,61,0.04);
+}
+.session-block.session-focused .focus-btn { opacity: 1; }
+
+/* Dead-terminal state. Registry row is kept (user's colour pick stays
+   around if they reopen the same session) but visually desaturated so
+   stale swatches don't look as "alive" as real ones. */
+.session-block.stale .swatch { filter: saturate(0.25) brightness(0.75); }
+.session-block.stale .short { color: rgba(255,255,255,0.35); }
+.session-block.stale input[type="text"],
+.session-block.stale select { opacity: 0.55; }
+.session-block.stale .short::after {
+  content: ' • closed';
+  color: rgba(255,255,255,0.35);
+  font-style: italic;
+}
+.dot.stale { opacity: 0.4; filter: saturate(0.3); }
+
+.session-remove {
+  width: 20px; height: 20px; padding: 0;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.4);
+  border-radius: 50%;
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.session-remove:hover {
+  background: rgba(255,94,94,0.2);
+  color: #ff8080;
+  border-color: rgba(255,94,94,0.4);
+}
+
+/* Expanded per-session settings */
+.session-expanded {
+  margin: 8px 0 4px;
+  padding: 8px 28px 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expanded-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.expanded-row label {
+  min-width: 180px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.expanded-row select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color-scheme: dark;
+}
+.expanded-subheader {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+}
+.tri-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+}
+.tri-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.tri-label { color: rgba(255, 255, 255, 0.75); }
+.tri-ctrl { display: inline-flex; }
+.tri-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+.tri-btn:first-child { border-radius: 4px 0 0 4px; }
+.tri-btn:last-child  { border-radius: 0 4px 4px 0; border-left: none; }
+.tri-btn:not(:first-child):not(:last-child) { border-left: none; }
+.tri-btn:hover { color: #fff; }
+.tri-btn.active.def { background: rgba(255,255,255,0.18); color: #fff; }
+.tri-btn.active.on  { background: #4ade80; color: #08240f; }
+.tri-btn.active.off { background: #ff5e5e; color: #260606; }
+.session-row .swatch {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.session-row .short {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+}
+.session-row input[type="text"] {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #fff;
+  font-size: 12px;
+}
+.session-row select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.sessions-empty {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+/* About section */
+.panel-section.about { padding-top: 4px; }
+.ascii-banner {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 8px;
+  line-height: 1.05;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  overflow-x: auto;
+  white-space: pre;
+}
+.shortcuts-title {
+  margin-top: 10px !important;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+.shortcuts {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+.shortcuts td {
+  padding: 3px 6px;
+  color: rgba(255, 255, 255, 0.8);
+  vertical-align: top;
+}
+.shortcuts td:first-child {
+  white-space: nowrap;
+  width: 140px;
+  color: rgba(255, 255, 255, 0.6);
+}
+/* Screen-reader-only text. Accessible table headers for .shortcuts
+   stay invisible to sighted users (the table's two columns are
+   obvious — shortcut + action — so a visible header row would just
+   waste vertical space) but remain announced by assistive tech.
+   Classic `clip` pattern works with our strict CSP. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* EX4 — transient toast for the undo-clear flow. Fixed position,
+   dark background, auto-hides via a JS timer. The `.tt-toast-undo`
+   button is inline inside; whole toast disappears when clicked. */
+.tt-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 26, 32, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  z-index: 9999;
+}
+.tt-toast-undo {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.tt-toast-undo:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* EX3 — inline button in settings panel (Reload toolbar etc). Visually
+   distinct from the icon-btn toolbar buttons; reads as a link-shaped
+   action rather than a primary control. */
+.text-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.text-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: #fff;
+}
+code {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* =============================================================
+   R4.4 — Focus indicators. Keyboard-first users need to see
+   which control the Tab key is on. We suppress the default
+   browser outline on mouse focus but bring back a bright ring
+   on :focus-visible so it only shows up when needed.
+   ============================================================= */
+:focus { outline: none; }
+.icon-btn:focus-visible,
+.chevron:focus-visible,
+.focus-btn:focus-visible,
+.mute-btn:focus-visible,
+.session-remove:focus-visible,
+.dot:focus-visible,
+.panel button:focus-visible,
+.panel input:focus-visible,
+.panel select:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #9ccaff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(79, 163, 255, 0.22);
+}
+/* Scrubber thumb focus ring — native range doesn't expose thumb
+   focus, so the whole track picks up the highlight. */
+input[type="range"]:focus-visible {
+  outline: 2px solid #9ccaff;
+  outline-offset: 2px;
+}
+
+/* =============================================================
+   R4.5 — Reduced-motion pass. Anything that moves, pulses,
+   slides, or auto-collapses gets killed when the user has
+   'Reduce motion' enabled in their OS settings.
+   ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .dot.active { animation: none; }
+  .dot:hover { filter: none; transform: none; }
+  .scrubber-mascot,
+  .scrubber-mascot .leg { animation: none !important; }
+  .bar, .bar.collapsed, .panel {
+    transition: none !important;
+  }
+}

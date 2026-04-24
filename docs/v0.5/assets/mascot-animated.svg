@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Terminal Talk animated mascot.
+
+     Same rectangular-pixel mascot the live toolbar renders (see
+     app/index.html #scrubberMascot), cycling through the 8 solid
+     palette colours + 4 split arrangements — exactly what users see
+     in the product when they have multiple Claude Code sessions
+     open. Speech bubble crossfades through 7 phrases Claude Code
+     actually says (spinner verbs, tool narrations, "cooked for X"
+     footer). Pure CSS animation via embedded <style>, no JS — works
+     in GitHub's README renderer.
+
+     Palette source: app/lib/tokens.json BASE_COLOURS.
+     Edit the @keyframes stops below to change the cycle.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of Claude Code phrases">
+  <style><![CDATA[
+    /* Colour-cycle via two CSS custom properties on the root element.
+       Eight 1.25s stops in a 10s loop, one per base palette colour
+       (matches app/lib/tokens.json BASE_COLOURS). Body rects use
+       currentColor; shadow rects use var(--mascot-shadow) and cycle
+       in sync with a pre-darkened variant of the active colour, so
+       the 3D-pixel drop shadow stays thematically correct on every
+       stop (dark red under red, dark mustard under yellow, etc.). */
+    svg {
+      color: #ffa726;                /* start on orange — matches wallpaper hero */
+      --mascot-shadow: #a85e00;
+      animation: cycleBody 10s steps(1, end) infinite,
+                 cycleShadow 10s steps(1, end) infinite;
+    }
+
+    @keyframes cycleBody {
+      0%,   12.5% { color: #ff5e5e; }  /* red */
+      12.5%, 25%  { color: #ffa726; }  /* orange */
+      25%,   37.5% { color: #ffd93d; } /* yellow */
+      37.5%, 50%  { color: #4ade80; }  /* green */
+      50%,   62.5% { color: #60a5fa; } /* blue */
+      62.5%, 75%  { color: #ee2bbd; }  /* magenta */
+      75%,   87.5% { color: #c97b50; } /* brown */
+      87.5%, 100% { color: #e0e0e0; }  /* bone */
+    }
+
+    @keyframes cycleShadow {
+      /* Each stop is a hand-picked darker tint of the body colour,
+         NOT a mechanical brightness() filter — the reference
+         wallpaper's shadow reads as dark-brown-orange under orange,
+         dark-mustard under yellow, etc. Keeps the retro feel
+         consistent across the full palette. */
+      0%,   12.5% { --mascot-shadow: #9c2020; }  /* dark red */
+      12.5%, 25%  { --mascot-shadow: #a85e00; }  /* dark orange-brown */
+      25%,   37.5% { --mascot-shadow: #8c6f00; } /* dark mustard */
+      37.5%, 50%  { --mascot-shadow: #166534; }  /* dark green */
+      50%,   62.5% { --mascot-shadow: #1e40af; } /* dark blue */
+      62.5%, 75%  { --mascot-shadow: #86188f; }  /* dark magenta */
+      75%,   87.5% { --mascot-shadow: #5d2f14; } /* dark brown */
+      87.5%, 100% { --mascot-shadow: #6b7280; }  /* slate (bone shadow) */
+    }
+
+    /* Speech-bubble phrase crossfade. Seven phrases sharing one 10s
+       cycle — each visible ~1.43s with 0.2s fade in / out. Because
+       SVG text content can't be animated in pure CSS, we stack 7
+       <text> elements and stagger their opacity keyframes. The
+       anonymous class names .p1..p7 map to the cycle position. */
+    .phrase { opacity: 0; animation: phraseFade 10s linear infinite; }
+    .phrase.p1 { animation-delay:  0s; }
+    .phrase.p2 { animation-delay:  1.43s; }
+    .phrase.p3 { animation-delay:  2.86s; }
+    .phrase.p4 { animation-delay:  4.29s; }
+    .phrase.p5 { animation-delay:  5.72s; }
+    .phrase.p6 { animation-delay:  7.15s; }
+    .phrase.p7 { animation-delay:  8.58s; }
+
+    @keyframes phraseFade {
+      0%    { opacity: 0; }
+      2%    { opacity: 1; }
+      12.5% { opacity: 1; }
+      14.5% { opacity: 0; }
+      100%  { opacity: 0; }
+    }
+
+    /* Respect the user's motion preference — GitHub respects these
+       preferences in README rendering on many platforms. */
+    @media (prefers-reduced-motion: reduce) {
+      svg { animation: none; color: #ffa726; --mascot-shadow: #a85e00; }
+      .phrase { animation: none; }
+      .phrase.p1 { opacity: 1; }
+    }
+  ]]></style>
+
+  <!-- Mascot, positioned on the left. Geometry mirrors the live toolbar's
+       #scrubberMascot rectangles. Two layers:
+         1. SHADOW layer, same shapes offset (4, 4) down-right, filled
+            with the mascot-shadow custom property. Rendered first so
+            the body overlays it, leaving only the bottom-right offset
+            visible as the classic 8-bit 3D pixel drop shadow seen in
+            the wallpaper hero (docs/assets/wallpaper/).
+         2. BODY layer, same shapes filled with currentColor, which
+            animates through the 8 palette colours.
+       Face (eyes + smile) sits above both, always black. -->
+  <g transform="translate(30, 28)">
+    <!-- 1. Shadow layer (rendered behind). -->
+    <g transform="translate(4, 4)">
+      <rect x="13"  y="0"  width="114" height="88" fill="var(--mascot-shadow)"/>
+      <rect x="0"   y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="127" y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+    </g>
+    <!-- 2. Body layer (rendered on top). Single-colour body matching
+         the reference image — no top/bottom split here; the in-app
+         mascot handles multi-session splits separately via its own
+         mascot-secondary variable. -->
+    <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
+    <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="19"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="46"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="79"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="106" y="88" width="16"  height="32" fill="currentColor"/>
+    <!-- Eyes + smile — always dark charcoal so they read on any body
+         colour (including bone). -->
+    <rect x="36"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="88"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="44"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="88"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
+  </g>
+
+  <!-- Speech bubble — pixel-art retro style matching the wallpaper hero
+       (docs/assets/wallpaper/terminal-talk-wallpaper.png):
+         - solid white interior
+         - chunky stepped corners (no smooth rounding)
+         - offset dark drop-shadow down-right, implying an 8-bit "3D
+           button" raised look
+         - chisel-cut triangular tail pointing at the mascot.
+       shape-rendering="crispEdges" is already set on the root <svg>,
+       so each rect / path edge snaps to the pixel grid rather than
+       anti-aliasing — crucial for the stepped-corner look. -->
+  <g transform="translate(205, 48)">
+    <!-- Drop shadow: same stepped shape as the main body, offset down-
+         right by 4 px. Sits behind everything so the main bubble punches
+         out a white silhouette with a solid dark step on the bottom-right. -->
+    <path d="M 6,4 L 176,4 L 176,6 L 178,6 L 178,8 L 180,8 L 180,60 L 178,60 L 178,62 L 176,62 L 176,64 L 6,64 L 6,62 L 4,62 L 4,60 L 2,60 L 2,8 L 4,8 L 4,6 L 6,6 Z"
+          fill="#1a1a1a"/>
+
+    <!-- Tail shadow (the dark stepped arrow). -->
+    <path d="M -6,32 L 0,26 L 0,42 L -4,42 Z" fill="#1a1a1a"/>
+
+    <!-- Main bubble body: stepped-corner path. 2 px notches at all four
+         corners create the pixel-stair silhouette. Dark stroke + white
+         fill; stroke-width 2 gives a chunky outline. -->
+    <path d="M 4,0 L 172,0 L 172,2 L 174,2 L 174,4 L 176,4 L 176,56 L 174,56 L 174,58 L 172,58 L 172,60 L 4,60 L 4,58 L 2,58 L 2,56 L 0,56 L 0,4 L 2,4 L 2,2 L 4,2 Z"
+          fill="#ffffff" stroke="#1a1a1a" stroke-width="2"/>
+
+    <!-- Tail body: chisel-cut triangle with pixel-stepped outline. -->
+    <path d="M -8,30 L 1,22 L 1,38 L -2,38 Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="miter"/>
+    <!-- Whitewash where the tail meets the bubble border so the join
+         doesn't double-stroke a visible dark line up the bubble's left edge. -->
+    <rect x="0" y="24" width="2" height="12" fill="#ffffff"/>
+
+    <!-- Seven phrases crossfading. Centred at (88, 36) to sit inside
+         the slightly-asymmetric stepped rect. Branding phrase HEY JARVIS
+         uppercased to match the wallpaper; runtime narrations keep
+         mixed casing ("Reading foo.py", "Cooked for 49s") because
+         that's literally what Claude Code emits. -->
+    <text class="phrase p1" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="16" font-weight="700" fill="#1a1a1a" letter-spacing="1">HEY JARVIS</text>
+    <text class="phrase p2" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="14" font-weight="700" fill="#1a1a1a">Cooked for 49s</text>
+    <text class="phrase p3" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="14" font-weight="700" fill="#1a1a1a">Reading foo.py</text>
+    <text class="phrase p4" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="14" font-weight="700" fill="#1a1a1a">Moonwalking</text>
+    <text class="phrase p5" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" font-weight="700" fill="#1a1a1a">Running npm test</text>
+    <text class="phrase p6" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="14" font-weight="700" fill="#1a1a1a">Brewed for 8m 4s</text>
+    <text class="phrase p7" x="88" y="36" text-anchor="middle"
+          font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" font-weight="700" fill="#1a1a1a">Sautéed for 1m 0s</text>
+  </g>
+</svg>

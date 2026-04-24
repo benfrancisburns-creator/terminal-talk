@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal Talk</title>
+  <!-- Strict CSP for the toolbar renderer. The renderer only loads local
+       scripts/styles, plays local audio clips (via the audio element
+       pointing at file: URLs), and has no network fetch surface — all
+       network calls (TTS, OpenAI fallback) happen in the main process
+       where contextIsolation + sandbox can't reach anyway.
+         - default-src 'none'  deny by default
+         - script-src 'self'   only renderer.js (and no inline <script>)
+         - style-src 'self'    styles.css + lib/palette-classes.css +
+                               renderer's Constructable Stylesheet for
+                               the 3 continuous-value sites (mascot /
+                               jarvis / spinner word positions). D2-9
+                               dropped 'unsafe-inline' in v0.3.
+         - img-src 'self' data:  SVG icons + any inline data: URLs
+         - media-src 'self' blob: file:  the <audio> tag plays queue files
+         - font-src 'self'  we don't load web fonts in the app
+         - connect-src 'none'  renderer must not call out to the network
+       Tightened per Electron's security checklist (see SECURITY.md). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none';">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="lib/palette-classes.css">
+</head>
+<body>
+  <div class="bar" id="bar">
+    <div class="bar-top">
+    <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <button class="icon-btn play" id="playPause" title="Play/Pause" aria-label="Play or pause">
+      <svg aria-hidden="true" id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg aria-hidden="true" id="pauseIcon" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button class="icon-btn" id="fwd10" title="Forward 10s" aria-label="Forward 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <!-- The native <input type="range"> handles all pointer events (drag, -->
+    <!-- click-to-seek). Its thumb is made transparent in styles.css. The -->
+    <!-- visible mascot is an SVG overlay positioned by renderer.js so we -->
+    <!-- can animate individual legs (walking) and rotate him 180° when -->
+    <!-- the user scrubs backward (angry face). -->
+    <div id="scrubberWrap" class="scrubber-wrap">
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
+      <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <!-- Body: split at y=44 so hsplit/vsplit palette arrangements show
+             a top/bottom colour pair. Solid arrangements set
+             --mascot-secondary = primary, so the fallback through
+             var(--mascot-secondary, currentColor) renders a single colour. -->
+        <!-- Body — top half (primary, currentColor) -->
+        <rect x="13"  y="0"  width="114" height="44" fill="currentColor"/>
+        <!-- Body — bottom half (secondary) -->
+        <rect x="13"  y="44" width="114" height="44" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Left ear — top half (primary), bottom half (secondary) -->
+        <rect x="0"   y="36" width="13" height="8"  fill="currentColor"/>
+        <rect x="0"   y="44" width="13" height="18" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Right ear — same -->
+        <rect x="127" y="36" width="13" height="8"  fill="currentColor"/>
+        <rect x="127" y="44" width="13" height="18" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Four legs — below the y=44 split line, so all legs take the
+             secondary colour. Each stays on its own animation track
+             (.leg-N class) so the walk cycle and scrubbing states work
+             identically to the single-colour version. -->
+        <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="var(--mascot-secondary, currentColor)"/>
+        <!-- Eyes — at y=26-42, sit in the primary (top) half -->
+        <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <!-- Smile — at y=58-70, sits in the secondary (bottom) half.
+             Dark grey reads on every palette colour except the brightest
+             bone slot, where it stays legible because of the #3a3a3a
+             contrast ratio against #e0e0e0. -->
+        <rect x="44" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
+      </svg>
+      <!-- Shown instead of the mascot when the currently-playing clip is a
+           highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clip. The mascot
+           is reserved for Claude Code responses — see renderer.js
+           updateScrubberMode() + README "About the mascot" for the why. -->
+      <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
+    </div>
+    <span id="time" aria-live="off">0:00 / 0:00</span>
+    <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button class="icon-btn close" id="close" title="Hide (Esc)" aria-label="Hide the toolbar">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    </div>
+    <div class="tabs-row"><div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div></div>
+    <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
+  </div>
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <section class="panel-section">
+        <header>Playback</header>
+        <div class="row">
+          <label for="speedSlider">Speed</label>
+          <input type="range" id="speedSlider" min="50" max="250" step="5" value="125">
+          <span id="speedValue" class="readout">1.25x</span>
+        </div>
+        <div class="row">
+          <label for="volumeSlider">Volume</label>
+          <input type="range" id="volumeSlider" min="0" max="100" step="1" value="100">
+          <span id="volumeValue" class="readout">100%</span>
+        </div>
+        <div class="row">
+          <label for="autoPruneToggle" title="Controls the longer delay on body / response clips only. Tool narrations (T-prefix) and heartbeat (H-prefix) clips are always ambient — they auto-delete ~200 ms after they finish playing regardless of this setting, so they never clutter the dot strip.">Auto-prune body clips <span class="hint-sub">(tool narrations &amp; heartbeat always vanish)</span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="autoPruneToggle" class="pill-toggle-input" checked>
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+          <div class="prune-value">
+            <input type="number" id="autoPruneSec" min="3" max="600" step="1" value="20">
+            <span class="prune-suffix">s after play</span>
+          </div>
+        </div>
+        <!-- 2-column grid for the four single-toggle playback rows. Keeps
+             the sliders + auto-prune (which has a side seconds input) at
+             full width above, compacts the four simpler controls into
+             half-width pairs below. -->
+        <div class="row-grid">
+          <div class="row">
+            <label for="autoContinueToggle" title="When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. Off plays just the clicked clip.">Auto-continue after clicking</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="autoContinueToggle" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="paletteVariantToggle" title="Switch the 8-colour session palette to Paul Tol's 'muted' scheme — proven distinguishable under deutan / protan / tritan colour-blindness (≈6% of men). Default palette stays for everyone else.">Colour-blind palette</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="paletteVariantToggle" class="pill-toggle-input">
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="heartbeatToggle" title="When Claude Code is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Heartbeat narration</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="heartbeatToggle" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label>Troubleshooting</label>
+            <button type="button" id="reloadToolbar" class="text-btn" title="Rebuild the toolbar from disk (keyboard: Ctrl+R). Useful if the display is stuck or stale.">Reload toolbar</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section" id="openaiSection">
+        <header>
+          <button type="button" id="openaiSectionToggle" class="section-toggle" aria-expanded="true" aria-controls="openaiBody">
+            <svg class="chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <span>OpenAI <span class="panel-header-sub">(premium)</span></span>
+          </button>
+        </header>
+        <div class="section-body" id="openaiBody">
+        <p class="panel-hint">
+          Optional. Paste an OpenAI API key to enable OpenAI TTS as either a fallback
+          (when edge-tts has a network wobble) or your primary voice. Pricing is
+          ~$0.015 per 1,000 characters, billed by OpenAI on their side.
+        </p>
+        <!-- Key-input row: shown ONLY when no key is saved or the last
+             test failed. When a valid key is in place we swap in the
+             "Change key" row below to save a line of panel height. -->
+        <div class="row" id="openaiKeyInputRow">
+          <label for="openaiKeyInput" title="Your key is stored encrypted (Windows DPAPI) in openai_key.enc, with a user-ACL'd plaintext sidecar at config.secrets.json that PowerShell hooks read. Neither is in config.json or git.">API key</label>
+          <input type="password" id="openaiKeyInput" class="openai-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false">
+          <button type="button" id="openaiKeySave"  class="text-btn">Save</button>
+          <button type="button" id="openaiKeyClear" class="text-btn danger">Clear</button>
+        </div>
+        <!-- Compact replacement row shown when a key IS saved. One-
+             click to switch back to the input row if the user wants to
+             rotate the key. -->
+        <div class="row hidden" id="openaiKeyChangeRow">
+          <label>API key</label>
+          <span class="panel-hint-inline">Saved (hidden for security)</span>
+          <button type="button" id="openaiKeyChange" class="text-btn">Change key</button>
+          <button type="button" id="openaiKeyClear2" class="text-btn danger">Clear</button>
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <span id="openaiKeyStatus" class="openai-key-status" aria-live="polite">
+            <span class="status-dot" data-state="unset"></span>
+            <span class="status-text">Not set</span>
+          </span>
+        </div>
+        <div class="row">
+          <label for="openaiPreferToggle" title="On — OpenAI is your primary voice: every response, tool narration and heartbeat plays in OpenAI's voice. Edge-tts only runs if OpenAI errors (key invalid, rate-limited, network glitch). Off — edge-tts is primary (free, default), OpenAI is the fallback. Needs a saved key to switch on.">Use OpenAI as primary <span class="hint-sub">(the other provider becomes the fallback)</span></label>
+          <div class="pill-toggle tri-ctrl" id="openaiPreferPillBox">
+            <input type="checkbox" id="openaiPreferToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Test voice</label>
+          <button type="button" id="openaiTestBtn" class="text-btn" title="Synthesise a short test phrase through whichever provider is currently preferred and drop it in the queue. Confirms your key works and lets you hear the voice without waiting for a real reply.">Test</button>
+          <span id="openaiTestResult" class="openai-test-result" aria-live="polite"></span>
+        </div>
+        </div><!-- /#openaiBody -->
+      </section>
+
+      <section class="panel-section">
+        <header>Sessions</header>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Claude Code sessions"></div>
+      </section>
+
+      <section class="panel-section about">
+        <header>About Terminal Talk</header>
+<pre class="ascii-banner">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        ████████╗ █████╗ ██╗     ██╗  ██╗
+        ╚══██╔══╝██╔══██╗██║     ██║ ██╔╝
+           ██║   ███████║██║     █████╔╝
+           ██║   ██╔══██║██║     ██╔═██╗
+           ██║   ██║  ██║███████╗██║  ██╗
+           ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
+        <p class="panel-hint">
+          Hands-free voice workflow for Claude Code. Say "hey jarvis" with text highlighted anywhere
+          and it's read aloud. Claude's replies are auto-spoken. Each terminal gets its own colour,
+          shown as an emoji in its statusline and as a dot on the toolbar.
+        </p>
+        <p class="panel-hint version-line">
+          Installed version: <span id="versionLabel" class="version-value">…</span>
+        </p>
+        <p class="panel-hint shortcuts-title">Global shortcuts</p>
+        <table class="shortcuts">
+          <caption class="sr-only">Global keyboard shortcuts</caption>
+          <thead>
+            <tr><th scope="col" class="sr-only">Shortcut</th><th scope="col" class="sr-only">Action</th></tr>
+          </thead>
+          <tbody>
+          <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
+          <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
+          <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
+          <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Pause / resume playback</td></tr>
+          <tr><td><kbd>Ctrl+Shift+O</kbd></td><td>Pause only (without resuming on next clip)</td></tr>
+          <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
+          </tbody>
+        </table>
+        <p class="panel-hint">
+          Tip: labels you set on a session show up next to its emoji in that terminal's statusline
+          (e.g. <code>&#x1f7e2; Frontend</code>).
+        </p>
+        <p class="panel-hint">
+          About the mascot: the walking character on the scrubber is a homage to
+          Claude Code's thinking-spinner humour. The verbs that float above his head
+          (Moonwalking, Finagling, Pontificating...) are the same list Claude Code
+          itself uses while thinking. He only appears while a Claude Code response is
+          playing; highlight-to-speak clips show a plain <b>J</b> badge instead.
+          No affiliation with Anthropic — this is a fan project.
+        </p>
+      </section>
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+  <script src="lib/tokens-window.js"></script>
+  <script src="lib/voices-window.js"></script>
+  <script src="lib/clip-paths.js"></script>
+  <script src="lib/heartbeat.js"></script>
+  <script src="lib/component.js"></script>
+  <script src="lib/stale-session-poller.js"></script>
+  <script src="lib/dot-strip.js"></script>
+  <script src="lib/tabs.js"></script>
+  <script src="lib/sessions-table.js"></script>
+  <script src="lib/settings-form.js"></script>
+  <script src="lib/audio-player.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
