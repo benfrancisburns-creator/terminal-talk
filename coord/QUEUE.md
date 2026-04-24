@@ -80,9 +80,21 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   Fix: branch on `tts_provider` before the call. **Surfaced by #12 audit.** · AXIS=1
   OWNER=TBD · STATUS=queued
 
-- [ ] **#13 speech-includes-filter-audit** (Surface J) — per sub-key, does a toggle actually
-  include/exclude that content from TTS synth? Needs code-path trace through sanitiser +
-  empirical probe with each sub-key set. · AXIS=1,2 · OWNER=TBD · STATUS=queued
+- [ ] **#13 speech-includes-filter-audit** (Surface J) — completed: 4 of 6 sub-keys have
+  matching fallbacks; J-S1 latent drift (Python `flags.get` fallbacks for `image_alt` +
+  `bullet_markers` are True but DEFAULTS are False); J-S2 unaudited cross-sanitiser parity.
+  · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/13-speech-includes-filter-audit.md`
+
+- [ ] **#18 sanitizer-fallback-drift** — `app/synth_turn.py:652,:680` — `flags.get('image_alt', True)`
+  + `flags.get('bullet_markers', True)` don't match DEFAULTS (both False). Latent; fires only
+  if a caller passes partial flags. Fix: change fallbacks to False; add forcing-function
+  invariant test that compares every `flags.get(k, fallback)` to `DEFAULT_SPEECH_INCLUDES[k]`
+  by source inspection. **Surfaced by #13 audit.** · AXIS=7 · OWNER=TBD · STATUS=queued
+
+- [ ] **#19 sanitizer-cross-parity-audit** (Surface J follow-up) — JS `text.js::looksLikeCode`
+  vs Python `synth_turn.py::_looks_like_code` heuristics may diverge, causing clipboard-speak
+  vs response-speak to handle edge-case fences differently on the same text. Needs head-to-head
+  comparison of the two regex sets. · AXIS=1,7 · OWNER=TBD · STATUS=queued
 
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
