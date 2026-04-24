@@ -64,9 +64,21 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   ephemeral). No new BROKEN states (pre-known #1/#3/#7 confirmed), 2 brittle. · AXIS=1,2,7
   OWNER=tt2 · STATUS=in-test · ACTIVE=`ACTIVE/11-settings-panel-audit.md`
 
-- [ ] **#12 voice-dispatch-audit** (Surface G per `PLAN-SYSTEMATIC-COVERAGE.md`) — per clip
-  type, is the correct voice used against the tts_provider setting? F1 from #11 suggests
-  incomplete validator here. · AXIS=1 · OWNER=TBD · STATUS=queued
+- [ ] **#12 voice-dispatch-audit** (Surface G per `PLAN-SYSTEMATIC-COVERAGE.md`) — completed:
+  ✗ G-V1 heartbeat ignores tts_provider (contradicts UI tooltip), ✗ G-V2 speakClipboard
+  ignores tts_provider (same), ~ G-V3 edge_question dead, ~ G-V4 edge_notification dead.
+  · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/12-voice-dispatch-audit.md`
+
+- [ ] **#15 heartbeat-voice-respect-provider** — `ipc-handlers.js:604,:616` always calls
+  `callEdgeTTS` for heartbeats regardless of `playback.tts_provider`. UI tooltip explicitly
+  promises heartbeats play in OpenAI's voice when the toggle is on. Fix: provider-aware
+  branch like `synth_turn.py::synthesize_parallel`. Test: stub both wrappers, assert correct
+  call path. **Surfaced by #12 audit.** · AXIS=1 · OWNER=TBD · STATUS=queued
+
+- [ ] **#16 speakClipboard-respect-provider** — `main.js:1103-1117` always tries edge FIRST
+  with OpenAI as fallback, regardless of `tts_provider`. Same UI-contract violation as #15.
+  Fix: branch on `tts_provider` before the call. **Surfaced by #12 audit.** · AXIS=1
+  OWNER=TBD · STATUS=queued
 
 - [ ] **#13 speech-includes-filter-audit** (Surface J) — per sub-key, does a toggle actually
   include/exclude that content from TTS synth? Needs code-path trace through sanitiser +
