@@ -118,6 +118,90 @@ Will treat as blocking fix. Happy to add an immediate detection to the `MAP/sess
 page when we have one — this also surfaces `#6 log-audit` (nothing in logs would have told us
 this was happening; Ben only noticed because his labels visibly vanished).
 
+## Wipe-source trace — [tt2 · 2026-04-25T02:00:00+01:00]
+
+Systematic trace of every path that could produce `label='' pinned=true`. Key enumerate:
+
+### Path 1 — `ensureAssignmentsForFiles` fresh-alloc (`app/main.js:1356-1363`)
+
+Creates new entry with `label: '', pinned: false`. **Does NOT match #8 pattern** (pinned
+wrong). Rules this path out as the *sole* wipe source.
+
+### Path 2 — `Update-SessionAssignment` fresh-alloc (`app/session-registry.psm1:274-283`)
+
+PS-side equivalent. Also `label: '', pinned: $false`. Same result — ruled out.
+
+### Path 3 — `set-session-label` IPC with empty label (`app/lib/ipc-handlers.js:165-175`) ★ **matches #8**
+
+```js
+const clean = sanitiseLabel(label);
+all[shortId].label = clean;
+if (clean) all[shortId].pinned = true;  // ← pinned NOT cleared when label is empty
+```
+
+Setting label to '' keeps `pinned` at its previous value. **If the entry was pinned
+previously (user set label earlier), the resulting state is `label='' pinned=true`** —
+exactly the observed #8 pattern.
+
+**Triggering user action:** click into the Settings row's label input, clear it
+(Backspace / Select-all-Delete), click away. The HTML `change` event fires with
+`labelInput.value.trim() === ''` → calls `_onSetLabel(shortId, '')` → IPC writes.
+
+Relevant code: `app/lib/sessions-table.js:240-252` — the label `<input>` is wired with a
+`change` listener that calls `_onSetLabel(shortId, labelInput.value.trim())`.
+
+### Path 4 — sanitiseEntry coerces non-string label to '' (`app/main.js:1157`)
+
+```js
+label: typeof e.label === 'string' ? e.label.slice(0, 60) : ''
+```
+
+If the on-disk entry has `label: null`, `label: undefined`, or `label: {}` (non-string),
+load coerces to `''` but preserves all other fields including `pinned`. **Matches #8 pattern
+IF some writer produces a non-string label.**
+
+**Who could produce that?** Not current JS or PS code — both always write `label: ''` or a
+non-empty string, never null/undefined/object. So this path requires one of:
+- External tooling (user hand-edited JSON), OR
+- Crash-mid-write (atomic `.tmp + rename` should prevent, but not bulletproof under OS-level
+  crash or antivirus file-lock), OR
+- A future code path that writes a non-string by accident.
+
+### Verdict
+
+**Path 3 is the primary candidate for #8.** Observation matches the user-action result
+exactly. The "I didn't clear labels" report could reconcile with:
+
+- A misclick (keyboard focus landed in label input during a different action; then a
+  separate keystroke or click-away caused `change` to fire with empty value).
+- A re-population bug elsewhere that programmatically set `labelInput.value = ''` and then
+  dispatched `change` (would need to grep for any `dispatchEvent(new Event('change'))` on
+  label inputs — I did a quick scan, none found).
+
+### Recommended fix for #8
+
+1. **Add a Devil's-advocate UX guard.** In `sessions-table.js:249-251`, require confirmation
+   if the new label is empty AND the session was pinned. Either a small inline confirm
+   ("clear label? [yes/cancel]") or just ignore empty inputs that would clear a pinned
+   session (treat as no-op). Small change, prevents accidental clears.
+2. **Observability logging from Batch 1 will pin it.** The new registry-write log line
+   `save-registry ok from=set-session-label keys=N changed=[short]` will show every
+   label-wipe event with timestamp + caller. Ben's watcher (`_registry-watcher.log`)
+   already captures this too. Next wipe episode, we'll see if it was `set-session-label`
+   (→ Path 3) or `write-registry from=ensure-for-files` (→ Path 1/2) or a third-party
+   writer.
+3. **Regression test for Path 3 (guard):** assert that `set-session-label(short, '')` on a
+   pinned entry returns false OR a `requiresConfirm` signal — not a silent wipe.
+
+### Lead still open for TT1's #8 fix draft
+
+- Check the PS side `Read-Registry:128` (`if ($v.label) ...`) — is there any PowerShell
+  JSON-parse quirk where a legitimately set string label comes back as `null` in
+  `$v.label`? I don't think so, but worth a probe (read a registry file with a valid
+  label, dump `$v.label`'s actual type + value).
+- Check for any programmatic label clears during tab-switch / focus-change (I didn't find
+  any, but my grep was shallow).
+
 ## Tester follow-up — [tt2 · 2026-04-24T22:54:00+01:00]
 
 ### LIVE evidence: wipe already manifest
