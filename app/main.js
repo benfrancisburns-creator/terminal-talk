@@ -1290,6 +1290,10 @@ function _registryWriteDelta(newAll) {
 function writeAssignments(all, opts) {
   const skipBackup = !!(opts && opts.skipBackup);
   const caller = (opts && opts.caller) || 'unknown';
+  // #8 — writeAssignments is used by ensureAssignmentsForFiles
+  // (queue-scan prune+recreate) and backup-recovery. Both are
+  // touch-paths; neither should ever drop user-intent fields.
+  const restored = _guardUserIntent(all, caller);
   const delta = _registryWriteDelta(all);
   try {
     // Rotate backups: .bak2 → .bak3, .bak1 → .bak2, current → .bak1.
@@ -1310,6 +1314,9 @@ function writeAssignments(all, opts) {
     const tmp = COLOURS_REGISTRY + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
     fs.renameSync(tmp, COLOURS_REGISTRY);
+    if (restored.length > 0) {
+      diag(`write-registry GUARD from=${caller} restored=[${restored.join(',')}] — incoming payload would have wiped user-intent fields`);
+    }
     diag(`write-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
     return true;
   } catch (e) { diag(`writeAssignments fail from=${caller}: ${e.message}`); return false; }
@@ -1445,18 +1452,96 @@ function allowMutation(name) {
   return false;
 }
 
+// #8 — callers that are ALLOWED to modify user-intent fields (label,
+// pinned, voice, muted, focus, speech_includes). Any other caller
+// (touch paths like ensure-for-files, backup-recovery, statusline
+// bumps) goes through the defensive guard below which restores
+// user-intent fields from disk if they'd be lost. Keeps the common
+// failure mode (fresh-alloc clobbers a tuned entry, or a stale-state
+// re-save drops fields that were set since load) non-destructive.
+const USER_INTENT_WRITERS = new Set([
+  'set-session-label',
+  'set-session-voice',
+  'set-session-muted',
+  'set-session-focus',
+  'set-session-include',
+  'remove-session',
+]);
+
+function _guardUserIntent(all, caller) {
+  // Returns a list of "{short}:{field}" tokens that were restored, or []
+  // if no restoration happened. Best-effort — if the disk read fails,
+  // we fall through without restoration (the bare write still happens).
+  if (USER_INTENT_WRITERS.has(caller)) return [];
+  let oldAll = {};
+  try {
+    let raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
+      oldAll = parsed.assignments;
+    }
+  } catch { return []; }
+  const restored = [];
+  for (const short of Object.keys(all)) {
+    const oldEntry = oldAll[short];
+    if (!oldEntry) continue;
+    const newEntry = all[short];
+    if (!newEntry || typeof newEntry !== 'object') continue;
+    if (typeof oldEntry.label === 'string' && oldEntry.label.length > 0 &&
+        (typeof newEntry.label !== 'string' || newEntry.label.length === 0)) {
+      newEntry.label = oldEntry.label;
+      restored.push(`${short}:label`);
+    }
+    if (oldEntry.pinned === true && newEntry.pinned !== true) {
+      newEntry.pinned = true;
+      restored.push(`${short}:pinned`);
+    }
+    if (typeof oldEntry.voice === 'string' && oldEntry.voice && !newEntry.voice) {
+      newEntry.voice = oldEntry.voice;
+      restored.push(`${short}:voice`);
+    }
+    if (oldEntry.muted === true && newEntry.muted !== true) {
+      newEntry.muted = true;
+      restored.push(`${short}:muted`);
+    }
+    if (oldEntry.focus === true && newEntry.focus !== true) {
+      newEntry.focus = true;
+      restored.push(`${short}:focus`);
+    }
+    if (oldEntry.speech_includes && typeof oldEntry.speech_includes === 'object' &&
+        Object.keys(oldEntry.speech_includes).length > 0 &&
+        (!newEntry.speech_includes || Object.keys(newEntry.speech_includes).length === 0)) {
+      newEntry.speech_includes = oldEntry.speech_includes;
+      restored.push(`${short}:speech_includes`);
+    }
+  }
+  return restored;
+}
+
 function saveAssignments(all, caller = 'unknown') {
   // #6 G1 + G3 — delta + caller attribution on every registry save.
   // Prior behaviour was silent-on-success: any label/pinned/includes
   // wipe (see #8) was invisible in `_toolbar.log` unless the user
   // noticed the UI regression. New log line is emitted WITHIN the lock
   // so entries appear serialised against concurrent writers.
+  //
+  // #8 defensive guard: touch-path writes (caller not in USER_INTENT_
+  // WRITERS) can't wipe user-intent fields — if the on-disk entry has
+  // label/pinned/voice/muted/focus/speech_includes and the incoming
+  // payload would drop them, we restore from disk before writing. The
+  // guard fires WARN-level diag so we can count how often the underlying
+  // bug triggers even while the guard masks the user-visible impact.
+  const restored = _guardUserIntent(all, caller);
   const delta = _registryWriteDelta(all);
   return withRegistryLock(COLOURS_REGISTRY, () => {
     try {
       const tmp = COLOURS_REGISTRY + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
       fs.renameSync(tmp, COLOURS_REGISTRY);
+      if (restored.length > 0) {
+        diag(`save-registry GUARD from=${caller} restored=[${restored.join(',')}] — incoming payload would have wiped user-intent fields`);
+      }
       diag(`save-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
       return true;
     } catch (e) { diag(`saveAssignments fail from=${caller}: ${e.message}`); return false; }

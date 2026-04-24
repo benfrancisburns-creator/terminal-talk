@@ -306,6 +306,63 @@ function Save-Registry {
     )
     $keys = 0
     try { $keys = $Assignments.Keys.Count } catch { $keys = 0 }
+    # #8 defensive guard — PS callers (statusline, speak-on-tool,
+    # speak-response) are all touch-paths that bump last_seen /
+    # claude_pid / session_id but must never wipe user-intent fields.
+    # Before writing, re-read the current disk state and, for each
+    # incoming short that's already on disk, restore label / pinned /
+    # voice / muted / focus / speech_includes if they'd be lost.
+    # Mirrors the JS-side _guardUserIntent guard in main.js.
+    $restored = @()
+    if (Test-Path $RegistryPath) {
+        try {
+            $raw = Get-Content $RegistryPath -Raw -Encoding utf8
+            if ($raw) {
+                $parsed = $raw | ConvertFrom-Json
+                if ($parsed.assignments) {
+                    foreach ($p in $parsed.assignments.PSObject.Properties) {
+                        $short = $p.Name
+                        if (-not $Assignments.ContainsKey($short)) { continue }
+                        $old = $p.Value
+                        $new = $Assignments[$short]
+                        if (-not $new) { continue }
+                        if ($old.label -and ([string]$old.label).Length -gt 0 -and (-not $new.label -or ([string]$new.label).Length -eq 0)) {
+                            $new.label = [string]$old.label
+                            $restored += "${short}:label"
+                        }
+                        if ($old.pinned -eq $true -and $new.pinned -ne $true) {
+                            $new.pinned = $true
+                            $restored += "${short}:pinned"
+                        }
+                        if ($old.voice -and -not $new.voice) {
+                            $new.voice = [string]$old.voice
+                            $restored += "${short}:voice"
+                        }
+                        if ($old.muted -eq $true -and $new.muted -ne $true) {
+                            $new.muted = $true
+                            $restored += "${short}:muted"
+                        }
+                        if ($old.focus -eq $true -and $new.focus -ne $true) {
+                            $new.focus = $true
+                            $restored += "${short}:focus"
+                        }
+                        if ($old.PSObject.Properties.Name -contains 'speech_includes' -and $old.speech_includes -and (-not $new.speech_includes -or $new.speech_includes.Count -eq 0)) {
+                            $inc = @{}
+                            foreach ($ip in $old.speech_includes.PSObject.Properties) {
+                                if ($ip.Value -is [bool]) { $inc[$ip.Name] = [bool]$ip.Value }
+                            }
+                            if ($inc.Count -gt 0) {
+                                $new['speech_includes'] = $inc
+                                $restored += "${short}:speech_includes"
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            # Best-effort — corrupt/locked file falls through to write.
+        }
+    }
     try {
         $tmp = "$RegistryPath.tmp"
         $jsonOut = (@{ assignments = $Assignments } | ConvertTo-Json -Depth 5)
@@ -313,6 +370,11 @@ function Save-Registry {
         Move-Item -Force $tmp $RegistryPath
         if ($LogPath) {
             $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            if ($restored.Count -gt 0) {
+                $restoredList = $restored -join ','
+                $guardLine = "$ts save-registry GUARD from=$Caller restored=[$restoredList]"
+                try { Add-Content -Path $LogPath -Value $guardLine -ErrorAction SilentlyContinue } catch {}
+            }
             $line = "$ts save-registry ok from=$Caller keys=$keys"
             try { Add-Content -Path $LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
         }

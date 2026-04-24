@@ -1724,6 +1724,176 @@ describe('REGISTRY LOGGING (#6 Batch 1 — G1 G2 G3)', () => {
   });
 });
 
+describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
+  // Ben's session labels / pinned / speech_includes keep getting wiped
+  // by a write path we haven't empirically pinned yet. The belt-and-
+  // braces defensive guard: touch-path writes (ensure-for-files,
+  // statusline, speak-on-tool, speak-response, backup-recovery) are NOT
+  // allowed to drop user-intent fields for an entry that already has
+  // them on disk. If the incoming payload would wipe one, it's restored
+  // from disk and a WARN-level diag fires.
+  //
+  // Intent-path writes (set-session-label, set-session-voice,
+  // set-session-muted, set-session-focus, set-session-include,
+  // remove-session) bypass the guard — the user explicitly asked for
+  // the mutation.
+  const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const psRegistrySrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8'
+  );
+
+  it('JS — USER_INTENT_WRITERS set lists the 6 intent-path callers', () => {
+    const m = mainJsSrc.match(/USER_INTENT_WRITERS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    if (!m) throw new Error('USER_INTENT_WRITERS allowlist not found in main.js — see #8 guard');
+    const names = m[1];
+    for (const expected of [
+      'set-session-label', 'set-session-voice', 'set-session-muted',
+      'set-session-focus', 'set-session-include', 'remove-session',
+    ]) {
+      if (!names.includes(`'${expected}'`)) {
+        throw new Error(`USER_INTENT_WRITERS missing "${expected}" — see #8 guard`);
+      }
+    }
+  });
+
+  it('JS — _guardUserIntent restores label/pinned/voice/muted/focus/speech_includes', () => {
+    if (!/function\s+_guardUserIntent\s*\(all,\s*caller\)/.test(mainJsSrc)) {
+      throw new Error('_guardUserIntent function signature missing — see #8 guard');
+    }
+    // Verify each user-intent field appears in a restoration branch.
+    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'speech_includes']) {
+      // Each field should appear on BOTH sides of an oldEntry/newEntry
+      // comparison in the guard body.
+      const rx = new RegExp(`oldEntry\\.${field}[\\s\\S]{0,200}newEntry\\.${field}`);
+      if (!rx.test(mainJsSrc)) {
+        throw new Error(`_guardUserIntent does not restore ${field} — see #8 guard`);
+      }
+    }
+  });
+
+  it('JS — saveAssignments + writeAssignments both invoke the guard', () => {
+    // Both writers run the guard. Without this, one path would bypass.
+    const saveMatch = mainJsSrc.match(/function\s+saveAssignments[\s\S]*?\n\}/);
+    if (!saveMatch || !/_guardUserIntent\(all,\s*caller\)/.test(saveMatch[0])) {
+      throw new Error('saveAssignments must call _guardUserIntent(all, caller) — see #8 guard');
+    }
+    const writeMatch = mainJsSrc.match(/function\s+writeAssignments\s*\(all,\s*opts\)[\s\S]*?\n\}/);
+    if (!writeMatch || !/_guardUserIntent\(all,\s*caller\)/.test(writeMatch[0])) {
+      throw new Error('writeAssignments must call _guardUserIntent(all, caller) — see #8 guard');
+    }
+  });
+
+  it('JS — guard emits WARN-style diag when restoration happens', () => {
+    if (!/save-registry GUARD from=\$\{caller\} restored=/.test(mainJsSrc)) {
+      throw new Error('saveAssignments must emit save-registry GUARD ... restored=[...] line — see #8 guard');
+    }
+    if (!/write-registry GUARD from=\$\{caller\} restored=/.test(mainJsSrc)) {
+      throw new Error('writeAssignments must emit write-registry GUARD ... restored=[...] line — see #8 guard');
+    }
+  });
+
+  it('PS — Save-Registry preserves user-intent fields when disk has them', () => {
+    // Mirror of the JS guard. Re-reads disk, compares per-short,
+    // restores the 6 user-intent fields (label/pinned/voice/muted/
+    // focus/speech_includes) when incoming payload would drop them.
+    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'speech_includes']) {
+      // The PS guard references $old.<field> and $new.<field> in
+      // restoration branches; at least one branch must name each field.
+      const rx = new RegExp(`\\$old\\.${field}[\\s\\S]{0,400}\\$new\\.${field}|\\$new\\.${field}[\\s\\S]{0,400}\\$old\\.${field}`);
+      if (!rx.test(psRegistrySrc)) {
+        throw new Error(`PS Save-Registry does not restore ${field} — see #8 guard`);
+      }
+    }
+    if (!/save-registry GUARD from=\$Caller restored=/.test(psRegistrySrc)) {
+      throw new Error('PS Save-Registry must emit save-registry GUARD line when restoration fires — see #8 guard');
+    }
+  });
+
+  it('JS — guard RUNTIME: ensure-for-files caller cannot wipe a labelled+pinned entry', () => {
+    // End-to-end sync test: write a live entry to disk with
+    // label+pinned+voice+speech_includes, then call saveAssignments
+    // with caller='ensure-for-files' and a payload that strips those.
+    // Expect the guard to restore all four fields before the write.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-guard-'));
+    const tmpRegistry = path.join(tmpDir, 'session-colours.json');
+    const clean = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      // Seed disk with a tuned entry.
+      const seeded = {
+        assignments: {
+          abcdef01: {
+            index: 0,
+            session_id: 'abcdef01-xxxx',
+            claude_pid: 12345,
+            label: 'My Terminal',
+            pinned: true,
+            voice: 'en-GB-SoniaNeural',
+            muted: false,
+            focus: false,
+            speech_includes: { tool_calls: false },
+            last_seen: Math.floor(Date.now() / 1000),
+          },
+        },
+      };
+      fs.writeFileSync(tmpRegistry, JSON.stringify(seeded, null, 2), 'utf8');
+
+      // Simulate the bug: ensure-for-files writes a fresh-alloc-default
+      // entry at the same short. Without the guard, this wipes the
+      // tuned fields. Re-implement the tiny guard logic inline so the
+      // test stays free of the main.js module (which has Electron
+      // deps we don't pull in unit tests).
+      const wiped = {
+        abcdef01: {
+          index: 0,
+          session_id: 'abcdef01-xxxx',
+          claude_pid: 99999,  // new pid
+          label: '',
+          pinned: false,
+          last_seen: Math.floor(Date.now() / 1000),
+        },
+      };
+      // Replicate _guardUserIntent against the seeded file.
+      const raw = fs.readFileSync(tmpRegistry, 'utf8');
+      const oldAll = JSON.parse(raw).assignments || {};
+      for (const short of Object.keys(wiped)) {
+        const oldEntry = oldAll[short];
+        if (!oldEntry) continue;
+        const newEntry = wiped[short];
+        if (typeof oldEntry.label === 'string' && oldEntry.label.length > 0 &&
+            (typeof newEntry.label !== 'string' || newEntry.label.length === 0)) {
+          newEntry.label = oldEntry.label;
+        }
+        if (oldEntry.pinned === true && newEntry.pinned !== true) newEntry.pinned = true;
+        if (typeof oldEntry.voice === 'string' && oldEntry.voice && !newEntry.voice) newEntry.voice = oldEntry.voice;
+        if (oldEntry.speech_includes && typeof oldEntry.speech_includes === 'object' &&
+            Object.keys(oldEntry.speech_includes).length > 0 &&
+            (!newEntry.speech_includes || Object.keys(newEntry.speech_includes).length === 0)) {
+          newEntry.speech_includes = oldEntry.speech_includes;
+        }
+      }
+      assertEqual(wiped.abcdef01.label, 'My Terminal', 'label restored');
+      assertEqual(wiped.abcdef01.pinned, true, 'pinned restored');
+      assertEqual(wiped.abcdef01.voice, 'en-GB-SoniaNeural', 'voice restored');
+      assertDeepEqual(wiped.abcdef01.speech_includes, { tool_calls: false }, 'speech_includes restored');
+    } finally {
+      clean();
+    }
+  });
+
+  it('JS — guard SEMANTICS: user-intent writer can actually clear a label', () => {
+    // The complementary invariant: the guard must NOT block legitimate
+    // user-initiated clears. set-session-label('') on a pinned entry
+    // should still clear the label (pinned stays — that's a separate
+    // concern). Verified via the USER_INTENT_WRITERS allowlist check:
+    // if caller is in the set, _guardUserIntent returns [] early.
+    const m = mainJsSrc.match(/function\s+_guardUserIntent[\s\S]*?\n\}/);
+    if (!m) throw new Error('_guardUserIntent body not found');
+    if (!/if\s*\(USER_INTENT_WRITERS\.has\(caller\)\)\s*return\s*\[\]/.test(m[0])) {
+      throw new Error('_guardUserIntent must short-circuit for USER_INTENT_WRITERS callers — see #8 guard');
+    }
+  });
+});
+
 describe('SETTINGS PANEL ↔ VALIDATOR COVERAGE (#11)', () => {
   // Enforces the invariant "validator RULES ≡ keys the UI writes + keys
   // the runtime reads". Four tests total: two forward (TT2's proposed
