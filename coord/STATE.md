@@ -1,6 +1,6 @@
 # STATE.md — cross-session consciousness
 
-**Last updated:** 2026-04-24 22:50 (TT2 post-compact rehydrate; #1 green-lit to TT1; #8 watcher live)
+**Last updated:** 2026-04-25 03:45 (TT2 shipped D1+D2+D3 parity fixes; DA'd #15 + #8 defensive)
 **Updated by:** TT2
 
 The one file any fresh session reads FIRST to pick up where the team is. Keep it under 200 lines.
@@ -51,20 +51,19 @@ See `QUEUE.md`. Initial seed: 6 items.
   at idle. Watcher log at `~/.terminal-talk/queue/_registry-watcher.log`. Suggests a save-site fires
   even when nothing changed — feeds into #8 diagnosis + G1 in #6 review.
 
-## Blockers — explicit
-
-What TT2 is waiting on (re-checked on any session resume):
+## Blockers — explicit (as of 2026-04-25 03:45)
 
 | Blocker | What's needed | Who | Unblocks |
 |---|---|---|---|
-| TT1 draft #1 fix on `fix-pass` | My green-light sent to TT1 INBOX 22:45 — awaiting commit | TT1 | #1, #3, #7 all close together |
-| Ben's #2 tense answer | "Tinkering" (present) vs "Tinkered for Xs" (past) — decides H1 vs H2 | Ben | #2 fix path |
-| Ben's next wipe episode | Watcher at `scripts/watch-registry.cjs` is running; capture happens automatically | Ben (passive — normal usage) | #8 empirical root-cause |
+| TT1 to merge #15 + #8 defensive | TT2 DA PASS sent 03:15 + 03:45 — awaiting their merge action | TT1 | Frees fix-drafted slot; #15 closes voice-routing; #8 defensive masks wipe until root cause pinned |
+| TT1 to claim #16 next | Fix spec staged in ACTIVE/16 | TT1 | Closes speakClipboard provider mismatch |
+| TT1 to claim #24 + #25 | New items from Ben's B-2 + B-4 decisions | TT1 | Tool_calls global UI + OpenAI collapse default |
 
-What TT2 can do autonomously while blocked (non-idle work):
-- Read TT1's fix-pass reviews as they land (#6 done, #5 pending)
-- Continue #4 24h-soak (T+24h ~2026-04-25T21:44)
-- Write additional diagnostic probes that don't need live Ben interaction
+TT2 has NO blockers — self-directing:
+- D4 emphasis regex audit (Surface J remaining divergence)
+- Path A race tightening for heartbeat (ACTIVE_FRESH_MS extension)
+- Verify #8 root cause when Batch 1 observability + GUARD diag captures the next wipe
+- Re-measure #4 24h-soak at ~2026-04-25T22:54
 
 ## Invariants discovered this run
 
@@ -90,6 +89,11 @@ What TT2 can do autonomously while blocked (non-idle work):
 | 2026-04-25 00:10      | TT1 | post-compact | #11 reviewer pass on `fix-pass` @ `0f14c4f`: F1/F3/F4 confirmed; F2 undercount (7 sub-keys not 6); F5/F6/F7 opened; awaiting Ben F5 resolution + TT2 Batch 1 pass |
 | 2026-04-25 00:55      | TT1 | post-compact | Batch 1 MERGED to main @ `8bc8a28` (TT2 DA PASS 00:35); #11 fix drafted on `fix-pass` @ `949296f` closing F1+F2+F3+F5+F6; 789/789; TT2 INBOX pinged |
 | 2026-04-25 01:05      | TT1 | post-compact | TT2 DA'ing #11; #15 reviewer pre-read committed @ `47ac8b7` (4 corrections + 2 extra tests for eventual fix draft); queued behind #11 merge |
+| 2026-04-25 01:50      | TT2 | post-compact | #11 DA PASS; F5 resolved by Ben (remove edge_notification); ben.md INBOX created for decisions; #8 wipe-source trace → Path 3 (set-session-label empty) primary candidate |
+| 2026-04-25 02:30      | TT2 | post-compact | K-1 race fix applied (@ `1967be8` main): openai-invalid watcher consumes flag before clear. 5 Ben decisions (B-1..B-5) all resolved. Surface B heartbeat state-machine verified clean |
+| 2026-04-25 02:45      | TT2 | post-compact | #19 JS↔Python sanitizer parity audit end-to-end (B-5). 3 divergences found: D1 (material, looksLikeCode counting), D2 (URL www.X), D3 (heading regex). Fix shapes drafted |
+| 2026-04-25 03:15      | TT2 | post-compact | #15 DA PASS @ `239a505`; D1 parity fix shipped @ `439d8ea` main (looksLikeCode counts ALL matches per pattern, matches Python) |
+| 2026-04-25 03:45      | TT2 | post-compact | D2+D3 parity fixes shipped @ `f9b098c` main. #8 defensive guard DA PASS @ `55366e5` (user-intent restoration on touch-path writes). 830 tests green |
 
 ## Pointers for a fresh session
 
