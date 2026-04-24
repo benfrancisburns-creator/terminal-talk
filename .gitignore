@@ -47,3 +47,11 @@ Claude Assesments/
 GHRC/
 .claude/
 iNPLAY IMAGES/
+
+# coord/ chatter surfaces — not committed. Durable surfaces
+# (README, STATE, QUEUE, INDEX, MAP/, ACTIVE/, DONE/) ARE committed.
+coord/INBOX/
+coord/LOCKS/
+coord/HANDOVER-*.md
+coord/BEN.md
+coord/IDLE/
