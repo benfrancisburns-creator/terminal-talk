@@ -13,6 +13,7 @@
     "scripts/generate-voices-window.cjs",
     "scripts/wrap-ascii-face.cjs",
     "scripts/run-sonar.sh",
+    "scripts/capture-kit-screenshots.cjs",
     "tests/e2e/**/*.spec.ts",
     "tests/e2e/**/*.ts",
     "docs/ui-kit/kit-bootstrap.js",
