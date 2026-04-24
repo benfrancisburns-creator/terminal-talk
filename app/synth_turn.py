@@ -905,6 +905,19 @@ def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path
         )
         if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 500:
             return True
+        # Exit code 2 = HTTP 401 (invalid key). openai_tts.py distinguishes
+        # this from generic failure so we can drop an auto-unset marker
+        # that main.js picks up on its next sweep — clears the safeStorage
+        # key + flips playback.tts_provider back to 'edge' so we don't
+        # keep hammering the API with a rejected key.
+        if proc.returncode == 2:
+            try:
+                flag = SESSIONS_DIR / 'openai-invalid.flag'
+                flag.parent.mkdir(parents=True, exist_ok=True)
+                flag.write_text(str(int(time.time())), encoding='utf-8')
+                _log('openai key rejected (HTTP 401) — wrote openai-invalid.flag')
+            except Exception:
+                pass  # best-effort; main.js falls back on its next check
         # Failure path: scrub stderr for accidental key echoes (defence
         # in depth — the wrapper writes to stderr, and an indiscreet
         # traceback from urllib could in theory contain headers).

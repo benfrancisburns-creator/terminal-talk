@@ -85,6 +85,12 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             detail = ''
         sys.stderr.write(f'HTTP {e.code}: {detail[:400]}\n')
+        # Exit code 2 specifically signals "the key was rejected" so the
+        # parent (synth_turn.py) can write an auto-unset flag that
+        # main.js picks up and clears the key + flips provider back to
+        # edge. 1 stays "generic failure" (transient 429, 5xx, timeout).
+        if e.code == 401:
+            return 2
         return 1
     except urllib.error.URLError as e:
         sys.stderr.write(f'URLError: {e.reason}\n')

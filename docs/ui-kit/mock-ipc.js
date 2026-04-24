@@ -348,6 +348,7 @@
     'pause-playback-only':    [],
     'mic-captured-elsewhere': [],
     'mic-released':           [],
+    'openai-key-invalid':     [],
   };
   function emit(channel, payload) {
     for (const cb of listeners[channel] || []) {
@@ -481,6 +482,7 @@
     // to demo the auto-pause / auto-resume flow.
     onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
     onMicReleased:          (cb) => subscribe('mic-released',           cb),
+    onOpenaiKeyInvalid:     (cb) => subscribe('openai-key-invalid',     cb),
   };
 
   function notifyQueue() {

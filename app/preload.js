@@ -73,4 +73,10 @@ contextBridge.exposeInMainWorld('api', {
   // dictation and never misses content while they talk.
   onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
   onMicReleased:          (cb) => subscribe('mic-released',           cb),
+  // Fires when main detects the auto-unset flag dropped by synth_turn
+  // after openai_tts.py returned HTTP 401 during a real synth. main
+  // has already cleared the key + demoted tts_provider to 'edge' by
+  // then; settings-form uses this to reveal the OpenAI section + show
+  // the key-input row so the user can re-enter their key.
+  onOpenaiKeyInvalid:     (cb) => subscribe('openai-key-invalid',     cb),
 });

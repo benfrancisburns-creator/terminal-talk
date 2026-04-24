@@ -61,9 +61,9 @@ function serveDocs() {
       // Strip querystring.
       const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
       // Default index.html on dir requests.
-      let rel = urlPath === '/' ? '/ui-kit/index.html'
-              : urlPath.endsWith('/') ? urlPath + 'index.html'
-              : urlPath;
+      const rel = urlPath === '/' ? '/ui-kit/index.html'
+                : urlPath.endsWith('/') ? urlPath + 'index.html'
+                : urlPath;
       const full = path.join(DOCS_DIR, rel);
       // Prevent escape out of DOCS_DIR.
       if (!full.startsWith(DOCS_DIR)) {
@@ -88,7 +88,7 @@ async function capture() {
     // direct import for a standalone script is `playwright` or the
     // `@playwright/test` `chromium` namespace. Use the stable one.
     ({ chromium } = require('@playwright/test'));
-  } catch (e) {
+  } catch {
     console.error('Playwright not installed. Run: npm install');
     process.exit(2);
   }

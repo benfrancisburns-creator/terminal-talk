@@ -367,6 +367,26 @@
       // the user can rotate the key without hunting for a toggle.
       this._openaiLastTestFailed = false;
 
+      // Runtime 401 auto-unset listener. main.js watches a flag file
+      // synth_turn.py drops when openai_tts.py returns HTTP 401 during
+      // a real (non-test) synth. By the time we get this event main
+      // has already cleared the encrypted key + flipped tts_provider
+      // back to 'edge'. We just need to make the UI reflect it:
+      // expand the section, reveal the input row, and show a red
+      // "key rejected" message so the user knows to re-enter.
+      if (this._api && typeof this._api.onOpenaiKeyInvalid === 'function') {
+        this._api.onOpenaiKeyInvalid(() => {
+          this._openaiLastTestFailed = true;
+          this._openaiUserWantsInput = true;
+          if (openaiSection && openaiSection.classList.contains('collapsed')) {
+            openaiSection.classList.remove('collapsed');
+            if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'true');
+          }
+          this._setTestResult('OpenAI rejected your key during a synth (HTTP 401). Provider reset to Edge; re-enter a valid key to re-enable OpenAI.', 'err');
+          this._refreshOpenAiStatus();
+        });
+      }
+
       // Section-collapse toggle on the OpenAI header.
       if (openaiSectionToggle && openaiSection) {
         this._on(openaiSectionToggle, 'click', () => {

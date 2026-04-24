@@ -1592,6 +1592,46 @@ function startVoiceListener() {
 let micWatcherProc = null;
 const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
 
+// OpenAI key auto-unset. When a real (non-test) TTS call gets HTTP 401
+// back, synth_turn.py drops `~/.terminal-talk/sessions/openai-invalid.flag`.
+// Polling for that file every 3 s is cheap (one fs.existsSync) and the
+// latency cap is fine — the moment it fires we clear the encrypted key +
+// sidecar, flip playback.tts_provider back to 'edge', and notify the
+// renderer so the settings UI can auto-expand the OpenAI section and
+// reveal the input row for the user to re-enter a key.
+let openaiInvalidTimer = null;
+function startOpenaiInvalidWatcher() {
+  if (openaiInvalidTimer) return;
+  const flagPath = path.join(SESSIONS_DIR, 'openai-invalid.flag');
+  openaiInvalidTimer = setInterval(() => {
+    try {
+      if (!fs.existsSync(flagPath)) return;
+      diag('openai-invalid.flag detected — clearing key + demoting provider to edge');
+      // Step 1: wipe the key from safeStorage + plaintext sidecar.
+      try { apiKeyStore.set(''); } catch (e) { diag(`apiKeyStore.set('') fail: ${e.message}`); }
+      // Step 2: demote provider so next turn doesn't re-trigger.
+      CFG.playback = CFG.playback || {};
+      CFG.playback.tts_provider = 'edge';
+      try { saveConfig(CFG); } catch (e) { diag(`saveConfig after auto-unset fail: ${e.message}`); }
+      // Step 3: tell the renderer so the UI reacts.
+      try {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('openai-key-invalid');
+        }
+      } catch (e) { diag(`notify renderer of openai-key-invalid fail: ${e.message}`); }
+      // Step 4: consume the flag so we don't loop.
+      try { fs.unlinkSync(flagPath); } catch {}
+    } catch (e) {
+      diag(`openai-invalid watcher tick fail: ${e.message}`);
+    }
+  }, 3000);
+}
+function stopOpenaiInvalidWatcher() {
+  if (!openaiInvalidTimer) return;
+  clearInterval(openaiInvalidTimer);
+  openaiInvalidTimer = null;
+}
+
 function startMicWatcher() {
   if (micWatcherProc) return;
   try {
@@ -1798,6 +1838,7 @@ app.whenReady().then(() => {
   else diag('listening DISABLED at startup');
   startMicWatcher();
   startTray();
+  startOpenaiInvalidWatcher();
 });
 
 app.on('will-quit', () => {
@@ -1808,6 +1849,7 @@ app.on('will-quit', () => {
   if (keyHelper) { try { keyHelper.kill(); } catch {} }
   stopMicWatcher();
   stopTray();
+  stopOpenaiInvalidWatcher();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });
