@@ -2574,6 +2574,182 @@ describe('SPEAK-HEARTBEAT IPC VALIDATION (HB1/HB3)', () => {
   });
 });
 
+describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
+  // Prior to #15 the speak-heartbeat handler always called callEdgeTTS
+  // regardless of cfg.playback.tts_provider — the "Prefer OpenAI"
+  // toggle's tooltip in app/index.html promised heartbeats would play
+  // in OpenAI's voice but the code never branched. These tests pin the
+  // UI-contract promise: heartbeat synth must route via the configured
+  // provider, pick the configured clip voice, and fall back to the
+  // other provider on synth failure.
+  //
+  // Harness constraint: `it()` is sync-only (async fn bodies silently
+  // pass because the harness doesn't await). Tests instead rely on
+  // "pre-await capture inspection": the async handler executes
+  // synchronously up to its first `await`, so callEdgeTTS / callOpenAITTS
+  // stub invocations have ALREADY recorded their args by the time
+  // handler() returns its Promise. The fallback path requires the
+  // catch-and-retry sequence to complete AFTER the first await, so
+  // that test falls back to source-structural grep instead of runtime.
+  const { createIpcHandlers } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+  );
+  const ipcSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8'
+  );
+  const baseCfg = () => ({
+    voices: {
+      edge_response:   'en-GB-RyanNeural',
+      edge_clip:       'en-GB-SoniaNeural',
+      openai_response: 'onyx',
+      openai_clip:     'shimmer',
+    },
+    playback: { tts_provider: 'edge' },
+    heartbeat_enabled: true,
+  });
+  const register = (overrides = {}) => {
+    const edgeCalls = [];
+    const openaiCalls = [];
+    const diagLines = [];
+    const handlers = {};
+    const ipcMain = { handle: (ch, fn) => { handlers[ch] = fn; } };
+    const cfg = overrides.cfg ? overrides.cfg() : baseCfg();
+    createIpcHandlers({
+      ipcMain,
+      diag: (l) => diagLines.push(l),
+      callEdgeTTS: overrides.edgeImpl
+        || ((verb, voice, outPath) => { edgeCalls.push({ verb, voice, outPath }); return Promise.resolve(); }),
+      callOpenAITTS: overrides.openaiImpl
+        || ((apiKey, input, voice, outPath) => { openaiCalls.push({ apiKey, input, voice, outPath }); return Promise.resolve(); }),
+      getAppVersion: () => '0.0.0-test',
+      getCFG: () => cfg,
+      loadAssignments: () => ({}),
+      getQueueFiles: () => [],
+      getQueueAllPaths: () => [],
+      ensureAssignmentsForFiles: () => {},
+      shortFromFile: () => null,
+      isPidAlive: () => false,
+      computeStaleSessions: () => [],
+      SESSIONS_DIR: os.tmpdir(),
+      getWin: () => null,
+      saveAssignments: () => true,
+      notifyQueue: () => {},
+      allowMutation: () => true,
+      validShort: () => true,
+      validVoice: () => true,
+      sanitiseLabel: (s) => s,
+      ALLOWED_INCLUDE_KEYS: new Set(),
+      setCFG: () => {},
+      saveConfig: () => true,
+      apiKeyStore: overrides.apiKeyStore || { get: () => 'sk-fake', set: () => {} },
+      redactForLog: (x) => x,
+      setApplyingDock: () => {},
+      testMode: true,
+      QUEUE_DIR: os.tmpdir(),
+      isPathInside: () => true,
+      getWatchdog: () => null,
+      getWatchdogIntervalMs: () => 0,
+    }).register();
+    return { handlers, edgeCalls, openaiCalls, diagLines };
+  };
+
+  it('provider=edge → edge synth only, uses voices.edge_clip (runtime)', () => {
+    const r = register();
+    // Kick off the async handler; we don't await (see group comment).
+    // Swallow any unhandled rejection — the handler's internal catch
+    // already covers synth failures; we only care about what it CALLED.
+    const p = r.handlers['speak-heartbeat']({}, 'Moonwalking', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(r.edgeCalls.length, 1, 'edge called exactly once');
+    assertEqual(r.openaiCalls.length, 0, 'openai must NOT be called when provider=edge');
+    assertEqual(r.edgeCalls[0].voice, 'en-GB-SoniaNeural', 'must use voices.edge_clip, not edge_response');
+  });
+
+  it('provider=openai + API key → openai synth first, uses voices.openai_clip (runtime)', () => {
+    const r = register({
+      cfg: () => ({ ...baseCfg(), playback: { tts_provider: 'openai' } }),
+    });
+    const p = r.handlers['speak-heartbeat']({}, 'Tinkering', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(r.openaiCalls.length, 1, 'openai called first when provider=openai');
+    assertEqual(r.edgeCalls.length, 0, 'edge must NOT be called when openai succeeds');
+    assertEqual(r.openaiCalls[0].voice, 'shimmer', 'must use voices.openai_clip');
+  });
+
+  it('provider=openai + no API key → openai NOT attempted (runtime sync-phase; TT1 #4)', () => {
+    // The edge fallback happens on the SECOND microtask (after tryOpenAI
+    // returns { ok: false, reason: 'no-api-key' } and the handler falls
+    // through to tryEdge). Sync-phase inspection can only verify the
+    // no-attempt side; the edge fallback path is covered by the
+    // structural regex in the next test.
+    let openaiCallCount = 0;
+    const r = register({
+      cfg: () => ({ ...baseCfg(), playback: { tts_provider: 'openai' } }),
+      apiKeyStore: { get: () => null, set: () => {} },
+      openaiImpl: () => { openaiCallCount += 1; return Promise.resolve(); },
+    });
+    const p = r.handlers['speak-heartbeat']({}, 'Moonwalking', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(openaiCallCount, 0, 'openai must NOT be attempted without an API key');
+    assertEqual(r.edgeCalls.length, 0, 'edge fallback runs on next microtask — not sync-observable here');
+  });
+
+  it('heartbeat_enabled=false short-circuits before any synth (runtime; TT1 #5)', () => {
+    const r = register({
+      cfg: () => ({ ...baseCfg(), heartbeat_enabled: false }),
+    });
+    const p = r.handlers['speak-heartbeat']({}, 'Moonwalking', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(r.edgeCalls.length + r.openaiCalls.length, 0, 'no synth attempted when disabled');
+  });
+
+  it('speak-heartbeat handler references tts_provider + callOpenAITTS + fallback try/catch (structural)', () => {
+    // Structural guard: the fallback runtime behaviour (openai throws →
+    // edge) can't be fully verified pre-await with the current harness,
+    // so we pin the source shape instead. If someone rewrites the
+    // handler without a tts_provider branch or without a try/catch
+    // fallback to callEdgeTTS, this test fires.
+    const m = ipcSrc.match(/ipcMain\.handle\(\s*'speak-heartbeat'[\s\S]*?\n\s*\}\);/);
+    if (!m) throw new Error('speak-heartbeat handler not found in ipc-handlers.js');
+    const body = m[0];
+    if (!/tts_provider/.test(body)) {
+      throw new Error('speak-heartbeat handler must branch on cfg.playback.tts_provider — see #15');
+    }
+    if (!/callOpenAITTS/.test(body)) {
+      throw new Error('speak-heartbeat handler must call callOpenAITTS when provider=openai — see #15');
+    }
+    if (!/callEdgeTTS/.test(body)) {
+      throw new Error('speak-heartbeat handler must keep callEdgeTTS path for provider=edge + openai-fallback — see #15');
+    }
+    // Fallback mechanism: either the traditional try/catch-calls-other
+    // pattern OR the "two-wrappers + result-check + await second()"
+    // pattern. Require SOMETHING that can rescue a failed first attempt.
+    const hasTryCatchFallback = /(callOpenAITTS[\s\S]{0,400}catch[\s\S]{0,400}callEdgeTTS)|(callEdgeTTS[\s\S]{0,400}catch[\s\S]{0,400}callOpenAITTS)/.test(body);
+    const hasResultFallback = /!result[\s\S]{0,500}await\s+second/.test(body);
+    const hasTryCatchAround = /try\s*\{[\s\S]{0,600}await\s+first[\s\S]{0,400}\}\s*catch/.test(body);
+    if (!(hasTryCatchFallback || (hasResultFallback && hasTryCatchAround))) {
+      throw new Error('speak-heartbeat must have a fallback mechanism between the two synth paths (try/catch OR two-wrappers + result-check) — see #15');
+    }
+    if (!/voices\.edge_clip/.test(body) || !/voices\.openai_clip/.test(body)) {
+      throw new Error('speak-heartbeat must use voices.edge_clip + voices.openai_clip (not edge_response) — see #15');
+    }
+  });
+
+  it('speak-heartbeat handler skips openai attempt when apiKey is falsy (structural; TT1 #4)', () => {
+    // Can't verify this end-to-end with the sync harness (see group
+    // comment), so pin the structural invariant instead: the handler
+    // body must contain a `!apiKey`-style short-circuit BEFORE the
+    // callOpenAITTS call. Prevents a regression where a missing key
+    // would wastefully 401 the API before falling back to edge.
+    const m = ipcSrc.match(/ipcMain\.handle\(\s*'speak-heartbeat'[\s\S]*?\n\s*\}\);/);
+    if (!m) throw new Error('speak-heartbeat handler not found');
+    const body = m[0];
+    if (!/!apiKey/.test(body) && !/apiKey\s*===\s*null/.test(body) && !/apiKey\s*==\s*null/.test(body)) {
+      throw new Error('speak-heartbeat must short-circuit the openai path when apiKey is missing — see #15');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';

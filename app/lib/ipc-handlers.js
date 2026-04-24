@@ -26,6 +26,12 @@ function createIpcHandlers(deps) {
     // handler can synthesise a spinner verb to an ephemeral T-prefixed
     // clip without duplicating the callEdgeTTS promise plumbing.
     callEdgeTTS,
+    // #15 — OpenAI TTS spawner for heartbeat clips when
+    // cfg.playback.tts_provider === 'openai'. Injected (rather than
+    // required directly) so the test harness can stub the call without
+    // hitting api.openai.com. Falls back to callEdgeTTS on throw or
+    // when no API key is set.
+    callOpenAITTS,
     // About panel: `app.getVersion()`-equivalent getter. Injected so
     // the factory doesn't need to import electron directly.
     getAppVersion,
@@ -633,7 +639,21 @@ function createIpcHandlers(deps) {
       if (cfg && cfg.heartbeat_enabled === false) { diag('speak-heartbeat skip: heartbeat_enabled=false in config'); return false; }
       heartbeatInFlight = true;
       try {
-        const voice = (cfg && cfg.voices && cfg.voices.edge_response) || 'en-GB-RyanNeural';
+        // #15 — respect cfg.playback.tts_provider. Prior to this fix the
+        // handler hardcoded callEdgeTTS with voices.edge_response,
+        // contradicting the UI tooltip at app/index.html:203 which
+        // promises heartbeats play in OpenAI's voice when "Prefer OpenAI"
+        // is on. Now branches by provider and uses the *clip* voice
+        // (edge_clip / openai_clip) since heartbeats are ephemeral
+        // short-utterance clips, matching the Settings panel "Clip voice"
+        // dropdown's semantic group. Existing listeners may notice a
+        // voice change post-update if they'd tuned edge_response — see
+        // commit message for rationale.
+        const voices = (cfg && cfg.voices) || {};
+        const provider = String(((cfg && cfg.playback) || {}).tts_provider || 'edge').toLowerCase();
+        const edgeVoice   = voices.edge_clip   || voices.edge_response   || 'en-GB-RyanNeural';
+        const openaiVoice = voices.openai_clip || voices.openai_response || 'shimmer';
+        const apiKey = (apiKeyStore && typeof apiKeyStore.get === 'function') ? apiKeyStore.get() : null;
         const d = new Date();
         const pad = (n, w = 2) => String(n).padStart(w, '0');
         const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`;
@@ -645,8 +665,41 @@ function createIpcHandlers(deps) {
         // modification race); re-applying explicitly.
         const filename = `${ts}-H-0001-${sessionShort}.mp3`;
         const outPath = path.join(QUEUE_DIR, filename);
-        await callEdgeTTS(verb, voice, outPath);
-        diag(`heartbeat: "${verb}" → ${filename}`);
+
+        // Try the configured provider first, fall back to the other on
+        // throw. OpenAI attempt skipped entirely when no API key —
+        // otherwise callOpenAITTS would 401 and we'd waste a round-trip
+        // before falling back to edge.
+        const tryEdge = async () => {
+          await callEdgeTTS(verb, edgeVoice, outPath);
+          return { ok: true, used: 'edge', voice: edgeVoice };
+        };
+        const tryOpenAI = async () => {
+          if (!apiKey) return { ok: false, used: null, reason: 'no-api-key' };
+          if (typeof callOpenAITTS !== 'function') return { ok: false, used: null, reason: 'callOpenAITTS-missing' };
+          await callOpenAITTS(apiKey, verb, openaiVoice, outPath);
+          return { ok: true, used: 'openai', voice: openaiVoice };
+        };
+        const first = provider === 'openai' ? tryOpenAI : tryEdge;
+        const second = provider === 'openai' ? tryEdge : tryOpenAI;
+        let result;
+        try {
+          result = await first();
+        } catch (e) {
+          diag(`heartbeat: ${provider === 'openai' ? 'openai' : 'edge'} synth threw, trying fallback: ${e && e.message ? e.message : e}`);
+          result = { ok: false };
+        }
+        if (!result || !result.ok) {
+          // First provider either refused (no key, no fn) or threw.
+          // Fall through to the other. If THAT also throws the outer
+          // catch handles it.
+          result = await second();
+        }
+        if (!result || !result.ok) {
+          diag(`heartbeat: no provider produced a clip for "${verb}" — check API key + edge-tts install`);
+          return false;
+        }
+        diag(`heartbeat: "${verb}" → ${filename} provider=${result.used} voice=${result.voice}`);
         if (typeof notifyQueue === 'function') notifyQueue();
         return true;
       } catch (e) {

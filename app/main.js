@@ -1495,6 +1495,7 @@ createIpcHandlers({
   ipcMain,
   diag,
   callEdgeTTS,
+  callOpenAITTS,
   getAppVersion: () => app.getVersion(),
   getCFG: () => CFG,
   setCFG: (next) => { CFG = next; },
