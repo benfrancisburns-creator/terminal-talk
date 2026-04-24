@@ -103,6 +103,14 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   draft. · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done
   ACTIVE=`ACTIVE/20-palette-and-sorting-audit.md`
 
+- [ ] **#21 openai-key-flow-audit** (Surface K) — audited: 8 invariants verified (atomic
+  write order, clear-both-files, safeStorage-unavailable cleanup, plaintext migration,
+  401-auto-unset 4-step, idempotent failure, no plaintext in logs, hook/synth sidecar). Two
+  minor findings: K-1 narrow race between 401 auto-unset and concurrent user-save (user's
+  pasted key could be wiped in ~5ms window); K-2 stale .enc after safeStorage flips
+  unavailable (disk-clutter, not security). · AXIS=1,3,8 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/21-openai-key-flow-audit.md`
+
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
   window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
