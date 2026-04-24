@@ -65,9 +65,6 @@ const scrubberJarvis = document.getElementById('scrubberJarvis');
 // in app/lib/heartbeat.js so they're independently unit-testable.
 // The setInterval tick below is a thin wrapper that reads live state,
 // calls decideHeartbeatAction(), and applies the returned mutation.
-// randomVerb + SPINNER_VERBS are re-exported from TT_HEARTBEAT so
-// existing callers (mascot word-cloud trail) keep working unchanged.
-const SPINNER_VERBS = window.TT_HEARTBEAT.SPINNER_VERBS;
 const randomVerb = window.TT_HEARTBEAT.pickHeartbeatVerb;
 const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
@@ -245,9 +242,6 @@ const HEARTBEAT_INTERVAL_MS = 8_000;
 // hooks fire every few seconds when Claude is actually working, so
 // `last_seen` stays fresh inside this window during real work and
 // ages out quickly once the turn ends.
-// TODO HB2: replace this proxy with an explicit UserPromptSubmit →
-// Stop flag file for zero-false-positive working detection.
-const HEARTBEAT_SESSION_FRESH_MS = 15_000;
 let lastHeartbeatAt = 0;
 let heartbeatSilentSince = Date.now();
 
@@ -257,19 +251,6 @@ let heartbeatSilentSince = Date.now();
 // session shorts whose UserPromptSubmit hook fired but whose Stop
 // hook hasn't, so a heartbeat genuinely maps to "waiting for Claude".
 let workingSessionsCache = [];
-
-function firstWorkingSessionShort() {
-  // Strict HB2 gate: heartbeat fires ONLY when a UserPromptSubmit flag
-  // file exists. No `last_seen` fallback — it caused the exact bug
-  // HB2 was meant to fix: Claude Code statusline refreshes `last_seen`
-  // on every terminal redraw, so a passive terminal you're just
-  // reading in kept the flag "fresh" within the 15 s window and
-  // heartbeat fired for minutes after the last response ended.
-  // If the UserPromptSubmit hook isn't registered (fresh install that
-  // hasn't re-run install.ps1), heartbeat stays silent entirely —
-  // that's the right default; noisy-when-idle is worse than silent.
-  return workingSessionsCache.length > 0 ? workingSessionsCache[0] : null;
-}
 
 // HB2 refresh: poll the working-sessions list from main on each tick.
 // Async IPC so the heartbeat tick itself stays synchronous and cheap.

@@ -159,10 +159,12 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
                           -SessionId $sessionId -Short $sessionShort -Now $now
 }
 
-# Config defaults + overrides
-$edgeClipVoice = 'en-GB-SoniaNeural'
+# Config defaults + overrides.
+# edge_clip + openai_clip are read by the highlight-to-speak / question
+# hooks, not the response hook. They used to default here too for copy-
+# paste consistency; removed once PSScriptAnalyzer started rightly
+# flagging them as assigned-but-never-used here.
 $edgeResponseVoice = 'en-GB-RyanNeural'
-$openaiClipVoice = 'shimmer'
 $openaiResponseVoice = 'onyx'
 $openaiApiKey = $null
 

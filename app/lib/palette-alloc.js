@@ -32,7 +32,7 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   // and the renderer would read `index: NaN`, painting nothing and
   // breaking the palette class CSS lookup. Audit 2026-04-23 Phase 4
   // Module 2 caught this via a paletteSize=0 probe.
-  if (!Number.isFinite(paletteSize) || paletteSize < 1) paletteSize = 24;
+  const size = (!Number.isFinite(paletteSize) || paletteSize < 1) ? 24 : paletteSize;
   const entries = Object.entries(assignments || {});
   const busy = new Map();  // index -> shortId
   for (const [short, entry] of entries) {
@@ -42,7 +42,7 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   }
 
   // 1. Lowest free index wins.
-  for (let i = 0; i < paletteSize; i++) {
+  for (let i = 0; i < size; i++) {
     if (!busy.has(i)) return { index: i, evicted: null, reason: 'free' };
   }
 
@@ -82,7 +82,7 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   let sum = 0;
   for (const ch of String(newShort || '')) sum += ch.charCodeAt(0);
   return {
-    index: sum % paletteSize,
+    index: sum % size,
     evicted: null,
     reason: 'hash-collision'
   };

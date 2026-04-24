@@ -19,10 +19,14 @@ test.describe('Settings panel', () => {
   test('Playback section shows speed + auto-prune controls', async ({ window }) => {
     await openSettings(window);
     await expect(window.locator('#speedSlider')).toBeVisible();
-    // The checkbox itself is visually hidden (the .toggle-slider span takes
-    // its place). Check that both exist and the slider is visible.
+    // The underlying <input type=checkbox> is visually hidden under the
+    // new pill-toggle UI (2026-04-23); the visible control is the pair
+    // of .tri-btn pill buttons inside the .pill-toggle wrapper. Check
+    // that the hidden input is attached AND the pill pair is visible.
     await expect(window.locator('#autoPruneToggle')).toBeAttached();
-    await expect(window.locator('.toggle-slider').first()).toBeVisible();
+    const prunePill = window.locator('#autoPruneToggle').locator('..');
+    await expect(prunePill.locator('.tri-btn.on')).toBeVisible();
+    await expect(prunePill.locator('.tri-btn.off')).toBeVisible();
     await expect(window.locator('#autoPruneSec')).toBeVisible();
   });
 
@@ -30,7 +34,10 @@ test.describe('Settings panel', () => {
     await openSettings(window);
     const toggle = window.locator('#autoPruneToggle');
     await expect(toggle).toBeChecked();
-    await clickById(window, 'autoPruneToggle');
+    // Click the "Off" pill — clicking the hidden <input> directly has
+    // pointer-events: none under the new pill-toggle UI.
+    const prunePill = toggle.locator('..');
+    await prunePill.locator('.tri-btn.off').click();
     await expect(toggle).not.toBeChecked();
     await expect(window.locator('#autoPruneSec')).toBeDisabled();
   });

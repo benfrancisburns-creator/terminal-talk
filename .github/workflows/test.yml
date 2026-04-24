@@ -197,7 +197,16 @@ jobs:
             'PSAvoidGlobalVars',
             'PSAvoidUsingWriteHost',
             'PSAvoidUsingEmptyCatchBlock',
-            'PSUseSingularNouns'
+            'PSUseSingularNouns',
+            # Files without a UTF-8 BOM are valid — PowerShell 7+ reads
+            # UTF-8 without BOM correctly. The BOM rule fires because
+            # our comments use Unicode em-dashes + arrows.
+            'PSUseBOMForUnicodeEncodedFile',
+            # Internal helper functions in .psm1 files start with `_` to
+            # signal module-private and aren't exported. PowerShell's
+            # approved-verb list is for EXPORTED cmdlets; rejecting _Get /
+            # _Try / _Parse here provides no real invariant.
+            'PSUseApprovedVerbs'
           )
           $files = @()
           Get-ChildItem -Path hooks,app,scripts -Include *.ps1,*.psm1 -Recurse | ForEach-Object { $files += $_.FullName }

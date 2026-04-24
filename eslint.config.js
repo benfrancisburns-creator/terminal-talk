@@ -95,6 +95,7 @@ module.exports = [
       'app/renderer.js',
       'app/lib/clip-paths.js',
       'app/lib/component.js',
+      'app/lib/heartbeat.js',
       'app/lib/stale-session-poller.js',
       'app/lib/dot-strip.js',
       'app/lib/sessions-table.js',

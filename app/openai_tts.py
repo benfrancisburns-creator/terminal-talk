@@ -25,7 +25,6 @@ import sys
 import urllib.error
 import urllib.request
 
-
 ENDPOINT = 'https://api.openai.com/v1/audio/speech'
 MODEL    = 'gpt-4o-mini-tts'
 INSTRUCTIONS = 'Speak in a calm, clear, conversational tone.'

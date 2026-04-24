@@ -109,14 +109,18 @@ function _Try-ScrapeOnce([string]$Signature, [int]$ExpectedSec, [int]$ToleranceS
             if (-not $text) { continue }
             if (-not $text.Contains($Signature)) { continue }
 
-            $matches = $footerRegex.Matches($text)
-            if ($matches.Count -eq 0) { continue }
+            # Named $footerMatches (not $matches) — PowerShell's $matches is
+            # an automatic variable populated by -match / -replace; shadowing
+            # it is flagged by PSScriptAnalyzer and can surprise future
+            # readers who expect -match results nearby.
+            $footerMatches = $footerRegex.Matches($text)
+            if ($footerMatches.Count -eq 0) { continue }
 
             # Walk matches newest-first (textual order = oldest-first
             # in a terminal buffer). Return the first one whose parsed
             # duration is within ToleranceSec of ExpectedSec.
-            for ($i = $matches.Count - 1; $i -ge 0; $i--) {
-                $phrase = $matches[$i].Value
+            for ($i = $footerMatches.Count - 1; $i -ge 0; $i--) {
+                $phrase = $footerMatches[$i].Value
                 $scrapedSec = _ParseFooterSeconds $phrase
                 if ($scrapedSec -lt 0) { continue }
                 $diff = [Math]::Abs($scrapedSec - $ExpectedSec)

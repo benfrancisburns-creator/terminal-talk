@@ -2,12 +2,15 @@
 
 All notable changes to Terminal Talk are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — post-v0.4.0
+## [Unreleased]
+
+_No changes yet._
+
+## [0.5.0] — 2026-04-24
 
 Audio-pipeline quality pass (NG / TN / HB initiatives), OpenAI
 premium-TTS UI, mic-aware auto-pause, terminal-footer scrape, plus
-a 221-test audit programme and assorted UX fixes surfaced by live
-use. Branch `main`; no tag cut yet.
+a 221-test audit programme and assorted UX fixes surfaced by live use.
 
 ### Added
 

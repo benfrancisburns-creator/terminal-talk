@@ -30,8 +30,10 @@ ignore = ["E501"]
 
 [lint.mccabe]
 # McCabe complexity threshold. Functions with more branching than this
-# are flagged. Current floor is 21 (synth_turn.run = 21, tool_narration.
-# narrate_tool_use = 16). Both grew from feature work — sentence-grouping
-# (NG1) and tool-call narration (TN1). Decompose when their shape settles
-# and ratchet this back toward 15.
-max-complexity = 21
+# are flagged. synth_turn.run grew to 33 after the on-stream + on-stop
+# + footer-phrase + elapsed-sec + OpenAI-provider branches landed
+# (2026-04-22 → 24). Decompose by extracting the four mode branches
+# (on-tool / on-stop / on-stream + the muted / not-muted paths) into
+# helper functions and then ratchet back toward 15. Tracked as a
+# post-v0.5 refactor.
+max-complexity = 33

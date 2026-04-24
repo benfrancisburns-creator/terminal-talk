@@ -547,9 +547,7 @@ def _inline_looks_like_prose(content: str) -> bool:
         return False
     if '\n' in trimmed:
         return False
-    if _INLINE_CODE_DISQUAL_RE.search(trimmed):
-        return False
-    return True
+    return not _INLINE_CODE_DISQUAL_RE.search(trimmed)
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 # Triple-asterisk emphasis (bold-italic ***x***) must be stripped BEFORE

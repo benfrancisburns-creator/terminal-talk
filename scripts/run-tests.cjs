@@ -1132,8 +1132,6 @@ describe('PINNED SESSIONS NOT PRUNED', () => {
     // (label / voice / muted / focus / speech_includes) alongside
     // pinned, so historic entries from before auto-pin keep their
     // labels across pid rotation.
-    const { createRequire } = require('node:module');
-    const req = createRequire(path.join(APP_DIR, '..', 'package.json'));
     // Use the installed mirror so the running toolbar's isSessionLive
     // matches the version under test. main.js isn't module.exports, so
     // we parse its hasUserIntent + isSessionLive out of source and eval
@@ -1146,7 +1144,6 @@ describe('PINNED SESSIONS NOT PRUNED', () => {
     }
     const SESSION_GRACE_SEC = 14400;
     const isPidAlive = () => false;
-    // eslint-disable-next-line no-new-func
     const isLive = new Function('entry', 'now', 'isPidAlive', 'SESSION_GRACE_SEC',
       `${helperMatch[0]}\n${liveMatch[0]}\nreturn isSessionLive(entry, now);`);
     const now = Math.floor(Date.now() / 1000);
@@ -3072,7 +3069,11 @@ describe('TranscriptWatcher lifecycle (EX7f / audit 2026-04-23)', () => {
 // so it stays out of the harness — but the wiring is verifiable here.
 // =============================================================================
 describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
-  const respHookPath = path.join(INSTALL_DIR, 'hooks', 'speak-response.ps1');
+  // Read from the REPO, not INSTALL_DIR — CI Linux jobs run the logic
+  // harness without an install, and a top-level read of INSTALL_DIR
+  // would ENOENT at module-eval time before the LOGIC_ONLY gate can
+  // skip the block. These are source-level invariants either way.
+  const respHookPath = path.join(__dirname, '..', 'hooks', 'speak-response.ps1');
   const respHook = fs.readFileSync(respHookPath, 'utf8');
 
   it('Stop hook uses System.Diagnostics.Process (not bare `& powershell.exe`)', () => {
@@ -3347,7 +3348,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
   it('multiple /clear in sequence: only one entry persists, slot preserved', () => {
     // /clear → short A migrates to B. /clear again → B migrates to C.
     // Final state must be exactly one entry (C) at the original slot.
-    let state = {
+    const state = {
       'alpha111': {
         index: 12, session_id: 'alpha-uuid', claude_pid: 5555,
         label: 'persistent', pinned: true, muted: false, focus: false,
@@ -6313,7 +6314,6 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     if (!voiceMatch)   throw new Error('could not extract VOICE_KEY_RE from main.js');
     if (!includeMatch) throw new Error('could not extract VALID_INCLUDE_KEYS from main.js');
     if (!fnMatch)      throw new Error('could not extract sanitiseEntry body from main.js');
-    // eslint-disable-next-line no-new-func
     const sanitiseEntry = new Function(
       `${voiceMatch[0]}\n${includeMatch[0]}\n${fnMatch[0]}\nreturn sanitiseEntry;`
     )();
