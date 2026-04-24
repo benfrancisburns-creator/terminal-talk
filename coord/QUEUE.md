@@ -84,6 +84,12 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   include/exclude that content from TTS synth? Needs code-path trace through sanitiser +
   empirical probe with each sub-key set. · AXIS=1,2 · OWNER=TBD · STATUS=queued
 
-- [ ] **#14 playback-controls-audit** (Surface H) — play/pause, back10, fwd10, scrubber,
-  clearPlayed + their keyboard shortcuts. State transitions, correctness, no races. · AXIS=1
-  OWNER=TBD · STATUS=queued
+- [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
+  UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
+  window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
+
+- [ ] **#17 mic-aware-auto-pause-audit** (Surface D) — completed: no BROKEN, no BRITTLE. 10
+  invariants verified from source (two-flag split, initial-state emit, crash-recovery,
+  self-exclusion, etc.). Ben's earlier "Path C fixed" observation validated from code. One
+  test gap noted (invariant I2 guard). · AXIS=1,3 · OWNER=tt2 · STATUS=audit-done
+  ACTIVE=`ACTIVE/17-mic-aware-auto-pause-audit.md`
