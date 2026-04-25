@@ -50,9 +50,44 @@ Captured after resume + compact. Key observations:
   future-hypothetical; it's already in the file. Watcher will catch the next one.
 - **No `.invalid-*` files, no stuck locks** (beyond the one this claude session owns).
 
+## T+10h intermediate measure — [tt2 · 2026-04-25T08:55]
+
+| # | Metric | T+0 | T+10h | Delta |
+|---|---|---|---|---|
+| M1 | Electron RSS | 0 (off) | 0 (off) | — (Ben not using right now) |
+| M3a | Python proc count | 14 | **11** | -3 (some orphans cleaned) |
+| M3b | Python RSS sum | 120.3 MB | **192.3 MB** | +72 MB (wake-word now active = openWakeWord 84 MB) |
+| M3c | Python handles | 1349 | 1579 | +230 |
+| M4a | `_toolbar.log` | 498 KB | 546 KB | +49 KB |
+| M4b | `_hook.log` | 260 KB | **608 KB** | +348 KB (Batch 1 + Batch 2 observability) |
+| M4c | `_voice.log` | 561 KB | 624 KB | +63 KB |
+| M4d | `_watchdog.log` | 21.6 KB | 24.5 KB | +3 KB (slow growth — good) |
+| M4f | `_registry-watcher.log` | 2.5 KB | **163 KB** | +160 KB (TT2's idle-churn watcher) |
+| M5 | MP3s in queue | 34 | **0** | -34 (clearPlayed or auto-prune cleaned) |
+
+### Intermediate observations
+
+- **Orphan python pattern persists.** 5 procs from 2026-04-22 (3+ days old, ~1 MB each)
+  + 1 from 2026-04-23 still around. TT1 claimed #9 (orphan-python-on-toolbar-exit) at
+  08:50 — fix shape: hard-kill voiceProc + keyHelper on will-quit + generalise sweep to
+  cover key_helper script too. Their fix should drain these orphans.
+- **MP3 cleanup working.** Queue has 0 MP3s vs 34 at T+0. Either Ben hit clearPlayed or
+  auto-prune (default 20s) cleaned them.
+- **Observability cost.** `_hook.log` grew 348 KB and `_registry-watcher.log` grew 160 KB
+  in 10h. At this rate, `_hook.log` would reach 1 MB rotation threshold (per #6 design)
+  in ~28h. `_registry-watcher.log` has no rotation — needs sampling or rotation if we
+  keep the watcher running long-term.
+- **No `save-registry skip` lines yet.** `grep skip _hook.log` → 0. The PS lock-fail path
+  has not fired since deploy = lock acquisition has been clean. Good empirical signal.
+- **No GUARD diag fires either.** `grep GUARD _hook.log` → 0. Confirms TT1's defensive
+  guard hasn't needed to restore any user-intent fields = the lock-fail-fall-through wipe
+  pattern hasn't recurred since the root-cause fix.
+
 ## T+24h re-measure — [tt2 · TBD]
 
-*(at ~2026-04-25T22:54 — or sooner if toolbar gets re-launched and drifts visibly)*
+*(at ~2026-04-25T22:54 — capture full deltas; expect orphan-python count to drop to ~0
+once TT1's #9 fix lands and Ben restarts; expect _registry-watcher.log to keep growing
+unless watcher gets rotation or stops)*
 
 ## T+24h re-measure — [tt2 · TBD]
 
