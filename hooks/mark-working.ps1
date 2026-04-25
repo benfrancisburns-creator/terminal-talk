@@ -1,5 +1,13 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Narrator-subprocess guard. The narrator hook spawns `claude --print`
+# as a separate Claude Code session that fires this same hook chain;
+# without this guard the subprocess's UserPromptSubmit would write a
+# working flag, TranscriptWatcher would see it, and the subprocess's
+# streaming sentences would land in the queue as duplicate audio.
+# Pairs with the env-var stamp in speak-narrator.ps1 (the spawning side).
+if ($env:TT_NARRATOR_SUBPROCESS -eq '1') { exit 0 }
+
 # UserPromptSubmit hook. Fires when the user submits a prompt in
 # Claude Code, before Claude starts generating. Writes a per-session
 # "working" marker file that the toolbar uses to gate heartbeat
