@@ -20,14 +20,48 @@ param(
     [Parameter(Mandatory = $true)] [string]$RegistryPath,
     [Parameter(Mandatory = $true)] [int]$ExpectedSec,
     [int]$ToleranceSec = 3,
-    [int]$MaxWaitMs = 2000,
-    [int]$PollIntervalMs = 250
+    # Polling window inside the scrape (after cold-start). Bumped from
+    # 2000 → 3000 ms 2026-04-26: telemetry showed the footer
+    # occasionally takes 1.5+ s to appear after the Stop hook fires
+    # because Claude Code prints it AFTER the hook chain completes.
+    # 3 s gives genuinely robust headroom while still staying under
+    # the parent's 6 s subprocess timeout.
+    [int]$MaxWaitMs = 3000,
+    # Tighter poll interval (250 → 150 ms) so we catch the footer's
+    # appearance window faster. Cheap — just more `if` checks against
+    # already-loaded buffer text.
+    [int]$PollIntervalMs = 150,
+    # Optional: when set, append per-stage timing data to this log
+    # path so we can see WHERE the cold-start cost actually goes.
+    # Caller (speak-response.ps1) supplies this for diagnostic runs.
+    [string]$TimingLog = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Stopwatch wrapper that writes per-stage durations to TimingLog. No-op
+# when TimingLog is empty so production runs pay zero cost. Designed
+# for cumulative breakdowns: each call records "stage took N ms" since
+# the last stage marker, so we see the actual cold-start composition
+# (assembly load vs UIA init vs window enum vs polling).
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$lastMs = 0L
+function _LogStage([string]$stage) {
+    if (-not $TimingLog) { return }
+    $now = $stopwatch.ElapsedMilliseconds
+    $delta = $now - $script:lastMs
+    $script:lastMs = $now
+    try {
+        "$(Get-Date -Format 'HH:mm:ss.fff') [scrape-footer] $stage took ${delta}ms (total ${now}ms)" |
+            Out-File $TimingLog -Append -Encoding utf8
+    } catch {}
+}
+
 try {
+    _LogStage 'subprocess started'
     $modulePath = Join-Path $PSScriptRoot 'terminal-scrape.psm1'
     Import-Module $modulePath -Force -ErrorAction Stop
+    _LogStage 'module imported (UIA assemblies loaded)'
     $phrase = Get-TerminalFooter `
         -SessionShort   $SessionShort `
         -RegistryPath   $RegistryPath `
@@ -35,6 +69,8 @@ try {
         -ToleranceSec   $ToleranceSec `
         -MaxWaitMs      $MaxWaitMs `
         -PollIntervalMs $PollIntervalMs
+    $resultLabel = if ([string]::IsNullOrEmpty($phrase)) { 'EMPTY' } else { 'MATCH' }
+    _LogStage "Get-TerminalFooter returned phrase=$resultLabel"
     # Write-Output so the phrase is the ONLY thing on stdout.
     if ($phrase) { Write-Output $phrase }
     exit 0
