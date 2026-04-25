@@ -202,9 +202,8 @@ def _should_finalise_capture(
         return True
     if fill < min_samples:
         return False
-    if saw_voice and silence_run >= trailing_silence_chunks:
-        return True
-    return False
+    # SIM103: collapsed `if cond: return True; return False` to direct return.
+    return saw_voice and silence_run >= trailing_silence_chunks
 
 
 def _write_wav(path: Path, samples: np.ndarray) -> None:
@@ -447,7 +446,7 @@ def main():
     # EPD counters: per-chunk (80 ms) rolling state.
     post_wake_saw_voice = [False]            # have we seen ANY voice yet?
     post_wake_silence_run = [0]              # chunks of silence since last voice
-    cmd_queue: 'queue.Queue[np.ndarray]' = queue.Queue()
+    cmd_queue: queue.Queue[np.ndarray] = queue.Queue()
 
     def dispatcher():
         """Consumes post-wake buffers off cmd_queue on a plain Python
