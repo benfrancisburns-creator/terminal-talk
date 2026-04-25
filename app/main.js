@@ -1688,23 +1688,46 @@ function isListeningEnabled() {
 function setListeningState(on) {
   try { fs.writeFileSync(LISTENING_STATE_FILE, on ? 'on' : 'off'); } catch {}
 }
-// Military-grade safety net: sweep any orphan wake-word listeners.
-// Matches only python.exe processes whose command line contains our script
-// path, so nothing unrelated gets killed. Runs on start, before every spawn,
-// and after every stop (belt-and-braces).
-function killOrphanVoiceListeners() {
+// #9 — script-name fragments matched by the orphan sweep below. Each
+// fragment is matched as a substring against the python child's
+// CommandLine, so 'wake-word-listener' catches our wake-word-listener.py
+// without false-positive on unrelated python tools.
+const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper'];
+
+// Military-grade safety net: sweep any orphan python helpers.
+// Matches only python.exe processes whose command line contains one of
+// the listed TT script-name fragments, so nothing unrelated gets killed.
+// Runs on start, before every spawn, after every stop (belt-and-braces),
+// and on app will-quit (#9 — orphan-python-on-toolbar-exit).
+//
+// #9 — was originally `killOrphanVoiceListeners` (wake-word only). Now
+// covers `key_helper.py` too because TT2's #4 baseline showed both
+// surviving toolbar exit. Old name kept as an alias so existing call
+// sites + tests don't churn.
+function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
   if (process.platform !== 'win32') return;
+  if (!Array.isArray(scriptFragments) || scriptFragments.length === 0) return;
   try {
     const { execFileSync } = require('child_process');
-    const psCmd = "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*wake-word-listener*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+    // Build a -or chain of CommandLine -like filters. Each fragment
+    // hand-validated as alphanum + underscore + hyphen below so the
+    // string interpolation can't smuggle PowerShell metachars.
+    const safe = scriptFragments.filter((s) => /^[a-zA-Z0-9_\-]+$/.test(s));
+    if (safe.length === 0) return;
+    const orChain = safe.map((s) => `$_.CommandLine -like '*${s}*'`).join(' -or ');
+    const psCmd = `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { ${orChain} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
     execFileSync(POWERSHELL_EXE, ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCmd], {
       windowsHide: true, timeout: 5000, stdio: 'ignore'
     });
-    diag('orphan voice listeners swept');
+    diag(`orphan python sweep ok — fragments=[${safe.join(',')}]`);
   } catch (e) {
-    diag(`orphan sweep failed: ${e.message}`);
+    diag(`orphan python sweep failed: ${e.message}`);
   }
 }
+// Back-compat alias — pre-#9 callers used this name when the sweep
+// only covered wake-word-listener. New callers should use
+// killOrphanPythonProcs directly.
+function killOrphanVoiceListeners() { killOrphanPythonProcs(); }
 function stopVoiceListener() {
   if (voiceProc) {
     try { voiceProc.removeAllListeners('exit'); } catch {}
@@ -2138,12 +2161,45 @@ app.whenReady().then(() => {
   startVoiceCommandWatcher();
 });
 
+// #9 — hard-kill a tracked python child by PID. Soft `.kill()` (SIGTERM)
+// is unreliable on Windows for python procs blocked on PortAudio /
+// model load; we need taskkill /F /T to terminate the process tree.
+// Returns the killed pid (or 0 if the proc wasn't running).
+function _hardKillProc(proc, label) {
+  if (!proc || !proc.pid) return 0;
+  const pid = proc.pid;
+  try { proc.removeAllListeners('exit'); } catch {}
+  try {
+    if (process.platform === 'win32') {
+      spawn(TASKKILL_EXE, ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
+    } else {
+      process.kill(pid, 'SIGKILL');
+    }
+    diag(`${label} hard-killed pid=${pid} on will-quit`);
+  } catch (e) {
+    diag(`${label} hard-kill pid=${pid} failed: ${e.message}`);
+  }
+  return pid;
+}
+
 app.on('will-quit', () => {
   stopWatchdog();
   globalShortcut.unregisterAll();
   if (watcher) watcher.close();
-  if (voiceProc) { try { voiceProc.kill(); } catch {} }
-  if (keyHelper) { try { keyHelper.kill(); } catch {} }
+  // #9 — promote will-quit kills from soft SIGTERM to hard taskkill /F /T.
+  // The pre-#9 soft-kill on the tracked python children left them alive
+  // when the listener was blocked on PortAudio init or openWakeWord
+  // model load. TT2's #4 baseline showed 7 orphans from prior boots
+  // accumulating up to 2d 22h.
+  _hardKillProc(voiceProc, 'voice listener');
+  _hardKillProc(keyHelper, 'keyHelper');
+  voiceProc = null;
+  keyHelper = null;
+  // Belt-and-braces: sweep any orphan python helpers that match our
+  // script-name fragments. Catches procs that slipped past the tracked-
+  // proc kill (e.g. respawn raced quit, or the proc was leaked from a
+  // prior boot that crashed before reaching will-quit).
+  killOrphanPythonProcs();
   stopMicWatcher();
   stopTray();
   stopOpenaiInvalidWatcher();
