@@ -1505,16 +1505,31 @@ function _guardUserIntent(all, caller) {
     }
   } catch { return []; }
   const restored = [];
-  // Mode 2 — missing-entry restoration. Any disk entry with user-intent
-  // that's absent from the payload gets re-added verbatim.
+  // PID-migration exclusion. Update-SessionAssignment legitimately re-keys
+  // an entry from old-short to new-short on /clear (matching by claude_pid,
+  // moving label/pinned/voice/speech_includes to the new short, removing
+  // the old). Without this exclusion, the missing-entry restoration below
+  // would add the old short back, duplicating the entry. Detect by pid
+  // match between any payload entry and the disk's missing entry.
+  const payloadPids = new Map();
+  for (const short of Object.keys(all)) {
+    const entry = all[short];
+    if (!entry || typeof entry !== 'object') continue;
+    const pid = Number(entry.claude_pid);
+    if (Number.isFinite(pid) && pid > 0) payloadPids.set(pid, short);
+  }
+  // Missing-entry restoration. Any disk entry with user-intent that's
+  // absent from the payload gets re-added verbatim — UNLESS its pid
+  // appears under a different short in the payload (PID migration).
   for (const short of Object.keys(oldAll)) {
     if (Object.prototype.hasOwnProperty.call(all, short)) continue;
-    if (_hasUserIntent(oldAll[short])) {
-      all[short] = oldAll[short];
-      restored.push(`${short}:*missing*`);
-    }
+    if (!_hasUserIntent(oldAll[short])) continue;
+    const oldPid = Number(oldAll[short].claude_pid);
+    if (oldPid > 0 && payloadPids.has(oldPid)) continue;  // migration
+    all[short] = oldAll[short];
+    restored.push(`${short}:*missing*`);
   }
-  // Mode 1 — per-field restoration on entries present in both.
+  // Per-field restoration on entries present in both.
   for (const short of Object.keys(all)) {
     const oldEntry = oldAll[short];
     if (!oldEntry) continue;

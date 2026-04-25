@@ -326,7 +326,18 @@ function Save-Registry {
             if ($raw) {
                 $parsed = $raw | ConvertFrom-Json
                 if ($parsed.assignments) {
-                    # Mode 1 — missing-entry restoration.
+                    # PID-migration exclusion. Update-SessionAssignment re-keys
+                    # entries on /clear; payload's new short inherits old's pid.
+                    # Don't restore old short if its pid lives at a different
+                    # key in the payload — that's migration, not a wipe.
+                    $payloadPids = @{}
+                    foreach ($pkey in @($Assignments.Keys)) {
+                        $pent = $Assignments[$pkey]
+                        if ($pent -and $pent.claude_pid -and [int]$pent.claude_pid -gt 0) {
+                            $payloadPids[[int]$pent.claude_pid] = $pkey
+                        }
+                    }
+                    # Missing-entry restoration.
                     foreach ($p in $parsed.assignments.PSObject.Properties) {
                         $short = $p.Name
                         if ($Assignments.ContainsKey($short)) { continue }
@@ -339,6 +350,10 @@ function Save-Registry {
                         elseif ($old.focus -eq $true) { $hasIntent = $true }
                         elseif ($old.PSObject.Properties.Name -contains 'speech_includes' -and $old.speech_includes) { $hasIntent = $true }
                         if (-not $hasIntent) { continue }
+                        # Skip if pid lives at a different short in the payload.
+                        if ($old.claude_pid -and [int]$old.claude_pid -gt 0 -and $payloadPids.ContainsKey([int]$old.claude_pid)) {
+                            continue
+                        }
                         $rebuilt = @{
                             index      = [int]$old.index
                             session_id = [string]$old.session_id
@@ -362,8 +377,8 @@ function Save-Registry {
                         $Assignments[$short] = $rebuilt
                         $restored += "${short}:*missing*"
                     }
-                    # Mode 2 — per-field restoration on entries now
-                    # present in both (either originally or via Mode 1).
+                    # Per-field restoration on entries now present in both
+                    # (either originally or via missing-entry restoration above).
                     foreach ($p in $parsed.assignments.PSObject.Properties) {
                         $short = $p.Name
                         if (-not $Assignments.ContainsKey($short)) { continue }
