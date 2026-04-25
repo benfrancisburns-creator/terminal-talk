@@ -18,6 +18,20 @@
 
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Recursion guard. The narrator hook spawns `claude --print`, which is
+# itself a Claude Code session that fires its own Stop hook chain —
+# including this script — so without this guard each fire spawns a
+# fresh fire, ad infinitum. Observed live 2026-04-25: enabling narrator
+# produced 9 cascading fires + 9 timeouts in two minutes plus a flood
+# of stale "closed" sessions in the toolbar. The env var is set on the
+# spawned child below; PowerShell ProcessStartInfo's
+# EnvironmentVariables dictionary copies parent env then applies our
+# additions, and the child inherits the flag. If the flag is present,
+# this is a narrator-spawned subprocess and we bail before doing any
+# work — including before reading config.json — so the recursion
+# can't even get past the cheap-exit gate.
+if ($env:TT_NARRATOR_SUBPROCESS -eq '1') { exit 0 }
+
 $ttHome    = Join-Path $env:USERPROFILE '.terminal-talk'
 $queueDir  = Join-Path $ttHome 'queue'
 $configPath = Join-Path $ttHome 'config.json'
@@ -162,6 +176,11 @@ try {
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
+    # Stamp the recursion-guard env var on the child. Pairs with the
+    # exit-0-at-top check at the head of this script — the spawned
+    # claude --print is itself a Claude Code session that would otherwise
+    # fire this same hook on its own Stop, cascading without bound.
+    $psi.EnvironmentVariables["TT_NARRATOR_SUBPROCESS"] = "1"
 
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.StandardInput.Write($userMessage)
