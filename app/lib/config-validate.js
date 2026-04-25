@@ -54,6 +54,13 @@ const RULES = [
   // HB1 — heartbeat toggle. Default true in DEFAULTS; users disable
   // via settings or by writing false to config.json.
   { path: 'heartbeat_enabled', type: 'boolean' },
+  // Experimental Haiku narrator. Off by default — when on, the Stop
+  // hook spawns a separate claude --print --model <model> invocation
+  // that produces a speakable summary clip alongside the existing
+  // streaming pipeline. See DEFAULTS.narrator in app/main.js.
+  { path: 'narrator',          type: 'object' },
+  { path: 'narrator.enabled',  type: 'boolean' },
+  { path: 'narrator.model',    type: 'string', maxLen: 64 },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
   { path: 'selected_tab',    type: 'string',  maxLen: 64 },
   { path: 'tabs_expanded',   type: 'boolean' },
