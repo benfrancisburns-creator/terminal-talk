@@ -1094,27 +1094,48 @@ async function speakClipboard() {
     // it starts emitting 429s, so cap at 4. Output paths are returned
     // positionally (source order) so priority-play still fires in the
     // order the user highlighted the text.
+    // #16 — respect cfg.playback.tts_provider. Prior to this fix the
+    // pipeline always tried edge-tts first regardless of the toggle,
+    // contradicting the UI tooltip at app/index.html:203 promising
+    // OpenAI is the primary voice when "Prefer OpenAI" is on.
     const CLIP_CONCURRENCY = 4;
+    const provider = String(((CFG.playback || {}).tts_provider) || 'edge').toLowerCase();
     const positional = await mapLimit(chunks, CLIP_CONCURRENCY, async (chunk, i) => {
       const idx = String(i + 1).padStart(2, '0');
       const edgeOut = path.join(QUEUE_DIR, `${ts}-clip-${sessionTag}-${idx}.mp3`);
       const wavOut = path.join(QUEUE_DIR, `${ts}-clip-${sessionTag}-${idx}.wav`);
-      try {
-        await callEdgeTTS(chunk, CFG.voices.edge_clip, edgeOut);
-        diag(`speakClipboard: edge-tts chunk ${idx} OK`);
-        return edgeOut;
-      } catch (e1) {
-        diag(`speakClipboard: edge-tts chunk ${idx} FAIL: ${e1.message}`);
-        if (!apiKey) { diag(`speakClipboard: no OpenAI key for fallback chunk ${idx}`); return null; }
+
+      const tryEdge = async () => {
         try {
-          await callOpenAITTS(apiKey, chunk, CFG.voices.openai_clip, wavOut);
-          diag(`speakClipboard: OpenAI fallback chunk ${idx} OK`);
-          return wavOut;
-        } catch (e2) {
-          diag(`speakClipboard: OpenAI fallback chunk ${idx} FAIL: ${e2.message}`);
+          await callEdgeTTS(chunk, CFG.voices.edge_clip, edgeOut);
+          diag(`speakClipboard: edge-tts chunk ${idx} OK`);
+          return edgeOut;
+        } catch (e) {
+          diag(`speakClipboard: edge-tts chunk ${idx} FAIL: ${e.message}`);
           return null;
         }
+      };
+      const tryOpenAI = async () => {
+        if (!apiKey) {
+          diag(`speakClipboard: no OpenAI key for chunk ${idx}`);
+          return null;
+        }
+        try {
+          await callOpenAITTS(apiKey, chunk, CFG.voices.openai_clip, wavOut);
+          diag(`speakClipboard: OpenAI chunk ${idx} OK`);
+          return wavOut;
+        } catch (e) {
+          diag(`speakClipboard: OpenAI chunk ${idx} FAIL: ${e.message}`);
+          return null;
+        }
+      };
+
+      if (provider === 'openai') {
+        const r = await tryOpenAI();
+        return r || (await tryEdge());
       }
+      const r = await tryEdge();
+      return r || (await tryOpenAI());
     });
     const paths = positional.filter(p => p && !(p instanceof Error));
     if (paths.length && win && !win.isDestroyed()) {

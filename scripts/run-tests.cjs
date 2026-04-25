@@ -3092,6 +3092,80 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
   });
 });
 
+describe('SPEAKCLIPBOARD VOICE ROUTING respects tts_provider (#16)', () => {
+  // Same UI-contract bug class as #15. The speakClipboard pipeline
+  // (Ctrl+Shift+S + "hey jarvis speak this") used to hardcode edge-tts
+  // first; the "Prefer OpenAI" toggle promised but never delivered
+  // OpenAI primacy here. The fix branches on cfg.playback.tts_provider.
+  //
+  // speakClipboard lives inside main.js (top-level Electron requires
+  // make it impractical to load in unit tests without a refactor — see
+  // TT2's note in ACTIVE/16 about extracting to app/lib/speak-clipboard.js
+  // as a follow-up). Tests are source-structural: regex against the
+  // function body. Same approach as parts of #15.
+  const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  // Extract the speakClipboard function body. Recognise the function
+  // by the unique log line "speakClipboard: stripped len=" near its
+  // top. Capture from the enclosing function definition through the
+  // matching closing brace.
+  const fnMatch = mainJsSrc.match(/(?:async\s+)?function\s+speakClipboard\s*\([^)]*\)\s*\{[\s\S]*?\nfunction\s/);
+  // Fallback if the above doesn't match (depends on adjacent function
+  // ordering) — grab a generous slice from speakClipboard log down to
+  // the next top-level `function ` declaration.
+  const speakClipBlock = fnMatch ? fnMatch[0] : (() => {
+    const start = mainJsSrc.indexOf('speakClipboard: stripped len=');
+    const tail = mainJsSrc.slice(start, start + 4000);
+    return tail;
+  })();
+
+  it('speakClipboard branches on cfg.playback.tts_provider', () => {
+    if (!/tts_provider/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must branch on cfg.playback.tts_provider — see #16');
+    }
+    if (!/provider\s*===?\s*['"]openai['"]/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must compare provider to "openai" — see #16');
+    }
+  });
+
+  it('speakClipboard calls both callEdgeTTS + callOpenAITTS in the chunk path', () => {
+    if (!/callEdgeTTS\s*\(/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must call callEdgeTTS — see #16');
+    }
+    if (!/callOpenAITTS\s*\(/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must call callOpenAITTS (not just keep it as fallback-only) — see #16');
+    }
+  });
+
+  it('speakClipboard uses voices.edge_clip + voices.openai_clip (clip voices)', () => {
+    if (!/voices\.edge_clip/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must use voices.edge_clip — see #16');
+    }
+    if (!/voices\.openai_clip/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must use voices.openai_clip — see #16');
+    }
+  });
+
+  it('speakClipboard has fallback when first provider returns null/throws', () => {
+    // The fix uses the two-wrappers pattern: provider chooses first, the
+    // other runs as fallback if the first returns null. Either order
+    // accepted (openai-first OR edge-first); both branches must wire
+    // the OR fallback.
+    const openaiFirstFallback = /tryOpenAI[\s\S]{0,200}\|\|\s*\(?\s*await\s+tryEdge/.test(speakClipBlock);
+    const edgeFirstFallback   = /tryEdge[\s\S]{0,200}\|\|\s*\(?\s*await\s+tryOpenAI/.test(speakClipBlock);
+    if (!openaiFirstFallback || !edgeFirstFallback) {
+      throw new Error('speakClipboard must have BOTH provider branches each with a fallback to the other — see #16');
+    }
+  });
+
+  it('speakClipboard short-circuits openai when apiKey is missing', () => {
+    // Same defensive pattern as #15: don't waste a 401 round-trip when
+    // there's no key. The tryOpenAI wrapper returns null on missing key.
+    if (!/if\s*\(\s*!apiKey\s*\)/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must short-circuit OpenAI on missing apiKey — see #16');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
