@@ -4479,9 +4479,14 @@ describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
     }
   });
 
-  it('scrape subprocess has a 4-second WaitForExit budget', () => {
-    if (!/WaitForExit\s*\(\s*4000\s*\)/.test(respHook)) {
-      throw new Error('speak-response.ps1 must bound the scrape subprocess at WaitForExit(4000)');
+  it('scrape subprocess has a 6-second WaitForExit budget', () => {
+    // Bumped 4s → 6s 2026-04-26 (Fix B). Cold-start composition (UIA
+    // assembly load + window enum + footer-appearance polling) needs
+    // genuine headroom on slower machines; old 4 s budget was killing
+    // ~30% of scrapes. 6 s leaves slack while staying well under
+    // Claude Code's 60 s Stop-hook timeout.
+    if (!/WaitForExit\s*\(\s*6000\s*\)/.test(respHook)) {
+      throw new Error('speak-response.ps1 must bound the scrape subprocess at WaitForExit(6000)');
     }
   });
 
@@ -4496,8 +4501,10 @@ describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
   it('timeout branch logs a distinct message separate from "scrape empty"', () => {
     // Operators need to tell "UIA ran but returned nothing" from
     // "UIA hung and we killed it". Two different action items.
-    if (!/scrape timed out after 4s/.test(respHook)) {
-      throw new Error('speak-response.ps1 must log a distinct timeout message (not just "scrape empty")');
+    // Log message now includes actual elapsed ms so we can correlate
+    // timeout duration with cold-start telemetry from scrape-footer.ps1.
+    if (!/scrape timed out after \$\{?scrapeElapsedMs\}?ms/.test(respHook)) {
+      throw new Error('speak-response.ps1 must log timeout with actual elapsed ms');
     }
     if (!/scrape empty/.test(respHook)) {
       throw new Error('speak-response.ps1 must also keep the "scrape empty" log for the clean-no-match case');
@@ -4534,12 +4541,15 @@ describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
     }
   });
 
-  it('elapsedSec guard skips the subprocess entirely when flag was never set', () => {
-    // First-ever invocation (or after a fresh install) has no working
-    // flag → elapsedSec=0. Skipping the scrape avoids paying the
-    // subprocess spawn cost for a case that can never match.
-    if (!/\$elapsedSec\s*-ge\s*1/.test(respHook)) {
-      throw new Error('speak-response.ps1 must skip scrape when elapsedSec < 1 (saves the subprocess spawn)');
+  it('elapsedSec guard skips the subprocess for trivial-or-missing turns', () => {
+    // Two skip cases, both at the elapsedSec >= 3 threshold:
+    //   1. First-ever invocation (no working flag) → elapsedSec=0.
+    //   2. Trivial turns (≤ 2 s) where the synth-computed phrase is
+    //      just as good as the scraped "Cooked for 1s" / "Cooked for
+    //      2s" — saves a 2-3 s subprocess for ~30 % of turns.
+    // Threshold raised from `-ge 1` to `-ge 3` 2026-04-26 (Fix B).
+    if (!/\$elapsedSec\s*-ge\s*3/.test(respHook)) {
+      throw new Error('speak-response.ps1 must skip scrape when elapsedSec < 3 (saves the subprocess spawn for trivial turns)');
     }
   });
 });
