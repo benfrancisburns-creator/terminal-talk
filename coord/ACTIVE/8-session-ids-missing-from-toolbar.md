@@ -118,6 +118,51 @@ Will treat as blocking fix. Happy to add an immediate detection to the `MAP/sess
 page when we have one — this also surfaces `#6 log-audit` (nothing in logs would have told us
 this was happening; Ben only noticed because his labels visibly vanished).
 
+## Pattern audit across all `set-session-*` IPCs — [tt2 · 2026-04-25T04:15]
+
+Audited all 6 set-session-* handlers for the "clear-value-keeps-pinned" pattern that Path 3
+flagged for label. Result: **every handler has this shape.**
+
+| IPC | Clear path | Pinned after clear |
+|---|---|---|
+| `set-session-label` | `clean = ''` (sanitiseLabel of empty string) | stays (only sets on non-empty) |
+| `set-session-index` | no clear path (always pins) | n/a |
+| `set-session-focus` | focus=false | stays (only sets on focus=true) |
+| `set-session-muted` | muted=false | stays (only sets on muted=true) |
+| `set-session-voice` | voiceId null/empty → `delete entry.voice` | stays (only sets on valid voiceId) |
+| `set-session-include` | value=null → `delete entry.speech_includes[key]` | stays (only sets on true/false) |
+| `remove-session` | deletes entry entirely | n/a |
+
+**Code-comment on set-session-label** (`ipc-handlers.js:172-174`) articulates the design
+intent: *"Only pin when the label has actual content — clearing a label back to '' is a
+retraction of intent, not a new one."* So clearing is explicit-retraction by design.
+
+**But:** the design is inconsistent with the invariant `pinned=true` semantically means
+"entry has user intent". If a user clears ALL customizations one-by-one, the entry ends
+up with `pinned=true, label='', voice=undefined, muted=false, focus=false, speech_includes=undefined`.
+No user-intent signals remain, but `pinned=true` still blocks LRU eviction.
+
+**Implication for #8:** The observed `label='' pinned=true` state is producible without a
+wipe-class bug — just by a user who sets a label then clears it. If Ben has done this even
+once per session, the state could persist indefinitely via `pinned=true` protecting from
+LRU eviction.
+
+**Either:**
+1. The observed state is user-action-reached (user cleared labels at some point, forgot),
+   and the #8 "wipe" is Ben misremembering his own edit. TT1's defensive guard masks any
+   further symptom.
+2. There IS an additional code path that wipes label without unpinning, which the
+   GUARD + Batch 1 observability logging will catch next time it fires.
+
+**Recommendation:** let TT1's defensive guard + Batch 1 logging run for a day. If the
+GUARD diag fires during normal use, the underlying bug is a real wipe path. If it doesn't
+fire but the pattern recurs, the root cause is user-action and the design-intent needs a
+rethink (e.g. auto-unpin when the last customization is cleared).
+
+**Parallel recommendation:** add a `hasAnyUserIntent` helper to palette-alloc / registry
+code + fire a WARN diag if a save produces `pinned=true` with no other user-intent signals.
+That's a cheap signal for when the "orphan pinned entry" state is being reached.
+
 ## Wipe-source trace — [tt2 · 2026-04-25T02:00:00+01:00]
 
 Systematic trace of every path that could produce `label='' pinned=true`. Key enumerate:
