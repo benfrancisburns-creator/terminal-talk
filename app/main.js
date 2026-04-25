@@ -1685,6 +1685,14 @@ function stopVoiceListener() {
     }
     diag(`voice listener stopped (pid ${pid})`);
   }
+  // Clear the listener-path file so mic-watcher stops filtering this
+  // Python install. If we left it, and the user later ran a non-TT
+  // Python audio tool under the same interpreter, TT would fail to
+  // pause for it (we'd still think that Python was us).
+  try {
+    const listenerPathFile = path.join(INSTALL_DIR, 'listener-python-path.txt');
+    if (fs.existsSync(listenerPathFile)) fs.unlinkSync(listenerPathFile);
+  } catch {}
   // Belt-and-braces: Python listener also polls _listening.state and closes
   // its InputStream when off, but sweep orphans regardless.
   killOrphanVoiceListeners();
@@ -1763,20 +1771,25 @@ function startOpenaiInvalidWatcher() {
     try {
       if (!fs.existsSync(flagPath)) return;
       diag('openai-invalid.flag detected — clearing key + demoting provider to edge');
-      // Step 1: wipe the key from safeStorage + plaintext sidecar.
+      // K-1 (#21): consume the flag FIRST so a user-save that races this
+      // tick doesn't get wiped by a post-save apiKeyStore.set(''). With
+      // flag-consume-first, subsequent ticks can't re-fire until a real
+      // 401 writes a new flag — narrows the race window from ~5 ms to
+      // effectively nil for the happy path. A full race-close would need
+      // an atomic compare-and-swap; reorder is the minimum-viable fix.
+      try { fs.unlinkSync(flagPath); } catch {}
+      // Step 2: wipe the key from safeStorage + plaintext sidecar.
       try { apiKeyStore.set(''); } catch (e) { diag(`apiKeyStore.set('') fail: ${e.message}`); }
-      // Step 2: demote provider so next turn doesn't re-trigger.
+      // Step 3: demote provider so next turn doesn't re-trigger.
       CFG.playback = CFG.playback || {};
       CFG.playback.tts_provider = 'edge';
       try { saveConfig(CFG); } catch (e) { diag(`saveConfig after auto-unset fail: ${e.message}`); }
-      // Step 3: tell the renderer so the UI reacts.
+      // Step 4: tell the renderer so the UI reacts.
       try {
         if (win && !win.isDestroyed()) {
           win.webContents.send('openai-key-invalid');
         }
       } catch (e) { diag(`notify renderer of openai-key-invalid fail: ${e.message}`); }
-      // Step 4: consume the flag so we don't loop.
-      try { fs.unlinkSync(flagPath); } catch {}
     } catch (e) {
       diag(`openai-invalid watcher tick fail: ${e.message}`);
     }
@@ -1786,6 +1799,74 @@ function stopOpenaiInvalidWatcher() {
   if (!openaiInvalidTimer) return;
   clearInterval(openaiInvalidTimer);
   openaiInvalidTimer = null;
+}
+
+// Phase 1 voice commands — watch for ~/.terminal-talk/voice-command.json
+// written by wake-word-listener.py after a successful SAPI grammar match.
+// Poll every 200 ms (responsive enough for a voice UX, cheap enough to
+// leave running). Stale-timestamp reject (> 5 s old) protects against
+// leftover files from a crashed listener.
+let voiceCommandTimer = null;
+const VOICE_COMMAND_PATH = path.join(INSTALL_DIR, 'voice-command.json');
+const VOICE_COMMAND_ALLOWED = new Set([
+  'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
+]);
+const VOICE_COMMAND_STALE_MS = 5000;
+
+// 50 ms poll instead of 200 ms: voice-command pickup is user-facing
+// latency, so spend the extra 3 polls/sec to cut avg dispatch lag from
+// ~100 ms to ~25 ms. The work per tick is one fs.existsSync — cheaper
+// than a single UI repaint — so the cost is negligible.
+const VOICE_COMMAND_POLL_MS = 50;
+function startVoiceCommandWatcher() {
+  if (voiceCommandTimer) return;
+  voiceCommandTimer = setInterval(() => {
+    try {
+      if (!fs.existsSync(VOICE_COMMAND_PATH)) return;
+      let payload;
+      try {
+        payload = JSON.parse(fs.readFileSync(VOICE_COMMAND_PATH, 'utf8'));
+      } catch (e) {
+        diag(`voice-command: parse fail: ${e.message}`);
+        try { fs.unlinkSync(VOICE_COMMAND_PATH); } catch {}
+        return;
+      }
+      // Consume the file FIRST — if anything downstream throws, we
+      // don't want to replay the same command on the next tick.
+      try { fs.unlinkSync(VOICE_COMMAND_PATH); } catch {}
+
+      const ts = Number(payload.timestamp);
+      if (!Number.isFinite(ts) || Date.now() - ts > VOICE_COMMAND_STALE_MS) {
+        diag(`voice-command: stale timestamp ${ts}; ignoring`);
+        return;
+      }
+      const action = String(payload.action || '');
+      if (!VOICE_COMMAND_ALLOWED.has(action)) {
+        diag(`voice-command: unknown action ${JSON.stringify(action)}; ignoring`);
+        return;
+      }
+      // 'cancel' means "nevermind" — the user aborted the post-wake
+      // window. Intentional no-op at main.js level; log so we can see
+      // it's being heard.
+      if (action === 'cancel') {
+        diag('voice-command: cancel (no-op)');
+        return;
+      }
+      diag(`voice-command: dispatching ${action}`);
+      if (win && !win.isDestroyed()) {
+        try { win.webContents.send('voice-command-action', action); }
+        catch (e) { diag(`voice-command send fail: ${e.message}`); }
+      }
+    } catch (e) {
+      diag(`voice-command watcher tick fail: ${e.message}`);
+    }
+  }, VOICE_COMMAND_POLL_MS);
+}
+
+function stopVoiceCommandWatcher() {
+  if (!voiceCommandTimer) return;
+  clearInterval(voiceCommandTimer);
+  voiceCommandTimer = null;
 }
 
 function startMicWatcher() {
@@ -1995,6 +2076,7 @@ app.whenReady().then(() => {
   startMicWatcher();
   startTray();
   startOpenaiInvalidWatcher();
+  startVoiceCommandWatcher();
 });
 
 app.on('will-quit', () => {
@@ -2006,6 +2088,7 @@ app.on('will-quit', () => {
   stopMicWatcher();
   stopTray();
   stopOpenaiInvalidWatcher();
+  stopVoiceCommandWatcher();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });

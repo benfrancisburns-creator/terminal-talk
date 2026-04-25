@@ -581,6 +581,19 @@ describe('wake-word-listener.py + key_helper.py source-level invariants', () => 
 const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
 
 describe('SPEECH INCLUDES (stripForTTS)', () => {
+  it('D1 (#19): looksLikeCode counts ALL pattern matches — untagged fence with repeated shell commands strips', () => {
+    // Pre-parity, the 'shell-command-at-line-start' pattern only contributed 1 hit
+    // regardless of how many times it matched in the body. Two `npm ...` lines
+    // tripped Python's findall-counting but not JS's single-match-counting — same
+    // text produced different audio on clipboard-speak vs response-speak. Post-fix,
+    // JS matches Python's aggressive-strip stance.
+    const body = 'npm install\nnpm test';
+    const fenced = 'Preamble\n```\n' + body + '\n```\nTrailing';
+    const out = stripForTTS(fenced);   // code_blocks=false default
+    if (out.includes('npm install') || out.includes('npm test')) {
+      throw new Error(`D1 regression: untagged fence with 2x npm should strip as code. Got: "${out}"`);
+    }
+  });
   it('strips code blocks by default', () => {
     const out = stripForTTS('Hello\n```js\nconst x = 1;\n```\nWorld');
     if (out.includes('const x') || out.includes('```')) throw new Error(`expected code stripped: "${out}"`);
@@ -592,6 +605,33 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
   it('strips URLs by default', () => {
     const out = stripForTTS('See https://example.com for info');
     if (out.includes('example.com')) throw new Error(`URL leaked: "${out}"`);
+  });
+  it('D2 (#19): strips bare www.X domains by default — JS↔Python parity', () => {
+    // Pre-parity, JS only matched http(s):// URLs; Python _URL_RE also
+    // matched bare `www.X`. Same input produced different audio across
+    // clipboard-speak (JS, kept) vs response-speak (Python, stripped).
+    const out = stripForTTS('go to www.example.com for details');
+    if (out.includes('www.example.com')) throw new Error(`bare www.X leaked: "${out}"`);
+  });
+  it('D3 (#19): strips heading WITHOUT space after # when headings=false — parity with Python', () => {
+    // Pre-parity, JS required `\s+` after hashes ('# heading') so
+    // `#notaheading` was kept as prose when headings=false. Python
+    // allowed no-space. Default headings=true uses a different branch
+    // (strip just the # marks, keep text) so we test the false path.
+    const out = stripForTTS('#notaheading_content', { headings: false });
+    if (out.includes('notaheading_content')) throw new Error(`no-space heading leaked: "${out}"`);
+  });
+  it('D3 (#19): strips heading WITH leading whitespace when headings=false — parity with Python', () => {
+    const out = stripForTTS('  # my heading', { headings: false });
+    if (out.includes('my heading')) throw new Error(`leading-ws heading leaked: "${out}"`);
+  });
+  it('D4 (#19): strips single-underscore emphasis — parity with Python', () => {
+    // Pre-D4, JS was missing the _X_ arm that Python's _EMPHASIS_RE has.
+    // Prose like `this is _emphasized_` reached TTS as "this is underscore
+    // emphasized underscore" (reads literal underscore characters).
+    const out = stripForTTS('this is _emphasized_ text');
+    if (out.includes('_')) throw new Error(`single-underscore emphasis leaked: "${out}"`);
+    if (!out.includes('emphasized')) throw new Error(`emphasis content dropped: "${out}"`);
   });
   it('keeps URLs when toggled on', () => {
     const out = stripForTTS('See https://example.com for info', { urls: true });
@@ -10055,22 +10095,15 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
     }
   });
 
-  // ----- 3b. Known drift: single-underscore italic emphasis -----------
-  // DOCUMENTED divergence surfaced by the Phase 3 parity test:
-  //   JS  `stripForTTS`        leaves `_x_` as-is (no single-underscore arm)
-  //   PY  `synth_turn.sanitize` strips `_x_` to `x` (full emphasis coverage)
-  //
-  // Neither is obviously wrong:
-  //   JS is safer for bare-prose identifiers (`session_id` → unchanged).
-  //   PY is more faithful to standard markdown (italic `_word_` → word).
-  //
-  // This test LOCKS IN the drift so if someone aligns one side without
-  // updating the other, we get a red flag. To resolve: either add
-  // `t = t.replace(/_([^_\n]+)_/g, '$1');` to app/lib/text.js (align JS
-  // to PY) or remove the `|_([^_\n]+)_` arm from `_EMPHASIS_RE` in
-  // app/synth_turn.py (align PY to JS) and update this test to assert
-  // byte-identical output.
-  it('known drift: single-underscore italic emphasis — JS keeps, Python strips', () => {
+  // ----- 3b. Parity achieved: single-underscore italic emphasis -------
+  // Previously a documented drift: JS kept `_x_`, Python stripped. Closed
+  // by #19 D4 (2026-04-25) — JS now mirrors Python's `_EMPHASIS_RE` single-
+  // underscore arm. Both strip to the content. Known tradeoff: snake_case
+  // identifiers wrapped in underscores (`_session_id_`) get partial-stripped
+  // the same way Python does. Bare snake_case WITHOUT wrapping (`session_id`)
+  // is unaffected — `[^_\n]+` excludes internal underscores from the
+  // emphasis-content match.
+  it('D4 parity achieved: single-underscore italic emphasis — JS + Python both strip', () => {
     const APP_DIR_ABS = path.join(__dirname, '..', 'app');
     const jsOut = stripForTTS('Plain _italic_ word', {});
     const pyScript = [
@@ -10083,15 +10116,12 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
       { encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
     const pyOut = r.stdout.replace(/\s+/g, ' ').trim();
-    // If this invariant inverts (JS strips, Python keeps, or both
-    // agree), the drift has been resolved — delete this test and
-    // update the main parity test to assert byte-identical output.
-    assertTruthy(jsOut.includes('_italic_'),
-      'JS must still NOT strip single-underscore italic (current behaviour)');
+    assertFalsy(jsOut.includes('_italic_'),
+      'JS must strip single-underscore italic (D4 parity)');
     assertFalsy(pyOut.includes('_italic_'),
-      'Python must still strip single-underscore italic (current behaviour)');
-    assertTruthy(pyOut.includes('italic'),
-      'Python must still keep the content "italic" after stripping the markers');
+      'Python must strip single-underscore italic');
+    assertTruthy(jsOut.includes('italic') && pyOut.includes('italic'),
+      'Both sides must keep the content "italic" after stripping the markers');
   });
 
   // ----- 3c. Known drift: code-block content emphasis shielding --------
@@ -11496,6 +11526,508 @@ describe('PHASE 4 #4 — ipc-handlers validator edge coverage', () => {
       'x'.repeat(200),
     ]) {
       if (validVoice(v)) throw new Error(`validVoice accepted bad input: ${JSON.stringify(v)}`);
+    }
+  });
+});
+
+// =============================================================================
+// VOICE COMMAND (Phase 1)
+//   Grammar XML validity + SAPI round-trip for the play/pause/next/back/stop
+//   post-wake command surface. `LOGIC_ONLY` skips the PS-driven tests since
+//   System.Speech.Recognition is Windows-only.
+// =============================================================================
+describe('VOICE COMMAND (Phase 1)', () => {
+  if (LOGIC_ONLY) {
+    it('skipped in logic-only mode', () => {});
+    return;
+  }
+
+  const repoApp = path.join(__dirname, '..', 'app');
+  const recognizerPath = path.join(repoApp, 'voice-command-recognize.ps1');
+
+  it('recognizer script exists', () => {
+    if (!fs.existsSync(recognizerPath)) {
+      throw new Error(`voice-command-recognize.ps1 missing at ${recognizerPath}`);
+    }
+  });
+
+  it('recognizer returns {} on silent WAV', () => {
+    // Build a 1-second 16kHz mono silent WAV (44-byte header + 32000 bytes
+    // of zeros). Feed to the recognizer. SAPI on pure silence returns
+    // nothing — we expect literal {}.
+    const wavPath = path.join(os.tmpdir(), `tt-voice-silent-${process.pid}-${Date.now()}.wav`);
+    const sampleRate = 16000;
+    const numSamples = sampleRate;   // 1 second
+    const dataLen = numSamples * 2;  // 16-bit mono
+    const buf = Buffer.alloc(44 + dataLen);
+    // RIFF header
+    buf.write('RIFF', 0);
+    buf.writeUInt32LE(36 + dataLen, 4);
+    buf.write('WAVE', 8);
+    buf.write('fmt ', 12);
+    buf.writeUInt32LE(16, 16);            // fmt chunk size
+    buf.writeUInt16LE(1, 20);             // PCM
+    buf.writeUInt16LE(1, 22);             // mono
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
+    buf.writeUInt16LE(2, 32);             // block align
+    buf.writeUInt16LE(16, 34);            // bits per sample
+    buf.write('data', 36);
+    buf.writeUInt32LE(dataLen, 40);
+    // data chunk stays zero-filled from Buffer.alloc
+    fs.writeFileSync(wavPath, buf);
+    try {
+      const r = spawnSync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        recognizerPath, wavPath,
+      ], { encoding: 'utf8', timeout: 15000 });
+      if (r.status !== 0) {
+        throw new Error(`recognizer rc=${r.status}; stderr=${r.stderr}`);
+      }
+      const out = (r.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+      const parsed = JSON.parse(out);
+      // Silence must not produce an action.
+      if (parsed.action) {
+        throw new Error(`expected no action on silent WAV, got: ${out}`);
+      }
+    } finally {
+      try { fs.unlinkSync(wavPath); } catch {}
+    }
+  });
+
+  it('recognizer matches "play" when synthesised by SAPI and fed back', () => {
+    // End-to-end round trip: use System.Speech.Synthesis to speak "play"
+    // into a WAV, then run the recognizer over the same WAV. If both
+    // halves of SAPI agree, we confirm the grammar + script wiring.
+    // Accepted matches at confidence >= 0.5 per MIN_CONFIDENCE in the
+    // Python listener.
+    const wavPath = path.join(os.tmpdir(), `tt-voice-play-${process.pid}-${Date.now()}.wav`);
+    const synth = spawnSync('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+      `Add-Type -AssemblyName System.Speech; ` +
+      `$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ` +
+      `$s.SetOutputToWaveFile('${wavPath.replace(/'/g, "''")}'); ` +
+      `$s.Speak('play'); $s.Dispose(); Write-Output 'SYNTH_OK'`,
+    ], { encoding: 'utf8', timeout: 20000 });
+    if (synth.status !== 0 || !synth.stdout.includes('SYNTH_OK')) {
+      throw new Error(`synth fail: stdout=${synth.stdout} stderr=${synth.stderr}`);
+    }
+    try {
+      const r = spawnSync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        recognizerPath, wavPath,
+      ], { encoding: 'utf8', timeout: 15000 });
+      if (r.status !== 0) {
+        throw new Error(`recognizer rc=${r.status}; stderr=${r.stderr}`);
+      }
+      const out = (r.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+      const parsed = JSON.parse(out);
+      if (parsed.action !== 'play') {
+        throw new Error(`expected action=play from round-trip, got: ${out}`);
+      }
+      if (!(parsed.confidence >= 0.5)) {
+        throw new Error(`round-trip confidence too low: ${parsed.confidence}`);
+      }
+    } finally {
+      try { fs.unlinkSync(wavPath); } catch {}
+    }
+  });
+
+  // ---- voice-dispatch state matrix -------------------------------------
+  // Exercises lib/voice-dispatch.js against every clip-state permutation
+  // Ben reported as problematic 2026-04-24: "when a clip's played and it
+  // turns white with the ring... play it again, it doesn't seem to work
+  // then". The play action must fall back to replay when no unplayed
+  // exists — that regression is locked in here.
+
+  const { createVoiceDispatcher, pickFallbackClip } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'voice-dispatch.js')
+  );
+
+  function makeMockAudio(init = {}) {
+    const audio = {
+      src: init.src || '',
+      paused: init.paused !== undefined ? init.paused : true,
+      ended: init.ended !== undefined ? init.ended : false,
+      duration: init.duration !== undefined ? init.duration : 10,
+      currentTime: 0,
+      _playCalls: 0,
+      _pauseCalls: 0,
+      play() { this._playCalls++; return Promise.resolve(); },
+      pause() { this._pauseCalls++; this.paused = true; },
+    };
+    return audio;
+  }
+
+  function makeMockPlayer() {
+    return {
+      _playPathCalls: [],
+      _abortCalls: 0,
+      playPath(p, manual, userClick) {
+        this._playPathCalls.push({ path: p, manual, userClick });
+        return true;
+      },
+      abort() { this._abortCalls++; },
+    };
+  }
+
+  function makeDispatcher(opts = {}) {
+    const audio = opts.audio || makeMockAudio();
+    const audioPlayer = opts.audioPlayer || makeMockPlayer();
+    const queue = opts.queue || [];
+    let nextPendingCalls = 0;
+    const d = createVoiceDispatcher({
+      audio, audioPlayer,
+      getQueue: () => queue,
+      isMuted: opts.isMuted || (() => false),
+      isStale: opts.isStale || (() => false),
+      playNextPending: () => { nextPendingCalls++; if (opts.onNextPending) opts.onNextPending(audio); },
+    });
+    return { d, audio, audioPlayer, queue, getNext: () => nextPendingCalls };
+  }
+
+  describe('voice-dispatch state matrix', () => {
+    // -- play -----------------------------------------------------------
+    it('play resumes a paused-mid-clip', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: false }),
+      });
+      d.dispatch('play');
+      assertEqual(audio._playCalls, 1);
+    });
+    it('play is a no-op when already playing', () => {
+      const { d, audio, getNext } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false }),
+      });
+      d.dispatch('play');
+      assertEqual(audio._playCalls, 0);
+      assertEqual(getNext(), 0);
+    });
+    it('play replays an ended clip still loaded', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: true }),
+      });
+      d.dispatch('play');
+      assertEqual(audio.currentTime, 0);
+      assertEqual(audio._playCalls, 1);
+    });
+    it('play calls playNextPending when nothing is loaded', () => {
+      const { d, getNext } = makeDispatcher({
+        audio: makeMockAudio({ src: '', paused: true, ended: false }),
+        queue: [{ path: '/a.mp3', mtime: 1 }],
+        onNextPending: (a) => { a.src = '/a.mp3'; a.paused = false; },
+      });
+      d.dispatch('play');
+      assertEqual(getNext(), 1);
+    });
+    it('play falls back to most-recent when all clips are played', () => {
+      // playNextPending finds nothing (no change to audio.src) — voice
+      // play must pick the most recent clip anyway. This is the
+      // regression Ben reported.
+      const { d, audioPlayer, getNext } = makeDispatcher({
+        audio: makeMockAudio({ src: '', paused: true, ended: false }),
+        queue: [
+          { path: '/a.mp3', mtime: 1 },
+          { path: '/c.mp3', mtime: 3 },
+          { path: '/b.mp3', mtime: 2 },
+        ],
+        onNextPending: () => { /* still nothing playable */ },
+      });
+      d.dispatch('play');
+      assertEqual(getNext(), 1, 'must try next-pending first');
+      assertEqual(audioPlayer._playPathCalls.length, 1, 'must fall back to playPath');
+      assertEqual(audioPlayer._playPathCalls[0].path, '/c.mp3',
+        'fallback must pick most recent by mtime');
+    });
+    it('play fallback skips muted sessions', () => {
+      const { d, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: '' }),
+        queue: [
+          { path: '/muted.mp3', mtime: 5 },
+          { path: '/ok.mp3', mtime: 3 },
+        ],
+        isMuted: (p) => p === '/muted.mp3',
+        onNextPending: () => {},
+      });
+      d.dispatch('play');
+      assertEqual(audioPlayer._playPathCalls[0].path, '/ok.mp3');
+    });
+    it('play fallback skips stale sessions', () => {
+      const { d, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: '' }),
+        queue: [
+          { path: '/stale.mp3', mtime: 5 },
+          { path: '/ok.mp3', mtime: 3 },
+        ],
+        isStale: (p) => p === '/stale.mp3',
+        onNextPending: () => {},
+      });
+      d.dispatch('play');
+      assertEqual(audioPlayer._playPathCalls[0].path, '/ok.mp3');
+    });
+    it('play with empty queue and nothing loaded is a clean no-op', () => {
+      const { d, audioPlayer, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: '' }),
+        queue: [],
+      });
+      d.dispatch('play');
+      assertEqual(audioPlayer._playPathCalls.length, 0);
+      assertEqual(audio._playCalls, 0);
+    });
+
+    // -- pause ----------------------------------------------------------
+    it('pause pauses a playing clip', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false }),
+      });
+      d.dispatch('pause');
+      assertEqual(audio._pauseCalls, 1);
+    });
+    it('pause is a no-op when already paused', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: false }),
+      });
+      d.dispatch('pause');
+      assertEqual(audio._pauseCalls, 0);
+    });
+    it('pause is a no-op when nothing loaded', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: '', paused: true, ended: false }),
+      });
+      d.dispatch('pause');
+      assertEqual(audio._pauseCalls, 0);
+    });
+
+    // -- resume ---------------------------------------------------------
+    it('resume resumes a paused-mid-clip', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: false }),
+      });
+      d.dispatch('resume');
+      assertEqual(audio._playCalls, 1);
+    });
+    it('resume is a no-op when nothing is paused', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: '', paused: true, ended: false }),
+      });
+      d.dispatch('resume');
+      assertEqual(audio._playCalls, 0);
+    });
+    it('resume does NOT start a fresh clip (stricter than play)', () => {
+      const { d, audio, getNext, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: '', paused: true, ended: false }),
+        queue: [{ path: '/a.mp3', mtime: 1 }],
+      });
+      d.dispatch('resume');
+      assertEqual(audio._playCalls, 0);
+      assertEqual(getNext(), 0);
+      assertEqual(audioPlayer._playPathCalls.length, 0);
+    });
+
+    // -- next -----------------------------------------------------------
+    it('next on a playing clip seeks to duration (fires ended handler)', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false, duration: 42 }),
+      });
+      d.dispatch('next');
+      assertEqual(audio.currentTime, 42);
+    });
+    it('next on an idle player calls playNextPending', () => {
+      const { d, getNext } = makeDispatcher({
+        audio: makeMockAudio({ src: '' }),
+      });
+      d.dispatch('next');
+      assertEqual(getNext(), 1);
+    });
+    it('next with non-finite duration falls back to playNextPending', () => {
+      const { d, audio, getNext } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false, duration: Infinity }),
+      });
+      d.dispatch('next');
+      assertEqual(audio.currentTime, 0, 'must not seek when duration is non-finite');
+      assertEqual(getNext(), 1);
+    });
+
+    // -- back -----------------------------------------------------------
+    it('back on a loaded+paused clip seeks to 0 and plays', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: false, currentTime: 7 }),
+      });
+      d.dispatch('back');
+      assertEqual(audio.currentTime, 0);
+      assertEqual(audio._playCalls, 1);
+    });
+    it('back on a loaded+playing clip seeks to 0 without double-playing', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false, currentTime: 7 }),
+      });
+      d.dispatch('back');
+      assertEqual(audio.currentTime, 0);
+      assertEqual(audio._playCalls, 0, 'should not re-call play() if already playing');
+    });
+    it('back on an ended clip seeks to 0 and plays', () => {
+      const { d, audio } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: true, ended: true }),
+      });
+      d.dispatch('back');
+      assertEqual(audio.currentTime, 0);
+      assertEqual(audio._playCalls, 1);
+    });
+    it('back on idle player plays most recent queue entry', () => {
+      const { d, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: '' }),
+        queue: [
+          { path: '/old.mp3', mtime: 1 },
+          { path: '/new.mp3', mtime: 9 },
+        ],
+      });
+      d.dispatch('back');
+      assertEqual(audioPlayer._playPathCalls.length, 1);
+      assertEqual(audioPlayer._playPathCalls[0].path, '/new.mp3');
+    });
+
+    // -- stop -----------------------------------------------------------
+    it('stop calls audioPlayer.abort', () => {
+      const { d, audioPlayer } = makeDispatcher();
+      d.dispatch('stop');
+      assertEqual(audioPlayer._abortCalls, 1);
+    });
+
+    // -- cancel / unknown ----------------------------------------------
+    it('cancel is a clean no-op', () => {
+      const { d, audio, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false }),
+      });
+      d.dispatch('cancel');
+      assertEqual(audio._pauseCalls, 0);
+      assertEqual(audio._playCalls, 0);
+      assertEqual(audioPlayer._abortCalls, 0);
+    });
+    it('unknown action is a clean no-op', () => {
+      const { d, audio, audioPlayer } = makeDispatcher({
+        audio: makeMockAudio({ src: 'a.mp3', paused: false, ended: false }),
+      });
+      d.dispatch('nonsense');
+      assertEqual(audio._pauseCalls, 0);
+      assertEqual(audio._playCalls, 0);
+      assertEqual(audioPlayer._abortCalls, 0);
+    });
+
+    // -- pickFallbackClip (pure helper) --------------------------------
+    it('pickFallbackClip returns null on empty queue', () => {
+      assertEqual(pickFallbackClip([], () => false, () => false), null);
+    });
+    it('pickFallbackClip returns null when all muted', () => {
+      const q = [{ path: '/a.mp3', mtime: 1 }];
+      assertEqual(pickFallbackClip(q, () => true, () => false), null);
+    });
+    it('pickFallbackClip picks newest by mtime', () => {
+      const q = [
+        { path: '/a.mp3', mtime: 1 },
+        { path: '/c.mp3', mtime: 3 },
+        { path: '/b.mp3', mtime: 2 },
+      ];
+      const pick = pickFallbackClip(q, () => false, () => false);
+      assertEqual(pick.path, '/c.mp3');
+    });
+  });
+
+  // ---- wake-word-listener end-point detection -------------------------
+  // Pure function _should_finalise_capture decides when post-wake audio
+  // capture ends. Exercised here so every state transition (hard cap,
+  // trailing silence after voice, min-capture floor, pre-voice silence
+  // doesn't count) is locked in.
+  describe('wake-word EPD (_should_finalise_capture)', () => {
+    const appDirRepo = path.join(__dirname, '..', 'app');
+
+    function runPy(body) {
+      // Use a multi-line shim so Python class/import statements work.
+      // wake-word-listener.py imports heavy deps (numpy, sounddevice,
+      // openwakeword) — stub the ones that might not be on a CI box.
+      // numpy is a required dep and always installed (requirements.txt
+      // ships it), so we don't stub that one.
+      const shim = `import sys, types, importlib.util, pathlib
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+# Stub sounddevice if not present (keeps CI headless boxes happy).
+if 'sounddevice' not in sys.modules:
+    try:
+        import sounddevice  # noqa
+    except Exception:
+        sys.modules['sounddevice'] = types.ModuleType('sounddevice')
+# Stub openwakeword if not present.
+if 'openwakeword' not in sys.modules:
+    try:
+        import openwakeword  # noqa
+    except Exception:
+        ow = types.ModuleType('openwakeword')
+        owm = types.ModuleType('openwakeword.model')
+        owm.Model = type('Model', (), {})
+        sys.modules['openwakeword'] = ow
+        sys.modules['openwakeword.model'] = owm
+# Load wake-word-listener.py by path (its filename has a dash so
+# 'import wake-word-listener' is not valid Python).
+_path = pathlib.Path(r'${appDirRepo.replace(/\\/g, '\\\\')}') / 'wake-word-listener.py'
+_spec = importlib.util.spec_from_file_location('wwl_mod', _path)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+should_finalise = _mod._should_finalise_capture
+${body}
+`;
+      const r = spawnSync('python', ['-c', shim], { encoding: 'utf8', timeout: 15000 });
+      return { code: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
+    }
+
+    it('does not finalise below minimum capture even with voice+silence', () => {
+      const r = runPy(`print(should_finalise(fill=5000, saw_voice=True, silence_run=10))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'False') throw new Error(`expected False, got: ${r.stdout}`);
+    });
+    it('finalises when voice seen + trailing silence threshold reached', () => {
+      const r = runPy(`print(should_finalise(fill=20000, saw_voice=True, silence_run=5))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'True') throw new Error(`expected True, got: ${r.stdout}`);
+    });
+    it('does not finalise on silence before any voice is seen', () => {
+      // User was silent for the entire post-wake window so far. Keep
+      // capturing up to hard cap.
+      const r = runPy(`print(should_finalise(fill=20000, saw_voice=False, silence_run=20))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'False') throw new Error(`expected False, got: ${r.stdout}`);
+    });
+    it('finalises at hard cap regardless of voice state', () => {
+      const r = runPy(`print(should_finalise(fill=48000, saw_voice=False, silence_run=0))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'True') throw new Error(`expected True at hard cap, got: ${r.stdout}`);
+    });
+    it('finalises above hard cap (belt and braces)', () => {
+      const r = runPy(`print(should_finalise(fill=100000, saw_voice=True, silence_run=0))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'True') throw new Error(`expected True above cap, got: ${r.stdout}`);
+    });
+    it('does not finalise with voice but less than trailing threshold', () => {
+      const r = runPy(`print(should_finalise(fill=20000, saw_voice=True, silence_run=3))`);
+      if (r.code !== 0) throw new Error(r.stderr);
+      if (r.stdout.trim() !== 'False') throw new Error(`expected False, got: ${r.stdout}`);
+    });
+  });
+
+  it('main.js voice-command payload validator rejects unknown actions', () => {
+    // Mirror of the whitelist in main.js startVoiceCommandWatcher —
+    // keeps the test authoritative if the set drifts.
+    const whitelist = new Set([
+      'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
+    ]);
+    const rejectCases = ['clear', 'delete', 'rm', '', null, 'PLAY', 'play;echo'];
+    for (const a of rejectCases) {
+      if (whitelist.has(a)) {
+        throw new Error(`whitelist accepted bad action: ${JSON.stringify(a)}`);
+      }
+    }
+    const acceptCases = ['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel'];
+    for (const a of acceptCases) {
+      if (!whitelist.has(a)) {
+        throw new Error(`whitelist rejected good action: ${JSON.stringify(a)}`);
+      }
     }
   });
 });
