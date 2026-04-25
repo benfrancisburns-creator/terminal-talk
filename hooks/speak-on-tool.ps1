@@ -95,6 +95,19 @@ try {
 Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid `
                       -SessionId $sessionId -Short $sessionShort -Now $now
 
+# Refresh the -working.flag timestamp. mark-working.ps1 stamps it on
+# UserPromptSubmit and speak-response.ps1 deletes it on Stop — but
+# long turns (> 10 min between prompt and Stop) let the flag's content
+# age past get-working-sessions' STALE_SEC=600 cutoff, so heartbeat
+# stops firing for the session even though Claude is still actively
+# tool-calling. Each PreToolUse bumps the timestamp so the flag stays
+# fresh for the whole active-tool-call stretch.
+try {
+    $flagPath = Join-Path $sessionsDir "$sessionShort-working.flag"
+    $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+    Set-Content -Path $flagPath -Value $nowSec -Encoding utf8 -NoNewline
+} catch {}
+
 # --- Spawn detached synth process ---
 # Start-Process returns immediately; the Python process runs in the background.
 # Claude Code is NOT blocked waiting for edge-tts.
