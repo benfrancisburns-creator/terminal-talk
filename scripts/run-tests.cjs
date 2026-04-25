@@ -5813,8 +5813,10 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     const m = mainJs.match(/function\s+killOrphanPythonProcs[\s\S]*?\n\}/);
     if (!m) throw new Error('killOrphanPythonProcs function missing — see #9');
     const body = m[0];
-    if (!/\/\^\[a-zA-Z0-9_\\-\]\+\$\//.test(body)) {
-      throw new Error('killOrphanPythonProcs must validate fragments against /^[a-zA-Z0-9_\\-]+$/ — see #9');
+    // Accept either form — `\-` (escape, redundant but valid) or `-`
+    // at the end of a char class (eslint no-useless-escape preferred).
+    if (!/\/\^\[a-zA-Z0-9_\\?-\]\+\$\//.test(body)) {
+      throw new Error('killOrphanPythonProcs must validate fragments against /^[a-zA-Z0-9_-]+$/ — see #9');
     }
     if (!/-or/.test(body)) {
       throw new Error('killOrphanPythonProcs must build a -or chain across fragments — see #9');
