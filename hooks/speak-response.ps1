@@ -1,5 +1,12 @@
 ﻿$ErrorActionPreference = 'SilentlyContinue'
 
+# Narrator-subprocess guard — pairs with the env-var stamp in
+# speak-narrator.ps1. Prevents the narrator's `claude --print` child's
+# Stop hook from synthesising Haiku's output as a duplicate response
+# clip alongside the proper N-prefix narrator clip. See
+# speak-narrator.ps1 for the full rationale.
+if ($env:TT_NARRATOR_SUBPROCESS -eq '1') { exit 0 }
+
 $ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
 $queueDir = Join-Path $ttHome 'queue'
 $edgeScript = Join-Path $ttHome 'app\edge_tts_speak.py'

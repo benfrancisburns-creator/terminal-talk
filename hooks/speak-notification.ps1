@@ -1,5 +1,11 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Narrator-subprocess guard — pairs with the env-var stamp in
+# speak-narrator.ps1. Notifications from the narrator's `claude --print`
+# child shouldn't produce audio. See speak-narrator.ps1 for the
+# full rationale.
+if ($env:TT_NARRATOR_SUBPROCESS -eq '1') { exit 0 }
+
 $ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
 $queueDir = Join-Path $ttHome 'queue'
 $edgeScript = Join-Path $ttHome 'app\edge_tts_speak.py'

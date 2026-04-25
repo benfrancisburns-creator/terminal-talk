@@ -271,16 +271,29 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
 
         if (-not $settings.hooks) { $settings | Add-Member -NotePropertyName hooks -NotePropertyValue (@{}) -Force }
         $respHook = Join-Path $hooksDir 'speak-response.ps1'
+        $narratorHook = Join-Path $hooksDir 'speak-narrator.ps1'
         $notifHook = Join-Path $hooksDir 'speak-notification.ps1'
         $toolHook = Join-Path $hooksDir 'speak-on-tool.ps1'
         $workHook = Join-Path $hooksDir 'mark-working.ps1'
+        # Stop hook chain: response synth (canonical) + narrator (experimental,
+        # gated on config.narrator.enabled — no-op when off, so registering it
+        # here is safe for everyone). Both fire in the same Stop event; Claude
+        # Code runs them sequentially. Narrator gets a tighter timeout because
+        # its work caps at one Haiku call + one TTS call.
         $settings.hooks.Stop = @(@{
             matcher = ''
-            hooks = @(@{
-                type = 'command'
-                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
-                timeout = 120
-            })
+            hooks = @(
+                @{
+                    type = 'command'
+                    command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
+                    timeout = 120
+                },
+                @{
+                    type = 'command'
+                    command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$narratorHook`""
+                    timeout = 30
+                }
+            )
         })
         $settings.hooks.Notification = @(@{
             matcher = ''

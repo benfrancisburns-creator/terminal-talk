@@ -1,5 +1,11 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Narrator-subprocess guard — pairs with the env-var stamp in
+# speak-narrator.ps1. Prevents the narrator's `claude --print` child
+# from spawning its own synth_turn.py and producing parallel tool
+# narration audio. See speak-narrator.ps1 for the full rationale.
+if ($env:TT_NARRATOR_SUBPROCESS -eq '1') { exit 0 }
+
 # PreToolUse hook -- streaming mid-response TTS.
 #
 # Fires before every tool invocation. Spawns synth_turn.py detached, which

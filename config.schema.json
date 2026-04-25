@@ -57,6 +57,14 @@
       "default": true,
       "description": "HB1 — when Claude Code is actively working but the queue has been silent for 15 s, synthesise a single spinner-verb ('Moonwalking', 'Pontificating') as an ephemeral T-prefixed clip so you get audible confirmation the session is alive. Mirrors the mascot's visible word-cloud."
     },
+    "narrator": {
+      "type": "object",
+      "description": "Experimental Haiku-backed narrator subagent. When enabled, the Stop hook spawns a separate `claude --print` invocation that converts the just-finished turn into a short speakable summary (N-prefix MP3 in the queue dir), alongside the existing streaming pipeline. Default off — flip enabled to true to A/B test.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false, "description": "Master toggle. When false, the narrator hook exits immediately and the pipeline behaves byte-for-byte as before." },
+        "model":   { "type": "string", "maxLength": 64, "default": "claude-haiku-4-5-20251001", "description": "Claude model ID to use for narration. Defaults to Haiku 4.5 — cheap, fast, plenty for short summaries." }
+      }
+    },
     "window": {
       "type": ["object", "null"],
       "description": "Last-saved window position. Managed by main.js; don't hand-edit.",
