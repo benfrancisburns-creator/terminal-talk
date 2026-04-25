@@ -193,6 +193,13 @@ function Update-SessionAssignment {
         [string]$Caller = 'unknown'
     )
 
+    # PSScriptAnalyzer can't follow $LogPath/$Caller usage into the
+    # nested function _LogBranch. Touch them once at the top of the
+    # parent body so the analyzer sees the params consumed and the
+    # PSReviewUnusedParameter rule passes. The Out-Null cast is a
+    # zero-side-effect read that compiles to a single instruction.
+    $null = $LogPath; $null = $Caller
+
     function _LogBranch($branch, $idx) {
         if (-not $LogPath) { return }
         $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')

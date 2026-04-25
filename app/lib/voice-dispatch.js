@@ -1,5 +1,6 @@
 'use strict';
 
+/* global self */
 // Voice-command action dispatcher. Extracted from renderer.js so every
 // state branch (paused-mid-clip, ended-clip-still-loaded, idle with
 // unplayed, idle with all-played, muted/stale filtering) can be unit

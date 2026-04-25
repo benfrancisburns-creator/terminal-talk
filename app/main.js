@@ -97,6 +97,17 @@ const DEFAULTS = {
   // the mascot's visible word-cloud. Ephemeral T- prefix; auto-deletes
   // on play-end. Off suppresses emission entirely (zero IPC traffic).
   heartbeat_enabled: true,
+  // Experimental: Haiku-backed narrator subagent. Stop hook spawns a
+  // separate Claude CLI invocation that converts the just-finished turn
+  // into a short speakable summary, dropped in the queue as an N-prefix
+  // MP3 alongside the existing streaming sentences. Default off — flip
+  // to true to A/B against the strip-for-tts pipeline. The narrator
+  // hook is a no-op when this is false, so existing behaviour is
+  // byte-for-byte unchanged.
+  narrator: {
+    enabled: false,
+    model: 'claude-haiku-4-5-20251001'
+  },
   openai_api_key: null
 };
 
@@ -1766,7 +1777,7 @@ function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
     // Build a -or chain of CommandLine -like filters. Each fragment
     // hand-validated as alphanum + underscore + hyphen below so the
     // string interpolation can't smuggle PowerShell metachars.
-    const safe = scriptFragments.filter((s) => /^[a-zA-Z0-9_\-]+$/.test(s));
+    const safe = scriptFragments.filter((s) => /^[a-zA-Z0-9_-]+$/.test(s));
     if (safe.length === 0) return;
     const orChain = safe.map((s) => `$_.CommandLine -like '*${s}*'`).join(' -or ');
     const psCmd = `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { ${orChain} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
