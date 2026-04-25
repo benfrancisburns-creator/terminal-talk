@@ -6982,15 +6982,39 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
   });
 
-  it('audio-player gates systemAutoResume on the _systemAutoPaused flag', () => {
-    // If the flag is missing, a release from ANY mic grab would unpause
-    // audio that the user had deliberately paused. The flag is the single
-    // guard that distinguishes "we paused this" from "user paused this".
+  it('audio-player gates systemAutoResume on the _micCaptured flag', () => {
+    // #30 (2026-04-25): two-flag split. systemAutoPause / systemAutoResume
+    // own _micCaptured exclusively; mediaSession owns _systemAutoPaused.
+    // The original race (single shared flag, mediaSession 'play' clears
+    // it during Wispr dictation, heartbeat fires) is closed by the split.
+    if (!/this\._micCaptured/.test(audioPlayerSrc)) {
+      throw new Error('audio-player must track _micCaptured instance state (HB4 two-flag split)');
+    }
     if (!/this\._systemAutoPaused/.test(audioPlayerSrc)) {
       throw new Error('audio-player must track _systemAutoPaused instance state');
     }
-    if (!/if\s*\(\s*!\s*this\._systemAutoPaused\s*\)\s*return/.test(audioPlayerSrc)) {
-      throw new Error('systemAutoResume must early-return when _systemAutoPaused is false (keep user-initiated pauses paused)');
+    if (!/if\s*\(\s*!\s*this\._micCaptured\s*\)\s*return/.test(audioPlayerSrc)) {
+      throw new Error('systemAutoResume must early-return when _micCaptured is false');
+    }
+  });
+
+  it('audio-player #30 — mediaSession handlers MUST NOT touch _micCaptured', () => {
+    // The whole point of the split: mediaSession 'play' fires spuriously
+    // during Wispr Flow dictation (Chromium audio-focus). Pre-fix that
+    // cleared the shared flag and heartbeat fired. Lock in: mediaSession
+    // handler bodies must only reference _systemAutoPaused.
+    const m = audioPlayerSrc.match(/mediaSession\.setActionHandler\([\s\S]*?\}\)\s*;\s*navigator\.mediaSession\.setActionHandler\([\s\S]*?\}\)\s*;/);
+    if (!m) throw new Error('mediaSession handler block not found in audio-player');
+    if (/_micCaptured/.test(m[0])) {
+      throw new Error('mediaSession handlers must not write _micCaptured (regression of #30)');
+    }
+  });
+
+  it('audio-player #30 — isSystemAutoPaused() reports the union of both flags', () => {
+    // After the two-flag split, the public gate must still close on
+    // EITHER source. heartbeat + playPath read this single accessor.
+    if (!/isSystemAutoPaused\(\)\s*\{\s*return\s*!!\s*\(\s*this\._micCaptured\s*\|\|\s*this\._systemAutoPaused\s*\)/.test(audioPlayerSrc)) {
+      throw new Error('isSystemAutoPaused must return (_micCaptured || _systemAutoPaused) — union semantics');
     }
   });
 });

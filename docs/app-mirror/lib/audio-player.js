@@ -150,11 +150,26 @@
       this._currentIsManual = false;
       this._currentIsUserClick = false;
       this._userScrubbing = false;
-      // Set when a MediaSession 'pause' action auto-pauses us for an
-      // audio-focus handover (e.g. Wispr Flow grabbing comms audio).
-      // Cleared when the matching 'play' action arrives or the user
-      // explicitly plays. Distinguishes system-initiated pauses (auto-
-      // resume-worthy) from user-initiated ones (stay paused).
+      // TWO orthogonal "suppress playback" flags, each owned by exactly
+      // one source. Playback (and heartbeat) is suppressed while EITHER
+      // is set. Previously a single _systemAutoPaused was shared between
+      // both sources; Chromium's audio-focus subsystem fires spurious
+      // mediaSession 'play' actions during Wispr Flow dictation that
+      // would clear the shared flag while the mic was still captured →
+      // heartbeat fired audibly over the dictation. Splitting makes
+      // each source authoritative for its own state. (#30 regression
+      // 2026-04-25; original HB4 fix described this design but only
+      // the comments shipped, not the code.)
+      //
+      //   _micCaptured       — set by mic-watcher via systemAutoPause,
+      //                        cleared by mic-watcher via systemAutoResume.
+      //                        mediaSession handlers never touch this.
+      //   _systemAutoPaused  — set by MediaSession 'pause' action (OS
+      //                        media key, audio-focus pause), cleared by
+      //                        'play' action. mic-watcher never touches
+      //                        this. isSystemAutoPaused() reports the
+      //                        union.
+      this._micCaptured = false;
       this._systemAutoPaused = false;
 
       // User-adjustable master volume (settings panel → Playback → Volume).
@@ -190,7 +205,7 @@
     // no new ambient clips get synthesised WHILE the user is dictating
     // — otherwise those clips pile up in the queue and all burst-play
     // the moment the user releases the dictation hotkey.
-    isSystemAutoPaused() { return !!this._systemAutoPaused; }
+    isSystemAutoPaused() { return !!(this._micCaptured || this._systemAutoPaused); }
 
     // Master volume (0.0–1.0). Applies to every subsequent play AND the
     // currently-playing clip if any. Heartbeat clips stay at 0.45× the
@@ -226,7 +241,9 @@
     //   22:59:15 heartbeat: "Working"     ← race: flag never set
     //   22:59:23 MIC_RELEASED
     systemAutoPause() {
-      this._systemAutoPaused = true;
+      // mic-watcher source — owns _micCaptured exclusively. Don't touch
+      // _systemAutoPaused (that's mediaSession territory).
+      this._micCaptured = true;
       // Pause the in-flight clip if there is one. Guarded because
       // pausing an ended / src-less <audio> is a no-op in Chromium
       // but pause() throws NotAllowedError mid-teardown in rare races.
@@ -243,8 +260,12 @@
     // window (which playPath refused while _systemAutoPaused was true)
     // now start playing in order.
     systemAutoResume() {
-      if (!this._systemAutoPaused) return;
-      this._systemAutoPaused = false;
+      // mic-watcher source — clears its own flag only. If mediaSession
+      // independently paused us during the mic window, leave that state
+      // alone (don't hijack an OS-level pause).
+      if (!this._micCaptured) return;
+      this._micCaptured = false;
+      if (this._systemAutoPaused) return;  // OS pause still active — respect it
       if (this._audio && this._audio.src && this._audio.paused && !this._audio.ended) {
         try { this._audio.play().catch(() => {}); } catch {}
       } else {
@@ -265,7 +286,7 @@
       // pause, talking over the user's dictation. EXCEPTION: manual
       // user-clicks override — if the user explicitly clicks a dot
       // while dictating, respect their intent.
-      if (this._systemAutoPaused && !userClick) {
+      if ((this._micCaptured || this._systemAutoPaused) && !userClick) {
         return false;
       }
       this._onPlayStart(p, { manual, userClick });  // triggers cancelAutoDelete
