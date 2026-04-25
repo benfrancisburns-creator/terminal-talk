@@ -151,17 +151,38 @@ if (-not $narratorOutput) {
     exit 0
 }
 
-# Strip the Agent-tool framework wrapper. Claude Code's Agent tool
-# appends metadata to the subagent's actual output:
-#   <narrator's speakable text>
-#   agentId: <hash> (use SendMessage with to: '<hash>' to continue ...)
-#   <usage>total_tokens: NNNN
-#   tool_uses: N
-#   duration_ms: NNN</usage>
-# We only want the speakable text; the metadata is for tooling, not
-# audio. Strip from the first `\nagentId:` or `\n<usage>` onward.
-$narratorOutput = ($narratorOutput -split "`n(?:agentId:|<usage>)", 2)[0]
+# Strip everything-after-the-speakable-text. Two sources of garbage
+# can leak in beyond the agent's intended speakable summary:
+#
+#   1. Claude Code's Agent tool framework metadata footer:
+#        <speakable text>
+#        agentId: <hash> (use SendMessage with to: '<hash>' to continue ...)
+#        <usage>total_tokens: NNNN tool_uses: N duration_ms: NNN</usage>
+#
+#   2. Haiku occasionally ignores the system-prompt rule and appends
+#      structured content the agent prompt explicitly forbids:
+#        <speakable text>
+#        ---
+#        Files to note:
+#        - bullet
+#        - bullet
+#      Live observation 2026-04-25: this happened on the e2fd3248
+#      transcript test, producing audio that read out "dash dash
+#      dash files to note colon dash regression tests..."
+#
+# Strip from the first occurrence of any of these tail markers.
+$narratorOutput = ($narratorOutput -split "`n(?:agentId:|<usage>|---\s*`n|Files to note:|\s*\*\*Files)", 2)[0]
 $narratorOutput = $narratorOutput.Trim()
+
+# Detect failed Agent invocations. When the Agent tool errors (e.g.
+# "Agent type 'narrator' not found" — observed live 2026-04-25 from
+# an Opus session whose agent list was locked at startup), the error
+# string lands in the tool_result and would otherwise be synthesised
+# as audio. Skip if the content matches the canonical error shape.
+if ($narratorOutput -match "^Agent type '[^']+' not found") {
+    Log "EXIT: skipping failed Agent invocation (error message, not narrator output): $($narratorOutput.Substring(0, [Math]::Min(80, $narratorOutput.Length)))"
+    exit 0
+}
 
 # The agent prompt explicitly says "output empty string for trivial
 # turns" — respect that signal and skip TTS. No clip is the right
