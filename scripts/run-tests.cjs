@@ -5491,6 +5491,109 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
   });
 });
 
+describe('REGISTRY LOCK SKIP-ON-FAIL (#26)', () => {
+  // JS-side mirror of the PS-side #8 root fix. withRegistryLock used
+  // to fall through and run the callback unlocked when acquire timed
+  // out — same lock-fail-fall-through bug class. Now: callback gets
+  // `held` and must skip the protected write when false. saveAssignments
+  // (the only production caller) does this + emits a skip diag.
+  const { withRegistryLock, _internals } = require(
+    path.join(__dirname, '..', 'app', 'lib', 'registry-lock.js')
+  );
+  const mainJs = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+  );
+
+  it('withRegistryLock passes held=true when lock acquired', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-lock-'));
+    const reg = path.join(tmpDir, 'r.json');
+    fs.writeFileSync(reg, '{}');
+    try {
+      let captured = null;
+      const result = withRegistryLock(reg, (held) => {
+        captured = held;
+        return 'inner-return';
+      });
+      assertEqual(captured, true, 'callback received held=true');
+      assertEqual(result, 'inner-return', 'wrapper returned callback value');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('withRegistryLock passes held=false when lock cannot be acquired', () => {
+    // Externally hold the lock so acquire() spin-waits then times out.
+    // Acquire timeout is 500ms (ACQUIRE_TIMEOUT_MS), so this test
+    // takes ~half a second.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-lock-'));
+    const reg = path.join(tmpDir, 'r.json');
+    const lockPath = reg + '.lock';
+    fs.writeFileSync(reg, '{}');
+    fs.writeFileSync(lockPath, String(process.pid));
+    try {
+      let captured = null;
+      const result = withRegistryLock(reg, (held) => {
+        captured = held;
+        return 'should-still-run-but-skip';
+      });
+      assertEqual(captured, false, 'callback received held=false');
+      assertEqual(result, 'should-still-run-but-skip', 'wrapper returned callback value');
+      // External lock must STILL be in place — wrapper must NOT have
+      // released a lock it didn't acquire.
+      if (!fs.existsSync(lockPath)) {
+        throw new Error('wrapper must not release a lock it never acquired');
+      }
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('saveAssignments source skips the write + logs skip diag when held=false', () => {
+    // Source-structural: the production caller must branch on `held`
+    // and emit the skip diag. End-to-end runtime would require loading
+    // main.js (which has Electron requires) — not feasible here.
+    // CRLF + indentation-aware. Function uses default arg
+    // `caller = 'unknown'`, body closes at column 0.
+    const m = mainJs.match(/function\s+saveAssignments\s*\(\s*all\s*,\s*caller[\s\S]+?\r?\n\}/);
+    if (!m) throw new Error('saveAssignments function body not found');
+    const body = m[0];
+    if (!/withRegistryLock\([^,]+,\s*\(held\)/.test(body)) {
+      throw new Error('saveAssignments callback must accept (held) — see #26');
+    }
+    if (!/if\s*\(\s*!held\s*\)/.test(body)) {
+      throw new Error('saveAssignments must branch on !held — see #26');
+    }
+    if (!/save-registry skip from=\$\{caller\} reason=lock-timeout/.test(body)) {
+      throw new Error('saveAssignments must emit "save-registry skip from=<caller> reason=lock-timeout" — see #26');
+    }
+    if (!/return\s+false/.test(body)) {
+      throw new Error('saveAssignments must return false on lock-timeout skip — see #26');
+    }
+  });
+
+  it('back-compat: callbacks that ignore held argument still work', () => {
+    // Existing tests + hypothetical future callers that don't care
+    // about held (`() => 42`) must continue to function.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-lock-'));
+    const reg = path.join(tmpDir, 'r.json');
+    fs.writeFileSync(reg, '{}');
+    try {
+      const result = withRegistryLock(reg, () => 42);
+      assertEqual(result, 42);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('_internals constants pinned (acquire-timeout = 500ms — invariant for #26)', () => {
+    // Sanity guard so a tweak to ACQUIRE_TIMEOUT_MS doesn't silently
+    // change the skip-on-fail cadence.
+    if (_internals.ACQUIRE_TIMEOUT_MS !== 500) {
+      throw new Error(`ACQUIRE_TIMEOUT_MS must be 500 (got ${_internals.ACQUIRE_TIMEOUT_MS}) — change requires re-evaluating skip cadence`);
+    }
+  });
+});
+
 describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
   // TT2's #4 baseline showed 7 orphan python procs from prior boots
   // surviving up to 2d 22h after toolbar exit. Root cause: will-quit

@@ -1602,7 +1602,17 @@ function saveAssignments(all, caller = 'unknown') {
   // bug triggers even while the guard masks the user-visible impact.
   const restored = _guardUserIntent(all, caller);
   const delta = _registryWriteDelta(all);
-  return withRegistryLock(COLOURS_REGISTRY, () => {
+  return withRegistryLock(COLOURS_REGISTRY, (held) => {
+    // #26 — same lock-fail-skip discipline as the PS-side fix for #8.
+    // Falling through unlocked produced the very wipe pattern we just
+    // closed on the PS side. Skip the write; next call will retry the
+    // lock. Belt-and-braces: the guard above already ran, so even if
+    // a different code path persists this `all` later, user-intent
+    // fields are restored.
+    if (!held) {
+      diag(`save-registry skip from=${caller} reason=lock-timeout — next save will retry`);
+      return false;
+    }
     try {
       const tmp = COLOURS_REGISTRY + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify({ assignments: all }, null, 2), 'utf8');
