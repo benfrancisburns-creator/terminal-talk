@@ -238,13 +238,21 @@ if (-not (Test-Path $queueDir)) {
     New-Item -ItemType Directory -Path $queueDir -Force | Out-Null
 }
 
-# N- prefix marks this as a narrator clip — distinguishes it from
-# streaming sentences (no prefix), heartbeat (H-), and tool narration
-# (T-). Filename leads with the timestamp so the descending-lexical
-# sort in queue-watcher.js sees it as the newest clip in the turn.
+# S- prefix marks this as a Summary clip — distinguishes it from
+# streaming sentences (no prefix), heartbeat (H-), tool narration
+# (T-), and Jarvis highlight clips (J-). Filename leads with the
+# timestamp so the descending-mtime sort in queue-watcher.js plays
+# it last in the turn.
 $timestamp = Get-Date -Format 'yyyyMMddTHHmmssfff'
-$baseFile = Join-Path $queueDir ("N-$timestamp-$sessionShort")
+$baseFile = Join-Path $queueDir ("S-$timestamp-$sessionShort")
 
+# Force OpenAI provider for the summary clip. Reason: gives the summary
+# an audibly distinct voice (onyx by default) from the streaming
+# sentences (en-GB-RyanNeural via edge), so the user instantly hears
+# "ah, this is the closing summary" without having to look at the
+# toolbar. If no OpenAI key is resolved, Invoke-TtsWithFallback
+# silently drops back to the edge-first chain so we still get audio
+# rather than nothing.
 $result = Invoke-TtsWithFallback `
     -EdgeScriptPath     $edgeScript `
     -EdgeVoice          $edgeResponseVoice `
@@ -253,7 +261,8 @@ $result = Invoke-TtsWithFallback `
     -BasePath           $baseFile `
     -OpenAiApiKey       $openaiApiKey `
     -OpenAiInstructions 'Speak in a calm, brief, conversational tone. Slightly faster than the main response — this is a closing summary.' `
-    -OpenAiTimeoutSec   30
+    -OpenAiTimeoutSec   30 `
+    -Provider           'openai'
 
 if ($result) { Log "DONE: $result" } else { Log "EXIT: TTS failed for narrator output" }
 exit 0
