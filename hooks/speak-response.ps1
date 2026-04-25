@@ -150,8 +150,10 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     try {
         if ($locked) {
             $assignments = Read-Registry -RegistryPath $registryPath
+            # #6 G4 — branch-tag log emitted by Update-SessionAssignment.
             $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
-                                              -SessionId $sessionId -ClaudePid $claudePid -Now $now
+                                              -SessionId $sessionId -ClaudePid $claudePid -Now $now `
+                                              -LogPath $logFile -Caller 'speak-response'
             # #6 G1 + G3 — writer attribution. speak-response runs on Stop
             # (end-of-turn) + Notification; tag its writes so they're
             # distinguishable from the other four registry writers.

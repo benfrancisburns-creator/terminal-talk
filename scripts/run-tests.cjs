@@ -5551,6 +5551,128 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
   });
 });
 
+describe('LOG-AUDIT BATCH 3 (#6 G0/G4/G5/G7 — observability polish)', () => {
+  // Final batch of TT1's #6 log-audit. Each gap closes a diagnostic
+  // dead-spot surfaced by recent bugs:
+  //   G0 — log-path discoverability (~/.terminal-talk/logs/ stub README)
+  //   G4 — Update-SessionAssignment branch-tag log
+  //   G5 — boot-event log line at app.whenReady
+  //   G7 — key_helper ctrlc with foreground-PID context
+  const mainJs = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+  );
+  const psRegistry = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8'
+  );
+  const keyHelperPy = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'key_helper.py'), 'utf8'
+  );
+
+  // ---- G5 — boot-event log line ----
+  it('G5 — main.js whenReady emits a boot-event diag with version + pid + cfg state', () => {
+    const m = mainJs.match(/app\.whenReady\(\)\.then\(\s*\(\)\s*=>\s*\{[\s\S]*?\}\);/);
+    if (!m) throw new Error('app.whenReady handler not found');
+    const body = m[0];
+    if (!/diag\(`boot version=\$\{app\.getVersion\(\)\} pid=\$\{process\.pid\}/.test(body)) {
+      throw new Error('whenReady must diag a boot line with version + pid — see #6 G5');
+    }
+    if (!/cfg_path=\$\{CONFIG_PATH\}/.test(body)) {
+      throw new Error('boot diag must include cfg_path — see #6 G5');
+    }
+    if (!/heartbeat=\$\{heartbeat\}/.test(body)) {
+      throw new Error('boot diag must include heartbeat=on/off (#1-class regression suspect) — see #6 G5');
+    }
+    if (!/tts_provider=\$\{provider\}/.test(body)) {
+      throw new Error('boot diag must include tts_provider (#15/#16-class regression suspect) — see #6 G5');
+    }
+    if (!/cfg_keys=\[/.test(body)) {
+      throw new Error('boot diag must include cfg_keys=[...] so dropped-key bugs surface — see #6 G5');
+    }
+  });
+
+  // ---- G4 — Update-SessionAssignment branch-tag log ----
+  it('G4 — Update-SessionAssignment accepts -LogPath + -Caller + emits branch tag', () => {
+    if (!/\[string\]\$LogPath\s*=\s*''/.test(psRegistry)) {
+      throw new Error('Update-SessionAssignment must accept -LogPath param (default empty) — see #6 G4');
+    }
+    if (!/\[string\]\$Caller\s*=\s*'unknown'/.test(psRegistry)) {
+      throw new Error('Update-SessionAssignment must accept -Caller param (default unknown) — see #6 G4');
+    }
+    // Branch tags emitted by _LogBranch helper. pid-migration and
+    // lru-evict carry composite suffixes (`pid-migration<-$oldShort`,
+    // `lru-evict<-$shortBeingEvicted`) so we use prefix-match for those.
+    const branchRegexes = [
+      /['"]existing-hit['"]/,
+      /['"]?pid-migration<-\$oldShort['"]?/,
+      /\$branchTag\s*=\s*['"]fresh-alloc['"]/,
+      /lru-evict<-\$\(\$lru\.Short\)/,
+      /\$branchTag\s*=\s*['"]hash-collision['"]/,
+    ];
+    for (const rx of branchRegexes) {
+      if (!rx.test(psRegistry)) {
+        throw new Error(`_LogBranch must tag the path matching ${rx} — see #6 G4`);
+      }
+    }
+    if (!/_LogBranch/.test(psRegistry)) {
+      throw new Error('Update-SessionAssignment must define + call _LogBranch helper — see #6 G4');
+    }
+  });
+
+  it('G4 — every PS Update-SessionAssignment caller threads -LogPath + -Caller', () => {
+    const callers = [
+      { file: 'app/statusline.ps1',       caller: 'statusline' },
+      { file: 'hooks/speak-on-tool.ps1',  caller: 'speak-on-tool' },
+      { file: 'hooks/speak-response.ps1', caller: 'speak-response' },
+    ];
+    for (const { file, caller } of callers) {
+      const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      // Multi-line PS continuation — Update-SessionAssignment + Caller
+      // within a 600-char window.
+      const rx = new RegExp(
+        String.raw`Update-SessionAssignment[\s\S]{0,600}-LogPath[\s\S]{0,200}-Caller\s+['"]` + caller + String.raw`['"]`
+      );
+      if (!rx.test(src)) {
+        throw new Error(`${file} — Update-SessionAssignment call must pass -LogPath + -Caller '${caller}' — see #6 G4`);
+      }
+    }
+  });
+
+  // ---- G7 — key_helper ctrlc context ----
+  it('G7 — key_helper.py ctrlc log line includes fg_pid context', () => {
+    if (!/cmd\s*==\s*['"]ctrlc['"]/.test(keyHelperPy)) {
+      throw new Error('key_helper.py _log_cmd must special-case ctrlc — see #6 G7');
+    }
+    if (!/fg_pid=\{get_foreground_pid\(\)\}/.test(keyHelperPy)) {
+      throw new Error('key_helper.py ctrlc log line must include fg_pid={get_foreground_pid()} — see #6 G7');
+    }
+  });
+
+  // ---- G0 — log-path discoverability ----
+  it('G0 — main.js boot-time creates ~/.terminal-talk/logs/README.md redirect stub', () => {
+    if (!/LOGS_REDIRECT_DIR\s*=\s*path\.join\(INSTALL_DIR,\s*['"]logs['"]\)/.test(mainJs)) {
+      throw new Error('main.js must define LOGS_REDIRECT_DIR pointing at INSTALL_DIR/logs — see #6 G0');
+    }
+    if (!/LOGS_REDIRECT_README\s*=\s*path\.join\(LOGS_REDIRECT_DIR,\s*['"]README\.md['"]\)/.test(mainJs)) {
+      throw new Error('main.js must define LOGS_REDIRECT_README — see #6 G0');
+    }
+    if (!/Where the logs actually live/.test(mainJs)) {
+      throw new Error('LOGS_REDIRECT_BODY must explain where logs actually live — see #6 G0');
+    }
+    // All 5 active log file names must be enumerated in the body so
+    // readers know what to look for.
+    for (const log of ['_toolbar.log', '_hook.log', '_voice.log', '_helper.log', '_watchdog.log']) {
+      if (!new RegExp(log.replace('.', '\\.')).test(mainJs)) {
+        throw new Error(`LOGS_REDIRECT_BODY must list ${log} — see #6 G0`);
+      }
+    }
+    // Must be best-effort (try/catch swallowed) so a broken docs
+    // write never blocks boot.
+    if (!/try\s*\{[\s\S]{0,300}LOGS_REDIRECT_README[\s\S]{0,300}\}\s*catch/.test(mainJs)) {
+      throw new Error('LOGS_REDIRECT_README write must be wrapped in try/catch — see #6 G0');
+    }
+  });
+});
+
 describe('REGISTRY LOCK SKIP-ON-FAIL (#26)', () => {
   // JS-side mirror of the PS-side #8 root fix. withRegistryLock used
   // to fall through and run the callback unlocked when acquire timed

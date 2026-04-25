@@ -70,8 +70,10 @@ $locked = Enter-RegistryLock -RegistryPath $registryPath
 try {
     if ($locked) {
         $assignments = Read-Registry -RegistryPath $registryPath
+        # #6 G4 — branch-tag log emitted by Update-SessionAssignment.
         $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
-                                          -SessionId $sessionId -ClaudePid $claudePid -Now $now
+                                          -SessionId $sessionId -ClaudePid $claudePid -Now $now `
+                                          -LogPath $logFile -Caller 'speak-on-tool'
         # #6 G1 + G3 — writer attribution. speak-on-tool fires on PreToolUse,
         # so tagging its writes distinguishes pre-tool saves from statusline-
         # triggered saves + the two speak-response (Stop/Notification) writers.

@@ -219,11 +219,24 @@ _LOG_PATH = Path.home() / '.terminal-talk' / 'queue' / '_helper.log'
 
 
 def _log_cmd(cmd: str) -> None:
+    # #6 G7 — for `ctrlc`, capture the foreground PID at the moment
+    # of the keystroke. Cross-correlated with the toolbar's
+    # `speakClipboard: TRIGGERED ... captureSelection ... captured.len=N`
+    # line in `_toolbar.log`, this gives the full origin → outcome
+    # picture of the highlight-to-speak path. Pre-G7 the line was
+    # context-free (`<ts> ctrlc`) and made speak-clipboard bug
+    # diagnosis guesswork.
+    extra = ''
+    try:
+        if cmd == 'ctrlc':
+            extra = f' fg_pid={get_foreground_pid()}'
+    except Exception:
+        pass
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
         with open(_LOG_PATH, 'a', encoding='utf-8') as fh:
-            fh.write(f'{ts} {cmd}\n')
+            fh.write(f'{ts} {cmd}{extra}\n')
     except Exception:
         pass  # diagnostic log is best-effort — missing log must never crash helper
 

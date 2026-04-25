@@ -177,14 +177,36 @@ function Update-SessionAssignment {
         [Parameter(Mandatory = $true)] [string]$Short,
         [Parameter(Mandatory = $true)] [string]$SessionId,
         [Parameter(Mandatory = $true)] [int]$ClaudePid,
-        [Parameter(Mandatory = $true)] [long]$Now
+        [Parameter(Mandatory = $true)] [long]$Now,
+        # #6 G4 — when -LogPath + -Caller are provided, emit one
+        # `update-session <short> -> <branch> index=<idx> pid=<pid>`
+        # line per call so PID-migration / fresh-alloc / lru-evict
+        # paths are diagnosable from logs alone. Branches:
+        #   existing-hit  — short already in registry, bookkeeping only
+        #   pid-migration — re-keyed from old short via PID match
+        #   fresh-alloc   — lowest free palette slot taken
+        #   lru-evict     — evicted a no-intent entry to free a slot
+        #   hash-collision — palette full of intent-bearing entries
+        # Optional so existing test call sites + un-instrumented
+        # callers stay back-compat.
+        [string]$LogPath = '',
+        [string]$Caller = 'unknown'
     )
+
+    function _LogBranch($branch, $idx) {
+        if (-not $LogPath) { return }
+        $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        $line = "$ts update-session $Short -> $branch index=$idx pid=$ClaudePid from=$Caller"
+        try { Add-Content -Path $LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
+    }
 
     if ($Assignments.ContainsKey($Short)) {
         $Assignments[$Short].last_seen  = $Now
         $Assignments[$Short].session_id = $SessionId
         $Assignments[$Short].claude_pid = $ClaudePid
-        return [int]$Assignments[$Short].index
+        $idx0 = [int]$Assignments[$Short].index
+        _LogBranch 'existing-hit' $idx0
+        return $idx0
     }
 
     # PID-identity migration. Claude Code's /clear rotates session_id but
@@ -220,7 +242,9 @@ function Update-SessionAssignment {
             $migrated.last_seen  = $Now
             $Assignments[$Short] = $migrated
             [void]$Assignments.Remove($oldShort)
-            return [int]$migrated.index
+            $idxM = [int]$migrated.index
+            _LogBranch "pid-migration<-$oldShort" $idxM
+            return $idxM
         }
     }
 
@@ -240,6 +264,7 @@ function Update-SessionAssignment {
     # speech_includes). Matches allocatePaletteIndex() + hasUserIntent()
     # in app/lib/palette-alloc.js so statusline + Electron UI always
     # agree on the candidate pool.
+    $branchTag = 'fresh-alloc'
     if ($null -eq $idx) {
         $candidates = @()
         foreach ($key in @($Assignments.Keys)) {
@@ -263,11 +288,13 @@ function Update-SessionAssignment {
             $lru = $candidates | Sort-Object LastSeen, Short | Select-Object -First 1
             $idx = $lru.Index
             [void]$Assignments.Remove($lru.Short)
+            $branchTag = "lru-evict<-$($lru.Short)"
         } else {
             # Every slot is pinned -- hash-mod collision is unavoidable.
             $sum = 0
             foreach ($ch in $Short.ToCharArray()) { $sum += [int]$ch }
             $idx = $sum % $script:PaletteSize
+            $branchTag = 'hash-collision'
         }
     }
 
@@ -281,6 +308,7 @@ function Update-SessionAssignment {
         focus      = $false
         last_seen  = $Now
     }
+    _LogBranch $branchTag ([int]$idx)
     return [int]$idx
 }
 

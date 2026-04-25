@@ -167,8 +167,13 @@ try {
     if ($locked) {
         # Lock held — safe to do the full Read-Update-Save triplet.
         $assignments = Read-Registry -RegistryPath $registryPath
+        # #6 G4 — pass -LogPath + -Caller so Update-SessionAssignment
+        # emits its branch tag (existing-hit / pid-migration / fresh-
+        # alloc / lru-evict / hash-collision). Makes #8-class identity-
+        # migration bugs diagnosable from logs alone.
         $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
-                                         -SessionId $sessionId -ClaudePid $claudePid -Now $now
+                                         -SessionId $sessionId -ClaudePid $claudePid -Now $now `
+                                         -LogPath $registryLogPath -Caller 'statusline'
         # #6 G1 + G3 — attribute every save + log to _hook.log so wipe-class
         # bugs (#8) have a writer-by-writer trail.
         Save-Registry -RegistryPath $registryPath -Assignments $assignments `

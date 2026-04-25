@@ -162,6 +162,50 @@ const STALE_MS = 60 * 60 * 1000;
 
 if (!fs.existsSync(QUEUE_DIR)) fs.mkdirSync(QUEUE_DIR, { recursive: true });
 
+// #6 G0 — log-path discoverability stub. The queue/_*.log convention
+// is non-obvious: anyone (Ben, a triager, a future maintainer)
+// hand-checking the obvious `~/.terminal-talk/logs/` path finds
+// nothing and assumes there are no logs. This stub sits at the
+// expected location and redirects them. Keep idempotent + cheap so
+// it can run on every boot without side effects.
+const LOGS_REDIRECT_DIR = path.join(INSTALL_DIR, 'logs');
+const LOGS_REDIRECT_README = path.join(LOGS_REDIRECT_DIR, 'README.md');
+const LOGS_REDIRECT_BODY = [
+  '# Where the logs actually live',
+  '',
+  'Terminal Talk writes logs to `~/.terminal-talk/queue/_*.log`, NOT this',
+  'directory. The `queue/` location was chosen because the toolbar already',
+  'watches that directory for clip arrivals + prunes stale files; piggy-',
+  'backing the logs onto that path keeps the install footprint flat.',
+  '',
+  '## Active log files',
+  '',
+  '- `queue/_toolbar.log`     — JS-side: IPC, mic-watcher, voice-command,',
+  '                             heartbeat, watchdog, save-registry attribution.',
+  '- `queue/_hook.log` (.1)   — PS-side: hook fires, synth spawn, edge-tts',
+  '                             retries, save-registry attribution. 1 MB cap.',
+  '- `queue/_voice.log` (.1)  — Python wake-word listener: openWakeWord scores,',
+  '                             FIRE events, post-wake capture, SAPI results.',
+  '                             1 MB cap as of 2026-04-25 (#10).',
+  '- `queue/_helper.log`      — key_helper.py: ctrlc + foreground-PID context.',
+  '- `queue/_watchdog.log`    — Periodic watchdog sweep: prune counts +',
+  '                             RSS / queue files / registry size / voice procs.',
+  '',
+  '## Why this stub exists (#6 G0)',
+  '',
+  'The `~/.terminal-talk/logs/` path was the documented convention in early',
+  'README drafts; logs ended up under `queue/` but the obvious path stuck in',
+  "developer + user mental models. Without this stub, anyone hand-checking",
+  '`~/.terminal-talk/logs/` finds nothing and assumes there are no logs.',
+  '',
+].join('\n');
+try {
+  if (!fs.existsSync(LOGS_REDIRECT_DIR)) fs.mkdirSync(LOGS_REDIRECT_DIR, { recursive: true });
+  // Always overwrite — if the body changes (new log surface added),
+  // the next boot picks up the refresh. Cheap (< 1 KB write).
+  fs.writeFileSync(LOGS_REDIRECT_README, LOGS_REDIRECT_BODY, 'utf8');
+} catch { /* best-effort — never block boot on a docs stub */ }
+
 // 1 MB cap, single rotated backup -> bounded disk use forever.
 const LOG_MAX_BYTES = 1024 * 1024;
 function rotateLogIfNeeded(filePath) {
@@ -2118,6 +2162,25 @@ function logIntegrity() {
 }
 
 app.whenReady().then(() => {
+  // #6 G5 — boot-event log line. Single self-contained snapshot of
+  // install state so post-mortem can identify which version, which
+  // PID, which CFG path, and the load-state of validator-accepted
+  // top-level scalars (most-likely #1-class regression suspects).
+  // Fires before any other startup work so the log is anchored even
+  // if a later step crashes.
+  try {
+    const cfgKeys = (() => {
+      try {
+        const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        return Object.keys(parsed).sort().join(',');
+      } catch { return 'load-failed'; }
+    })();
+    const heartbeat = (CFG && CFG.heartbeat_enabled !== false) ? 'on' : 'off';
+    const provider = String(((CFG && CFG.playback) || {}).tts_provider || 'edge');
+    diag(`boot version=${app.getVersion()} pid=${process.pid} cfg_path=${CONFIG_PATH} cfg_keys=[${cfgKeys}] heartbeat=${heartbeat} tts_provider=${provider}`);
+  } catch (e) { diag(`boot-event log failed: ${e.message}`); }
+
   logIntegrity();
   killOrphanVoiceListeners();
   pruneOldFiles();
