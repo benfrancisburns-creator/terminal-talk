@@ -41,19 +41,36 @@ try {
     if (-not (Test-Path $sessionsDir)) {
         New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null
     }
-    $flagPath = Join-Path $sessionsDir "$sessionShort-working.flag"
-    # Content is the epoch seconds of when the user submitted — gives
-    # the toolbar (and watchdog) a way to prune stale markers without
-    # guessing from mtime alone.
+    # Two-flag split (audit 2026-04-25 — "moonwalking for 19 seconds"
+    # bug). mark-working writes BOTH flags on submit:
+    #
+    #   <short>-start.flag    The IMMUTABLE submit timestamp. Written
+    #                          once per turn here; never touched by any
+    #                          other hook. speak-response reads this
+    #                          for elapsed-time calculation.
+    #
+    #   <short>-working.flag  The keep-fresh signal. Written here on
+    #                          submit, REFRESHED by speak-on-tool on
+    #                          every PreToolUse so heartbeat stays alive
+    #                          for long turns (>10 min) where a single
+    #                          submit timestamp would age past
+    #                          STALE_SEC=600. Toolbar gates heartbeat
+    #                          emission on presence + freshness of this
+    #                          flag.
+    #
+    # Pre-fix, both flags were the same file — speak-on-tool's refresh
+    # clobbered the submit timestamp, so a 79-second turn whose last
+    # tool fired 19s before Stop produced "Moonwalking for 19 seconds"
+    # instead of "Moonwalking for 1 minute and 19 seconds".
+    #
     # UTC-correct epoch seconds. `Get-Date -UFormat %s` returns LOCAL
-    # time on Windows PowerShell 5.1, which puts this flag's timestamp
-    # hours ahead or behind what the JS reader (Date.now()/1000, UTC)
-    # expects. Audit 2026-04-23 Phase 2b caught this via a 3600 s drift
-    # in BST. ToUnixTimeSeconds() is UTC by definition — fixes it once,
-    # for every PS version.
+    # time on PS 5.1 — caught via 3600 s drift in BST audit 2026-04-23.
     $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-    Set-Content -Path $flagPath -Value $nowSec -Encoding utf8 -NoNewline
-    Log "flag set for $sessionShort"
+    $startFlag   = Join-Path $sessionsDir "$sessionShort-start.flag"
+    $workingFlag = Join-Path $sessionsDir "$sessionShort-working.flag"
+    Set-Content -Path $startFlag   -Value $nowSec -Encoding utf8 -NoNewline
+    Set-Content -Path $workingFlag -Value $nowSec -Encoding utf8 -NoNewline
+    Log "flags set for $sessionShort (start + working)"
 } catch {
     Log "EXIT: $($_.Exception.Message)"
 }

@@ -340,7 +340,7 @@ describe('MARK-WORKING HOOK (UserPromptSubmit)', () => {
     };
   }
 
-  it('writes flag file named <8hex>-working.flag with epoch-second content', () => {
+  it('writes BOTH -start.flag and -working.flag with epoch-second content', () => {
     const home = makeTempHome();
     try {
       const payload = JSON.stringify({
@@ -367,9 +367,9 @@ describe('MARK-WORKING HOOK (UserPromptSubmit)', () => {
         transcript_path: 'C:\\fake\\AABBCCDD-1234-5678-9abc-def012345678.jsonl',
       });
       runMarkWorking(payload, home.root);
-      const files = fs.readdirSync(home.sessionsDir);
-      assertEqual(files, ['aabbccdd-working.flag'],
-        'hook must lowercase the shortId when building the flag filename');
+      const files = fs.readdirSync(home.sessionsDir).sort();
+      assertEqual(files, ['aabbccdd-start.flag', 'aabbccdd-working.flag'],
+        'hook must lowercase the shortId on BOTH flag filenames');
     } finally { home.cleanup(); }
   });
 
