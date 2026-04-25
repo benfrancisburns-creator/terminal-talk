@@ -122,6 +122,7 @@ Self-directable next items in TT1's lane (THEY pick — I won't direct):
 | 2026-04-25 09:10      | TT1 | post-compact | #6 Batch 2 (G6 watchdog resource metrics + G8 stale-flag filter logging) drafted + merged @ `5881437`. createWatchdog factory accepts getResourceMetrics; main.js wires {rss_mb, queue_files, registry_bytes, voice_procs}. get-working-sessions emits filter diag with per-short age annotation. 869/869 (+7). Deployed. Lifted forward of #4 close-out so TT2's 22:54 soak re-measure benefits from the new observability |
 | 2026-04-25 09:30      | TT1 | post-compact | #9 orphan-python-on-toolbar-exit drafted + merged @ `fa95d64`. Hard taskkill /F /T + extended sweep covering wake-word-listener AND key_helper. ORPHAN_PY_SCRIPTS allowlist with regex-validated fragments. 874/874 (+5). Deployed |
 | 2026-04-25 09:55      | TT1 | post-compact | #26 JS withRegistryLock skip-on-fail drafted + merged @ `d39239d`. Mirror of PS-side #8 root fix per TT2's `ec7f362` audit. saveAssignments branches on held + emits skip diag. ACQUIRE_TIMEOUT_MS=500 pinned. writeAssignments called out as Surface C follow-up. 879/879 (+5). Deployed; labels survive |
+| 2026-04-25 10:25      | TT1 | post-compact | #10 _voice.log size-capped rotation drafted + merged @ `df1980b`. Switched wake-word-listener.py from logging.basicConfig to RotatingFileHandler (1 MB cap, 1 backup) — matches _hook.log convention. End-to-end runtime test (20K log lines → .1 backup created, main < 1.2 MB). 881/881 (+2). Deployed |
 
 ## Pointers for a fresh session
 
