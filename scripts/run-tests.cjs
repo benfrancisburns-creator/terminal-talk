@@ -1838,13 +1838,18 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
   // remove-session) bypass the guard — the user explicitly asked for
   // the mutation.
   const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  // #29 (2026-04-25): the guard implementation moved to app/lib/registry-guard.js
+  // via factory extract. Source-pattern tests below now read the lib file.
+  const libRegistryGuardSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'registry-guard.js'), 'utf8'
+  );
   const psRegistrySrc = fs.readFileSync(
     path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8'
   );
 
   it('JS — USER_INTENT_WRITERS set lists the 6 intent-path callers', () => {
-    const m = mainJsSrc.match(/USER_INTENT_WRITERS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
-    if (!m) throw new Error('USER_INTENT_WRITERS allowlist not found in main.js — see #8 guard');
+    const m = libRegistryGuardSrc.match(/USER_INTENT_WRITERS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    if (!m) throw new Error('USER_INTENT_WRITERS allowlist not found in registry-guard.js — see #8 guard');
     const names = m[1];
     for (const expected of [
       'set-session-label', 'set-session-voice', 'set-session-muted',
@@ -1854,19 +1859,25 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
         throw new Error(`USER_INTENT_WRITERS missing "${expected}" — see #8 guard`);
       }
     }
+    // Sanity check: main.js still imports + uses the set so the
+    // production wire-up isn't accidentally orphaned.
+    if (!/USER_INTENT_WRITERS\s*=\s*_registryGuard\.USER_INTENT_WRITERS/.test(mainJsSrc) &&
+        !/createRegistryGuard/.test(mainJsSrc)) {
+      throw new Error('main.js no longer imports the registry-guard factory — extract orphaned');
+    }
   });
 
-  it('JS — _guardUserIntent restores label/pinned/voice/muted/focus/speech_includes', () => {
-    if (!/function\s+_guardUserIntent\s*\(all,\s*caller\)/.test(mainJsSrc)) {
-      throw new Error('_guardUserIntent function signature missing — see #8 guard');
+  it('JS — guardUserIntent restores label/pinned/voice/muted/focus/speech_includes', () => {
+    if (!/function\s+guardUserIntent\s*\(all,\s*caller\)/.test(libRegistryGuardSrc)) {
+      throw new Error('guardUserIntent function signature missing — see #8 guard');
     }
     // Verify each user-intent field appears in a restoration branch.
     for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'speech_includes']) {
       // Each field should appear on BOTH sides of an oldEntry/newEntry
       // comparison in the guard body.
       const rx = new RegExp(`oldEntry\\.${field}[\\s\\S]{0,200}newEntry\\.${field}`);
-      if (!rx.test(mainJsSrc)) {
-        throw new Error(`_guardUserIntent does not restore ${field} — see #8 guard`);
+      if (!rx.test(libRegistryGuardSrc)) {
+        throw new Error(`guardUserIntent does not restore ${field} — see #8 guard`);
       }
     }
   });
@@ -2052,24 +2063,25 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     }
   });
 
-  it('JS — _guardUserIntent source implements Mode 1 (missing entry) + Mode 2 (missing field)', () => {
+  it('JS — guardUserIntent source implements Mode 1 (missing entry) + Mode 2 (missing field)', () => {
     // Structural confirmation that both modes exist in the code, not
-    // just the test's inline replica.
-    const m = mainJsSrc.match(/function\s+_guardUserIntent[\s\S]*?\n\}/);
-    if (!m) throw new Error('_guardUserIntent body not found');
+    // just the test's inline replica. Now reads the lib module after
+    // #29 extraction.
+    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n  \}/);
+    if (!m) throw new Error('guardUserIntent body not found');
     const body = m[0];
-    // Mode 1 marker — iterating oldAll keys + _hasUserIntent + add to all[short].
+    // Mode 1 marker — iterating oldAll keys + hasUserIntent + add to all[short].
     if (!/for\s*\(const\s+short\s+of\s+Object\.keys\(oldAll\)\)/.test(body)) {
-      throw new Error('_guardUserIntent must iterate oldAll keys for Mode 1 — see #8 missing-entry');
+      throw new Error('guardUserIntent must iterate oldAll keys for Mode 1 — see #8 missing-entry');
     }
     if (!/_hasUserIntent\(oldAll\[short\]\)/.test(body)) {
-      throw new Error('_guardUserIntent Mode 1 must check _hasUserIntent on missing entries');
+      throw new Error('guardUserIntent Mode 1 must check _hasUserIntent on missing entries');
     }
     if (!/all\[short\]\s*=\s*oldAll\[short\]/.test(body)) {
-      throw new Error('_guardUserIntent Mode 1 must re-add oldAll[short] to all');
+      throw new Error('guardUserIntent Mode 1 must re-add oldAll[short] to all');
     }
     if (!/\*missing\*/.test(body)) {
-      throw new Error('_guardUserIntent Mode 1 must tag restored entries with *missing* marker');
+      throw new Error('guardUserIntent Mode 1 must tag restored entries with *missing* marker');
     }
   });
 
@@ -2117,9 +2129,9 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     // user-initiated clears. set-session-label('') on a pinned entry
     // should still clear the label (pinned stays — that's a separate
     // concern). Verified via the USER_INTENT_WRITERS allowlist check:
-    // if caller is in the set, _guardUserIntent returns [] early.
-    const m = mainJsSrc.match(/function\s+_guardUserIntent[\s\S]*?\n\}/);
-    if (!m) throw new Error('_guardUserIntent body not found');
+    // if caller is in the set, guardUserIntent returns [] early.
+    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n  \}/);
+    if (!m) throw new Error('guardUserIntent body not found');
     if (!/if\s*\(USER_INTENT_WRITERS\.has\(caller\)\)\s*return\s*\[\]/.test(m[0])) {
       throw new Error('_guardUserIntent must short-circuit for USER_INTENT_WRITERS callers — see #8 guard');
     }
@@ -6801,26 +6813,33 @@ describe('TRAY ICON — always-available show/hide + context menu', () => {
     }
   });
 
-  it('main.js defines startTray + stopTray helpers', () => {
-    if (!/function startTray\(\)/.test(mainSrc)) {
-      throw new Error('main.js must define function startTray()');
+  // #29 (2026-04-25): tray logic moved to app/lib/tray.js. Source-pattern
+  // tests below now read the lib file. main.js still references
+  // startTray/stopTray for the lifecycle hooks.
+  const libTraySrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'tray.js'), 'utf8'
+  );
+
+  it('main.js wires startTray + stopTray via lib factory', () => {
+    if (!/createTray/.test(mainSrc)) {
+      throw new Error('main.js must use createTray factory from lib/tray.js');
     }
-    if (!/function stopTray\(\)/.test(mainSrc)) {
-      throw new Error('main.js must define function stopTray()');
+    if (!/startTray/.test(mainSrc) || !/stopTray/.test(mainSrc)) {
+      throw new Error('main.js must reference startTray + stopTray for lifecycle hooks');
     }
   });
 
-  it('startTray wires both left-click (toggleWindow) and right-click (context menu)', () => {
-    if (!/tray\.on\(['"]click['"][\s\S]{0,200}toggleWindow/.test(mainSrc)) {
-      throw new Error('startTray must bind left-click to toggleWindow');
+  it('lib/tray.js wires both left-click (toggleWindow) and right-click (context menu)', () => {
+    if (!/tray\.on\(['"]click['"][\s\S]{0,200}toggleWindow/.test(libTraySrc)) {
+      throw new Error('lib/tray.js must bind left-click to toggleWindow');
     }
-    if (!/tray\.on\(['"]right-click['"]/.test(mainSrc)) {
-      throw new Error('startTray must bind right-click for the context menu');
+    if (!/tray\.on\(['"]right-click['"]/.test(libTraySrc)) {
+      throw new Error('lib/tray.js must bind right-click for the context menu');
     }
   });
 
   it('context menu offers a Quit entry', () => {
-    if (!/label:\s*['"]Quit Terminal Talk['"][\s\S]{0,120}app\.quit\(\)/.test(mainSrc)) {
+    if (!/label:\s*['"]Quit Terminal Talk['"][\s\S]{0,120}app\.quit\(\)/.test(libTraySrc)) {
       throw new Error('Tray context menu must offer "Quit Terminal Talk" → app.quit()');
     }
   });
@@ -6844,8 +6863,8 @@ describe('TRAY ICON — always-available show/hide + context menu', () => {
     // Missing icon must log + return, not throw. Otherwise a partial
     // install (PNG missed by the robocopy pass, file-lock during copy)
     // would turn the whole app unlaunchable.
-    if (!/img\.isEmpty\(\)[\s\S]{0,200}return/.test(mainSrc)) {
-      throw new Error('startTray must return early when img.isEmpty() — no crash on partial install');
+    if (!/img\.isEmpty\(\)[\s\S]{0,200}return/.test(libTraySrc)) {
+      throw new Error('lib/tray.js must return early when img.isEmpty() — no crash on partial install');
     }
   });
 });
@@ -6896,11 +6915,16 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   });
 
   it('main.js spawns the mic-watcher on app ready', () => {
-    if (!/startMicWatcher\s*\(\s*\)/.test(mainSrc)) {
-      throw new Error('main.js must call startMicWatcher() to launch the sidecar');
+    // #29 (2026-04-25): mic-watcher logic moved to app/lib/mic-watcher.js.
+    // Read it lazily so existing tests in this group keep working.
+    const libMicSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'mic-watcher.js'), 'utf8'
+    );
+    if (!/startMicWatcher/.test(mainSrc)) {
+      throw new Error('main.js must reference startMicWatcher to launch the sidecar');
     }
-    if (!/spawn\(\s*POWERSHELL_EXE\b[\s\S]{0,200}MIC_WATCHER_SCRIPT/.test(mainSrc)) {
-      throw new Error('main.js must spawn POWERSHELL_EXE on MIC_WATCHER_SCRIPT');
+    if (!/spawn\(\s*powershellExe\b[\s\S]{0,200}scriptPath/.test(libMicSrc)) {
+      throw new Error('mic-watcher.js must spawn powershellExe on scriptPath (deps named via factory)');
     }
     if (!/stopMicWatcher/.test(mainSrc)) {
       throw new Error('main.js must clean up mic-watcher on will-quit (stopMicWatcher)');
@@ -6908,19 +6932,26 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   });
 
   it('main.js auto-restarts the mic-watcher if it exits', () => {
-    // Without restart, a one-time sidecar crash would silently disable
-    // the whole auto-pause feature until the user reloaded the toolbar.
-    if (!/micWatcherProc\.on\(\s*['"]exit['"][\s\S]{0,500}startMicWatcher/.test(mainSrc)) {
-      throw new Error('main.js must restart mic-watcher on exit (setTimeout startMicWatcher)');
+    // Restart preservation post-#29 extract: live in lib/mic-watcher.js's
+    // proc.on('exit') handler. Without restart, a one-time sidecar crash
+    // would silently disable the whole auto-pause feature.
+    const libMicSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'mic-watcher.js'), 'utf8'
+    );
+    if (!/proc\.on\(\s*['"]exit['"][\s\S]{0,500}start\(\)/.test(libMicSrc)) {
+      throw new Error('lib/mic-watcher.js must restart on exit (setTimeout start())');
     }
   });
 
   it('main.js forwards MIC_CAPTURED / MIC_RELEASED to the renderer', () => {
-    if (!/MIC_CAPTURED[\s\S]{0,200}mic-captured-elsewhere/.test(mainSrc)) {
-      throw new Error('main.js must send mic-captured-elsewhere IPC on MIC_CAPTURED');
+    const libMicSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'mic-watcher.js'), 'utf8'
+    );
+    if (!/MIC_CAPTURED[\s\S]{0,200}mic-captured-elsewhere/.test(libMicSrc)) {
+      throw new Error('lib/mic-watcher.js must send mic-captured-elsewhere IPC on MIC_CAPTURED');
     }
-    if (!/MIC_RELEASED[\s\S]{0,200}mic-released/.test(mainSrc)) {
-      throw new Error('main.js must send mic-released IPC on MIC_RELEASED');
+    if (!/MIC_RELEASED[\s\S]{0,200}mic-released/.test(libMicSrc)) {
+      throw new Error('lib/mic-watcher.js must send mic-released IPC on MIC_RELEASED');
     }
   });
 

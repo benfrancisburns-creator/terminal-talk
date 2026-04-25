@@ -663,51 +663,19 @@ function forceOnTop() {
 // keyboard hook path — left-click toggles the window, right-click
 // opens a context menu with explicit Show/Hide + Quit. Works 100 %
 // regardless of any keyboard-shortcut conflict.
-let tray = null;
-
-function startTray() {
-  if (tray) return;
-  try {
-    // app/tray-icon.png ships alongside main.js; install.ps1's
-    // `Copy-Item -Recurse app/` copies the whole directory so the
-    // installed tree has the file at ~/.terminal-talk/app/tray-icon.png.
-    const iconPath = path.join(__dirname, 'tray-icon.png');
-    const img = nativeImage.createFromPath(iconPath);
-    if (img.isEmpty()) {
-      diag(`tray: icon file missing or empty at ${iconPath} — tray disabled`);
-      return;
-    }
-    tray = new Tray(img);
-    tray.setToolTip('Terminal Talk');
-    tray.on('click', () => {
-      try { toggleWindow(); } catch (e) { diag(`tray click: ${e.message}`); }
-    });
-    const buildMenu = () => Menu.buildFromTemplate([
-      {
-        label: (win && !win.isDestroyed() && win.isVisible()) ? 'Hide toolbar' : 'Show toolbar',
-        click: () => { try { toggleWindow(); } catch {} },
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit Terminal Talk',
-        click: () => { app.quit(); },
-      },
-    ]);
-    tray.on('right-click', () => {
-      try { tray.popUpContextMenu(buildMenu()); } catch (e) { diag(`tray right-click: ${e.message}`); }
-    });
-    diag('tray: started');
-  } catch (e) {
-    diag(`tray: start failed: ${e.message}`);
-    tray = null;
-  }
-}
-
-function stopTray() {
-  if (!tray) return;
-  try { tray.destroy(); } catch {}
-  tray = null;
-}
+// System tray — extracted to app/lib/tray.js (#29). app/tray-icon.png
+// ships alongside main.js; install.ps1's `Copy-Item -Recurse app/`
+// copies the whole directory so the installed tree has the file at
+// ~/.terminal-talk/app/tray-icon.png.
+const _tray = createTray({
+  Tray, Menu, nativeImage, app,
+  iconPath: path.join(__dirname, 'tray-icon.png'),
+  getWin: () => win,
+  toggleWindow: () => toggleWindow(),
+  diag,
+});
+const startTray = _tray.start;
+const stopTray = _tray.stop;
 
 function toggleWindow() {
   if (!win) return;
@@ -809,6 +777,11 @@ function stripForTTS(text) {
 const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
 const { withRegistryLock } = require('./lib/registry-lock');
+const { createRegistryGuard } = require('./lib/registry-guard');
+const { createOpenaiInvalidWatcher } = require('./lib/openai-invalid-watcher');
+const { createVoiceCommandWatcher } = require('./lib/voice-command-watcher');
+const { createMicWatcher } = require('./lib/mic-watcher');
+const { createTray } = require('./lib/tray');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
 
@@ -1218,6 +1191,14 @@ async function speakClipboard() {
 
 const COLOURS_REGISTRY = path.join(INSTALL_DIR, 'session-colours.json');
 const SHORT_KEY_RE = /^[a-f0-9]{8}$/;
+// #29 — registry-guard extracted to app/lib/registry-guard.js (2026-04-25).
+// Provides writeDelta (Batch 1 G1+G3 logging) + USER_INTENT_WRITERS set
+// + guardUserIntent (defensive restoration). Factory takes the registry
+// path so the unit harness can mock disk reads with a tmp file.
+const _registryGuard = createRegistryGuard({ registryPath: COLOURS_REGISTRY });
+const _registryWriteDelta = _registryGuard.writeDelta;
+const _guardUserIntent = _registryGuard.guardUserIntent;
+const USER_INTENT_WRITERS = _registryGuard.USER_INTENT_WRITERS;
 const VOICE_KEY_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$|^(alloy|echo|fable|onyx|nova|shimmer)$/;
 const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt','tool_calls']);
 
@@ -1339,30 +1320,6 @@ function loadAssignments() {
 // can attribute who wrote what to the log. Best-effort: a missing or
 // malformed registry is treated as empty prior state. Returns
 // { count, added:[...], removed:[...], changed:[...] } — short-IDs only.
-function _registryWriteDelta(newAll) {
-  let oldAll = {};
-  try {
-    let raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
-      oldAll = parsed.assignments;
-    }
-  } catch { /* missing or parse-failure — treat prior state as empty */ }
-  const oldKeys = Object.keys(oldAll);
-  const newKeys = Object.keys(newAll);
-  const newSet = new Set(newKeys);
-  const oldSet = new Set(oldKeys);
-  const added = newKeys.filter((k) => !oldSet.has(k));
-  const removed = oldKeys.filter((k) => !newSet.has(k));
-  const changed = [];
-  for (const k of newKeys) {
-    if (!oldSet.has(k)) continue;
-    if (JSON.stringify(oldAll[k]) !== JSON.stringify(newAll[k])) changed.push(k);
-  }
-  return { count: newKeys.length, added, removed, changed };
-}
-
 function writeAssignments(all, opts) {
   const skipBackup = !!(opts && opts.skipBackup);
   const caller = (opts && opts.caller) || 'unknown';
@@ -1535,113 +1492,6 @@ function allowMutation(name) {
 // user-intent fields from disk if they'd be lost. Keeps the common
 // failure mode (fresh-alloc clobbers a tuned entry, or a stale-state
 // re-save drops fields that were set since load) non-destructive.
-const USER_INTENT_WRITERS = new Set([
-  'set-session-label',
-  'set-session-voice',
-  'set-session-muted',
-  'set-session-focus',
-  'set-session-include',
-  'remove-session',
-]);
-
-function _hasUserIntent(entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  if (typeof entry.label === 'string' && entry.label.length > 0) return true;
-  if (entry.pinned === true) return true;
-  if (typeof entry.voice === 'string' && entry.voice.length > 0) return true;
-  if (entry.muted === true) return true;
-  if (entry.focus === true) return true;
-  if (entry.speech_includes && typeof entry.speech_includes === 'object' &&
-      Object.keys(entry.speech_includes).length > 0) return true;
-  return false;
-}
-
-function _guardUserIntent(all, caller) {
-  // Returns a list of "{short}:{field}" or "{short}:*missing*" tokens
-  // that were restored, or [] if no restoration happened. Best-effort
-  // — if the disk read fails, we fall through without restoration
-  // (the bare write still happens).
-  //
-  // Two restoration modes:
-  //   1. FIELD restoration — entry exists in both disk and payload but
-  //      the payload's entry has fewer user-intent fields. Restore the
-  //      disk's field value.
-  //   2. ENTRY restoration — entry exists on disk with user-intent but
-  //      is completely missing from the payload. This fires when a
-  //      statusline / hook race reads-empty-then-writes, dropping the
-  //      other terminal's entry entirely. Add the disk entry back.
-  if (USER_INTENT_WRITERS.has(caller)) return [];
-  let oldAll = {};
-  try {
-    let raw = fs.readFileSync(COLOURS_REGISTRY, 'utf8');
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
-      oldAll = parsed.assignments;
-    }
-  } catch { return []; }
-  const restored = [];
-  // PID-migration exclusion. Update-SessionAssignment legitimately re-keys
-  // an entry from old-short to new-short on /clear (matching by claude_pid,
-  // moving label/pinned/voice/speech_includes to the new short, removing
-  // the old). Without this exclusion, the missing-entry restoration below
-  // would add the old short back, duplicating the entry. Detect by pid
-  // match between any payload entry and the disk's missing entry.
-  const payloadPids = new Map();
-  for (const short of Object.keys(all)) {
-    const entry = all[short];
-    if (!entry || typeof entry !== 'object') continue;
-    const pid = Number(entry.claude_pid);
-    if (Number.isFinite(pid) && pid > 0) payloadPids.set(pid, short);
-  }
-  // Missing-entry restoration. Any disk entry with user-intent that's
-  // absent from the payload gets re-added verbatim — UNLESS its pid
-  // appears under a different short in the payload (PID migration).
-  for (const short of Object.keys(oldAll)) {
-    if (Object.prototype.hasOwnProperty.call(all, short)) continue;
-    if (!_hasUserIntent(oldAll[short])) continue;
-    const oldPid = Number(oldAll[short].claude_pid);
-    if (oldPid > 0 && payloadPids.has(oldPid)) continue;  // migration
-    all[short] = oldAll[short];
-    restored.push(`${short}:*missing*`);
-  }
-  // Per-field restoration on entries present in both.
-  for (const short of Object.keys(all)) {
-    const oldEntry = oldAll[short];
-    if (!oldEntry) continue;
-    const newEntry = all[short];
-    if (!newEntry || typeof newEntry !== 'object') continue;
-    if (typeof oldEntry.label === 'string' && oldEntry.label.length > 0 &&
-        (typeof newEntry.label !== 'string' || newEntry.label.length === 0)) {
-      newEntry.label = oldEntry.label;
-      restored.push(`${short}:label`);
-    }
-    if (oldEntry.pinned === true && newEntry.pinned !== true) {
-      newEntry.pinned = true;
-      restored.push(`${short}:pinned`);
-    }
-    if (typeof oldEntry.voice === 'string' && oldEntry.voice && !newEntry.voice) {
-      newEntry.voice = oldEntry.voice;
-      restored.push(`${short}:voice`);
-    }
-    if (oldEntry.muted === true && newEntry.muted !== true) {
-      newEntry.muted = true;
-      restored.push(`${short}:muted`);
-    }
-    if (oldEntry.focus === true && newEntry.focus !== true) {
-      newEntry.focus = true;
-      restored.push(`${short}:focus`);
-    }
-    if (oldEntry.speech_includes && typeof oldEntry.speech_includes === 'object' &&
-        Object.keys(oldEntry.speech_includes).length > 0 &&
-        (!newEntry.speech_includes || Object.keys(newEntry.speech_includes).length === 0)) {
-      newEntry.speech_includes = oldEntry.speech_includes;
-      restored.push(`${short}:speech_includes`);
-    }
-  }
-  return restored;
-}
-
 function saveAssignments(all, caller = 'unknown') {
   // #6 G1 + G3 — delta + caller attribution on every registry save.
   // Prior behaviour was silent-on-success: any label/pinned/includes
@@ -1880,168 +1730,48 @@ function startVoiceListener() {
 let micWatcherProc = null;
 const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
 
-// OpenAI key auto-unset. When a real (non-test) TTS call gets HTTP 401
-// back, synth_turn.py drops `~/.terminal-talk/sessions/openai-invalid.flag`.
-// Polling for that file every 3 s is cheap (one fs.existsSync) and the
-// latency cap is fine — the moment it fires we clear the encrypted key +
-// sidecar, flip playback.tts_provider back to 'edge', and notify the
-// renderer so the settings UI can auto-expand the OpenAI section and
-// reveal the input row for the user to re-enter a key.
-let openaiInvalidTimer = null;
-function startOpenaiInvalidWatcher() {
-  if (openaiInvalidTimer) return;
-  const flagPath = path.join(SESSIONS_DIR, 'openai-invalid.flag');
-  openaiInvalidTimer = setInterval(() => {
-    try {
-      if (!fs.existsSync(flagPath)) return;
-      diag('openai-invalid.flag detected — clearing key + demoting provider to edge');
-      // K-1 (#21): consume the flag FIRST so a user-save that races this
-      // tick doesn't get wiped by a post-save apiKeyStore.set(''). With
-      // flag-consume-first, subsequent ticks can't re-fire until a real
-      // 401 writes a new flag — narrows the race window from ~5 ms to
-      // effectively nil for the happy path. A full race-close would need
-      // an atomic compare-and-swap; reorder is the minimum-viable fix.
-      try { fs.unlinkSync(flagPath); } catch {}
-      // Step 2: wipe the key from safeStorage + plaintext sidecar.
-      try { apiKeyStore.set(''); } catch (e) { diag(`apiKeyStore.set('') fail: ${e.message}`); }
-      // Step 3: demote provider so next turn doesn't re-trigger.
-      CFG.playback = CFG.playback || {};
-      CFG.playback.tts_provider = 'edge';
-      try { saveConfig(CFG); } catch (e) { diag(`saveConfig after auto-unset fail: ${e.message}`); }
-      // Step 4: tell the renderer so the UI reacts.
-      try {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('openai-key-invalid');
-        }
-      } catch (e) { diag(`notify renderer of openai-key-invalid fail: ${e.message}`); }
-    } catch (e) {
-      diag(`openai-invalid watcher tick fail: ${e.message}`);
-    }
-  }, 3000);
-}
-function stopOpenaiInvalidWatcher() {
-  if (!openaiInvalidTimer) return;
-  clearInterval(openaiInvalidTimer);
-  openaiInvalidTimer = null;
-}
+// OpenAI 401 auto-unset watcher — extracted to app/lib/openai-invalid-watcher.js
+// (#29). cfg passed by reference so the in-place tts_provider flip works
+// without a getCFG/setCFG round-trip — same way the K-1 race fix expects.
+const _openaiInvalidWatcher = createOpenaiInvalidWatcher({
+  flagPath: path.join(SESSIONS_DIR, 'openai-invalid.flag'),
+  apiKeyStore,
+  getCFG: () => CFG,
+  saveConfig,
+  getWin: () => win,
+  diag,
+});
+const startOpenaiInvalidWatcher = _openaiInvalidWatcher.start;
+const stopOpenaiInvalidWatcher = _openaiInvalidWatcher.stop;
 
-// Phase 1 voice commands — watch for ~/.terminal-talk/voice-command.json
-// written by wake-word-listener.py after a successful SAPI grammar match.
-// Poll every 200 ms (responsive enough for a voice UX, cheap enough to
-// leave running). Stale-timestamp reject (> 5 s old) protects against
-// leftover files from a crashed listener.
-let voiceCommandTimer = null;
+// Phase 1 voice-command file-watcher — extracted to
+// app/lib/voice-command-watcher.js (#29). Allowlist is exported there
+// as DEFAULT_ALLOWED; main keeps the same VOICE_COMMAND_ALLOWED ref so
+// existing tests asserting on `app/main.js VOICE_COMMAND_ALLOWED`
+// (#27 invariant) keep finding it.
 const VOICE_COMMAND_PATH = path.join(INSTALL_DIR, 'voice-command.json');
 const VOICE_COMMAND_ALLOWED = new Set([
   'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
 ]);
-const VOICE_COMMAND_STALE_MS = 5000;
+const _voiceCommandWatcher = createVoiceCommandWatcher({
+  commandPath: VOICE_COMMAND_PATH,
+  allowed: VOICE_COMMAND_ALLOWED,
+  getWin: () => win,
+  diag,
+});
+const startVoiceCommandWatcher = _voiceCommandWatcher.start;
+const stopVoiceCommandWatcher = _voiceCommandWatcher.stop;
 
-// 50 ms poll instead of 200 ms: voice-command pickup is user-facing
-// latency, so spend the extra 3 polls/sec to cut avg dispatch lag from
-// ~100 ms to ~25 ms. The work per tick is one fs.existsSync — cheaper
-// than a single UI repaint — so the cost is negligible.
-const VOICE_COMMAND_POLL_MS = 50;
-function startVoiceCommandWatcher() {
-  if (voiceCommandTimer) return;
-  voiceCommandTimer = setInterval(() => {
-    try {
-      if (!fs.existsSync(VOICE_COMMAND_PATH)) return;
-      let payload;
-      try {
-        payload = JSON.parse(fs.readFileSync(VOICE_COMMAND_PATH, 'utf8'));
-      } catch (e) {
-        diag(`voice-command: parse fail: ${e.message}`);
-        try { fs.unlinkSync(VOICE_COMMAND_PATH); } catch {}
-        return;
-      }
-      // Consume the file FIRST — if anything downstream throws, we
-      // don't want to replay the same command on the next tick.
-      try { fs.unlinkSync(VOICE_COMMAND_PATH); } catch {}
-
-      const ts = Number(payload.timestamp);
-      if (!Number.isFinite(ts) || Date.now() - ts > VOICE_COMMAND_STALE_MS) {
-        diag(`voice-command: stale timestamp ${ts}; ignoring`);
-        return;
-      }
-      const action = String(payload.action || '');
-      if (!VOICE_COMMAND_ALLOWED.has(action)) {
-        diag(`voice-command: unknown action ${JSON.stringify(action)}; ignoring`);
-        return;
-      }
-      // 'cancel' means "nevermind" — the user aborted the post-wake
-      // window. Intentional no-op at main.js level; log so we can see
-      // it's being heard.
-      if (action === 'cancel') {
-        diag('voice-command: cancel (no-op)');
-        return;
-      }
-      diag(`voice-command: dispatching ${action}`);
-      if (win && !win.isDestroyed()) {
-        try { win.webContents.send('voice-command-action', action); }
-        catch (e) { diag(`voice-command send fail: ${e.message}`); }
-      }
-    } catch (e) {
-      diag(`voice-command watcher tick fail: ${e.message}`);
-    }
-  }, VOICE_COMMAND_POLL_MS);
-}
-
-function stopVoiceCommandWatcher() {
-  if (!voiceCommandTimer) return;
-  clearInterval(voiceCommandTimer);
-  voiceCommandTimer = null;
-}
-
-function startMicWatcher() {
-  if (micWatcherProc) return;
-  try {
-    micWatcherProc = spawn(POWERSHELL_EXE, [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', MIC_WATCHER_SCRIPT
-    ], {
-      windowsHide: true,
-      detached: false,
-      stdio: ['ignore', 'pipe', 'ignore']
-    });
-    let buf = '';
-    micWatcherProc.stdout.on('data', (chunk) => {
-      buf += chunk.toString('utf8');
-      let nl;
-      while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line || !win || win.isDestroyed()) continue;
-        try {
-          if (line.startsWith('MIC_CAPTURED')) {
-            diag(`mic-watcher: ${line}`);
-            win.webContents.send('mic-captured-elsewhere');
-          } else if (line.startsWith('MIC_RELEASED')) {
-            diag(`mic-watcher: ${line}`);
-            win.webContents.send('mic-released');
-          } else {
-            diag(`mic-watcher(?): ${line}`);  // unexpected protocol line
-          }
-        } catch {}
-      }
-    });
-    micWatcherProc.on('exit', (code) => {
-      micWatcherProc = null;
-      diag(`mic-watcher exited code=${code}`);
-      // Restart unless the app is shutting down. Cheap backoff: 2 s.
-      setTimeout(() => { if (!win || win.isDestroyed()) return; startMicWatcher(); }, 2000);
-    });
-    diag('mic-watcher started');
-  } catch (e) {
-    diag(`mic-watcher failed to start: ${e && e.message}`);
-    micWatcherProc = null;
-  }
-}
-
-function stopMicWatcher() {
-  if (!micWatcherProc) return;
-  try { micWatcherProc.kill(); } catch {}
-  micWatcherProc = null;
-}
+// Mic-usage watcher — extracted to app/lib/mic-watcher.js (#29).
+const _micWatcher = createMicWatcher({
+  scriptPath: MIC_WATCHER_SCRIPT,
+  powershellExe: POWERSHELL_EXE,
+  spawn,
+  getWin: () => win,
+  diag,
+});
+const startMicWatcher = _micWatcher.start;
+const stopMicWatcher = _micWatcher.stop;
 
 function toggleListening() {
   const now = isListeningEnabled();
