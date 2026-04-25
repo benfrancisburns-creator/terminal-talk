@@ -19,10 +19,13 @@
 //     that gives us atomic "acquire or fail". No native flock binding.
 //   - If the lock is older than LOCK_STALE_MS, we steal it rather than
 //     waiting. Protects against crashed holders that never release.
-//   - If acquire times out after ACQUIRE_TIMEOUT_MS we fall through
-//     and proceed unlocked. Philosophy: a stuck lock shouldn't freeze
-//     the toolbar. The worst case (un-guarded concurrent write) is
-//     exactly what we had before this lock.
+//   - If acquire times out after ACQUIRE_TIMEOUT_MS the callback now
+//     receives `held=false`. Pre-#26 the wrapper fell through and ran
+//     fn() unlocked anyway — that's the same lock-fail-fall-through bug
+//     #8 closed on PS-side. Falling through under contention causes
+//     stale-read → write-clobbers-other-writer races (the #8 wipe
+//     symptom). Callers MUST branch on `held` and skip the protected
+//     write when false; the next retry will pick up.
 //   - Retry polls without `setTimeout` so callers can stay synchronous.
 //     Lock windows are measured in tens of ms, not seconds, so a tight
 //     loop with micro-waits is fine.
@@ -69,7 +72,12 @@ function withRegistryLock(registryPath, fn) {
   const lockPath = registryPath + '.lock';
   const held = acquire(lockPath);
   try {
-    return fn();
+    // #26 — callback now receives `held` so it can skip the protected
+    // write when the lock wasn't acquired. Existing call sites that
+    // ignored the arg (`() => 42`) still work as before; new callers
+    // MUST branch on `held` and skip the write to avoid the lock-fail-
+    // fall-through bug class (PS-side closed in #8 root fix `5b7354d`).
+    return fn(held);
   } finally {
     if (held) release(lockPath);
   }
