@@ -520,6 +520,66 @@ describe('wake-word-listener.py + key_helper.py source-level invariants', () => 
     }
   });
 
+  it('wake-word-listener uses RotatingFileHandler with 1MB cap (#10)', () => {
+    // _voice.log was append-forever pre-#10 (561 KB after ~2 days,
+    // ~10 MB/month). Mirror _hook.log's 1 MB rotation pattern to
+    // bound disk usage at ~2 MB worst case (1 backup).
+    if (!/import\s+logging\.handlers/.test(wake)) {
+      throw new Error('wake-word-listener.py must `import logging.handlers` for RotatingFileHandler — see #10');
+    }
+    if (!/RotatingFileHandler\s*\(/.test(wake)) {
+      throw new Error('wake-word-listener.py must use logging.handlers.RotatingFileHandler — see #10');
+    }
+    if (!/maxBytes\s*=\s*1[_,]?048[_,]?576/.test(wake)) {
+      throw new Error('wake-word-listener.py RotatingFileHandler must set maxBytes=1048576 (matches _hook.log) — see #10');
+    }
+    if (!/backupCount\s*=\s*1/.test(wake)) {
+      throw new Error('wake-word-listener.py RotatingFileHandler must set backupCount=1 (matches _hook.log .1 backup) — see #10');
+    }
+  });
+
+  it('wake-word-listener RotatingFileHandler actually rotates at 1MB (runtime)', () => {
+    // End-to-end: drive RotatingFileHandler with the same parameters
+    // used by the listener, write > 1 MB of log lines, assert that
+    // the .1 backup file was created and the live file size dropped.
+    // Independent of the listener's import chain (sounddevice etc.)
+    // so the test runs in CI even without audio hardware.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-voicelog-'));
+    const tmpLog = path.join(tmpDir, '_voice.log');
+    const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      const r = spawnSync('python', ['-c', `
+import logging, logging.handlers
+h = logging.handlers.RotatingFileHandler(r'${tmpLog.replace(/\\/g, '\\\\')}', maxBytes=1048576, backupCount=1, encoding='utf-8')
+h.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(message)s', datefmt='%H:%M:%S'))
+logging.basicConfig(level=logging.INFO, handlers=[h])
+log = logging.getLogger('t')
+# Each line ~80 bytes; write enough to exceed 1MB.
+for i in range(20000):
+    log.info('x' * 60 + ' iter=%d', i)
+h.close()
+import os, sys
+print('main_size=', os.path.getsize(r'${tmpLog.replace(/\\/g, '\\\\')}'))
+print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
+`], { encoding: 'utf8', timeout: 15000 });
+      if (r.status !== 0) {
+        throw new Error(`python rotation probe exited ${r.status}: ${r.stderr || r.stdout}`);
+      }
+      const out = r.stdout;
+      if (!/backup_exists=\s*True/.test(out)) {
+        throw new Error(`expected .1 backup file to be created — output: ${out}`);
+      }
+      const sizeMatch = out.match(/main_size=\s*(\d+)/);
+      if (!sizeMatch) throw new Error(`could not parse main_size from output: ${out}`);
+      const mainSize = parseInt(sizeMatch[1], 10);
+      if (mainSize >= 1_200_000) {
+        throw new Error(`main log should be < 1.2MB after rotation (got ${mainSize})`);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
   it('wake-word-listener applies an adaptive noise-floor gate (S2.3), not just raw THRESHOLD', () => {
     // Stripping the noise-floor code would re-introduce the false-fire
     // rate in busy rooms. Lock in that the EMA / noise-floor logic

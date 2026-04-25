@@ -26,6 +26,7 @@ import contextlib
 import ctypes
 import json
 import logging
+import logging.handlers
 import os
 import queue
 import subprocess
@@ -64,12 +65,24 @@ def is_listening_on():
     except (FileNotFoundError, OSError):
         return True
 
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.INFO,
-    format='%(asctime)s.%(msecs)03d %(message)s',
-    datefmt='%H:%M:%S',
+# #10 — size-capped rotation mirroring _hook.log's pattern. Pre-#10
+# the log was append-forever (561 KB after ~2 days → ~10 MB/month).
+# RotatingFileHandler at 1 MB with 1 backup matches the PS-side
+# convention used by the hook scripts (`Move-Item _hook.log
+# _hook.log.1` at > 1048576 bytes). Drops the daily-quiet log to
+# bounded ~2 MB on disk worst case.
+_voice_log_handler = logging.handlers.RotatingFileHandler(
+    LOG_PATH,
+    maxBytes=1_048_576,
+    backupCount=1,
     encoding='utf-8',
+)
+_voice_log_handler.setFormatter(
+    logging.Formatter('%(asctime)s.%(msecs)03d %(message)s', datefmt='%H:%M:%S')
+)
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[_voice_log_handler],
 )
 log = logging.getLogger('wake')
 
