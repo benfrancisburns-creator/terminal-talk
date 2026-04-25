@@ -271,16 +271,28 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
 
         if (-not $settings.hooks) { $settings | Add-Member -NotePropertyName hooks -NotePropertyValue (@{}) -Force }
         $respHook = Join-Path $hooksDir 'speak-response.ps1'
+        $narratorHook = Join-Path $hooksDir 'speak-narrator.ps1'
         $notifHook = Join-Path $hooksDir 'speak-notification.ps1'
         $toolHook = Join-Path $hooksDir 'speak-on-tool.ps1'
         $workHook = Join-Path $hooksDir 'mark-working.ps1'
+        # Stop hook chain: response synth (canonical) + narrator (experimental,
+        # gated on config.narrator.enabled — no-op when off, so registering it
+        # here is safe for everyone). Both fire in the same Stop event; Claude
+        # Code runs them sequentially.
         $settings.hooks.Stop = @(@{
             matcher = ''
-            hooks = @(@{
-                type = 'command'
-                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
-                timeout = 120
-            })
+            hooks = @(
+                @{
+                    type = 'command'
+                    command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
+                    timeout = 120
+                },
+                @{
+                    type = 'command'
+                    command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$narratorHook`""
+                    timeout = 30
+                }
+            )
         })
         $settings.hooks.Notification = @(@{
             matcher = ''
@@ -319,6 +331,70 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
     }
 } else {
     Write-Warn2 "Skipped. You can still use highlight-to-speak + wake word."
+}
+
+# 6a-2. Narrator subagent (experimental — closing summary clip per turn).
+#
+# Architecture: a Claude Code subagent at ~/.claude/agents/narrator.md
+# plus an instruction block in ~/.claude/CLAUDE.md telling main Claude
+# to invoke the narrator at the end of each substantive turn. The
+# narrator runs in-session via Claude Code's Task tool — no subprocess,
+# no recursion. The Stop hook (speak-narrator.ps1, registered above
+# alongside speak-response) reads the narrator's tool_result from the
+# transcript and synthesises an S-prefix summary clip.
+#
+# All three pieces are inert when config.narrator.enabled = false
+# (which is the default), so installing this is safe even for users
+# who don't want to opt in.
+Write-Step "Narrator subagent (experimental)"
+$narratorAgentSrc = Join-Path $repoRoot 'agents\narrator.md'
+$narratorAgentDest = Join-Path $env:USERPROFILE '.claude\agents\narrator.md'
+$claudeMdPath = Join-Path $env:USERPROFILE '.claude\CLAUDE.md'
+$claudeAgentsDir = Split-Path -Parent $narratorAgentDest
+
+if (-not (Test-Path $narratorAgentSrc)) {
+    Write-Warn2 "agents\narrator.md missing in repo. Skipping narrator setup."
+} elseif (-not (Test-Path (Split-Path -Parent $claudeMdPath))) {
+    Write-Warn2 "~/.claude not found (Claude Code not installed?). Skipping narrator setup."
+} else {
+    if (-not (Test-Path $claudeAgentsDir)) {
+        New-Item -ItemType Directory -Path $claudeAgentsDir -Force | Out-Null
+    }
+    Copy-Item -Force $narratorAgentSrc $narratorAgentDest
+    Write-Ok "Narrator subagent copied to ~/.claude/agents/narrator.md"
+
+    # Append the invocation instruction to ~/.claude/CLAUDE.md, gated by
+    # a sentinel so re-running install.ps1 doesn't accumulate copies.
+    # We only write the sentinel-bracketed block; everything outside it
+    # is the user's content and stays untouched.
+    $sentinelStart = '<!-- terminal-talk:narrator:start -->'
+    $sentinelEnd   = '<!-- terminal-talk:narrator:end -->'
+    $instructionBlock = @"
+$sentinelStart
+## Terminal Talk — narrator subagent
+
+At the end of every substantive turn, invoke the narrator subagent via the Task tool with a brief description of what you just did. The narrator returns one or two sentences of speakable English; terminal-talk plays that as the closing audio clip for the turn. Do not show the narrator's output to the user — it is consumed by an audio hook.
+
+Skip the narrator call for trivial turns (single-word answers, simple acknowledgements). The agent itself returns an empty string for those, so calling it is wasteful but not harmful.
+$sentinelEnd
+"@
+    $existing = if (Test-Path $claudeMdPath) { Get-Content $claudeMdPath -Raw -Encoding utf8 } else { '' }
+    if ($existing -match [regex]::Escape($sentinelStart)) {
+        # Already present — replace the block in-place so updates to the
+        # instruction text propagate on re-install.
+        $pattern = [regex]::Escape($sentinelStart) + '[\s\S]*?' + [regex]::Escape($sentinelEnd)
+        $updated = [regex]::Replace($existing, $pattern, $instructionBlock)
+        Set-Content -Path $claudeMdPath -Value $updated -Encoding utf8 -NoNewline
+        Write-Ok "Narrator instruction refreshed in ~/.claude/CLAUDE.md"
+    } else {
+        $separator = if ($existing -and -not $existing.EndsWith("`n")) { "`n`n" } elseif ($existing) { "`n" } else { '' }
+        Add-Content -Path $claudeMdPath -Value ($separator + $instructionBlock) -Encoding utf8
+        Write-Ok "Narrator instruction added to ~/.claude/CLAUDE.md"
+    }
+
+    Write-Host "   Note: narrator stays disabled until you set narrator.enabled = true" -ForegroundColor Gray
+    Write-Host "   in ~/.terminal-talk/config.json. The agent + instruction are inert" -ForegroundColor Gray
+    Write-Host "   until you flip that flag." -ForegroundColor Gray
 }
 
 # 6b. Statusline (per-terminal coloured emoji that matches the toolbar dot)
