@@ -1080,6 +1080,11 @@ settingsBtn.addEventListener('click', async () => {
   if (open) {
     applyCollapsed(false);
     renderSessionsTable();
+    // #25 — re-evaluate per-panel-open lifecycle decisions (OpenAI
+    // section auto-collapse defaults, etc.).
+    if (settingsForm && typeof settingsForm.onPanelOpen === 'function') {
+      settingsForm.onPanelOpen();
+    }
   }
   // settingsOpen flag (set above) keeps the poll from collapsing while
   // the panel is up. When closed, the poll picks up normally.

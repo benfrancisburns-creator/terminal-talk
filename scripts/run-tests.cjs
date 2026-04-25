@@ -3251,6 +3251,66 @@ describe('TOOL_CALLS GLOBAL CHECKBOX (#24, Ben B-2)', () => {
   });
 });
 
+describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
+  // Per-panel-open default: OpenAI section should re-default to
+  // collapsed every time the user opens the panel (assuming key saved
+  // + last test passed). Prior to #25 the `_openaiCollapseDecided`
+  // flag was per-instance, so once the user expanded the section it
+  // stayed expanded for the lifetime of the renderer process.
+  const settingsFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8'
+  );
+  const rendererSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8'
+  );
+
+  it('SettingsForm exposes an onPanelOpen() lifecycle method', () => {
+    if (!/onPanelOpen\s*\(\s*\)\s*\{/.test(settingsFormSrc)) {
+      throw new Error('SettingsForm must expose onPanelOpen() — see #25');
+    }
+  });
+
+  it('onPanelOpen resets _openaiCollapseDecided to false', () => {
+    const m = settingsFormSrc.match(/onPanelOpen\s*\(\s*\)\s*\{[\s\S]*?\n\s{4}\}/);
+    if (!m) throw new Error('onPanelOpen body not found');
+    const body = m[0];
+    if (!/this\._openaiCollapseDecided\s*=\s*false/.test(body)) {
+      throw new Error('onPanelOpen must reset _openaiCollapseDecided to false — see #25');
+    }
+    // Should also re-trigger _populateOpenAi so the auto-collapse
+    // branch fires on the now-undecided state.
+    if (!/this\._populateOpenAi\(/.test(body)) {
+      throw new Error('onPanelOpen must call _populateOpenAi to apply the reset — see #25');
+    }
+  });
+
+  it('renderer settingsBtn click calls settingsForm.onPanelOpen() when opening', () => {
+    // Match the settingsBtn click handler. Within the `if (open)`
+    // branch, settingsForm.onPanelOpen() must be called so the
+    // collapse decision re-applies.
+    const m = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
+    if (!m) throw new Error('settingsBtn click handler not found');
+    const body = m[0];
+    if (!/if\s*\(open\)[\s\S]*?settingsForm\.onPanelOpen\(\)/.test(body)) {
+      throw new Error('settingsBtn click handler must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+    }
+  });
+
+  it('_openaiCollapseDecided still gates the auto-collapse one-shot per decision (regression guard)', () => {
+    // The flag's purpose is unchanged: it prevents the auto-collapse
+    // from re-firing on every queue-updated tick within a panel
+    // session (which would re-collapse a user who manually expanded
+    // mid-session). Resetting on panel open is the new behaviour;
+    // the one-shot-per-decision shape must remain.
+    if (!/if\s*\(openaiSection\s*&&\s*!this\._openaiCollapseDecided\)/.test(settingsFormSrc)) {
+      throw new Error('_populateOpenAi must still gate auto-collapse on !this._openaiCollapseDecided — see #25');
+    }
+    if (!/this\._openaiCollapseDecided\s*=\s*true/.test(settingsFormSrc)) {
+      throw new Error('_populateOpenAi must set _openaiCollapseDecided=true after deciding — see #25');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
