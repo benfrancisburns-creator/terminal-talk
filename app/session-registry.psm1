@@ -309,10 +309,16 @@ function Save-Registry {
     # #8 defensive guard — PS callers (statusline, speak-on-tool,
     # speak-response) are all touch-paths that bump last_seen /
     # claude_pid / session_id but must never wipe user-intent fields.
-    # Before writing, re-read the current disk state and, for each
-    # incoming short that's already on disk, restore label / pinned /
-    # voice / muted / focus / speech_includes if they'd be lost.
-    # Mirrors the JS-side _guardUserIntent guard in main.js.
+    # Two restoration modes:
+    #   1. MISSING ENTRY — disk has an entry with user-intent that's
+    #      absent from the payload. Belt-and-braces catch for the
+    #      lock-fail-race where a stale Read-Registry returned an empty
+    #      hashtable; Save-Registry would otherwise persist only the
+    #      firing terminal's own session, dropping the others.
+    #   2. MISSING FIELD — entry exists in both, but payload has fewer
+    #      user-intent fields (label / pinned / voice / muted / focus /
+    #      speech_includes). Restore the disk value.
+    # Mirrors the JS-side _guardUserIntent in main.js.
     $restored = @()
     if (Test-Path $RegistryPath) {
         try {
@@ -320,6 +326,44 @@ function Save-Registry {
             if ($raw) {
                 $parsed = $raw | ConvertFrom-Json
                 if ($parsed.assignments) {
+                    # Mode 1 — missing-entry restoration.
+                    foreach ($p in $parsed.assignments.PSObject.Properties) {
+                        $short = $p.Name
+                        if ($Assignments.ContainsKey($short)) { continue }
+                        $old = $p.Value
+                        $hasIntent = $false
+                        if ($old.label -and ([string]$old.label).Length -gt 0) { $hasIntent = $true }
+                        elseif ($old.pinned -eq $true) { $hasIntent = $true }
+                        elseif ($old.voice) { $hasIntent = $true }
+                        elseif ($old.muted -eq $true) { $hasIntent = $true }
+                        elseif ($old.focus -eq $true) { $hasIntent = $true }
+                        elseif ($old.PSObject.Properties.Name -contains 'speech_includes' -and $old.speech_includes) { $hasIntent = $true }
+                        if (-not $hasIntent) { continue }
+                        $rebuilt = @{
+                            index      = [int]$old.index
+                            session_id = [string]$old.session_id
+                            claude_pid = if ($old.claude_pid) { [int]$old.claude_pid } else { 0 }
+                            label      = if ($old.label) { [string]$old.label } else { '' }
+                            pinned     = if ($old.pinned) { [bool]$old.pinned } else { $false }
+                            muted      = ($old.PSObject.Properties.Name -contains 'muted') -and ($old.muted -eq $true)
+                            focus      = ($old.PSObject.Properties.Name -contains 'focus') -and ($old.focus -eq $true)
+                            last_seen  = [long]$old.last_seen
+                        }
+                        if ($old.PSObject.Properties.Name -contains 'voice' -and $old.voice) {
+                            $rebuilt['voice'] = [string]$old.voice
+                        }
+                        if ($old.PSObject.Properties.Name -contains 'speech_includes' -and $old.speech_includes) {
+                            $inc = @{}
+                            foreach ($ip in $old.speech_includes.PSObject.Properties) {
+                                if ($ip.Value -is [bool]) { $inc[$ip.Name] = [bool]$ip.Value }
+                            }
+                            if ($inc.Count -gt 0) { $rebuilt['speech_includes'] = $inc }
+                        }
+                        $Assignments[$short] = $rebuilt
+                        $restored += "${short}:*missing*"
+                    }
+                    # Mode 2 — per-field restoration on entries now
+                    # present in both (either originally or via Mode 1).
                     foreach ($p in $parsed.assignments.PSObject.Properties) {
                         $short = $p.Name
                         if (-not $Assignments.ContainsKey($short)) { continue }

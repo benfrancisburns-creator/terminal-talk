@@ -1880,6 +1880,138 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     }
   });
 
+  it('JS — guard MISSING-ENTRY: touch-path write that omits a tuned entry restores it', () => {
+    // Root-cause reproduction. statusline race reads empty → writes
+    // only its own entry. Without Mode 1, the other session vanishes.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-guard-miss-'));
+    const tmpRegistry = path.join(tmpDir, 'session-colours.json');
+    const clean = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      // Seed disk with TWO tuned entries.
+      const seeded = {
+        assignments: {
+          aef91e8e: {
+            index: 0, session_id: 'aef91e8e-xxxx', claude_pid: 111,
+            label: 'TT 1', pinned: true, muted: false, focus: false,
+            speech_includes: { tool_calls: false }, last_seen: 1000,
+          },
+          a29f747b: {
+            index: 1, session_id: 'a29f747b-yyyy', claude_pid: 222,
+            label: 'TT 2', pinned: true, muted: false, focus: false,
+            speech_includes: { tool_calls: false }, last_seen: 1001,
+          },
+        },
+      };
+      fs.writeFileSync(tmpRegistry, JSON.stringify(seeded, null, 2), 'utf8');
+
+      // Simulate the statusline race: payload has ONLY one entry
+      // (aef91e8e), as if Read-Registry returned empty and fresh-alloc
+      // created just this terminal's entry.
+      const payload = {
+        aef91e8e: {
+          index: 0, session_id: 'aef91e8e-xxxx', claude_pid: 111,
+          label: '', pinned: false, last_seen: 2000,
+        },
+      };
+
+      // Replicate the guard's Mode 1 + Mode 2 logic inline (the full
+      // _guardUserIntent is inside main.js which has Electron deps).
+      const raw = fs.readFileSync(tmpRegistry, 'utf8');
+      const oldAll = JSON.parse(raw).assignments || {};
+      const hasUserIntent = (e) => (
+        (typeof e.label === 'string' && e.label.length > 0) ||
+        e.pinned === true ||
+        (typeof e.voice === 'string' && e.voice.length > 0) ||
+        e.muted === true || e.focus === true ||
+        (e.speech_includes && Object.keys(e.speech_includes).length > 0)
+      );
+      // Mode 1 — missing entries with intent.
+      for (const short of Object.keys(oldAll)) {
+        if (Object.prototype.hasOwnProperty.call(payload, short)) continue;
+        if (hasUserIntent(oldAll[short])) payload[short] = oldAll[short];
+      }
+      // Mode 2 — restore label/pinned for aef91e8e (present but wiped).
+      for (const short of Object.keys(payload)) {
+        const oldEntry = oldAll[short];
+        if (!oldEntry) continue;
+        const newEntry = payload[short];
+        if (oldEntry.label && (!newEntry.label || newEntry.label.length === 0)) {
+          newEntry.label = oldEntry.label;
+        }
+        if (oldEntry.pinned === true && newEntry.pinned !== true) newEntry.pinned = true;
+      }
+
+      // Both entries present now.
+      assertEqual(Object.keys(payload).length, 2, 'missing entry restored');
+      assertEqual(payload.a29f747b.label, 'TT 2', 'TT 2 entry re-added verbatim');
+      assertEqual(payload.a29f747b.pinned, true, 'TT 2 pinned preserved');
+      assertEqual(payload.aef91e8e.label, 'TT 1', 'TT 1 label restored via Mode 2');
+      assertEqual(payload.aef91e8e.pinned, true, 'TT 1 pinned restored via Mode 2');
+    } finally {
+      clean();
+    }
+  });
+
+  it('JS — _guardUserIntent source implements Mode 1 (missing entry) + Mode 2 (missing field)', () => {
+    // Structural confirmation that both modes exist in the code, not
+    // just the test's inline replica.
+    const m = mainJsSrc.match(/function\s+_guardUserIntent[\s\S]*?\n\}/);
+    if (!m) throw new Error('_guardUserIntent body not found');
+    const body = m[0];
+    // Mode 1 marker — iterating oldAll keys + _hasUserIntent + add to all[short].
+    if (!/for\s*\(const\s+short\s+of\s+Object\.keys\(oldAll\)\)/.test(body)) {
+      throw new Error('_guardUserIntent must iterate oldAll keys for Mode 1 — see #8 missing-entry');
+    }
+    if (!/_hasUserIntent\(oldAll\[short\]\)/.test(body)) {
+      throw new Error('_guardUserIntent Mode 1 must check _hasUserIntent on missing entries');
+    }
+    if (!/all\[short\]\s*=\s*oldAll\[short\]/.test(body)) {
+      throw new Error('_guardUserIntent Mode 1 must re-add oldAll[short] to all');
+    }
+    if (!/\*missing\*/.test(body)) {
+      throw new Error('_guardUserIntent Mode 1 must tag restored entries with *missing* marker');
+    }
+  });
+
+  it('PS — Save-Registry restores missing entries with user-intent', () => {
+    // Mirror structural check — the PS guard must also implement Mode 1.
+    if (!/\*missing\*/.test(psRegistrySrc)) {
+      throw new Error('PS Save-Registry must implement missing-entry restoration (look for *missing* marker) — see #8');
+    }
+    // Must iterate parsed.assignments to find keys not in $Assignments.
+    if (!/foreach\s*\(\$p\s+in\s+\$parsed\.assignments\.PSObject\.Properties\)/.test(psRegistrySrc)) {
+      throw new Error('PS Save-Registry must iterate parsed.assignments for Mode 1 — see #8');
+    }
+    if (!/if\s*\(\$Assignments\.ContainsKey\(\$short\)\)\s*\{\s*continue\s*\}/.test(psRegistrySrc)) {
+      throw new Error('PS Save-Registry Mode 1 must skip entries already in $Assignments — see #8');
+    }
+  });
+
+  it('PS — statusline / hooks skip save when Enter-RegistryLock fails (#8 root cause)', () => {
+    // Critical root-cause fix. Prior to this, an unlocked fall-through
+    // allowed the race that dropped other sessions' entries. Each of
+    // the 3 PS callers must now branch on $locked and only do
+    // Read-Update-Save when the lock was acquired.
+    const files = [
+      { path: 'app/statusline.ps1',       caller: 'statusline' },
+      { path: 'hooks/speak-on-tool.ps1',  caller: 'speak-on-tool' },
+      { path: 'hooks/speak-response.ps1', caller: 'speak-response' },
+    ];
+    for (const { path: relPath, caller } of files) {
+      const src = fs.readFileSync(path.join(__dirname, '..', relPath), 'utf8');
+      // Match `if ($locked) {` then EVENTUALLY Save-Registry then `} else {`
+      // then EVENTUALLY the skip-log line. Allow any content between.
+      if (!/if\s*\(\$locked\)\s*\{[\s\S]*?Save-Registry[\s\S]*?\}\s*else\s*\{[\s\S]*?reason=lock-timeout/.test(src)) {
+        throw new Error(`${relPath} must branch on $locked: Save-Registry inside the if, log reason=lock-timeout in the else — see #8 root fix`);
+      }
+      // Skip-log line must identify the caller.
+      const expectedSkip = new RegExp(`save-registry skip from=${caller} reason=lock-timeout`);
+      if (!expectedSkip.test(src)) {
+        throw new Error(`${relPath} must emit skip log "save-registry skip from=${caller} reason=lock-timeout" — see #8 root fix`);
+      }
+    }
+  });
+
   it('JS — guard SEMANTICS: user-intent writer can actually clear a label', () => {
     // The complementary invariant: the guard must NOT block legitimate
     // user-initiated clears. set-session-label('') on a pinned entry

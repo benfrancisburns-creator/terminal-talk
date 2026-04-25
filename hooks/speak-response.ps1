@@ -148,14 +148,26 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     # the JS-side counterpart this mirrors.
     $locked = Enter-RegistryLock -RegistryPath $registryPath
     try {
-        $assignments = Read-Registry -RegistryPath $registryPath
-        $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
-                                          -SessionId $sessionId -ClaudePid $claudePid -Now $now
-        # #6 G1 + G3 — writer attribution. speak-response runs on Stop
-        # (end-of-turn) + Notification; tag its writes so they're
-        # distinguishable from the other four registry writers.
-        Save-Registry -RegistryPath $registryPath -Assignments $assignments `
-                      -Caller 'speak-response' -LogPath $logFile
+        if ($locked) {
+            $assignments = Read-Registry -RegistryPath $registryPath
+            $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
+                                              -SessionId $sessionId -ClaudePid $claudePid -Now $now
+            # #6 G1 + G3 — writer attribution. speak-response runs on Stop
+            # (end-of-turn) + Notification; tag its writes so they're
+            # distinguishable from the other four registry writers.
+            Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                          -Caller 'speak-response' -LogPath $logFile
+        } else {
+            # #8 — see rationale in app/statusline.ps1. Lock fail → skip
+            # write. Response hook's real work (synth + clip queue) is
+            # downstream and doesn't depend on the registry bookkeeping.
+            $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            try {
+                Add-Content -Path $logFile `
+                            -Value "$ts save-registry skip from=speak-response reason=lock-timeout short=$sessionShort" `
+                            -ErrorAction SilentlyContinue
+            } catch {}
+        }
     } finally {
         if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
     }

@@ -162,16 +162,47 @@ function Test-ProcessAlive($p) {
 # semantics mirror app/lib/registry-lock.js (3 s stale, 500 ms acquire
 # timeout, 15 ms poll backoff).
 $locked = Enter-RegistryLock -RegistryPath $registryPath
+$registryLogPath = Join-Path $env:USERPROFILE '.terminal-talk\queue\_hook.log'
 try {
-    $assignments = Read-Registry -RegistryPath $registryPath
-    $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
-                                     -SessionId $sessionId -ClaudePid $claudePid -Now $now
-    # #6 G1 + G3 — attribute every save + log to _hook.log so wipe-class
-    # bugs (#8) have a writer-by-writer trail. Log path mirrors the
-    # convention used by the hook scripts.
-    $registryLogPath = Join-Path $env:USERPROFILE '.terminal-talk\queue\_hook.log'
-    Save-Registry -RegistryPath $registryPath -Assignments $assignments `
-                  -Caller 'statusline' -LogPath $registryLogPath
+    if ($locked) {
+        # Lock held — safe to do the full Read-Update-Save triplet.
+        $assignments = Read-Registry -RegistryPath $registryPath
+        $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
+                                         -SessionId $sessionId -ClaudePid $claudePid -Now $now
+        # #6 G1 + G3 — attribute every save + log to _hook.log so wipe-class
+        # bugs (#8) have a writer-by-writer trail.
+        Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                      -Caller 'statusline' -LogPath $registryLogPath
+    } else {
+        # #8 — lock acquisition timed out (another writer held it longer
+        # than LockAcquireMs = 500ms). Prior to this fix we fell through
+        # and did an UNLOCKED Read-Update-Save. Read-Registry can read
+        # the file mid-rename and come back empty; Save-Registry then
+        # writes ONLY this terminal's entry, wiping the other terminal's
+        # labels / pinned / overrides. Empirical evidence: _hook.log
+        # showed repeated `save-registry ok from=statusline keys=1`
+        # lines where there should be 2, correlating with the wipe.
+        #
+        # Correct behaviour: read WITHOUT writing so we still have
+        # accurate data for the glyph/label display, then skip the
+        # save. Next statusline fire will retry the lock.
+        $assignments = Read-Registry -RegistryPath $registryPath
+        if ($assignments.ContainsKey($short)) {
+            $idx = [int]$assignments[$short].index
+        } else {
+            # No existing entry + no lock to allocate safely. Pick a
+            # stable hash-based index for display only; do NOT persist.
+            $sum = 0
+            foreach ($ch in $short.ToCharArray()) { $sum += [int]$ch }
+            $idx = $sum % 24
+        }
+        $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        try {
+            Add-Content -Path $registryLogPath `
+                        -Value "$ts save-registry skip from=statusline reason=lock-timeout short=$short" `
+                        -ErrorAction SilentlyContinue
+        } catch {}
+    }
 } finally {
     if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }

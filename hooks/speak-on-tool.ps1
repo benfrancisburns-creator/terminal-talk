@@ -68,14 +68,27 @@ Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorActio
 # Lock semantics mirror app/lib/registry-lock.js.
 $locked = Enter-RegistryLock -RegistryPath $registryPath
 try {
-    $assignments = Read-Registry -RegistryPath $registryPath
-    $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
-                                      -SessionId $sessionId -ClaudePid $claudePid -Now $now
-    # #6 G1 + G3 — writer attribution. speak-on-tool fires on PreToolUse,
-    # so tagging its writes distinguishes pre-tool saves from statusline-
-    # triggered saves + the two speak-response (Stop/Notification) writers.
-    Save-Registry -RegistryPath $registryPath -Assignments $assignments `
-                  -Caller 'speak-on-tool' -LogPath $logFile
+    if ($locked) {
+        $assignments = Read-Registry -RegistryPath $registryPath
+        $null = Update-SessionAssignment -Assignments $assignments -Short $sessionShort `
+                                          -SessionId $sessionId -ClaudePid $claudePid -Now $now
+        # #6 G1 + G3 — writer attribution. speak-on-tool fires on PreToolUse,
+        # so tagging its writes distinguishes pre-tool saves from statusline-
+        # triggered saves + the two speak-response (Stop/Notification) writers.
+        Save-Registry -RegistryPath $registryPath -Assignments $assignments `
+                      -Caller 'speak-on-tool' -LogPath $logFile
+    } else {
+        # #8 — see detailed rationale in app/statusline.ps1. Lock fail
+        # → skip the write. The speak-on-tool hook's other side-effects
+        # (spawning the synth process below) do not depend on the
+        # registry write, so this is safe.
+        $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        try {
+            Add-Content -Path $logFile `
+                        -Value "$ts save-registry skip from=speak-on-tool reason=lock-timeout short=$sessionShort" `
+                        -ErrorAction SilentlyContinue
+        } catch {}
+    }
 } finally {
     if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }

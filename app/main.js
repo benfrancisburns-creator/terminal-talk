@@ -1468,10 +1468,32 @@ const USER_INTENT_WRITERS = new Set([
   'remove-session',
 ]);
 
+function _hasUserIntent(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (typeof entry.label === 'string' && entry.label.length > 0) return true;
+  if (entry.pinned === true) return true;
+  if (typeof entry.voice === 'string' && entry.voice.length > 0) return true;
+  if (entry.muted === true) return true;
+  if (entry.focus === true) return true;
+  if (entry.speech_includes && typeof entry.speech_includes === 'object' &&
+      Object.keys(entry.speech_includes).length > 0) return true;
+  return false;
+}
+
 function _guardUserIntent(all, caller) {
-  // Returns a list of "{short}:{field}" tokens that were restored, or []
-  // if no restoration happened. Best-effort — if the disk read fails,
-  // we fall through without restoration (the bare write still happens).
+  // Returns a list of "{short}:{field}" or "{short}:*missing*" tokens
+  // that were restored, or [] if no restoration happened. Best-effort
+  // — if the disk read fails, we fall through without restoration
+  // (the bare write still happens).
+  //
+  // Two restoration modes:
+  //   1. FIELD restoration — entry exists in both disk and payload but
+  //      the payload's entry has fewer user-intent fields. Restore the
+  //      disk's field value.
+  //   2. ENTRY restoration — entry exists on disk with user-intent but
+  //      is completely missing from the payload. This fires when a
+  //      statusline / hook race reads-empty-then-writes, dropping the
+  //      other terminal's entry entirely. Add the disk entry back.
   if (USER_INTENT_WRITERS.has(caller)) return [];
   let oldAll = {};
   try {
@@ -1483,6 +1505,16 @@ function _guardUserIntent(all, caller) {
     }
   } catch { return []; }
   const restored = [];
+  // Mode 2 — missing-entry restoration. Any disk entry with user-intent
+  // that's absent from the payload gets re-added verbatim.
+  for (const short of Object.keys(oldAll)) {
+    if (Object.prototype.hasOwnProperty.call(all, short)) continue;
+    if (_hasUserIntent(oldAll[short])) {
+      all[short] = oldAll[short];
+      restored.push(`${short}:*missing*`);
+    }
+  }
+  // Mode 1 — per-field restoration on entries present in both.
   for (const short of Object.keys(all)) {
     const oldEntry = oldAll[short];
     if (!oldEntry) continue;
