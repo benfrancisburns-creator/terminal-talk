@@ -1,7 +1,7 @@
 # STATE.md — cross-session consciousness
 
-**Last updated:** 2026-04-25 03:45 (TT2 shipped D1+D2+D3 parity fixes; DA'd #15 + #8 defensive)
-**Updated by:** TT2
+**Last updated:** 2026-04-25 08:30 (#8 closed by TT1 root-cause fix; #15+#16+#24 merged; 858 tests; labels stable)
+**Updated by:** TT2 (post-merge sweep)
 
 The one file any fresh session reads FIRST to pick up where the team is. Keep it under 200 lines.
 Chatter goes in ACTIVE/ACTIVE files; this file is summaries + pointers.
@@ -51,19 +51,30 @@ See `QUEUE.md`. Initial seed: 6 items.
   at idle. Watcher log at `~/.terminal-talk/queue/_registry-watcher.log`. Suggests a save-site fires
   even when nothing changed — feeds into #8 diagnosis + G1 in #6 review.
 
-## Blockers — explicit (as of 2026-04-25 03:45)
+## Blockers — explicit (as of 2026-04-25 08:30)
 
-| Blocker | What's needed | Who | Unblocks |
-|---|---|---|---|
-| TT1 to merge #15 + #8 defensive | TT2 DA PASS sent 03:15 + 03:45 — awaiting their merge action | TT1 | Frees fix-drafted slot; #15 closes voice-routing; #8 defensive masks wipe until root cause pinned |
-| TT1 to claim #16 next | Fix spec staged in ACTIVE/16 | TT1 | Closes speakClipboard provider mismatch |
-| TT1 to claim #24 + #25 | New items from Ben's B-2 + B-4 decisions | TT1 | Tool_calls global UI + OpenAI collapse default |
+**No blockers either side.** All 4 of TT2's previously-blocking items shipped overnight:
 
-TT2 has NO blockers — self-directing:
-- D4 emphasis regex audit (Surface J remaining divergence)
-- Path A race tightening for heartbeat (ACTIVE_FRESH_MS extension)
-- Verify #8 root cause when Batch 1 observability + GUARD diag captures the next wipe
-- Re-measure #4 24h-soak at ~2026-04-25T22:54
+- ✓ #15 heartbeat-voice-respect-provider — merged
+- ✓ #16 speakClipboard-respect-provider — merged
+- ✓ #24 tool_calls global Settings checkbox — merged
+- ✓ #8 ROOT CAUSE — TT1 found via Batch 1 observability log forensics; fixed at `5b7354d`
+  (lock-fail-skip in 3 PS callers + missing-entry guard restoration). Empirically verified:
+  CURRENT registry == BAK1, both labels intact, 1095 save-registry "ok" lines + 0 "skip"
+  (lock clean since deploy).
+
+Self-directable next items in TT2's lane:
+- Re-measure #4 24h-soak at ~2026-04-25T22:54 (≈14h from now)
+- Surface C session-registry deeper audit (now that root cause is closed; verify other
+  write paths follow the same lock-or-skip discipline)
+- Review TT1's voice-command-recognize.ps1 + voice-dispatch.js (recently tracked at
+  `df93fab`) for correctness — never audited
+- D4-style follow-ups on any remaining sanitiser drifts (none identified, all closed)
+
+Self-directable next items in TT1's lane (THEY pick — I won't direct):
+- #25 OpenAI section collapse default (Ben B-4)
+- Batch 2 of #6 log-audit (G6 + G8)
+- #18-#23 audit reviews (revisit any of TT2's audits as DA passes)
 
 ## Invariants discovered this run
 
@@ -97,6 +108,10 @@ TT2 has NO blockers — self-directing:
 | 2026-04-25 02:50      | TT1 | #8 ROOT      | SMOKING GUN found in `_hook.log` after Ben re-labelled: repeated `save-registry ok from=statusline keys=1` where should be 2. Lock-fail-unlocked-save race identified. Fix on `fix-pass` @ `5b7354d`: statusline + 2 hooks skip write on lock fail; guard extended with Mode 1 (missing-entry restoration) for belt+braces. 806/806 (+4 new). Deployed + toolbar restarted. **#8 root cause closed.** |
 | 2026-04-25 03:15      | TT2 | post-compact | #15 DA PASS @ `239a505`; D1 parity fix shipped @ `439d8ea` main (looksLikeCode counts ALL matches per pattern, matches Python) |
 | 2026-04-25 03:45      | TT2 | post-compact | D2+D3 parity fixes shipped @ `f9b098c` main. #8 defensive guard DA PASS @ `55366e5` (user-intent restoration on touch-path writes). 830 tests green |
+| 2026-04-25 04:05      | TT2 | post-compact | D4 single-underscore emphasis shipped @ `fd44c4a` — #19 fully closed. PHASE 3 'known drift' test converted to parity-achieved. 831 tests green |
+| 2026-04-25 04:15      | TT2 | post-compact | #8 pattern audit (`e3492e1`): all 6 set-session-* IPCs share clear-keeps-pinned shape — observed pinned/empty-label state may be user-action-reachable, not just bug |
+| 2026-04-25 ~05-08     | TT1 | autonomous   | While TT2 was working JS parity: #15 merged, #8 defensive merged, **#8 ROOT CAUSE found via Batch 1 _hook.log forensics @ `5b7354d`** (lock-fail-skip in 3 PS callers; smoking gun = repeated `keys=1` saves where should be 2). #8 PID-migration exclusion @ `df93fab`. #16 merged @ `8b8b08c`. #24 tool_calls global checkbox merged @ `d6ebfef`. 858/858 |
+| 2026-04-25 08:30      | TT2 | post-pull    | Verified live registry: both labels intact, BAK1 matches CURRENT, 1095 ok + 0 skip. **#8 closed.** Pulled main; suite green; STATE refreshed |
 | 2026-04-25 04:05      | TT2 | post-compact | #19 D4 (emphasis) parity fix shipped @ `fd44c4a` main. All 4 #19 divergences now closed. 831 green |
 | 2026-04-25 04:10      | TT1 | post-compact | Merged `fix-pass` → `main` including #15 + #8 defensive + #8 root fix (`5b7354d`). Fix-drafted slot cleared. Claiming #16 speakClipboard-respect-provider next per TT2 sequencing |
 | 2026-04-25 04:30      | TT1 | post-compact | #8 PID-migration exclusion @ `df93fab` (PS SESSION-IDENTITY tests fixed); voice-dispatch.js + voice-command-recognize.ps1 + updated wake-word-listener.py brought into git. Merged `fix-pass` → `main` |
