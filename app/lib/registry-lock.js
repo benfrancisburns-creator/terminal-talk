@@ -19,13 +19,10 @@
 //     that gives us atomic "acquire or fail". No native flock binding.
 //   - If the lock is older than LOCK_STALE_MS, we steal it rather than
 //     waiting. Protects against crashed holders that never release.
-//   - If acquire times out after ACQUIRE_TIMEOUT_MS the callback now
-//     receives `held=false`. Pre-#26 the wrapper fell through and ran
-//     fn() unlocked anyway — that's the same lock-fail-fall-through bug
-//     #8 closed on PS-side. Falling through under contention causes
-//     stale-read → write-clobbers-other-writer races (the #8 wipe
-//     symptom). Callers MUST branch on `held` and skip the protected
-//     write when false; the next retry will pick up.
+//   - If acquire times out after ACQUIRE_TIMEOUT_MS we fall through
+//     and proceed unlocked. Philosophy: a stuck lock shouldn't freeze
+//     the toolbar. The worst case (un-guarded concurrent write) is
+//     exactly what we had before this lock.
 //   - Retry polls without `setTimeout` so callers can stay synchronous.
 //     Lock windows are measured in tens of ms, not seconds, so a tight
 //     loop with micro-waits is fine.
@@ -68,15 +65,17 @@ function release(lockPath) {
   try { fs.unlinkSync(lockPath); } catch {}
 }
 
+// fn is called with the boolean `held`. Existing zero-arg callbacks
+// (`() => 42`) keep working — JavaScript ignores extra arguments. Callers
+// that care about lock-fail vs lock-held branch on `held`. #26 — prior
+// to this change, fn ran unconditionally and any caller that did
+// Read-Update-Save races a concurrent writer (the same wipe class TT1
+// closed on PS at 5b7354d for #8). Now caller can detect lock-timeout
+// and skip the write rather than clobber stale data.
 function withRegistryLock(registryPath, fn) {
   const lockPath = registryPath + '.lock';
   const held = acquire(lockPath);
   try {
-    // #26 — callback now receives `held` so it can skip the protected
-    // write when the lock wasn't acquired. Existing call sites that
-    // ignored the arg (`() => 42`) still work as before; new callers
-    // MUST branch on `held` and skip the write to avoid the lock-fail-
-    // fall-through bug class (PS-side closed in #8 root fix `5b7354d`).
     return fn(held);
   } finally {
     if (held) release(lockPath);

@@ -140,14 +140,12 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   is per-instance; need to reset it on every panel open (or remove it) so the collapse
   decision re-applies every time. · AXIS=1 · OWNER=TBD · STATUS=queued
 
-- [ ] **#26 js-lock-fail-fall-through** — Surface C deeper audit found JS-side has the
-  same lock-fail-fall-through bug class TT1 just closed on PS at `5b7354d`. `withRegistryLock`
-  at `app/lib/registry-lock.js:68-76` calls `fn()` unconditionally regardless of whether
-  the lock was held. `saveAssignments` therefore writes stale data on lock-timeout —
-  exactly the wipe pattern. Fix shape: pass `held` to fn, caller branches (Option A,
-  back-compat). Defensive guard masks ~80% but USER_INTENT_WRITERS bypass + non-intent
-  fields still clobberable. **Suggest TT1 claim** (freshest context from PS fix).
-  · AXIS=1,3 · OWNER=TBD · STATUS=queued · ACTIVE=`ACTIVE/26-js-lock-fail-fall-through.md`
+- [x] **#26 js-lock-fail-fall-through** — **CLOSED 2026-04-25 by TT1 @ `d39239d`.** Same
+  lock-fail-fall-through bug class as #8's PS root cause; symmetric fix on JS side. TT1
+  picked it up after TT2 audit + INBOX ping; landed Option A (pass `held` to fn). 879
+  tests green. Coord pattern win — TT2 found via Surface C deeper audit, queued + INBOX'd,
+  TT1 shipped same day. · AXIS=1,3 · OWNER=tt1 · STATUS=done
+  ACTIVE=`ACTIVE/26-js-lock-fail-fall-through.md`
 
 - [ ] **#27 voice-command-pipeline-audit** — audited end-to-end: 8 invariants verified,
   no BROKEN findings. Pipeline (wake-word → recognize.ps1 → confidence gate → main.js
