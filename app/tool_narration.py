@@ -354,9 +354,116 @@ def _strip_env_assignments(cmd: str) -> str:
     return ' '.join(out) if out else cmd
 
 
+# Heredoc detection: `<verb> <args>? << ?[-]?[quotedmarker]\n...\nmarker`
+# Matches the OUTER command structure so the inner script body doesn't
+# trip the regex (`[^<]*` between verb and `<<` blocks `<` from leaking
+# into the args slot).
+_HEREDOC_RE = re.compile(r"^(\w+)([^<\n]*)<<-?\s*['\"]?(\w+)['\"]?", re.DOTALL)
+
+
+def _narrate_heredoc(cmd: str) -> str | None:
+    """Detect heredoc invocations (`python3 << EOF`, `cat << 'EOF' > f.txt`,
+    `bash << EOF`) and produce a spoken phrase that reflects the actual
+    operation, not the literal `python3` / `cat` head verb. Returns None
+    if not a heredoc."""
+    m = _HEREDOC_RE.match(cmd)
+    if not m:
+        return None
+    verb = m.group(1).lower()
+    middle = m.group(2)  # everything between verb and `<<`
+    redirect_m = re.search(r'>\s*(\S+)', middle)
+    target_file = redirect_m.group(1) if redirect_m else None
+
+    if verb == 'cat':
+        if target_file:
+            return f'Writing {naturalise_path(target_file)}'
+        return 'Writing inline content'
+    if verb in ('python', 'python3', 'py'):
+        return 'Running an inline python script'
+    if verb == 'node':
+        return 'Running an inline node script'
+    if verb in ('bash', 'sh', 'zsh'):
+        return 'Running an inline shell script'
+    if verb == 'powershell':
+        return 'Running an inline PowerShell script'
+    return f'Running an inline {verb} script'
+
+
+# Match a leading `echo "..."` (or `echo '...'` or unquoted echo) followed
+# by ` && `. Used to strip noisy "echo === HEADER ===" framing from
+# multi-stage chains so the meaningful work surfaces in the narration.
+_ECHO_HEAD_RE = re.compile(r'''^echo\s+(?:"[^"]*"|'[^']*'|[^&|;]+?)\s+&&\s+(.+)$''', re.DOTALL)
+
+
+def _strip_leading_echo(cmd: str) -> str:
+    """If the command starts with an `echo "..."` stage followed by `&&`,
+    drop the echo so the rest of the chain narrates as the head action.
+    Common pattern: `echo "=== heading ===" && actual_command`. Recurses
+    once so back-to-back echo headers (`echo "A" && echo "B" && cmd`) all
+    get peeled."""
+    m = _ECHO_HEAD_RE.match(cmd)
+    if m:
+        rest = m.group(1).strip()
+        # Recurse one level — handles `echo X && echo Y && cmd`.
+        return _strip_leading_echo(rest) if rest != cmd else rest
+    return cmd
+
+
+def _narrate_single_command(head: str) -> str | None:
+    """Lookup the BASH_PATTERNS table for a single command (no chain
+    awareness). Returns the matched phrase or a generic 'Running <verb>'
+    fallback."""
+    for pat, template in _BASH_PATTERNS:
+        m = pat.match(head)
+        if m:
+            try:
+                return m.expand(template)
+            except re.error:
+                return template
+    first = head.split()[0] if head.split() else ''
+    return f'Running {first}' if first else None
+
+
+def _narrate_and_chain(cmd: str) -> str | None:
+    """Narrate a command that contains `&&` chains. Splits on ` && `,
+    narrates each stage via _narrate_single_command, then joins the
+    meaningful ones into a flowing phrase:
+
+        2 stages -> "X then y"
+        3 stages -> "X, then y, then z"
+        4+ stages -> "X and N more steps"
+
+    Returns None if the chain has fewer than 2 narratable stages (the
+    caller falls back to single-command narration)."""
+    stages = [s.strip() for s in re.split(r'\s&&\s', cmd) if s.strip()]
+    if len(stages) < 2:
+        return None
+    phrases: list[str] = []
+    for s in stages:
+        cleaned = _strip_env_assignments(s)
+        p = _narrate_single_command(cleaned)
+        if p:
+            phrases.append(p)
+    if len(phrases) < 2:
+        return None
+    if len(phrases) == 2:
+        return f'{phrases[0]} then {phrases[1][0].lower()}{phrases[1][1:]}'
+    if len(phrases) == 3:
+        return (f'{phrases[0]}, then {phrases[1][0].lower()}{phrases[1][1:]}, '
+                f'then {phrases[2][0].lower()}{phrases[2][1:]}')
+    return f'{phrases[0]} and {len(phrases) - 1} more steps'
+
+
 def narrate_bash(command: str) -> str | None:
-    """Map a shell command to a spoken phrase via the BASH_PATTERNS table.
-    Falls back to a friendly first-word phrasing for unmatched commands.
+    """Map a shell command to a spoken phrase. Honours four tiers in order:
+
+      1. Strip leading `echo "header"` framing if followed by real work.
+      2. Heredoc detection — `python3 << EOF` narrates as the actual
+         intent, not the literal `python3` head.
+      3. AND-chain detection — multi-step pipelines narrate every step.
+      4. Fall through to single-command lookup against _BASH_PATTERNS,
+         with a `(in a pipeline)` tag for `|` / `;` chains.
+
     Returns None for empty commands."""
     if not command:
         return 'Running a command'
@@ -364,27 +471,36 @@ def narrate_bash(command: str) -> str | None:
     if not cmd:
         return 'Running a command'
 
-    # Pipe / chain detection: if this is a multi-stage pipeline,
-    # describe the FIRST command and indicate it's part of a pipeline.
-    is_pipeline = bool(re.search(r'\s\|\s|\s&&\s|\s;\s', cmd))
-    head = re.split(r'\s\|\s|\s&&\s|\s;\s', cmd, maxsplit=1)[0].strip() if is_pipeline else cmd
+    # 1. Strip leading echo framing — common in our own scripts.
+    cmd = _strip_leading_echo(cmd)
+    if not cmd:
+        return 'Running a command'
 
-    for pat, template in _BASH_PATTERNS:
-        m = pat.match(head)
-        if m:
-            try:
-                phrase = m.expand(template)
-            except re.error:
-                phrase = template
-            if is_pipeline:
-                return f'{phrase} (in a pipeline)'
-            return phrase
+    # 2. Heredoc — must come before chain detection because the body
+    #    might contain `&&` / `;` that aren't real chain operators.
+    heredoc_phrase = _narrate_heredoc(cmd)
+    if heredoc_phrase:
+        return heredoc_phrase
 
-    # Unknown command — use the first verb plainly.
-    first = head.split()[0] if head.split() else ''
-    if first:
-        return f'Running {first}'
-    return 'Running a command'
+    # 3. AND-chain — every stage gets narrated; result is a flowing
+    #    description of the whole sequence.
+    if ' && ' in cmd:
+        chain_phrase = _narrate_and_chain(cmd)
+        if chain_phrase:
+            return chain_phrase
+        # AND-chain detected but couldn't extract 2+ meaningful phrases —
+        # fall through to single-command on the head (existing behaviour).
+
+    # 4. Pipe (`|`) or semicolon (`;`) — describe the head + tag.
+    is_pipeline = bool(re.search(r'\s\|\s|\s;\s', cmd))
+    head = re.split(r'\s\|\s|\s;\s', cmd, maxsplit=1)[0].strip() if is_pipeline else cmd
+
+    phrase = _narrate_single_command(head)
+    if not phrase:
+        return 'Running a command'
+    if is_pipeline:
+        return f'{phrase} (in a pipeline)'
+    return phrase
 
 
 # ---------------------------------------------------------------------------
@@ -404,40 +520,68 @@ def _maybe_in_file(prev_file: str | None, curr_file: str | None, suffix: str) ->
     return f' in {suffix}'
 
 
-def _narrate_read(inp: dict, prev_file: str | None) -> str | None:
+def _narrate_read(inp: dict, prev_file: str | None,
+                  prev_tool: str | None = None) -> str | None:
     path = str(inp.get('file_path', ''))
     if not path:
         return 'Looking at a file'
     base = os.path.basename(path.replace('\\', '/'))
     natural = naturalise_path(path)
-    # Special files speak more naturally with a different verb.
     low = base.lower()
+
+    # Same-file consecutive Read suppression. Re-reading the same file
+    # back-to-back (e.g. Edit → Read → Edit) doesn't add information
+    # for the listener — they already know we're working on this file.
+    if prev_tool == 'read' and prev_file == path:
+        return None
+
+    # offset/limit means Claude is investigating a specific region, not
+    # reviewing the whole file. Speak about it as a partial read so the
+    # listener knows it's spot-checking, not full review.
+    has_partial = ('offset' in inp and inp.get('offset') is not None) or \
+                  ('limit' in inp and inp.get('limit') is not None)
+
     if low.endswith('.log'):
-        return f'Checking {natural}'
+        return f'Checking part of {natural}' if has_partial else f'Checking {natural}'
     if low in _SPECIAL_FILES:
-        return f'Reading {natural}'
+        return f'Reading part of {natural}' if has_partial else f'Reading {natural}'
+    if has_partial:
+        return f'Looking at part of {natural}'
     return f'Looking at {natural}'
 
 
-def _narrate_edit(inp: dict, prev_file: str | None) -> str | None:
+def _narrate_edit(inp: dict, prev_file: str | None,
+                  prev_tool: str | None = None) -> str | None:
     path = str(inp.get('file_path', ''))
     old = str(inp.get('old_string', ''))
     new = str(inp.get('new_string', ''))
     natural = naturalise_path(path) if path else ''
     in_file = _maybe_in_file(prev_file, path, natural)
 
+    # Whitespace-only suppression always wins — even on repeats.
+    if old and new and _looks_whitespace_only(old, new):
+        return None
+
+    # Same-file consecutive Edit dedup. The first edit speaks the file
+    # name fully; subsequent edits to the same file get terse phrases
+    # so the audio doesn't repeat the filename 5 times in a row when
+    # Claude makes multiple incremental changes to one file.
+    is_repeat_edit = (prev_tool == 'edit' and prev_file == path and bool(path))
+
     if old and new:
-        if _looks_whitespace_only(old, new):
-            # Suppress whitespace-only narration entirely; usually formatter
-            # noise or trailing-space cleanup.
-            return None
         rename = _detect_rename(old, new)
         if rename:
             old_name, new_name = rename
+            if is_repeat_edit:
+                return f'Then renamed {old_name} to {new_name}'
             return f'Renamed {old_name} to {new_name}{in_file}'
         if _looks_imports_only(old, new):
+            if is_repeat_edit:
+                return 'More import changes'
             return f'Updated imports{in_file}' if in_file else 'Updated imports'
         if _looks_comment_only(old, new):
+            if is_repeat_edit:
+                return 'More comment changes'
             return f'Updated comments{in_file}' if in_file else 'Updated comments'
 
     # Generic edit. Speak about size if it's notable.
@@ -445,10 +589,16 @@ def _narrate_edit(inp: dict, prev_file: str | None) -> str | None:
     new_lines = _count_lines(new)
     delta = new_lines - old_lines
     if delta > 5:
+        if is_repeat_edit:
+            return f'Added {delta} more lines'
         return f'Added {delta} lines{in_file}' if in_file else f'Added {delta} lines to {natural}'
     if delta < -5:
+        if is_repeat_edit:
+            return f'Removed {-delta} more lines'
         return f'Removed {-delta} lines{in_file}' if in_file else f'Removed {-delta} lines from {natural}'
 
+    if is_repeat_edit:
+        return 'Another change to the same file'
     if natural:
         return f'Edited {natural}'
     return 'Edited a file'
@@ -514,7 +664,8 @@ def _narrate_glob(inp: dict, prev_file: str | None) -> str | None:
     return f'Searching with pattern {pattern}'
 
 
-def _narrate_grep(inp: dict, prev_file: str | None) -> str | None:
+def _narrate_grep(inp: dict, prev_file: str | None,
+                  prev_tool: str | None = None) -> str | None:
     pattern = str(inp.get('pattern', '')).strip()
     type_ = str(inp.get('type', '')).strip().lower()
     if not pattern:
@@ -526,9 +677,28 @@ def _narrate_grep(inp: dict, prev_file: str | None) -> str | None:
             return f'Searching {type_} files for {pattern}'
         return f'Searching for {pattern}'
 
-    # Common shapes that have a natural reading
+    # TODO/FIXME pattern is a special-case classic.
     if pattern in ('TODO', 'FIXME', 'TODO|FIXME', 'TODO\\|FIXME'):
         return 'Searching for to-do markers'
+
+    # OR-pattern detection: `foo|bar|baz` outside a character class.
+    # Common shape when Claude is finding any of N test names / function
+    # names / anchor strings. Heuristic: contains `|`, has no `[`, all
+    # alternatives look like plain text snippets (≤ 50 chars each, no
+    # regex specials beyond word chars + spaces). Bare `|` between
+    # plain identifiers narrates as "for several patterns".
+    if '|' in pattern and ']' not in pattern:
+        alts = [a.strip() for a in pattern.split('|')]
+        is_simple = all(
+            a and len(a) <= 50 and re.fullmatch(r"[A-Za-z0-9_\-\s'\"=()/.:]+", a)
+            for a in alts
+        )
+        if is_simple and len(alts) >= 2:
+            n = len(alts)
+            if type_:
+                return f'Searching {type_} files for {n} patterns'
+            return f'Searching for {n} different patterns'
+
     if 'function' in pattern.lower() and r'\w' in pattern:
         return 'Searching for function definitions'
     if pattern.startswith(('import', 'require')):
@@ -682,18 +852,19 @@ def narrate_tool_use(
         return None
 
     prev_file = _file_path_of(prev_call[1]) if prev_call else None
+    prev_tool = prev_call[0].strip().lower() if prev_call else None
 
     # Tool dispatch.
     if name == 'read':
-        return _narrate_read(inp, prev_file)
+        return _narrate_read(inp, prev_file, prev_tool)
     if name == 'edit':
-        return _narrate_edit(inp, prev_file)
+        return _narrate_edit(inp, prev_file, prev_tool)
     if name == 'write':
         return _narrate_write(inp, prev_file)
     if name == 'glob':
         return _narrate_glob(inp, prev_file)
     if name == 'grep':
-        return _narrate_grep(inp, prev_file)
+        return _narrate_grep(inp, prev_file, prev_tool)
     if name in ('bash', 'powershell'):
         return narrate_bash(str(inp.get('command', '')))
     if name == 'webfetch':

@@ -2910,6 +2910,126 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     if (!a.includes('refactor queue')) throw new Error(`bad sub-agent phrase: ${a}`);
   });
 
+  // ---- Bash heredoc detection (#2 — v0.5 enhancement) ---------------
+  it('Bash heredoc with python3 narrates as inline python script', () => {
+    const out = narrate('Bash', { command: "python3 << 'PYEOF'\nprint('hi')\nPYEOF" });
+    if (!out || !out.includes('inline python script')) {
+      throw new Error(`expected python heredoc narration, got: ${out}`);
+    }
+  });
+  it('Bash heredoc with cat and redirect narrates as writing the target file', () => {
+    const out = narrate('Bash', { command: "cat << 'EOF' > config.json\n{}\nEOF" });
+    if (!out || !out.toLowerCase().includes('writing')) {
+      throw new Error(`expected cat-heredoc-writing narration, got: ${out}`);
+    }
+  });
+  it('Bash heredoc with bash narrates as inline shell script', () => {
+    const out = narrate('Bash', { command: "bash << EOF\nls\nEOF" });
+    if (!out || !out.includes('shell script')) {
+      throw new Error(`expected bash heredoc narration, got: ${out}`);
+    }
+  });
+
+  // ---- Bash AND-chain summarisation (#3) ----------------------------
+  it('Bash 2-stage AND chain narrates both stages with "then"', () => {
+    const out = narrate('Bash', { command: 'git commit -m "x" && git push' });
+    if (!out || !out.toLowerCase().includes('committing then pushing')) {
+      throw new Error(`expected "Committing then pushing", got: ${out}`);
+    }
+  });
+  it('Bash 3-stage AND chain narrates all three with commas + then', () => {
+    const out = narrate('Bash', { command: 'npm test && npm run lint && git push' });
+    if (!out || (out.match(/then/gi) || []).length < 2) {
+      throw new Error(`expected 3-stage flowing narration, got: ${out}`);
+    }
+  });
+  it('Bash 4+ stage AND chain summarises remainder', () => {
+    const out = narrate('Bash', {
+      command: 'cd app && npm test && npm run lint && git commit -m "x" && git push',
+    });
+    if (!out || !out.toLowerCase().includes('more steps')) {
+      throw new Error(`expected "and N more steps" summary, got: ${out}`);
+    }
+  });
+
+  // ---- Bash leading echo strip (#6) ---------------------------------
+  it('Bash strips leading echo "===" framing in chains', () => {
+    const out = narrate('Bash', { command: 'echo "=== running ===" && npm test' });
+    if (!out || out.toLowerCase().includes('printing') || out.toLowerCase().includes('echo')) {
+      throw new Error(`echo prefix should be stripped, got: ${out}`);
+    }
+    if (!out.includes('Running the tests')) {
+      throw new Error(`expected real work to surface after echo strip, got: ${out}`);
+    }
+  });
+  it('Bash strips back-to-back echo headers', () => {
+    const out = narrate('Bash', { command: 'echo "A" && echo "B" && git push' });
+    if (!out || !out.toLowerCase().includes('pushing')) {
+      throw new Error(`expected push to surface after multiple echo strips, got: ${out}`);
+    }
+  });
+
+  // ---- Read offset/limit (#4) --------------------------------------
+  it('Read with offset narrates "part of" the file', () => {
+    const out = narrate('Read', {
+      file_path: 'app/synth_turn.py',
+      offset: 1200,
+      limit: 50,
+    });
+    if (!out || !out.includes('part of')) {
+      throw new Error(`expected partial-read narration, got: ${out}`);
+    }
+  });
+  it('Read without offset narrates the file as a whole', () => {
+    const out = narrate('Read', { file_path: 'app/synth_turn.py' });
+    if (!out || out.includes('part of')) {
+      throw new Error(`full-file read shouldn't say "part of", got: ${out}`);
+    }
+  });
+
+  // ---- Grep OR-pattern (#5) ----------------------------------------
+  it('Grep OR-pattern of plain identifiers narrates as N patterns', () => {
+    const out = narrate('Grep', { pattern: 'foo|bar|baz' });
+    if (!out || !out.includes('3') || !out.toLowerCase().includes('pattern')) {
+      throw new Error(`expected "3 patterns"-shaped narration, got: ${out}`);
+    }
+  });
+  it('Grep complex regex with | inside char class still hits the silent fallback', () => {
+    const out = narrate('Grep', { pattern: '(?:foo|bar)\\s*\\(' });
+    if (out !== 'Searching the code') {
+      throw new Error(`expected generic phrase for heavy regex, got: ${out}`);
+    }
+  });
+
+  // ---- Repeat-Edit dedup (#1) --------------------------------------
+  it('Consecutive Edit on same file shortens to "Another change"', () => {
+    const second = narrate('Edit',
+      { file_path: 'app/main.js', old_string: 'const a = 1;', new_string: 'const b = 2;' },
+      ['Edit', { file_path: 'app/main.js', old_string: 'foo', new_string: 'bar' }],
+    );
+    if (!second || !second.toLowerCase().includes('another')) {
+      throw new Error(`repeat edit should be dedup'd, got: ${second}`);
+    }
+  });
+  it('Consecutive Edit rename uses "Then renamed" prefix', () => {
+    const second = narrate('Edit',
+      { file_path: 'auth/router.ts', old_string: 'oldFn()', new_string: 'newFn()' },
+      ['Edit', { file_path: 'auth/router.ts', old_string: 'foo', new_string: 'bar' }],
+    );
+    if (!second || !second.toLowerCase().includes('then renamed')) {
+      throw new Error(`repeat-rename should use "Then renamed" prefix, got: ${second}`);
+    }
+  });
+  it('Consecutive Read on same file is suppressed entirely', () => {
+    const second = narrate('Read',
+      { file_path: 'app/main.js' },
+      ['Read', { file_path: 'app/main.js' }],
+    );
+    if (second !== null) {
+      throw new Error(`repeat read should be suppressed, got: ${second}`);
+    }
+  });
+
   // ---- Suppression rules -------------------------------------------
   it('meta tools (TaskCreate etc.) return null', () => {
     for (const meta of ['TaskCreate', 'TaskUpdate', 'TaskList', 'ExitPlanMode']) {
