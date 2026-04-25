@@ -162,4 +162,7 @@ function createRegistryGuard({ registryPath, fs = realFs } = {}) {
   return { writeDelta, guardUserIntent, USER_INTENT_WRITERS, hasUserIntent: _hasUserIntent };
 }
 
-module.exports = { createRegistryGuard, USER_INTENT_WRITERS };
+// USER_INTENT_WRITERS is intentionally NOT a top-level export. Callers
+// access the set via the factory return (`createRegistryGuard().USER_INTENT_WRITERS`).
+// Exporting at top level too triggered Knip's unused-export rule.
+module.exports = { createRegistryGuard };

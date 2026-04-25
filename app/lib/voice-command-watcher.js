@@ -90,4 +90,7 @@ function createVoiceCommandWatcher({
   return { start, stop };
 }
 
-module.exports = { createVoiceCommandWatcher, DEFAULT_ALLOWED };
+// DEFAULT_ALLOWED is intentionally NOT a top-level export — Knip flags
+// unused top-level exports. Callers can pass their own `allowed` set
+// to the factory; the const inside this file is the production default.
+module.exports = { createVoiceCommandWatcher };
