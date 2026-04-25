@@ -107,6 +107,12 @@
         openaiTestBtn:    document.getElementById('openaiTestBtn'),
         openaiTestResult: document.getElementById('openaiTestResult'),
         // Speech-includes checkboxes follow a consistent naming scheme.
+        // tool_calls (#24 / Ben B-2) — global on/off for tool-call
+        // narration. Default true (matches DEFAULTS.speech_includes).
+        // The other 6 entries currently have no HTML control (their
+        // sub-keys are still validator-accepted for hand-edits and
+        // per-session overrides in the Sessions panel) — kept here so
+        // a future panel-section addition picks them up automatically.
         incBoxes: {
           code_blocks:    document.getElementById('incCodeBlocks'),
           inline_code:    document.getElementById('incInlineCode'),
@@ -114,6 +120,7 @@
           headings:       document.getElementById('incHeadings'),
           bullet_markers: document.getElementById('incBulletMarkers'),
           image_alt:      document.getElementById('incImageAlt'),
+          tool_calls:     document.getElementById('incToolCalls'),
         },
       };
       this._wirePillToggles();
@@ -173,6 +180,8 @@
         this._el.paletteToggle,
         this._el.heartbeatToggle,
         this._el.openaiPreferToggle,
+        // #24 — tool_calls global checkbox uses the same pill UI.
+        this._el.incBoxes && this._el.incBoxes.tool_calls,
       ];
       for (const input of inputs) {
         if (!input || !input.parentElement) continue;
@@ -688,9 +697,26 @@
     }
 
     _populateIncludeBoxes(cfg) {
+      // Defaults map mirrors DEFAULTS.speech_includes in app/main.js.
+      // tool_calls is the only sub-key with default=true; the other 6
+      // default to false. Without per-key defaults, an unset config
+      // would render tool_calls UNCHECKED while behaviour is enabled
+      // (DEFAULTS.tool_calls=true) — confusing for users.
+      const DEFAULTS = {
+        code_blocks: false,
+        inline_code: false,
+        urls: false,
+        headings: true,
+        bullet_markers: false,
+        image_alt: false,
+        tool_calls: true,
+      };
       const inc = cfg.speech_includes || {};
       for (const [key, el] of Object.entries(this._el.incBoxes)) {
-        if (el) el.checked = !!inc[key];
+        if (!el) continue;
+        const cfgVal = inc[key];
+        el.checked = (cfgVal === undefined) ? !!DEFAULTS[key] : !!cfgVal;
+        this._syncPill(el);
       }
     }
   }

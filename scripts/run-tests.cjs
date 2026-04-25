@@ -3166,6 +3166,91 @@ describe('SPEAKCLIPBOARD VOICE ROUTING respects tts_provider (#16)', () => {
   });
 });
 
+describe('TOOL_CALLS GLOBAL CHECKBOX (#24, Ben B-2)', () => {
+  // Adds the missing global Settings control for `speech_includes.tool_calls`.
+  // Validator already accepts the key (added in #11 F2); UI was missing.
+  // Tests pin: HTML element exists with the right id, settings-form.js
+  // wires it via incBoxes, default-true semantics in _populateIncludeBoxes
+  // so an unset config doesn't render the box UNCHECKED while behaviour
+  // is enabled.
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+  const settingsFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8'
+  );
+
+  it('app/index.html declares <input id="incToolCalls">', () => {
+    if (!/id="incToolCalls"/.test(indexHtml)) {
+      throw new Error('app/index.html must contain <input id="incToolCalls"> — see #24');
+    }
+    // Must be a checkbox + part of the pill-toggle skin (matches the
+    // existing 5 toggles).
+    const m = indexHtml.match(/<input[^>]*id="incToolCalls"[^>]*>/);
+    if (!m) throw new Error('incToolCalls input declaration not parseable');
+    if (!/type="checkbox"/.test(m[0])) {
+      throw new Error('incToolCalls must be a checkbox — see #24');
+    }
+    if (!/class="[^"]*pill-toggle-input/.test(m[0])) {
+      throw new Error('incToolCalls must use the pill-toggle-input class — see #24');
+    }
+  });
+
+  it('app/index.html includes a label + tri-btn pill UI for incToolCalls', () => {
+    // Confirm the row is wired with the same UX as Heartbeat narration —
+    // label + pill toggle + on/off buttons.
+    if (!/for="incToolCalls"/.test(indexHtml)) {
+      throw new Error('label[for=incToolCalls] missing — see #24');
+    }
+    // Anchor on the input element, not the label-for, so the slice
+    // captures the trailing pill UI rather than the long title text.
+    const block = indexHtml.match(/<input[^>]*id="incToolCalls"[^>]*>[\s\S]{0,500}/);
+    if (!block) throw new Error('incToolCalls input + trailing block not found');
+    if (!/tri-btn\s+on/.test(block[0]) || !/tri-btn\s+off/.test(block[0])) {
+      throw new Error('incToolCalls must have on + off tri-btn pill controls — see #24');
+    }
+  });
+
+  it('settings-form.js incBoxes maps tool_calls to incToolCalls element', () => {
+    if (!/tool_calls\s*:\s*document\.getElementById\(\s*['"]incToolCalls['"]/.test(settingsFormSrc)) {
+      throw new Error('incBoxes must include tool_calls: document.getElementById("incToolCalls") — see #24');
+    }
+  });
+
+  it('settings-form.js _wirePillToggles includes the tool_calls toggle', () => {
+    // The pill-toggle UI hooks into the input via parent .tri-ctrl.
+    // Without including tool_calls here, the on/off buttons would not
+    // sync the input.
+    const m = settingsFormSrc.match(/_wirePillToggles\s*\(\s*\)\s*\{[\s\S]*?const\s+inputs\s*=\s*\[([\s\S]*?)\]/);
+    if (!m) throw new Error('_wirePillToggles inputs array not found');
+    if (!/incBoxes[\s\S]*?tool_calls/.test(m[1])) {
+      throw new Error('_wirePillToggles inputs must include incBoxes.tool_calls — see #24');
+    }
+  });
+
+  it('_populateIncludeBoxes uses default=true for tool_calls (and heading)', () => {
+    // tool_calls global default is true; an unset config must NOT
+    // render the checkbox unchecked. Same goes for headings (also
+    // default=true in DEFAULTS.speech_includes).
+    // Match the WHOLE function from name to its inner closing brace.
+    // The `\}` must close the for-loop / object literal first, so we
+    // need a deeper match than the lazy default.
+    // CRLF-aware match. Anchor on the function definition opening
+    // `_populateIncludeBoxes(cfg) {` (not a call site), then capture
+    // through the matching `}` at base method indentation.
+    const m = settingsFormSrc.match(/_populateIncludeBoxes\s*\(cfg\)\s*\{[\s\S]+?\r?\n\s{4}\}/);
+    if (!m) throw new Error('_populateIncludeBoxes body not found');
+    const body = m[0];
+    if (!/tool_calls\s*:\s*true/.test(body)) {
+      throw new Error('_populateIncludeBoxes DEFAULTS map must set tool_calls: true — see #24');
+    }
+    if (!/headings\s*:\s*true/.test(body)) {
+      throw new Error('_populateIncludeBoxes DEFAULTS map must set headings: true (matches DEFAULTS.speech_includes) — see #24');
+    }
+    if (!/cfgVal\s*===\s*undefined/.test(body)) {
+      throw new Error('_populateIncludeBoxes must distinguish unset cfg from explicit false — see #24');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';

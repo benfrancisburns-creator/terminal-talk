@@ -155,6 +155,14 @@
             </div>
           </div>
           <div class="row">
+            <label for="incToolCalls" title="Speak short ephemeral clips during tool calls (e.g. 'Reading foo.py', 'Searching files') so you hear progress while Claude works. Off silences these but keeps Claude's full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Tool-call narration</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="incToolCalls" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
             <label>Troubleshooting</label>
             <button type="button" id="reloadToolbar" class="text-btn" title="Rebuild the toolbar from disk (keyboard: Ctrl+R). Useful if the display is stuck or stale.">Reload toolbar</button>
           </div>
