@@ -140,6 +140,26 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   is per-instance; need to reset it on every panel open (or remove it) so the collapse
   decision re-applies every time. · AXIS=1 · OWNER=TBD · STATUS=queued
 
+- [ ] **#26 js-lock-fail-fall-through** — Surface C deeper audit found JS-side has the
+  same lock-fail-fall-through bug class TT1 just closed on PS at `5b7354d`. `withRegistryLock`
+  at `app/lib/registry-lock.js:68-76` calls `fn()` unconditionally regardless of whether
+  the lock was held. `saveAssignments` therefore writes stale data on lock-timeout —
+  exactly the wipe pattern. Fix shape: pass `held` to fn, caller branches (Option A,
+  back-compat). Defensive guard masks ~80% but USER_INTENT_WRITERS bypass + non-intent
+  fields still clobberable. **Suggest TT1 claim** (freshest context from PS fix).
+  · AXIS=1,3 · OWNER=TBD · STATUS=queued · ACTIVE=`ACTIVE/26-js-lock-fail-fall-through.md`
+
+- [ ] **#27 voice-command-pipeline-audit** — audited end-to-end: 8 invariants verified,
+  no BROKEN findings. Pipeline (wake-word → recognize.ps1 → confidence gate → main.js
+  whitelist → voice-dispatch) is correct + observable. Two minor doc-drift findings
+  (F1 exit-code comment, F2 stale lock-step reference). · AXIS=1,6,7 · OWNER=tt2
+  STATUS=audit-done · ACTIVE=`ACTIVE/27-voice-command-pipeline-audit.md`
+
+- [ ] **#28 voice-command-vocab-forcing-test** (#27 F2 follow-up) — add a test that
+  asserts phraseToAction values in `voice-command-recognize.ps1` exactly match
+  `VOICE_COMMAND_ALLOWED` in main.js, by reading both source files and comparing sets.
+  Catches future drift as a CI red flag. · AXIS=7 · OWNER=TBD · STATUS=queued
+
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
   window). · AXIS=1 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/14-playback-controls-audit.md`
