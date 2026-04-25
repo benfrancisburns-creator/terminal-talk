@@ -1386,10 +1386,18 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         tool_narrations: list[str] = []
         tool_indices_done: list[int] = []
         if new_tool_entries and flags.get('tool_calls', True):
+            # Thread `prev_call` so the narrator can suppress same-file
+            # repetition (e.g. consecutive Edit + Read on the same file
+            # drop the "in <file>" suffix on the second call).
+            prev_call: tuple[str, dict] | None = None
             for tool_idx, tname, tinput in new_tool_entries:
-                phrase = narrate_tool_use(tname, tinput)
+                phrase = narrate_tool_use(tname, tinput, prev_call=prev_call)
                 if phrase:
                     tool_narrations.append(phrase)
+                    # Only update prev_call when narration was emitted.
+                    # Suppressed tool_uses (whitespace-only edits, meta
+                    # tools) shouldn't reset the same-file context.
+                    prev_call = (tname, tinput or {})
                 # Mark handled even if narration was None so we don't
                 # reconsider the same entry on the next hook fire.
                 tool_indices_done.append(tool_idx)
