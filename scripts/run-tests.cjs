@@ -5491,6 +5491,98 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
   });
 });
 
+describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
+  // TT2's #4 baseline showed 7 orphan python procs from prior boots
+  // surviving up to 2d 22h after toolbar exit. Root cause: will-quit
+  // was calling soft `voiceProc.kill()` (SIGTERM) which Python doesn't
+  // reliably handle when blocked on PortAudio init / openWakeWord
+  // model load. Fix: hard taskkill /F /T + extend the orphan sweep
+  // to cover key_helper.py too.
+  //
+  // Tests are source-structural — Electron will-quit can't be exercised
+  // in this harness without spinning up the full app. The structural
+  // checks pin the contract: hard-kill helper exists, will-quit calls
+  // it for both procs, sweep covers both fragments.
+  const mainJs = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+  );
+
+  it('orphan sweep covers wake-word-listener AND key_helper fragments', () => {
+    // The script-fragments list is the source of truth for what counts
+    // as a TT-owned python child. Both must be present.
+    const m = mainJs.match(/ORPHAN_PY_SCRIPTS\s*=\s*\[([^\]]*)\]/);
+    if (!m) throw new Error('ORPHAN_PY_SCRIPTS list missing — see #9');
+    const list = m[1];
+    if (!/['"]wake-word-listener['"]/.test(list)) {
+      throw new Error('ORPHAN_PY_SCRIPTS must include "wake-word-listener" — see #9');
+    }
+    if (!/['"]key_helper['"]/.test(list)) {
+      throw new Error('ORPHAN_PY_SCRIPTS must include "key_helper" — see #9');
+    }
+  });
+
+  it('killOrphanPythonProcs builds a -or chain across script fragments', () => {
+    // Defensive coding shape: each fragment validated alphanum/underscore/
+    // hyphen before string-interpolation into the PowerShell command, so
+    // a malicious entry can't smuggle PS metachars.
+    const m = mainJs.match(/function\s+killOrphanPythonProcs[\s\S]*?\n\}/);
+    if (!m) throw new Error('killOrphanPythonProcs function missing — see #9');
+    const body = m[0];
+    if (!/\/\^\[a-zA-Z0-9_\\-\]\+\$\//.test(body)) {
+      throw new Error('killOrphanPythonProcs must validate fragments against /^[a-zA-Z0-9_\\-]+$/ — see #9');
+    }
+    if (!/-or/.test(body)) {
+      throw new Error('killOrphanPythonProcs must build a -or chain across fragments — see #9');
+    }
+    if (!/Stop-Process\s+-Id\s+\$_\.ProcessId\s+-Force/.test(body)) {
+      throw new Error('killOrphanPythonProcs must Stop-Process -Force — see #9');
+    }
+  });
+
+  it('killOrphanVoiceListeners back-compat alias preserved', () => {
+    // Pre-#9 code + tests called killOrphanVoiceListeners. Keep the
+    // alias so existing call sites + watchdog wiring still work.
+    if (!/function\s+killOrphanVoiceListeners\s*\(\s*\)\s*\{[\s\S]{0,200}killOrphanPythonProcs/.test(mainJs)) {
+      throw new Error('killOrphanVoiceListeners must alias to killOrphanPythonProcs() — see #9');
+    }
+  });
+
+  it('_hardKillProc uses taskkill /F /T on Windows + SIGKILL on POSIX', () => {
+    const m = mainJs.match(/function\s+_hardKillProc[\s\S]*?\n\}/);
+    if (!m) throw new Error('_hardKillProc helper missing — see #9');
+    const body = m[0];
+    if (!/TASKKILL_EXE/.test(body) || !/['"]\/F['"]/.test(body) || !/['"]\/T['"]/.test(body)) {
+      throw new Error('_hardKillProc Windows branch must use TASKKILL_EXE with /F + /T — see #9');
+    }
+    if (!/process\.kill\(pid,\s*['"]SIGKILL['"]\)/.test(body)) {
+      throw new Error('_hardKillProc POSIX branch must use SIGKILL — see #9');
+    }
+    if (!/hard-killed pid=/.test(body)) {
+      throw new Error('_hardKillProc must emit a "hard-killed pid=" diag — see #9');
+    }
+  });
+
+  it('will-quit calls _hardKillProc for both voiceProc and keyHelper + sweeps orphans', () => {
+    const m = mainJs.match(/app\.on\(['"]will-quit['"][\s\S]*?\n\}\);/);
+    if (!m) throw new Error('app.on(will-quit) handler missing');
+    const body = m[0];
+    if (!/_hardKillProc\(voiceProc,\s*['"]voice listener['"]\)/.test(body)) {
+      throw new Error("will-quit must call _hardKillProc(voiceProc, 'voice listener') — see #9");
+    }
+    if (!/_hardKillProc\(keyHelper,\s*['"]keyHelper['"]\)/.test(body)) {
+      throw new Error("will-quit must call _hardKillProc(keyHelper, 'keyHelper') — see #9");
+    }
+    if (!/killOrphanPythonProcs\(\)/.test(body)) {
+      throw new Error('will-quit must call killOrphanPythonProcs() as belt-and-braces — see #9');
+    }
+    // Regression guard: must NOT fall back to the soft `.kill()` shape
+    // since that's the bug. Allow `_hardKillProc(...)` calls only.
+    if (/voiceProc\.kill\(\)/.test(body) || /keyHelper\.kill\(\)/.test(body)) {
+      throw new Error('will-quit must NOT use soft voiceProc.kill() / keyHelper.kill() — promote to _hardKillProc — see #9');
+    }
+  });
+});
+
 describe('HARDENING: renderer CSP', () => {
   it('app/index.html has a strict Content-Security-Policy meta tag', () => {
     const html = fs.readFileSync(path.join(INSTALL_DIR, 'app', 'index.html'), 'utf8');
