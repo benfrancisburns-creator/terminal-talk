@@ -2067,7 +2067,7 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     // Structural confirmation that both modes exist in the code, not
     // just the test's inline replica. Now reads the lib module after
     // #29 extraction.
-    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n  \}/);
+    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n {2}\}/);
     if (!m) throw new Error('guardUserIntent body not found');
     const body = m[0];
     // Mode 1 marker — iterating oldAll keys + hasUserIntent + add to all[short].
@@ -2130,7 +2130,7 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     // should still clear the label (pinned stays — that's a separate
     // concern). Verified via the USER_INTENT_WRITERS allowlist check:
     // if caller is in the set, guardUserIntent returns [] early.
-    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n  \}/);
+    const m = libRegistryGuardSrc.match(/function\s+guardUserIntent[\s\S]*?\n {2}\}/);
     if (!m) throw new Error('guardUserIntent body not found');
     if (!/if\s*\(USER_INTENT_WRITERS\.has\(caller\)\)\s*return\s*\[\]/.test(m[0])) {
       throw new Error('_guardUserIntent must short-circuit for USER_INTENT_WRITERS callers — see #8 guard');

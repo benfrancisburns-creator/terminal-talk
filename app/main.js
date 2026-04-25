@@ -663,19 +663,10 @@ function forceOnTop() {
 // keyboard hook path — left-click toggles the window, right-click
 // opens a context menu with explicit Show/Hide + Quit. Works 100 %
 // regardless of any keyboard-shortcut conflict.
-// System tray — extracted to app/lib/tray.js (#29). app/tray-icon.png
-// ships alongside main.js; install.ps1's `Copy-Item -Recurse app/`
-// copies the whole directory so the installed tree has the file at
-// ~/.terminal-talk/app/tray-icon.png.
-const _tray = createTray({
-  Tray, Menu, nativeImage, app,
-  iconPath: path.join(__dirname, 'tray-icon.png'),
-  getWin: () => win,
-  toggleWindow: () => toggleWindow(),
-  diag,
-});
-const startTray = _tray.start;
-const stopTray = _tray.stop;
+// System tray — extracted to app/lib/tray.js (#29). The factory call
+// + startTray/stopTray bindings live further down the file (after
+// the lib imports + after toggleWindow is declared) to satisfy the
+// temporal-dead-zone rule on `createTray` + `toggleWindow`.
 
 function toggleWindow() {
   if (!win) return;
@@ -784,6 +775,20 @@ const { createMicWatcher } = require('./lib/mic-watcher');
 const { createTray } = require('./lib/tray');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
+
+// System-tray factory call. Placed AFTER the lib import + AFTER
+// toggleWindow is hoisted (function declaration earlier in this file)
+// — see the comment at the original tray block. Runs once at module
+// load; binds the start/stop callbacks below.
+const _tray = createTray({
+  Tray, Menu, nativeImage, app,
+  iconPath: path.join(__dirname, 'tray-icon.png'),
+  getWin: () => win,
+  toggleWindow: () => toggleWindow(),
+  diag,
+});
+const startTray = _tray.start;
+const stopTray = _tray.stop;
 
 function chunkText(text, maxLen = 3800) {
   if (text.length <= maxLen) return [text];
@@ -1198,7 +1203,10 @@ const SHORT_KEY_RE = /^[a-f0-9]{8}$/;
 const _registryGuard = createRegistryGuard({ registryPath: COLOURS_REGISTRY });
 const _registryWriteDelta = _registryGuard.writeDelta;
 const _guardUserIntent = _registryGuard.guardUserIntent;
-const USER_INTENT_WRITERS = _registryGuard.USER_INTENT_WRITERS;
+// USER_INTENT_WRITERS is consumed inside the guard's closure, not by
+// main.js itself anymore — kept off the explicit binding to avoid the
+// no-unused-vars rule. Available via _registryGuard.USER_INTENT_WRITERS
+// if any future caller needs read access.
 const VOICE_KEY_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$|^(alloy|echo|fable|onyx|nova|shimmer)$/;
 const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt','tool_calls']);
 
@@ -1726,8 +1734,8 @@ function startVoiceListener() {
 // on stdout when another app starts/stops using the microphone. We
 // forward those transitions to the renderer so TTS playback can auto-
 // pause while the user dictates to Wispr Flow (or any other mic-using
-// tool) and auto-resume when they let go.
-let micWatcherProc = null;
+// tool) and auto-resume when they let go. Process state lives inside
+// the lib/mic-watcher.js factory closure post-#29 extract.
 const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
 
 // OpenAI 401 auto-unset watcher — extracted to app/lib/openai-invalid-watcher.js
