@@ -101,6 +101,7 @@ TT2 has NO blockers — self-directing:
 | 2026-04-25 04:10      | TT1 | post-compact | Merged `fix-pass` → `main` including #15 + #8 defensive + #8 root fix (`5b7354d`). Fix-drafted slot cleared. Claiming #16 speakClipboard-respect-provider next per TT2 sequencing |
 | 2026-04-25 04:30      | TT1 | post-compact | #8 PID-migration exclusion @ `df93fab` (PS SESSION-IDENTITY tests fixed); voice-dispatch.js + voice-command-recognize.ps1 + updated wake-word-listener.py brought into git. Merged `fix-pass` → `main` |
 | 2026-04-25 04:40      | TT1 | post-compact | #16 speakClipboard-respect-provider drafted + merged @ `8b8b08c`. 853/853 (+5). Live install + toolbar restarted. Labels survive. Fix-drafted slot empty. Claiming #24 tool_calls-global-checkbox (Ben B-2) next |
+| 2026-04-25 05:00      | TT1 | post-compact | #24 tool_calls-global-checkbox drafted + merged @ `d6ebfef`. New tri-ctrl pill row in Settings; default-true semantics for tool_calls + headings. Surfaced: 6 of the 7 speech_includes sub-keys still have no global UI control (incBoxes refs them but HTML doesn't); kept comment in code. 858/858 (+5). Live install + restarted. Labels survive |
 
 ## Pointers for a fresh session
 
