@@ -40,31 +40,46 @@ if (-not ($sessionShort -match '^[a-f0-9]{8}$')) {
     exit 0
 }
 
-# HB2: clear the working flag as early as possible in the Stop hook.
-# The heartbeat timer gates on the presence of this flag, so clearing
+# HB2: clear both per-turn flags as early as possible in the Stop hook.
+# The heartbeat timer gates on the presence of -working.flag, so clearing
 # it here stops verb emission the instant the response starts playing
 # (before audio synth has time to finish). If any of the heavier work
-# below fails, the flag still gets cleared — matching the user's
+# below fails, both flags still get cleared — matching the user's
 # mental model of "Claude finished, stop saying 'Percolating'".
 #
-# Also capture turn elapsed seconds: flag content = epoch seconds at
-# UserPromptSubmit (set by mark-working.ps1). synth_turn.py reads this
-# via --elapsed-sec and appends a "worked for X" clip to the end of
-# the response audio.
+# Two-flag split (audit 2026-04-25):
+#   -start.flag   IMMUTABLE submit timestamp (written by mark-working
+#                 only). Read here for elapsed-time calculation —
+#                 always reflects user-submit time even after long
+#                 turns with many tool calls.
+#   -working.flag Keep-fresh signal (refreshed by speak-on-tool on
+#                 every PreToolUse). Used by toolbar for heartbeat
+#                 freshness ONLY, not elapsed calculation.
+#
+# Pre-fix, both names referred to the same file — speak-on-tool's
+# refresh clobbered the submit timestamp and synth_turn produced
+# wildly wrong "Moonwalking for 19 seconds" phrases on long turns.
+# Backward-compat fallback: if -start.flag is missing (older install
+# upgraded mid-turn), fall back to -working.flag — degraded but
+# functional.
+$startFlag   = Join-Path $ttHome "sessions\$sessionShort-start.flag"
 $workingFlag = Join-Path $ttHome "sessions\$sessionShort-working.flag"
 $elapsedSec = 0
 try {
-    if (Test-Path $workingFlag) {
+    $flagToRead = if (Test-Path $startFlag) { $startFlag } elseif (Test-Path $workingFlag) { $workingFlag } else { $null }
+    if ($flagToRead) {
         try {
-            $startSec = [long](Get-Content $workingFlag -Raw -Encoding utf8).Trim()
+            $startSec = [long](Get-Content $flagToRead -Raw -Encoding utf8).Trim()
             $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
             if ($startSec -gt 0 -and $nowSec -ge $startSec) {
                 $elapsedSec = [int]($nowSec - $startSec)
             }
         } catch {}
-        Remove-Item -Force $workingFlag -ErrorAction SilentlyContinue
-        Log "cleared working flag for $sessionShort (elapsed ${elapsedSec}s)"
     }
+    # Always remove both flags on Stop, regardless of which we read from.
+    if (Test-Path $startFlag)   { Remove-Item -Force $startFlag   -ErrorAction SilentlyContinue }
+    if (Test-Path $workingFlag) { Remove-Item -Force $workingFlag -ErrorAction SilentlyContinue }
+    Log "cleared per-turn flags for $sessionShort (elapsed ${elapsedSec}s, source=$([IO.Path]::GetFileName($flagToRead)))"
 } catch {}
 
 # Scrape Claude Code's actual terminal footer ("Cooked for 49s" /
