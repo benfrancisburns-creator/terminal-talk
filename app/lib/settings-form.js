@@ -137,6 +137,23 @@
       this._loadVersion();
     }
 
+    // #25 — panel-open lifecycle hook. Renderer calls this when the
+    // user opens the settings panel (settingsBtn click → settings-open
+    // class added). Resets per-instance flags that should re-decide on
+    // every panel open rather than only on first mount. Specifically:
+    // the OpenAI auto-collapse decision is a per-panel-open default;
+    // a user who expanded the section, closed the panel, and re-opened
+    // it should see the section collapsed again (assuming key saved +
+    // last test passed). Without this reset, `_openaiCollapseDecided`
+    // sticks for the lifetime of the renderer process.
+    onPanelOpen() {
+      this._openaiCollapseDecided = false;
+      // Re-run populate so the now-undecided state actually triggers
+      // the auto-collapse branch in _populateOpenAi on the next tick.
+      const cfg = this.state && this.state.cfg;
+      if (cfg) this._populateOpenAi(cfg);
+    }
+
     // Populate from config. Safe to call multiple times — values
     // overwrite but listeners were wired once at mount.
     _onUpdate() {

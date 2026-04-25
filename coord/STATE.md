@@ -58,6 +58,7 @@ See `QUEUE.md`. Initial seed: 6 items.
 - ✓ #15 heartbeat-voice-respect-provider — merged
 - ✓ #16 speakClipboard-respect-provider — merged
 - ✓ #24 tool_calls global Settings checkbox — merged
+- ✓ #25 OpenAI section collapse default (Ben B-4) — merged @ `b992b75`
 - ✓ #8 ROOT CAUSE — TT1 found via Batch 1 observability log forensics; fixed at `5b7354d`
   (lock-fail-skip in 3 PS callers + missing-entry guard restoration). Empirically verified:
   CURRENT registry == BAK1, both labels intact, 1095 save-registry "ok" lines + 0 "skip"
@@ -117,6 +118,8 @@ Self-directable next items in TT1's lane (THEY pick — I won't direct):
 | 2026-04-25 04:30      | TT1 | post-compact | #8 PID-migration exclusion @ `df93fab` (PS SESSION-IDENTITY tests fixed); voice-dispatch.js + voice-command-recognize.ps1 + updated wake-word-listener.py brought into git. Merged `fix-pass` → `main` |
 | 2026-04-25 04:40      | TT1 | post-compact | #16 speakClipboard-respect-provider drafted + merged @ `8b8b08c`. 853/853 (+5). Live install + toolbar restarted. Labels survive. Fix-drafted slot empty. Claiming #24 tool_calls-global-checkbox (Ben B-2) next |
 | 2026-04-25 05:00      | TT1 | post-compact | #24 tool_calls-global-checkbox drafted + merged @ `d6ebfef`. New tri-ctrl pill row in Settings; default-true semantics for tool_calls + headings. Surfaced: 6 of the 7 speech_includes sub-keys still have no global UI control (incBoxes refs them but HTML doesn't); kept comment in code. 858/858 (+5). Live install + restarted. Labels survive |
+| 2026-04-25 08:45      | TT1 | post-compact | #25 OpenAI section collapse default (Ben B-4) drafted + merged @ `b992b75`. New `onPanelOpen()` lifecycle method on SettingsForm; renderer wires it from settingsBtn click. Per-panel-open re-default; one-shot-per-decision shape preserved mid-session. 862/862 (+4). Deployed |
+| 2026-04-25 09:10      | TT1 | post-compact | #6 Batch 2 (G6 watchdog resource metrics + G8 stale-flag filter logging) drafted + merged @ `5881437`. createWatchdog factory accepts getResourceMetrics; main.js wires {rss_mb, queue_files, registry_bytes, voice_procs}. get-working-sessions emits filter diag with per-short age annotation. 869/869 (+7). Deployed. Lifted forward of #4 close-out so TT2's 22:54 soak re-measure benefits from the new observability |
 
 ## Pointers for a fresh session
 

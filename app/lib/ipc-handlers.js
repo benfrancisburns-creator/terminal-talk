@@ -584,12 +584,19 @@ function createIpcHandlers(deps) {
     // Flag files are named `<sessionShort>-working.flag` in SESSIONS_DIR.
     // Stale flags (older than 10 min — user killed Claude Code
     // mid-response) are filtered here so callers never see them.
+    //
+    // #6 G8 — when the filter actually drops something, log
+    // `get-working-sessions: filtered N stale flag(s): [short(age=Ns),...]`
+    // so #8-class diagnoses (heartbeat-not-firing-for-this-session)
+    // can see the flag was age-filtered, not absent. Silent on
+    // empty-drops to keep `_toolbar.log` quiet during normal idle.
     ipcMain.handle('get-working-sessions', () => {
       try {
         if (!SESSIONS_DIR || !fs.existsSync(SESSIONS_DIR)) return [];
         const now = Math.floor(Date.now() / 1000);
         const STALE_SEC = 600;
         const out = [];
+        const dropped = [];
         for (const name of fs.readdirSync(SESSIONS_DIR)) {
           const m = /^([a-f0-9]{8})-working\.flag$/.exec(name);
           if (!m) continue;
@@ -597,10 +604,17 @@ function createIpcHandlers(deps) {
           try {
             const content = fs.readFileSync(full, 'utf8').trim();
             const ts = Number(content) || 0;
-            if (ts && now - ts <= STALE_SEC) {
+            if (!ts) continue;
+            const age = now - ts;
+            if (age <= STALE_SEC) {
               out.push(m[1]);
+            } else {
+              dropped.push(`${m[1]}(age=${age}s)`);
             }
           } catch {}
+        }
+        if (dropped.length > 0) {
+          diag(`get-working-sessions: filtered ${dropped.length} stale flag(s): [${dropped.join(',')}]`);
         }
         return out;
       } catch { return []; }

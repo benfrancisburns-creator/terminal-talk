@@ -3251,6 +3251,66 @@ describe('TOOL_CALLS GLOBAL CHECKBOX (#24, Ben B-2)', () => {
   });
 });
 
+describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
+  // Per-panel-open default: OpenAI section should re-default to
+  // collapsed every time the user opens the panel (assuming key saved
+  // + last test passed). Prior to #25 the `_openaiCollapseDecided`
+  // flag was per-instance, so once the user expanded the section it
+  // stayed expanded for the lifetime of the renderer process.
+  const settingsFormSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8'
+  );
+  const rendererSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8'
+  );
+
+  it('SettingsForm exposes an onPanelOpen() lifecycle method', () => {
+    if (!/onPanelOpen\s*\(\s*\)\s*\{/.test(settingsFormSrc)) {
+      throw new Error('SettingsForm must expose onPanelOpen() — see #25');
+    }
+  });
+
+  it('onPanelOpen resets _openaiCollapseDecided to false', () => {
+    const m = settingsFormSrc.match(/onPanelOpen\s*\(\s*\)\s*\{[\s\S]*?\n\s{4}\}/);
+    if (!m) throw new Error('onPanelOpen body not found');
+    const body = m[0];
+    if (!/this\._openaiCollapseDecided\s*=\s*false/.test(body)) {
+      throw new Error('onPanelOpen must reset _openaiCollapseDecided to false — see #25');
+    }
+    // Should also re-trigger _populateOpenAi so the auto-collapse
+    // branch fires on the now-undecided state.
+    if (!/this\._populateOpenAi\(/.test(body)) {
+      throw new Error('onPanelOpen must call _populateOpenAi to apply the reset — see #25');
+    }
+  });
+
+  it('renderer settingsBtn click calls settingsForm.onPanelOpen() when opening', () => {
+    // Match the settingsBtn click handler. Within the `if (open)`
+    // branch, settingsForm.onPanelOpen() must be called so the
+    // collapse decision re-applies.
+    const m = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
+    if (!m) throw new Error('settingsBtn click handler not found');
+    const body = m[0];
+    if (!/if\s*\(open\)[\s\S]*?settingsForm\.onPanelOpen\(\)/.test(body)) {
+      throw new Error('settingsBtn click handler must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+    }
+  });
+
+  it('_openaiCollapseDecided still gates the auto-collapse one-shot per decision (regression guard)', () => {
+    // The flag's purpose is unchanged: it prevents the auto-collapse
+    // from re-firing on every queue-updated tick within a panel
+    // session (which would re-collapse a user who manually expanded
+    // mid-session). Resetting on panel open is the new behaviour;
+    // the one-shot-per-decision shape must remain.
+    if (!/if\s*\(openaiSection\s*&&\s*!this\._openaiCollapseDecided\)/.test(settingsFormSrc)) {
+      throw new Error('_populateOpenAi must still gate auto-collapse on !this._openaiCollapseDecided — see #25');
+    }
+    if (!/this\._openaiCollapseDecided\s*=\s*true/.test(settingsFormSrc)) {
+      throw new Error('_populateOpenAi must set _openaiCollapseDecided=true after deciding — see #25');
+    }
+  });
+});
+
 describe('SYNTH TURN SYNC STATE', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const testSessionId = 'testsesn1234567890abcdef';
@@ -5214,6 +5274,220 @@ describe('SELF-CLEANUP WATCHDOG', () => {
 
     const quit = main.slice(main.indexOf("app.on('will-quit'"));
     if (!quit.includes('stopWatchdog()')) throw new Error("will-quit must call stopWatchdog()");
+  });
+});
+
+describe('WATCHDOG RESOURCE METRICS (#6 G6)', () => {
+  // The watchdog now appends `key=value` resource metrics to its
+  // sweep log line (rss_mb / queue_files / registry_bytes /
+  // voice_procs) so 24h-soak deltas are readable straight off
+  // _watchdog.log without manual gathering. Tests cover both the
+  // factory's generic suffix-emit logic and the real wire-up in
+  // main.js's createWatchdog call.
+  const watchdogJs = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'watchdog.js'), 'utf8'
+  );
+  const mainJs = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+  );
+
+  it('createWatchdog accepts an optional getResourceMetrics dep', () => {
+    if (!/getResourceMetrics\s*=\s*null/.test(watchdogJs)) {
+      throw new Error('createWatchdog must accept getResourceMetrics=null parameter — see #6 G6');
+    }
+  });
+
+  it('createWatchdog appends metrics suffix to sweep log line when configured', () => {
+    // Unit test against the factory directly. Stub everything needed
+    // to drive runSweep deterministically + capture its log output.
+    const { createWatchdog } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'watchdog.js')
+    );
+    const captured = [];
+    const wd = createWatchdog({
+      intervalMs: 1000,
+      logPath: '/tmp/test.log',
+      sweeps: [],
+      postSweepFns: [],
+      getResourceMetrics: () => ({ rss_mb: 142, queue_files: 7, registry_bytes: 1245 }),
+      now: () => 1700000000000,
+      readdir: () => [],
+      logWriter: (line) => captured.push(line),
+    });
+    wd.runSweep();
+    if (captured.length !== 1) throw new Error(`expected 1 log line, got ${captured.length}`);
+    const line = captured[0];
+    if (!/rss_mb=142/.test(line)) throw new Error(`expected rss_mb=142 in line: ${line}`);
+    if (!/queue_files=7/.test(line)) throw new Error(`expected queue_files=7 in line: ${line}`);
+    if (!/registry_bytes=1245/.test(line)) throw new Error(`expected registry_bytes=1245 in line: ${line}`);
+  });
+
+  it('createWatchdog omits suffix when getResourceMetrics is not provided', () => {
+    const { createWatchdog } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'watchdog.js')
+    );
+    const captured = [];
+    const wd = createWatchdog({
+      intervalMs: 1000,
+      logPath: '/tmp/test.log',
+      sweeps: [],
+      postSweepFns: [],
+      now: () => 1700000000000,
+      readdir: () => [],
+      logWriter: (line) => captured.push(line),
+    });
+    wd.runSweep();
+    const line = captured[0] || '';
+    if (/rss_mb=|queue_files=|registry_bytes=/.test(line)) {
+      throw new Error(`metrics suffix must be absent when no getResourceMetrics: ${line}`);
+    }
+  });
+
+  it('createWatchdog swallows errors from a flaky getResourceMetrics', () => {
+    // A measurement that throws must not crash the watchdog. Sweep
+    // line is still written, just without the metrics suffix.
+    const { createWatchdog } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'watchdog.js')
+    );
+    const captured = [];
+    const wd = createWatchdog({
+      intervalMs: 1000,
+      logPath: '/tmp/test.log',
+      sweeps: [],
+      postSweepFns: [],
+      getResourceMetrics: () => { throw new Error('flaky stat'); },
+      now: () => 1700000000000,
+      readdir: () => [],
+      logWriter: (line) => captured.push(line),
+    });
+    wd.runSweep();  // must not throw
+    if (captured.length !== 1) throw new Error('flaky metrics must not block the sweep log');
+  });
+
+  it('main.js createWatchdog call provides a getResourceMetrics with the 4 expected keys', () => {
+    // Source-grep against the wire-up. Bound the slice to the
+    // createWatchdog block so we don't false-match later code.
+    const createIdx = mainJs.indexOf('createWatchdog({');
+    if (createIdx < 0) throw new Error('createWatchdog call missing');
+    const endIdx = mainJs.indexOf('\n});', createIdx);
+    const block = mainJs.slice(createIdx, endIdx > 0 ? endIdx : createIdx + 4000);
+    if (!/getResourceMetrics\s*:/.test(block)) {
+      throw new Error('main.js createWatchdog must pass getResourceMetrics — see #6 G6');
+    }
+    for (const key of ['rss_mb', 'queue_files', 'registry_bytes', 'voice_procs']) {
+      if (!new RegExp(`m\\.${key}\\s*=`).test(block)) {
+        throw new Error(`main.js getResourceMetrics must set m.${key} — see #6 G6`);
+      }
+    }
+  });
+});
+
+describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
+  // get-working-sessions filters working-flag files older than 600s.
+  // Pre-G8 the drop was silent, leaving downstream consumers unable
+  // to tell "no flag" from "flag too stale". Now: log only when the
+  // filter actually drops something, with each dropped short + age.
+  const ipcSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8'
+  );
+
+  it('get-working-sessions handler tracks dropped stale flags', () => {
+    // Body must collect dropped shorts with age and emit a single
+    // diag line when the dropped list is non-empty.
+    const m = ipcSrc.match(/ipcMain\.handle\(\s*'get-working-sessions'[\s\S]*?\}\);/);
+    if (!m) throw new Error('get-working-sessions handler not found');
+    const body = m[0];
+    if (!/dropped\s*=\s*\[\]/.test(body)) {
+      throw new Error('handler must declare a dropped array — see #6 G8');
+    }
+    if (!/age\s*=\s*now\s*-\s*ts/.test(body)) {
+      throw new Error('handler must compute age = now - ts — see #6 G8');
+    }
+    if (!/dropped\.push\(/.test(body)) {
+      throw new Error('handler must push stale shorts to dropped — see #6 G8');
+    }
+    if (!/get-working-sessions: filtered \$\{dropped\.length\} stale flag/.test(body)) {
+      throw new Error('handler must emit "filtered N stale flag(s)" diag on non-empty drop — see #6 G8');
+    }
+    if (!/if\s*\(dropped\.length\s*>\s*0\)/.test(body)) {
+      throw new Error('handler must short-circuit the diag when no drops (silent on empty) — see #6 G8');
+    }
+  });
+
+  it('get-working-sessions runtime: drops stale, keeps fresh, logs only when dropped', () => {
+    // End-to-end. Stub fs + diag via the factory deps. Seed a virtual
+    // SESSIONS_DIR with two flag files: one fresh, one stale. Verify
+    // return value, captured diag content, and silent-on-empty case.
+    const { createIpcHandlers } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-g8-'));
+    const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      // Fresh: 30s old → kept.
+      fs.writeFileSync(path.join(tmpDir, 'aaaa1111-working.flag'), String(now - 30));
+      // Stale: 700s old → dropped + logged.
+      fs.writeFileSync(path.join(tmpDir, 'bbbb2222-working.flag'), String(now - 700));
+
+      const captured = [];
+      const handlers = {};
+      const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
+      createIpcHandlers({
+        ipcMain,
+        diag: (l) => captured.push(l),
+        callEdgeTTS: () => {},
+        callOpenAITTS: () => {},
+        getAppVersion: () => '0',
+        getCFG: () => ({}),
+        loadAssignments: () => ({}),
+        getQueueFiles: () => [],
+        getQueueAllPaths: () => [],
+        ensureAssignmentsForFiles: () => {},
+        shortFromFile: () => null,
+        isPidAlive: () => false,
+        computeStaleSessions: () => [],
+        SESSIONS_DIR: tmpDir,
+        getWin: () => null,
+        saveAssignments: () => true,
+        notifyQueue: () => {},
+        allowMutation: () => true,
+        validShort: () => true,
+        validVoice: () => true,
+        sanitiseLabel: (s) => s,
+        ALLOWED_INCLUDE_KEYS: new Set(),
+        setCFG: () => {},
+        saveConfig: () => true,
+        apiKeyStore: { get: () => null, set: () => {} },
+        redactForLog: (x) => x,
+        setApplyingDock: () => {},
+        testMode: true,
+        QUEUE_DIR: tmpDir,
+        isPathInside: () => true,
+        getWatchdog: () => null,
+        getWatchdogIntervalMs: () => 0,
+      }).register();
+
+      const result = handlers['get-working-sessions']({});
+      // Fresh kept, stale dropped.
+      assertDeepEqual(result, ['aaaa1111'], 'fresh flag must be returned');
+      // Diag must include the stale short with age annotation.
+      const filterLine = captured.find((l) => l.startsWith('get-working-sessions: filtered'));
+      if (!filterLine) throw new Error('expected stale-flag filter diag line');
+      if (!/bbbb2222\(age=\d+s\)/.test(filterLine)) {
+        throw new Error(`diag must include short(age=Ns): got: ${filterLine}`);
+      }
+      // Silent-on-empty pass: clear stale flag, re-call, expect no diag.
+      fs.unlinkSync(path.join(tmpDir, 'bbbb2222-working.flag'));
+      captured.length = 0;
+      handlers['get-working-sessions']({});
+      const stillThere = captured.find((l) => l.startsWith('get-working-sessions: filtered'));
+      if (stillThere) {
+        throw new Error('handler must NOT emit diag when no stale flags dropped');
+      }
+    } finally {
+      cleanup();
+    }
   });
 });
 

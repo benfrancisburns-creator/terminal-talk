@@ -2023,6 +2023,29 @@ const _watchdog = createWatchdog({
   postSweepFns: [
     { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
   ],
+  // #6 G6 — emit per-sweep resource metrics so 24h-soak deltas can be
+  // read straight off _watchdog.log instead of hand-gathered. RSS is
+  // the main process only (renderers + child electron procs not
+  // attributed here — see #4 follow-up if needed). voice_procs counts
+  // tracked python listeners; queue_files is the raw file count in
+  // the queue directory; registry_bytes is session-colours.json size.
+  // All measurements are best-effort — getResourceMetrics swallows
+  // its own errors so a flaky stat call never crashes the watchdog.
+  getResourceMetrics: () => {
+    const m = {};
+    try { m.rss_mb = Math.round(process.memoryUsage().rss / (1024 * 1024)); } catch {}
+    try {
+      m.queue_files = fs.readdirSync(QUEUE_DIR).length;
+    } catch {}
+    try { m.registry_bytes = fs.statSync(COLOURS_REGISTRY).size; } catch {}
+    try {
+      // voiceProc is the single-tracked python listener spawn (see
+      // startVoiceListener); count it as 1 if alive, else 0.
+      const alive = voiceProc && voiceProc.pid && isPidAlive(voiceProc.pid);
+      m.voice_procs = alive ? 1 : 0;
+    } catch {}
+    return m;
+  },
 });
 const startWatchdog = _watchdog.start;
 const stopWatchdog = _watchdog.stop;

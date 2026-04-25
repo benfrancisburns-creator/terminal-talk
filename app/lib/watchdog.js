@@ -20,6 +20,12 @@ function createWatchdog({
   logPath,
   sweeps = [],           // Array<{ name, dir, predicate, fn, statKey }>
   postSweepFns = [],     // Array<{ name, fn }>  — run after numbered sweeps, no count diff
+  // #6 G6 — optional resource-metrics gatherer. Returns a flat object
+  // of `key=value` pairs to append to the per-sweep log line. Caller
+  // owns what to measure (RSS, queue file count, registry size, etc.).
+  // Errors are swallowed so a flaky measurement never crashes the
+  // watchdog itself. Returning null/empty disables the suffix.
+  getResourceMetrics = null,
   now = () => Date.now(),
   readdir = (dir) => fs.readdirSync(dir),
   logWriter = (line) => { try { fs.appendFileSync(logPath, line); } catch {} },
@@ -62,7 +68,21 @@ function createWatchdog({
     const statsStr = sweeps
       .map((s) => `${stats[s.statKey]} ${s.name}`)
       .join(' · ');
-    const line = `${ts} sweep ok · pruned ${statsStr} · ${now() - t0}ms` +
+    // #6 G6 — append resource metrics to the sweep line so a 24h-soak
+    // can be read directly off `_watchdog.log` without manual gathering.
+    let metricsStr = '';
+    if (typeof getResourceMetrics === 'function') {
+      try {
+        const m = getResourceMetrics() || {};
+        const parts = [];
+        for (const [k, v] of Object.entries(m)) {
+          if (v === undefined || v === null) continue;
+          parts.push(`${k}=${v}`);
+        }
+        if (parts.length > 0) metricsStr = ' · ' + parts.join(' ');
+      } catch { /* swallowed — never let a measurement crash the watchdog */ }
+    }
+    const line = `${ts} sweep ok · pruned ${statsStr} · ${now() - t0}ms${metricsStr}` +
       (errors.length ? ` · errors: ${errors.join('; ')}` : '') + '\n';
     logWriter(line);
     return stats;
