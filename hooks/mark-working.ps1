@@ -1,17 +1,28 @@
-$ErrorActionPreference = 'SilentlyContinue'
+﻿$ErrorActionPreference = 'SilentlyContinue'
 
-# UserPromptSubmit hook. Fires when the user submits a prompt in
-# Claude Code, before Claude starts generating. Writes a per-session
-# "working" marker file that the toolbar uses to gate heartbeat
-# emission — so the spinner-verb audio ("Percolating", "Moonwalking")
-# plays ONLY between user submit and Claude's Stop, not for minutes
-# after Claude finishes (the symptom of the old last_seen-based
-# proxy).
+# UserPromptSubmit hook. Two responsibilities:
 #
-# The matching Stop hook (speak-response.ps1) deletes the marker at
-# end of turn. If the user quits Claude Code mid-response, the marker
-# stays on disk — the watchdog in the main app prunes stale markers
-# older than 10 min on its periodic sweep.
+# 1. Write a per-session "working" marker file that the toolbar uses
+#    to gate heartbeat emission — so the spinner-verb audio
+#    ("Percolating", "Moonwalking") plays ONLY between user submit and
+#    Claude's Stop, not for minutes after Claude finishes (the symptom
+#    of the old last_seen-based proxy).
+#
+# 2. When config.narrator.enabled = true, emit a UserPromptSubmit
+#    hookSpecificOutput JSON with additionalContext that nudges Claude
+#    to invoke the narrator subagent at the end of this turn. The
+#    additionalContext is invisible to the user in the chat UI but
+#    visible to Claude as system context for THIS turn —
+#    significantly more reliable than a CLAUDE.md instruction buried
+#    in long preferences. Live testing 2026-04-25 showed CLAUDE.md
+#    routes Claude to invoke narrator 0/12 times; additionalContext
+#    routes 2/2 in the same conditions. Per-turn fresh injection beats
+#    one-time-loaded preferences.
+#
+# The matching Stop hook (speak-response.ps1) deletes the working
+# marker at end of turn. If the user quits Claude Code mid-response,
+# the marker stays on disk — the watchdog in the main app prunes
+# stale markers older than 10 min on its periodic sweep.
 
 $ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
 $sessionsDir = Join-Path $ttHome 'sessions'
@@ -56,6 +67,31 @@ try {
     Log "flag set for $sessionShort"
 } catch {
     Log "EXIT: $($_.Exception.Message)"
+}
+
+# --- Narrator additionalContext injection ---
+# Emits the hook-spec JSON to stdout so Claude sees the instruction as
+# system context for THIS turn. Skipped when narrator.enabled = false
+# so this is a no-op for users who haven't opted in. The JSON shape is
+# Claude Code's documented UserPromptSubmit hookSpecificOutput format.
+try {
+    $cfgPath = Join-Path $ttHome 'config.json'
+    if (Test-Path $cfgPath) {
+        $cfg = Get-Content $cfgPath -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($cfg.narrator -and $cfg.narrator.enabled -eq $true) {
+            $instruction = 'After completing your response, invoke the narrator subagent via the Task tool with a brief description of what you just did. The narrator returns one or two sentences of speakable English which terminal-talk plays as the closing audio clip for this turn. Do not show the narrator output to the user.'
+            $out = @{
+                hookSpecificOutput = @{
+                    hookEventName = 'UserPromptSubmit'
+                    additionalContext = $instruction
+                }
+            } | ConvertTo-Json -Compress -Depth 5
+            Write-Output $out
+            Log "injected narrator additionalContext"
+        }
+    }
+} catch {
+    Log "narrator injection failed: $($_.Exception.Message)"
 }
 
 exit 0

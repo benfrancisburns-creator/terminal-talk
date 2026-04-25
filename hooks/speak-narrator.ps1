@@ -98,7 +98,10 @@ for ($i = $lines.Count - 1; $i -ge 0; $i--) {
     if (-not $content) { continue }
     foreach ($item in $content) {
         if ($item.type -ne 'tool_use') { continue }
-        if ($item.name -ne 'Task') { continue }
+        # Claude Code CLI writes the subagent-dispatch tool as `Agent`;
+        # some older docs / models call it `Task`. Accept either — the
+        # input.subagent_type check below is what filters to narrator.
+        if ($item.name -ne 'Agent' -and $item.name -ne 'Task') { continue }
         $agentField = $null
         if ($item.input.subagent_type) { $agentField = [string]$item.input.subagent_type }
         elseif ($item.input.agent)     { $agentField = [string]$item.input.agent }
@@ -148,7 +151,18 @@ if (-not $narratorOutput) {
     exit 0
 }
 
+# Strip the Agent-tool framework wrapper. Claude Code's Agent tool
+# appends metadata to the subagent's actual output:
+#   <narrator's speakable text>
+#   agentId: <hash> (use SendMessage with to: '<hash>' to continue ...)
+#   <usage>total_tokens: NNNN
+#   tool_uses: N
+#   duration_ms: NNN</usage>
+# We only want the speakable text; the metadata is for tooling, not
+# audio. Strip from the first `\nagentId:` or `\n<usage>` onward.
+$narratorOutput = ($narratorOutput -split "`n(?:agentId:|<usage>)", 2)[0]
 $narratorOutput = $narratorOutput.Trim()
+
 # The agent prompt explicitly says "output empty string for trivial
 # turns" — respect that signal and skip TTS. No clip is the right
 # answer for "yes" / "done" / one-word acknowledgements.
