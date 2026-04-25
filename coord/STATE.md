@@ -99,6 +99,8 @@ TT2 has NO blockers — self-directing:
 | 2026-04-25 03:45      | TT2 | post-compact | D2+D3 parity fixes shipped @ `f9b098c` main. #8 defensive guard DA PASS @ `55366e5` (user-intent restoration on touch-path writes). 830 tests green |
 | 2026-04-25 04:05      | TT2 | post-compact | #19 D4 (emphasis) parity fix shipped @ `fd44c4a` main. All 4 #19 divergences now closed. 831 green |
 | 2026-04-25 04:10      | TT1 | post-compact | Merged `fix-pass` → `main` including #15 + #8 defensive + #8 root fix (`5b7354d`). Fix-drafted slot cleared. Claiming #16 speakClipboard-respect-provider next per TT2 sequencing |
+| 2026-04-25 04:30      | TT1 | post-compact | #8 PID-migration exclusion @ `df93fab` (PS SESSION-IDENTITY tests fixed); voice-dispatch.js + voice-command-recognize.ps1 + updated wake-word-listener.py brought into git. Merged `fix-pass` → `main` |
+| 2026-04-25 04:40      | TT1 | post-compact | #16 speakClipboard-respect-provider drafted + merged @ `8b8b08c`. 853/853 (+5). Live install + toolbar restarted. Labels survive. Fix-drafted slot empty. Claiming #24 tool_calls-global-checkbox (Ben B-2) next |
 
 ## Pointers for a fresh session
 
