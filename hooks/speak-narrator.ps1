@@ -1,4 +1,4 @@
-# Stop hook companion — speakable closing-summary clip.
+﻿# Stop hook companion — speakable closing-summary clip.
 #
 # Architecture (v2 — Task-tool-driven, replaces v1 subprocess approach):
 # Main Claude is instructed (via the user's CLAUDE.md) to invoke the
