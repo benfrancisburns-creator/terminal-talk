@@ -280,11 +280,6 @@ const _queueWatcher = createQueueWatcher({ queueDir: QUEUE_DIR, maxFiles: MAX_FI
 const getQueueFiles = _queueWatcher.list;
 const getQueueAllPaths = _queueWatcher.listPaths;
 
-// Disk pruning extracted to app/lib/prune.js (2026-04-26 — #29 sub-2000 follow-up).
-const { pruneOldFiles, pruneSessionsDir } = require('./lib/prune').createPruner({
-  queueDir: QUEUE_DIR, sessionsDir: SESSIONS_DIR, staleMs: STALE_MS, isAudioFile, isPidAlive,
-});
-
 // Edge snapping: within this many pixels of a screen edge, on move-end we
 // snap to that edge. Pick a threshold big enough to forgive imprecise drags
 // but not so big it triggers when the user wants to park the bar near an
@@ -986,6 +981,15 @@ async function getForegroundTree() {
 // Returns the 8-char session short, or null if no match (e.g. Chrome/PDF).
 // Used to colour-code highlight-to-speak clips with a matching J label.
 const SESSIONS_DIR = path.join(INSTALL_DIR, 'sessions');
+
+// Disk pruning extracted to app/lib/prune.js (2026-04-26 — #29 sub-2000 follow-up).
+// Must come after SESSIONS_DIR is declared because createPruner captures it
+// at call time (not lazily). Was at the top of the file pre-merge but the
+// origin/main #29 extraction moved the require to a position where SESSIONS_DIR
+// hadn't been initialised yet — caused a TDZ ReferenceError on boot.
+const { pruneOldFiles, pruneSessionsDir } = require('./lib/prune').createPruner({
+  queueDir: QUEUE_DIR, sessionsDir: SESSIONS_DIR, staleMs: STALE_MS, isAudioFile, isPidAlive,
+});
 async function detectActiveSession() {
   try {
     const fg = await getForegroundTree();
