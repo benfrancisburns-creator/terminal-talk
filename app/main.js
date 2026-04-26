@@ -508,6 +508,11 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'floating');
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { win = null; });
+  // Start the main-side cursor-poll click-through driver. Reliable
+  // alternative to the renderer's mousemove → setClickthrough loop
+  // which can get stuck when forward:true fails to forward cursor-
+  // entry events. Polls every 80ms using screen.getCursorScreenPoint().
+  startCursorPollDriver();
 
   // EX3 — Ctrl+R reloads the renderer (window-scoped, not global).
   // Browser convention + cheap recovery path if the toolbar gets into
@@ -1617,6 +1622,46 @@ let _reloadGraceUntil = 0;
 function startReloadGrace(ms = 5000) {
   _reloadGraceUntil = Date.now() + ms;
   diag(`reload-trace: reload grace started (${ms}ms)`);
+}
+
+// Cursor-poll click-through driver. Replaces the renderer-driven
+// mousemove → setClickthrough loop, which has a chronic Windows
+// bug: when the bar is in click-through mode, Electron's
+// `forward: true` does NOT reliably forward cursor-entry events,
+// so the renderer never sees the cursor RETURN to the bar →
+// click-through stays on → bar appears "frozen" even though it's
+// alive. screen.getCursorScreenPoint() works regardless of
+// click-through state, so polling cursor in main is reliable.
+//
+// The renderer still pushes setClickthrough via its mousemove
+// handler — those calls remain as a fast path when forward:true
+// happens to work. Main's poll wins on the next tick if they
+// disagree. State change is logged so we can verify the poll
+// is actually driving toggles.
+let _cursorPollState = null;  // null=unknown, true=clickthrough, false=interactive
+const CURSOR_POLL_MS = 80;
+function startCursorPollDriver() {
+  setInterval(() => {
+    if (!win || win.isDestroyed()) return;
+    if (process.env.TT_TEST_MODE === '1') return;
+    let c;
+    try { c = screen.getCursorScreenPoint(); } catch { return; }
+    let bounds;
+    try { bounds = win.getBounds(); } catch { return; }
+    const overWindow = c.x >= bounds.x
+                    && c.x < bounds.x + bounds.width
+                    && c.y >= bounds.y
+                    && c.y < bounds.y + bounds.height;
+    const wantClickthrough = !overWindow;
+    if (wantClickthrough === _cursorPollState) return;
+    _cursorPollState = wantClickthrough;
+    try {
+      win.setIgnoreMouseEvents(wantClickthrough, { forward: true });
+      diag(`reload-trace: cursor-poll over=${overWindow} ignoreMouseEvents=${wantClickthrough}`);
+    } catch (e) {
+      diag(`reload-trace: cursor-poll setIgnoreMouseEvents threw: ${e && e.message}`);
+    }
+  }, CURSOR_POLL_MS);
 }
 
 const { createIpcHandlers } = require('./lib/ipc-handlers');
