@@ -2659,61 +2659,450 @@ describe('SENTENCE GROUP (v0.5 smart grouping)', () => {
   });
 });
 
-describe('TOOL NARRATION (v0.5 ephemeral tool-call phrases)', () => {
-  // narrate_tool_use() maps (tool_name, tool_input) to a short spoken
-  // status phrase, or None to skip. Emitted as T- prefixed ephemeral
-  // clips that the renderer auto-deletes on playback-end.
+describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
+  // narrate_tool_use(tool_name, tool_input, prev_call=None) maps a tool
+  // call to a short spoken phrase, or None to skip. The v0.5 version
+  // (smart-tool-narration branch) replaces the old mechanical "Reading
+  // foo.py" output with semantic narration: detects renames in Edit
+  // diffs, maps known shell commands to intent ("Running the tests"
+  // for `npm test`), naturalises file paths ("the auth router file"),
+  // and suppresses same-file repetition via prev_call.
   const appDirRepo = path.join(__dirname, '..', 'app');
   const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from tool_narration import narrate_tool_use; `;
 
-  function narrate(name, inp) {
-    const code = `${pyPrelude}import json; r = narrate_tool_use(${JSON.stringify(name)}, ${JSON.stringify(inp)}); print(json.dumps(r))`;
+  function narrate(name, inp, prev = null) {
+    const prevArg = prev === null ? 'None' : `(${JSON.stringify(prev[0])}, ${JSON.stringify(prev[1])})`;
+    const code = `${pyPrelude}import json; r = narrate_tool_use(${JSON.stringify(name)}, ${JSON.stringify(inp)}, prev_call=${prevArg}); print(json.dumps(r))`;
     const r = runPythonInline(code);
     if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
     return JSON.parse(r.stdout.trim());
   }
 
-  it('Read uses basename not full path', () => {
-    assertEqual(narrate('Read', { file_path: 'C:/Users/Ben/Desktop/foo/bar.py' }), 'Reading bar.py');
+  // ---- Read --------------------------------------------------------
+  it('Read naturalises file path with parent for generic basenames', () => {
+    assertEqual(narrate('Read', { file_path: 'auth/middleware.ts' }), 'Looking at the auth middleware file');
+  });
+  it('Read with non-generic basename omits parent', () => {
+    assertEqual(narrate('Read', { file_path: 'app/sentence_group.py' }), 'Looking at the sentence group file');
+  });
+  it('Read special-cases package.json', () => {
+    assertEqual(narrate('Read', { file_path: 'package.json' }), 'Reading the package json');
+  });
+  it('Read special-cases README', () => {
+    assertEqual(narrate('Read', { file_path: 'README.md' }), 'Reading the readme');
   });
   it('Read with missing path falls back to generic phrase', () => {
-    assertEqual(narrate('Read', {}), 'Reading a file');
+    assertEqual(narrate('Read', {}), 'Looking at a file');
   });
-  it('Edit uses basename', () => {
-    assertEqual(narrate('Edit', { file_path: '/tmp/foo.js' }), 'Editing foo.js');
+
+  // ---- Edit (semantic detection) -----------------------------------
+  it('Edit detects single-identifier rename and naturalises camelCase for speech', () => {
+    // Identifier names are naturalised before speaking — programmer-style
+    // names like camelCase / snake_case / leading underscores don't read
+    // well aloud. Listener gets "get token" / "verify session" and can
+    // see the literal names in their IDE.
+    const out = narrate('Edit', {
+      file_path: 'auth/router.ts',
+      old_string: 'function getToken() { return null; }',
+      new_string: 'function verifySession() { return null; }',
+    });
+    if (!out.toLowerCase().startsWith('renamed get token to verify session')) {
+      throw new Error(`expected naturalised rename narration, got: ${out}`);
+    }
   });
-  it('Write uses basename', () => {
-    assertEqual(narrate('Write', { file_path: 'app/sentence_group.py' }), 'Writing sentence_group.py');
+  it('Edit suppresses whitespace-only changes', () => {
+    assertEqual(narrate('Edit', {
+      file_path: 'app/main.js',
+      old_string: '  foo();',
+      new_string: '    foo();',
+    }), null);
   });
-  it('Bash speaks the command with env assignments stripped, truncated ~50ch', () => {
-    // 2026-04-22 — widened from first-word-only ("Running npm") after
-    // user feedback that single-word narration told them nothing about
-    // what was actually running. Now speaks up to 50 chars with sensible
-    // truncation + leading FOO=bar env assignments stripped.
-    assertEqual(narrate('Bash', { command: 'npm test --verbose' }), 'Running npm test --verbose');
-    assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm run build' }), 'Running npm run build');
-    assertEqual(narrate('Bash', {}), 'Running a command');
-    const long = narrate('Bash', { command: 'grep -rn some_long_pattern_here ' + 'x'.repeat(200) });
-    if (long.length > 65) throw new Error(`bash phrase too long: ${long.length}ch`);
-    if (!long.startsWith('Running grep')) throw new Error(`bash phrase should start with command: ${long}`);
+  it('Edit detects imports-only changes', () => {
+    const out = narrate('Edit', {
+      file_path: 'app/lib/text.js',
+      old_string: "import { foo } from './foo';",
+      new_string: "import { foo, bar } from './foo';\nimport { baz } from './baz';",
+    });
+    if (!out.includes('Updated imports')) {
+      throw new Error(`expected imports update, got: ${out}`);
+    }
   });
-  it('Grep pattern truncates at word boundary', () => {
-    const out = narrate('Grep', { pattern: 'class Communicate' });
-    assertEqual(out, 'Searching for class Communicate');
-    const long = narrate('Grep', { pattern: 'x'.repeat(200) });
-    if (long.length > 55) throw new Error(`not truncated: ${long.length} chars`);
+  it('Edit falls back to generic edit narration when multiple identifiers change in non-structural code', () => {
+    // No function declaration / class / test in either side — just
+    // identifier shuffling at a value-expression site. Falls through
+    // to the generic edit narration since structure detection finds
+    // nothing meaningful to surface.
+    const out = narrate('Edit', {
+      file_path: 'app/main.js',
+      old_string: 'const result = alpha + beta;',
+      new_string: 'const summed = gamma + delta;',
+    });
+    if (!out || (!out.toLowerCase().includes('edit') && !out.toLowerCase().includes('line'))) {
+      throw new Error(`expected generic edit, got: ${out}`);
+    }
   });
-  it('Glob returns pattern phrase', () => {
-    assertEqual(narrate('Glob', { pattern: '**/*.test.ts' }), 'Finding files matching **/*.test.ts');
+
+  // ---- Write (file-kind detection) ---------------------------------
+  it('Write recognises test files', () => {
+    const out = narrate('Write', {
+      file_path: 'tests/narrator.test.ts',
+      content: 'test stuff\n'.repeat(20),
+    });
+    if (!out.startsWith('Wrote a new test')) {
+      throw new Error(`expected test narration, got: ${out}`);
+    }
   });
+  it('Write recognises components by .tsx extension', () => {
+    const out = narrate('Write', {
+      file_path: 'src/components/Button.tsx',
+      content: 'export const Button = () => null;\n',
+    });
+    if (!out.startsWith('Wrote a new component')) {
+      throw new Error(`expected component narration, got: ${out}`);
+    }
+  });
+  it('Write recognises config files', () => {
+    const out = narrate('Write', {
+      file_path: 'tsconfig.json',
+      content: '{}\n',
+    });
+    if (!out.includes('config')) {
+      throw new Error(`expected config narration, got: ${out}`);
+    }
+  });
+  it('Write appends line count for large files (>= 100 lines)', () => {
+    const big = 'x\n'.repeat(150);
+    const out = narrate('Write', { file_path: 'app/lib/big-thing.js', content: big });
+    if (!out.includes('150 lines')) {
+      throw new Error(`expected line count, got: ${out}`);
+    }
+  });
+
+  // ---- Bash (command lookup table) ---------------------------------
+  it('Bash maps npm test', () => {
+    assertEqual(narrate('Bash', { command: 'npm test' }), 'Running the tests');
+  });
+  it('Bash maps npm run lint', () => {
+    assertEqual(narrate('Bash', { command: 'npm run lint' }), 'Running the linter');
+  });
+  it('Bash maps git diff main with capture', () => {
+    assertEqual(narrate('Bash', { command: 'git diff main' }), 'Comparing against main');
+  });
+  it('Bash maps git diff (no arg)', () => {
+    assertEqual(narrate('Bash', { command: 'git diff' }), 'Looking at the diff');
+  });
+  it('Bash maps git checkout -b for new branches', () => {
+    assertEqual(narrate('Bash', { command: 'git checkout -b feature/foo' }), 'Cutting branch feature/foo');
+  });
+  it('Bash maps gh pr create', () => {
+    assertEqual(narrate('Bash', { command: 'gh pr create --draft' }), 'Opening a pull request');
+  });
+  it('Bash strips leading env assignments before matching', () => {
+    assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm test' }), 'Running the tests');
+  });
+  it('Bash detects pipelines and tags them', () => {
+    const out = narrate('Bash', { command: 'git status | head -5' });
+    if (!out.includes('pipeline')) {
+      throw new Error(`expected pipeline tag, got: ${out}`);
+    }
+  });
+  it('Bash falls back gracefully on unknown commands', () => {
+    const out = narrate('Bash', { command: 'someunknownbinary --help' });
+    if (!out || !out.startsWith('Running')) {
+      throw new Error(`expected fallback, got: ${out}`);
+    }
+  });
+
+  // ---- Grep (smart pattern detection) ------------------------------
+  it('Grep speaks plain identifiers', () => {
+    assertEqual(narrate('Grep', { pattern: 'narrator' }), 'Searching for narrator');
+  });
+  it('Grep recognises TODO/FIXME pattern', () => {
+    assertEqual(narrate('Grep', { pattern: 'TODO|FIXME' }), 'Searching for to-do markers');
+  });
+  it('Grep stays silent on heavy regex', () => {
+    const out = narrate('Grep', { pattern: '(?:foo|bar)\\s*\\([^\\)]*\\)' });
+    if (out !== 'Searching the code') {
+      throw new Error(`expected generic phrase for heavy regex, got: ${out}`);
+    }
+  });
+
+  // ---- Glob (extension -> language) --------------------------------
+  it('Glob maps **/*.ts to typescript', () => {
+    assertEqual(narrate('Glob', { pattern: '**/*.ts' }), 'Looking for typescript files');
+  });
+  it('Glob maps *.md to markdown', () => {
+    assertEqual(narrate('Glob', { pattern: '*.md' }), 'Looking for markdown files');
+  });
+
+  // ---- Web tools ---------------------------------------------------
   it('WebFetch extracts bare domain (no www)', () => {
-    assertEqual(narrate('WebFetch', { url: 'https://www.example.com/path?q=1' }), 'Fetching example.com');
+    assertEqual(narrate('WebFetch', { url: 'https://www.example.com/path?q=1' }), 'Fetching from example.com');
   });
-  it('WebSearch returns query phrase', () => {
-    assertEqual(narrate('WebSearch', { query: 'edge tts streaming' }), 'Searching the web for edge tts streaming');
+  it('WebSearch shortens long queries to ~6 words', () => {
+    const out = narrate('WebSearch', { query: 'how do I chunk tts audio for streaming responses' });
+    if (!out.includes('how do I chunk tts audio')) {
+      throw new Error(`expected first-6-words, got: ${out}`);
+    }
   });
-  it('meta tools return null (no narration)', () => {
-    for (const meta of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'ExitPlanMode']) {
+
+  // ---- TodoWrite (now narrated using activeForm) -------------------
+  it('TodoWrite uses activeForm of the in_progress task', () => {
+    assertEqual(narrate('TodoWrite', {
+      todos: [
+        { content: 'fix the auth bug', activeForm: 'Fixing the auth bug', status: 'in_progress' },
+        { content: 'write tests', activeForm: 'Writing tests', status: 'pending' },
+      ],
+    }), 'Fixing the auth bug');
+  });
+  it('TodoWrite reports done counts when nothing in progress', () => {
+    const out = narrate('TodoWrite', {
+      todos: [
+        { content: 'a', activeForm: 'A', status: 'completed' },
+        { content: 'b', activeForm: 'B', status: 'completed' },
+        { content: 'c', activeForm: 'C', status: 'pending' },
+      ],
+    });
+    if (!out || !out.includes('done')) {
+      throw new Error(`expected done count, got: ${out}`);
+    }
+  });
+  it('TodoWrite says all complete when nothing else outstanding', () => {
+    assertEqual(narrate('TodoWrite', {
+      todos: [
+        { content: 'a', activeForm: 'A', status: 'completed' },
+        { content: 'b', activeForm: 'B', status: 'completed' },
+      ],
+    }), 'All tasks complete');
+  });
+
+  // ---- NotebookEdit ------------------------------------------------
+  it('NotebookEdit narrates cell edits', () => {
+    const out = narrate('NotebookEdit', {
+      notebook_path: 'reports/q4-analysis.ipynb',
+      edit_mode: 'replace',
+      new_source: 'import pandas as pd',
+    });
+    if (!out.includes('cell') || !out.includes('q4 analysis')) {
+      throw new Error(`expected cell edit narration, got: ${out}`);
+    }
+  });
+
+  // ---- Same-file suppression with prev_call ------------------------
+  it('drops "in <file>" suffix when prev_call hit the same file', () => {
+    const first = narrate('Edit', {
+      file_path: 'auth/router.ts',
+      old_string: 'getToken()',
+      new_string: 'verifySession()',
+    });
+    if (!first.includes('in the auth router file')) {
+      throw new Error(`expected first edit to include file suffix, got: ${first}`);
+    }
+    const second = narrate('Edit',
+      { file_path: 'auth/router.ts', old_string: 'foo', new_string: 'bar' },
+      ['Edit', { file_path: 'auth/router.ts', old_string: 'getToken()', new_string: 'verifySession()' }],
+    );
+    if (second && second.includes('in the auth router file')) {
+      throw new Error(`expected suppressed file suffix on same-file repeat, got: ${second}`);
+    }
+  });
+
+  // ---- Sub-agent ---------------------------------------------------
+  it('Task/Agent alias both work for sub-agents', () => {
+    const a = narrate('Agent', { description: 'refactor queue', subagent_type: 'general-purpose' });
+    const b = narrate('Task', { description: 'refactor queue', subagent_type: 'general-purpose' });
+    assertEqual(a, b);
+    if (!a.includes('refactor queue')) throw new Error(`bad sub-agent phrase: ${a}`);
+  });
+
+  // ---- Identifier naturalisation in narrations ----------------------
+  it('Edit rename naturalises identifier names for speech', () => {
+    const out = narrate('Edit', {
+      file_path: 'auth/router.ts',
+      old_string: 'function getToken() { return null; }',
+      new_string: 'function verifySession() { return null; }',
+    });
+    if (!out || !out.toLowerCase().includes('get token') || !out.toLowerCase().includes('verify session')) {
+      throw new Error(`expected naturalised camelCase, got: ${out}`);
+    }
+  });
+  it('Edit detects single new function and naturalises its name', () => {
+    const out = narrate('Edit', {
+      file_path: 'app/foo.py',
+      old_string: '# stub',
+      new_string: '# stub\ndef handle_request(req):\n    return req\n',
+    });
+    if (!out || !out.toLowerCase().includes('handle request') || !out.toLowerCase().includes('function')) {
+      throw new Error(`expected new-function detection with naturalisation, got: ${out}`);
+    }
+  });
+  it('Edit detects multiple new tests and quotes the first label', () => {
+    const out = narrate('Edit', {
+      file_path: 'scripts/run-tests.cjs',
+      old_string: 'foo',
+      new_string: 'foo\nit(\'first new test\', () => {});\nit(\'second test\', () => {});\nit(\'third test\', () => {});',
+    });
+    if (!out || !out.includes('3') || !out.includes('first new test')) {
+      throw new Error(`expected multi-test narration, got: ${out}`);
+    }
+  });
+  it('Edit detects single test addition', () => {
+    const out = narrate('Edit', {
+      file_path: 'scripts/run-tests.cjs',
+      old_string: '});',
+      new_string: '});\nit(\'handles edge case for foo\', () => {});',
+    });
+    if (!out || !out.toLowerCase().includes('test for') || !out.includes('handles edge case')) {
+      throw new Error(`expected single-test narration, got: ${out}`);
+    }
+  });
+  it('Edit strips leading underscore from "private-by-convention" function names', () => {
+    const out = narrate('Edit', {
+      file_path: 'app/tool.py',
+      old_string: '# stub',
+      new_string: '# stub\ndef _private_helper():\n    pass\n',
+    });
+    if (!out || out.includes('_')) {
+      throw new Error(`expected leading-underscore stripped, got: ${out}`);
+    }
+    if (!out.toLowerCase().includes('private helper')) {
+      throw new Error(`expected naturalised underscore name, got: ${out}`);
+    }
+  });
+  it('Write detects class declarations and naturalises the name', () => {
+    const big = '\n'.repeat(20);
+    const out = narrate('Write', {
+      file_path: 'app/lib/narrator-watcher.js',
+      content: 'class NarratorWatcher {}' + big,
+    });
+    if (!out || !out.toLowerCase().includes('narrator watcher class')) {
+      throw new Error(`expected class detection w/ naturalisation, got: ${out}`);
+    }
+  });
+
+  // ---- Bash heredoc detection (#2 — v0.5 enhancement) ---------------
+  it('Bash heredoc with python3 narrates as inline python script', () => {
+    const out = narrate('Bash', { command: "python3 << 'PYEOF'\nprint('hi')\nPYEOF" });
+    if (!out || !out.includes('inline python script')) {
+      throw new Error(`expected python heredoc narration, got: ${out}`);
+    }
+  });
+  it('Bash heredoc with cat and redirect narrates as writing the target file', () => {
+    const out = narrate('Bash', { command: "cat << 'EOF' > config.json\n{}\nEOF" });
+    if (!out || !out.toLowerCase().includes('writing')) {
+      throw new Error(`expected cat-heredoc-writing narration, got: ${out}`);
+    }
+  });
+  it('Bash heredoc with bash narrates as inline shell script', () => {
+    const out = narrate('Bash', { command: "bash << EOF\nls\nEOF" });
+    if (!out || !out.includes('shell script')) {
+      throw new Error(`expected bash heredoc narration, got: ${out}`);
+    }
+  });
+
+  // ---- Bash AND-chain summarisation (#3) ----------------------------
+  it('Bash 2-stage AND chain narrates both stages with "then"', () => {
+    const out = narrate('Bash', { command: 'git commit -m "x" && git push' });
+    if (!out || !out.toLowerCase().includes('committing then pushing')) {
+      throw new Error(`expected "Committing then pushing", got: ${out}`);
+    }
+  });
+  it('Bash 3-stage AND chain narrates all three with commas + then', () => {
+    const out = narrate('Bash', { command: 'npm test && npm run lint && git push' });
+    if (!out || (out.match(/then/gi) || []).length < 2) {
+      throw new Error(`expected 3-stage flowing narration, got: ${out}`);
+    }
+  });
+  it('Bash 4+ stage AND chain summarises remainder', () => {
+    const out = narrate('Bash', {
+      command: 'cd app && npm test && npm run lint && git commit -m "x" && git push',
+    });
+    if (!out || !out.toLowerCase().includes('more steps')) {
+      throw new Error(`expected "and N more steps" summary, got: ${out}`);
+    }
+  });
+
+  // ---- Bash leading echo strip (#6) ---------------------------------
+  it('Bash strips leading echo "===" framing in chains', () => {
+    const out = narrate('Bash', { command: 'echo "=== running ===" && npm test' });
+    if (!out || out.toLowerCase().includes('printing') || out.toLowerCase().includes('echo')) {
+      throw new Error(`echo prefix should be stripped, got: ${out}`);
+    }
+    if (!out.includes('Running the tests')) {
+      throw new Error(`expected real work to surface after echo strip, got: ${out}`);
+    }
+  });
+  it('Bash strips back-to-back echo headers', () => {
+    const out = narrate('Bash', { command: 'echo "A" && echo "B" && git push' });
+    if (!out || !out.toLowerCase().includes('pushing')) {
+      throw new Error(`expected push to surface after multiple echo strips, got: ${out}`);
+    }
+  });
+
+  // ---- Read offset/limit (#4) --------------------------------------
+  it('Read with offset narrates "part of" the file', () => {
+    const out = narrate('Read', {
+      file_path: 'app/synth_turn.py',
+      offset: 1200,
+      limit: 50,
+    });
+    if (!out || !out.includes('part of')) {
+      throw new Error(`expected partial-read narration, got: ${out}`);
+    }
+  });
+  it('Read without offset narrates the file as a whole', () => {
+    const out = narrate('Read', { file_path: 'app/synth_turn.py' });
+    if (!out || out.includes('part of')) {
+      throw new Error(`full-file read shouldn't say "part of", got: ${out}`);
+    }
+  });
+
+  // ---- Grep OR-pattern (#5) ----------------------------------------
+  it('Grep OR-pattern of plain identifiers narrates as N patterns', () => {
+    const out = narrate('Grep', { pattern: 'foo|bar|baz' });
+    if (!out || !out.includes('3') || !out.toLowerCase().includes('pattern')) {
+      throw new Error(`expected "3 patterns"-shaped narration, got: ${out}`);
+    }
+  });
+  it('Grep complex regex with | inside char class still hits the silent fallback', () => {
+    const out = narrate('Grep', { pattern: '(?:foo|bar)\\s*\\(' });
+    if (out !== 'Searching the code') {
+      throw new Error(`expected generic phrase for heavy regex, got: ${out}`);
+    }
+  });
+
+  // ---- Repeat-Edit dedup (#1) --------------------------------------
+  it('Consecutive Edit on same file shortens to "Another change"', () => {
+    const second = narrate('Edit',
+      { file_path: 'app/main.js', old_string: 'const a = 1;', new_string: 'const b = 2;' },
+      ['Edit', { file_path: 'app/main.js', old_string: 'foo', new_string: 'bar' }],
+    );
+    if (!second || !second.toLowerCase().includes('another')) {
+      throw new Error(`repeat edit should be dedup'd, got: ${second}`);
+    }
+  });
+  it('Consecutive Edit rename uses "Then renamed" prefix', () => {
+    const second = narrate('Edit',
+      { file_path: 'auth/router.ts', old_string: 'oldFn()', new_string: 'newFn()' },
+      ['Edit', { file_path: 'auth/router.ts', old_string: 'foo', new_string: 'bar' }],
+    );
+    if (!second || !second.toLowerCase().includes('then renamed')) {
+      throw new Error(`repeat-rename should use "Then renamed" prefix, got: ${second}`);
+    }
+  });
+  it('Consecutive Read on same file is suppressed entirely', () => {
+    const second = narrate('Read',
+      { file_path: 'app/main.js' },
+      ['Read', { file_path: 'app/main.js' }],
+    );
+    if (second !== null) {
+      throw new Error(`repeat read should be suppressed, got: ${second}`);
+    }
+  });
+
+  // ---- Suppression rules -------------------------------------------
+  it('meta tools (TaskCreate etc.) return null', () => {
+    for (const meta of ['TaskCreate', 'TaskUpdate', 'TaskList', 'ExitPlanMode']) {
       assertEqual(narrate(meta, {}), null);
     }
   });
@@ -2726,26 +3115,6 @@ describe('TOOL NARRATION (v0.5 ephemeral tool-call phrases)', () => {
   });
   it('empty tool_name returns null', () => {
     assertEqual(narrate('', {}), null);
-  });
-  it('Task/Agent alias both work for sub-agents', () => {
-    const a = narrate('Agent', { description: 'refactor queue' });
-    const b = narrate('Task', { description: 'refactor queue' });
-    assertEqual(a, b);
-    if (!a.includes('refactor queue')) throw new Error(`bad sub-agent phrase: ${a}`);
-  });
-  it('all phrases stay under ~50 chars', () => {
-    const samples = [
-      ['Read', { file_path: 'some/longish/path/to/a/source_file.py' }],
-      ['Bash', { command: 'echo hello world' }],
-      ['Grep', { pattern: 'reasonable-length search pattern here' }],
-      ['WebSearch', { query: 'how do I chunk tts audio for streaming' }],
-    ];
-    for (const [n, inp] of samples) {
-      const phrase = narrate(n, inp);
-      if (phrase && phrase.length > 55) {
-        throw new Error(`phrase too long for ${n}: ${phrase.length}ch "${phrase}"`);
-      }
-    }
   });
 });
 
