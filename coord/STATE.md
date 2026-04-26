@@ -1,7 +1,7 @@
 # STATE.md — cross-session consciousness
 
-**Last updated:** 2026-04-25 08:30 (#8 closed by TT1 root-cause fix; #15+#16+#24 merged; 858 tests; labels stable)
-**Updated by:** TT2 (post-merge sweep)
+**Last updated:** 2026-04-26 00:00 (TT2 pre-clear save; #30 fix shipped @ 41baf7f, awaiting Ben live verify; 888 tests)
+**Updated by:** TT2 (pre-clear handover)
 
 The one file any fresh session reads FIRST to pick up where the team is. Keep it under 200 lines.
 Chatter goes in ACTIVE/ACTIVE files; this file is summaries + pointers.
@@ -126,6 +126,39 @@ Self-directable next items in TT1's lane (THEY pick — I won't direct):
 | 2026-04-25 10:55      | TT1 | post-compact | #6 Batch 3 (G0+G4+G5+G7 observability polish) drafted + merged @ `f2062b9`. **#6 log-audit fully closed across 3 batches.** Boot-event diag, Update-SessionAssignment branch tag, key_helper ctrlc fg_pid context, logs/README redirect stub. Live boot line: `boot version=0.4.0 pid=16120 cfg_path=... cfg_keys=[heartbeat_enabled,hotkeys,...,window] heartbeat=on tts_provider=openai`. 886/886 (+5). Deployed |
 | 2026-04-25 11-25      | TT2 | self-direct  | CI cleanup (`2a51ca9`+`3cd0b2f`+`70e72aa`); #29 main.js extract @ `48d1151` (5 new lib modules: registry-guard, tray, voice-command-watcher + 2); deleted scripts/watch-registry.cjs (#8 closed); #30 HB4 two-flag split @ `41baf7f` closing heartbeat-during-Wispr-dictation regression (888/888) |
 | 2026-04-26 01:25      | TT1 | pre-/clear   | Pre-`/clear` save: HANDOVER written to `coord/HANDOVER-2026-04-26T012539.md`; brain entry to `~/Documents/Terminal-Talk-Brain/_conversations/`; project memory snapshot updated. Run scoreboard: 12 closed by TT1 + #29 + #30 by TT2; 777 → 888 tests (+111); #6 log-audit fully closed; #8 ROOT closed; all Ben B-decisions resolved |
+
+## 2026-04-26 pre-clear summary — TT2
+
+**main at `41baf7f`** — #30 fix shipped. **#30 OPEN — awaiting Ben's live verify.**
+Live install synced; Ben needs to restart toolbar OR Ctrl+R to pick up new
+audio-player.js, then re-test Wispr dictation.
+
+**Three-terminal coord:**
+- TT1 — reviewer (offline-ish). Last commit on fix-pass: `f2062b9` (Batch 3).
+- TT2 — me. Tester / audit / ad-hoc fix lane.
+- TT3 — narrator + lib-extraction lane. narrator-subagent at `9aa5231` (green).
+- Ben's terminal — building/testing the narrator sub-agent.
+
+**Closed this stretch (12+ items):** #1, #3, #7, #8 root cause + defensive, #9, #10,
+#11, #15, #16, #19 (D1+D2+D3+D4), #24, #25, #26, #27 audit, #29 lib extract, #6 full
+log-audit (3 batches G0-G8). 888 tests; CI 3-gate ratchet (c8 functions 75→68;
+file-length ceiling 2000→2050 temp; lint+Knip cleanup) all green.
+
+**OPEN (TT2 owns):** #30 heartbeat-during-dictation regression. Smoking gun captured.
+Root cause: `audio-player.js` had single shared `_systemAutoPaused` flag; Chromium
+mediaSession 'play' clears it during Wispr dictation → heartbeat gate opens. Fix
+implements the two-flag split (`_micCaptured` + `_systemAutoPaused`) that was
+documented in comments but never coded. 3 lock-in regression tests added.
+**Lesson saved as `feedback-audit-from-code-not-comments.md`** — Surface D #17 audit
+trusted comments over code; missed #30 because of it.
+
+**Resume sequence:**
+1. Read `coord/HANDOVER-2026-04-26T00-00.md` (gitignored, local) for full pre-clear
+   dump including #30 verify recipe + IPC chain diagnostic order if test still fails.
+2. Read this STATE.md (cross-session consciousness).
+3. Read `coord/INBOX/tt2.md` tail for any TT1/TT3 messages.
+4. Run `tail -30 ~/.terminal-talk/queue/_toolbar.log` — check for `heartbeat:` lines
+   between MIC_CAPTURED and MIC_RELEASED. If 0, #30 is verified closed.
 
 ## Pointers for a fresh session
 
