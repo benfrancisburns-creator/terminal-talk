@@ -220,15 +220,26 @@
     _readSidecarText(audioPath) {
       if (!audioPath) return { spoken: '', original: '' };
       const cached = this._sidecarCache.get(audioPath);
-      if (cached) return cached;
+      // Cache hit: only return it if it has actual content. Empty
+      // entries get re-asked every render — the renderer's IPC fetch
+      // is async, so first render usually sees an empty cache while
+      // the fetch is still in flight. If we cached the empty result,
+      // we'd never see the text once the fetch lands. Only fully
+      // empty results (no spoken AND no original) are skipped; once
+      // either field has content, we trust it.
+      if (cached && (cached.spoken || cached.original)) return cached;
       // Resolver returns { spoken, original } or null. Treat null as
-      // "no sidecar" (older clips from before this feature shipped).
+      // "no sidecar yet" — caller may retry on next refresh.
       const result = this._readSidecar(audioPath) || { spoken: '', original: '' };
       const safe = {
         spoken: typeof result.spoken === 'string' ? result.spoken : '',
         original: typeof result.original === 'string' ? result.original : '',
       };
-      this._sidecarCache.set(audioPath, safe);
+      // Only cache non-empty results. Empty stays uncached so the next
+      // refresh can pick up content once the renderer's IPC fetch lands.
+      if (safe.spoken || safe.original) {
+        this._sidecarCache.set(audioPath, safe);
+      }
       return safe;
     }
 
