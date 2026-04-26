@@ -356,10 +356,18 @@ Write-Host "  Ctrl+Shift+A   show/hide toolbar"
 Write-Host "  Ctrl+Shift+S   read highlighted text aloud"
 Write-Host "  Ctrl+Shift+J   toggle wake-word listening on/off"
 Write-Host ""
-Write-Host "Codex with TT badge:" -ForegroundColor Cyan
-Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
+Write-Host "Claude Code:" -ForegroundColor Cyan
+Write-Host "  Hooks already registered into ~/.claude/settings.json"
+Write-Host "  (Stop, Notification, PreToolUse, UserPromptSubmit). Just"
+Write-Host "  start a Claude Code terminal -- the toolbar narrates"
+Write-Host "  responses + tool calls automatically."
 Write-Host ""
-Write-Host "Say 'hey jarvis' with text highlighted to trigger speech."
+Write-Host "Codex CLI (with TT badge in terminal tab):" -ForegroundColor Cyan
+Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
+Write-Host "  (or just run codex directly -- the watcher tails ~/.codex/sessions/"
+Write-Host "  every 1s and speaks commentary/final messages with no hooks needed)"
+Write-Host ""
+Write-Host "Highlight any text + say 'hey jarvis' (or press Ctrl+Shift+S) to read it aloud."
 Write-Host ""
 $launchResp = Get-Consent "Launch Terminal Talk now? [Y/n]" $false
 if ($launchResp -eq '' -or $launchResp -match '^[Yy]') {

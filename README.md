@@ -27,8 +27,8 @@ Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signu
 
 |  |  |
 |---|---|
-| 🎙️ **"Hey jarvis" → read highlighted text** — works in any app, offline wake-word | 🔊 **Auto-speaks Claude Code responses** — starts within ~2–3 s, not after the turn ends |
-| 🤖 **Codex CLI integration** — tails Codex rollout sessions, same queue + colours, no hooks needed | 📜 **Transcript panel** — recent clips with copy + Spoken / Original toggle, filtered per session |
+| 🟧 **Claude Code integration** — Stop / PreToolUse / UserPromptSubmit hooks + transcript-watcher streams audio mid-turn | 🤖 **Codex CLI integration** — tails Codex rollout sessions, same queue + colours, no hooks needed |
+| 🎙️ **"Hey jarvis" → read highlighted text** — works in any app, offline wake-word | 📜 **Transcript panel** — recent clips with copy + Spoken / Original toggle, filtered per session |
 | 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 🛠️ **Smart tool narration** — _"Edit to render banner in renderer.js — added 12 lines"_ |
 | 🎚️ **Master volume + per-clip mix** — heartbeat stays ambient at any master level | 🔕 **Auto-pauses when you dictate** — Wispr / Voice Access / VoIP never get talked over |
 | 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **End-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
@@ -62,8 +62,8 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 ## What it does
 
-- **Auto-speak Claude Code responses.** Starts speaking as Claude generates, not after it finishes — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice).
-- **Also speaks Codex CLI replies.** No Claude-style hook registration needed — Terminal Talk tails Codex's persisted session JSONL and narrates assistant commentary / final messages through the same toolbar queue. Codex sessions appear in the Settings panel with their own colour entry; per-session voice / mute / speech-includes overrides apply identically. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
+- **Claude Code integration.** First-class support via three hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) registered into `~/.claude/settings.json` at install time, plus a transcript-watcher that streams synth as Claude generates — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice). Per-session muting / focus / voice / speech-includes overrides all wired through.
+- **Codex CLI integration.** First-class support via a 1-second poll on `~/.codex/sessions/` — no hook registration needed. Terminal Talk tails Codex's persisted rollout JSONL and narrates assistant `commentary` + `final` messages through the same toolbar queue. Codex sessions appear in the Settings panel with their own colour entry; per-session voice / mute / speech-includes overrides apply identically. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
 - **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
 - **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
 - **Smart tool-call narration.** When Claude reads a file, the toolbar says "Looking at the renderer file" — not just "Reading renderer.js". Edits surface as "Edit to render continuation banner — added 12 lines" with enclosing-function detection. Glob / Grep narrations include result counts. Bash commands peel echo headers and capture file paths instead of flag values.
