@@ -2670,9 +2670,10 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
   const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from tool_narration import narrate_tool_use; `;
 
-  function narrate(name, inp, prev = null) {
+  function narrate(name, inp, prev = null, toolResult = null) {
     const prevArg = prev === null ? 'None' : `(${JSON.stringify(prev[0])}, ${JSON.stringify(prev[1])})`;
-    const code = `${pyPrelude}import json; r = narrate_tool_use(${JSON.stringify(name)}, ${JSON.stringify(inp)}, prev_call=${prevArg}); print(json.dumps(r))`;
+    const resultArg = toolResult === null ? 'None' : JSON.stringify(toolResult);
+    const code = `${pyPrelude}import json; r = narrate_tool_use(${JSON.stringify(name)}, ${JSON.stringify(inp)}, prev_call=${prevArg}, tool_result=${resultArg}); print(json.dumps(r))`;
     const r = runPythonInline(code);
     if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
     return JSON.parse(r.stdout.trim());
@@ -2833,6 +2834,71 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   });
   it('Glob maps *.md to markdown', () => {
     assertEqual(narrate('Glob', { pattern: '*.md' }), 'Looking for markdown files');
+  });
+
+  // ---- Result-aware narration (Phase 1: Grep + Glob counts) --------
+  // Pulled from the toolUseResult side of the JSONL — narrate_tool_use
+  // accepts a `tool_result` kwarg; Glob + Grep narrators surface match
+  // counts. None / missing field falls back to the input-only phrase.
+  it('Glob appends file count from result when present', () => {
+    assertEqual(
+      narrate('Glob', { pattern: '**/*.ts' }, null, { numFiles: 26 }),
+      'Looking for typescript files — found 26 files'
+    );
+  });
+  it('Glob singularises "file" for single-result count', () => {
+    assertEqual(
+      narrate('Glob', { pattern: '**/*.ts' }, null, { numFiles: 1 }),
+      'Looking for typescript files — found 1 file'
+    );
+  });
+  it('Glob says "none found" on zero-result count', () => {
+    assertEqual(
+      narrate('Glob', { pattern: '**/*.ts' }, null, { numFiles: 0 }),
+      'Looking for typescript files — none found'
+    );
+  });
+  it('Glob with no result falls through to input-only phrase', () => {
+    assertEqual(
+      narrate('Glob', { pattern: '**/*.ts' }, null, null),
+      'Looking for typescript files'
+    );
+  });
+  it('Glob ignores non-int numFiles defensively', () => {
+    assertEqual(
+      narrate('Glob', { pattern: '**/*.ts' }, null, { numFiles: 'twelve' }),
+      'Looking for typescript files'
+    );
+  });
+  it('Grep appends file count from result for plain identifier', () => {
+    assertEqual(
+      narrate('Grep', { pattern: 'narrator' }, null, { numFiles: 4 }),
+      'Searching for narrator — found 4 files'
+    );
+  });
+  it('Grep falls back to numLines when numFiles absent', () => {
+    assertEqual(
+      narrate('Grep', { pattern: 'narrator' }, null, { numLines: 12 }),
+      'Searching for narrator — found 12 matches'
+    );
+  });
+  it('Grep prefers numFiles over numLines when both present', () => {
+    assertEqual(
+      narrate('Grep', { pattern: 'narrator' }, null, { numFiles: 4, numLines: 12 }),
+      'Searching for narrator — found 4 files'
+    );
+  });
+  it('Grep says "none found" on zero matches', () => {
+    assertEqual(
+      narrate('Grep', { pattern: 'narrator' }, null, { numFiles: 0 }),
+      'Searching for narrator — none found'
+    );
+  });
+  it('Grep heavy-regex fallback still appends count', () => {
+    assertEqual(
+      narrate('Grep', { pattern: '(?:foo|bar)\\s*\\([^\\)]*\\)' }, null, { numFiles: 3 }),
+      'Searching the code — found 3 files'
+    );
   });
 
   // ---- Web tools ---------------------------------------------------
@@ -3115,6 +3181,100 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   });
   it('empty tool_name returns null', () => {
     assertEqual(narrate('', {}), null);
+  });
+});
+
+describe('TOOL_USE_ENTRIES_AFTER (tool_use ↔ tool_result pairing)', () => {
+  // tool_use_entries_after walks the transcript JSONL forward from a
+  // start index and returns one tuple per assistant tool_use block.
+  // Phase 1 of result-aware narration extended the tuple shape to
+  // (line_idx, tool_name, tool_input, tool_result) — pairing each
+  // tool_use with its matching user-side toolUseResult by tool_use_id.
+  // These tests exercise the pairing logic against a synthetic
+  // transcript so a regression in the pairing wouldn't silently strip
+  // the result back out (the narrator would then fall through to its
+  // input-only phrase with no test failure).
+  const appDirRepo = path.join(__dirname, '..', 'app');
+  const pyPrelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); from synth_turn import tool_use_entries_after; `;
+
+  function pair(entries, startIdx = -1) {
+    const code = `${pyPrelude}import json; print(json.dumps(tool_use_entries_after(${JSON.stringify(entries)}, ${startIdx})))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return JSON.parse(r.stdout.trim());
+  }
+
+  function assistantToolUse(id, name, input) {
+    return { type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } };
+  }
+  function userToolResult(id, toolUseResult) {
+    return {
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+      toolUseResult,
+    };
+  }
+
+  it('pairs each tool_use with its matching tool_result by id', () => {
+    const entries = [
+      assistantToolUse('toolu_a', 'Glob', { pattern: '**/*.ts' }),
+      userToolResult('toolu_a', { numFiles: 26, filenames: [] }),
+      assistantToolUse('toolu_b', 'Grep', { pattern: 'narrator' }),
+      userToolResult('toolu_b', { numFiles: 4, numLines: 12 }),
+    ];
+    const out = pair(entries);
+    assertEqual(out.length, 2);
+    // tuple shape: [line_idx, name, input, result]
+    assertEqual(out[0][1], 'Glob');
+    assertEqual(out[0][3].numFiles, 26);
+    assertEqual(out[1][1], 'Grep');
+    assertEqual(out[1][3].numFiles, 4);
+    assertEqual(out[1][3].numLines, 12);
+  });
+
+  it('result is null when the matching tool_result has not landed yet', () => {
+    // On-tool fire: tool_use already in transcript, result hasn't
+    // arrived. tool_use_entries_after must NOT block — narrator falls
+    // through to input-only phrase, result-aware enrichment skipped.
+    const entries = [
+      assistantToolUse('toolu_x', 'Glob', { pattern: '**/*.py' }),
+      // no matching user entry yet
+    ];
+    const out = pair(entries);
+    assertEqual(out.length, 1);
+    assertEqual(out[0][3], null);
+  });
+
+  it('multiple parallel tool_uses in one assistant entry each get paired', () => {
+    const entries = [
+      {
+        type: 'assistant',
+        message: { content: [
+          { type: 'tool_use', id: 'toolu_p1', name: 'Read', input: { file_path: 'a.py' } },
+          { type: 'tool_use', id: 'toolu_p2', name: 'Read', input: { file_path: 'b.py' } },
+        ]},
+      },
+      userToolResult('toolu_p1', { numLines: 50 }),
+      userToolResult('toolu_p2', { numLines: 80 }),
+    ];
+    const out = pair(entries);
+    assertEqual(out.length, 2);
+    assertEqual(out[0][3].numLines, 50);
+    assertEqual(out[1][3].numLines, 80);
+  });
+
+  it('only entries strictly after start_idx are emitted', () => {
+    const entries = [
+      assistantToolUse('toolu_old', 'Read', { file_path: 'old.py' }),
+      userToolResult('toolu_old', { numLines: 10 }),
+      assistantToolUse('toolu_new', 'Read', { file_path: 'new.py' }),
+      userToolResult('toolu_new', { numLines: 20 }),
+    ];
+    // start at index 1 — only the second tool_use should come back
+    const out = pair(entries, 1);
+    assertEqual(out.length, 1);
+    assertEqual(out[0][2].file_path, 'new.py');
+    assertEqual(out[0][3].numLines, 20);
   });
 });
 

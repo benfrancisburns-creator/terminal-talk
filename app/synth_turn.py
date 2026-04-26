@@ -408,9 +408,42 @@ def _safe_stream_slice(content: str, start: int) -> tuple[str, int]:
 
 
 def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
-    """Return list of (line_idx, tool_name, tool_input) for assistant tool_use
-    content after start_idx. One tuple per tool_use block; a single assistant
-    entry can contain multiple parallel tool calls, each emitted separately."""
+    """Return list of (line_idx, tool_name, tool_input, tool_result) for
+    assistant tool_use content after start_idx. One tuple per tool_use
+    block; a single assistant entry can contain multiple parallel tool
+    calls, each emitted separately.
+
+    `tool_result` is the structured `toolUseResult` dict from the matching
+    user-side tool_result entry — paired by `tool_use_id` — or None when
+    the result hasn't landed yet (in-flight on-tool fire) or the entry
+    didn't include the structured field. Lets narrate_tool_use surface
+    counts ("found 26 files") and stdout heads ("755 passed") that live
+    only on the result side, never on the input."""
+    # Pre-index toolUseResult dicts by tool_use_id so we don't quadratic-
+    # scan for every emitted tool_use. Cheap walk through the same slice.
+    results_by_id: dict[str, dict] = {}
+    for j in range(start_idx + 1, len(entries)):
+        ej = entries[j]
+        if ej.get('type') != 'user':
+            continue
+        msg_content = ej.get('message', {}).get('content', [])
+        if not isinstance(msg_content, list):
+            continue
+        # Pair via the tool_use_id field on the inner tool_result block.
+        # The structured payload sits at the entry's top level under
+        # `toolUseResult`; the inner content[].content is just the
+        # truncated text Claude sees.
+        tool_use_id = None
+        for c in msg_content:
+            if isinstance(c, dict) and c.get('type') == 'tool_result':
+                tool_use_id = c.get('tool_use_id')
+                break
+        if not tool_use_id:
+            continue
+        result = ej.get('toolUseResult')
+        if isinstance(result, dict):
+            results_by_id[tool_use_id] = result
+
     out: list[tuple] = []
     for i in range(start_idx + 1, len(entries)):
         e = entries[i]
@@ -424,8 +457,10 @@ def tool_use_entries_after(entries: list[dict], start_idx: int) -> list[tuple]:
                 continue
             tool_name = str(c.get('name', '')).strip()
             tool_input = c.get('input') if isinstance(c.get('input'), dict) else {}
+            tool_use_id = c.get('id')
+            tool_result = results_by_id.get(tool_use_id) if tool_use_id else None
             if tool_name:
-                out.append((i, tool_name, tool_input))
+                out.append((i, tool_name, tool_input, tool_result))
     return out
 
 
@@ -1329,9 +1364,9 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         announced_set = set(state.get('announced_tool_line_indices', []))
         new_tool_entries: list[tuple] = []
         if mode == 'on-tool':
-            for tool_idx, tname, tinput in tool_use_entries_after(entries, user_idx):
+            for tool_idx, tname, tinput, tresult in tool_use_entries_after(entries, user_idx):
                 if tool_idx not in announced_set:
-                    new_tool_entries.append((tool_idx, tname, tinput))
+                    new_tool_entries.append((tool_idx, tname, tinput, tresult))
 
         # On-stop ALWAYS owes the user a footer clip ("Cooked for 49s"
         # etc.) when elapsed_sec is known. Without this carve-out the
@@ -1361,7 +1396,7 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             state['synthesized_line_indices'].extend(i for i, _ in pending)
             if new_tool_entries:
                 state['announced_tool_line_indices'] = list(
-                    announced_set.union(i for i, _, _ in new_tool_entries)
+                    announced_set.union(i for i, _, _, _ in new_tool_entries)
                 )
             save_sync_state(session_id, state)
             return 0
@@ -1390,8 +1425,10 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             # repetition (e.g. consecutive Edit + Read on the same file
             # drop the "in <file>" suffix on the second call).
             prev_call: tuple[str, dict] | None = None
-            for tool_idx, tname, tinput in new_tool_entries:
-                phrase = narrate_tool_use(tname, tinput, prev_call=prev_call)
+            for tool_idx, tname, tinput, tresult in new_tool_entries:
+                phrase = narrate_tool_use(tname, tinput,
+                                          prev_call=prev_call,
+                                          tool_result=tresult)
                 if phrase:
                     tool_narrations.append(phrase)
                     # Only update prev_call when narration was emitted.
@@ -1403,7 +1440,7 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                 tool_indices_done.append(tool_idx)
         elif new_tool_entries:
             # tool_calls disabled: still mark as handled.
-            tool_indices_done.extend(i for i, _, _ in new_tool_entries)
+            tool_indices_done.extend(i for i, _, _, _ in new_tool_entries)
 
         # Body: only runs when we have new prose to synth. When pending
         # is empty (pure tool chain), we skip straight to the narration

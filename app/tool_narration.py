@@ -834,10 +834,36 @@ def _narrate_write(inp: dict, prev_file: str | None) -> str | None:
     return f'Wrote a new module: {natural}{primary_defined}{size_suffix}'
 
 
-def _narrate_glob(inp: dict, prev_file: str | None) -> str | None:
+def _result_count_suffix(tool_result: dict | None,
+                         field: str = 'numFiles',
+                         singular: str = 'match',
+                         plural: str = 'matches') -> str:
+    """Format a result-count tail like ' — found 26 files' / ' — none found'.
+    Returns '' if tool_result is missing or doesn't carry an int field.
+
+    Glob/Grep tool_result entries from Claude Code carry `numFiles` (and
+    Grep additionally carries `numLines`). Pulling the count out lets
+    narration say "found 26 files" instead of just "Searching for X" —
+    the listener gets to know the search succeeded or returned empty
+    without having to wait for Claude's follow-up text."""
+    if not isinstance(tool_result, dict):
+        return ''
+    n = tool_result.get(field)
+    if not isinstance(n, int):
+        return ''
+    if n == 0:
+        return ' — none found'
+    if n == 1:
+        return f' — found 1 {singular}'
+    return f' — found {n} {plural}'
+
+
+def _narrate_glob(inp: dict, prev_file: str | None,
+                  tool_result: dict | None = None) -> str | None:
     pattern = str(inp.get('pattern', '')).strip()
+    suffix = _result_count_suffix(tool_result, 'numFiles', 'file', 'files')
     if not pattern:
-        return 'Searching for files'
+        return f'Searching for files{suffix}'
     # Common shapes: **/*.ext, *.ext, dir/**/*.ext, specific filename.
     # Map extensions to language names for natural speech.
     ext_lang = {
@@ -852,35 +878,46 @@ def _narrate_glob(inp: dict, prev_file: str | None) -> str | None:
     m = re.match(r'^(?:\*\*?/)?\*\.(\w+)$', pattern)
     if m:
         lang = ext_lang.get(m.group(1).lower(), m.group(1))
-        return f'Looking for {lang} files'
+        return f'Looking for {lang} files{suffix}'
     # `dir/**/*.ext` — speak about the dir.
     m = re.match(r'^([\w\-/]+)/\*\*?/\*\.(\w+)$', pattern)
     if m:
         lang = ext_lang.get(m.group(2).lower(), m.group(2))
         dir_words = _to_words(os.path.basename(m.group(1).rstrip('/')))
-        return f'Looking for {lang} files in the {dir_words} folder'
+        return f'Looking for {lang} files in the {dir_words} folder{suffix}'
     # Plain literal path / specific file.
     if '*' not in pattern:
-        return f'Looking for {naturalise_path(pattern)}'
-    return f'Searching with pattern {pattern}'
+        return f'Looking for {naturalise_path(pattern)}{suffix}'
+    return f'Searching with pattern {pattern}{suffix}'
 
 
 def _narrate_grep(inp: dict, prev_file: str | None,
-                  prev_tool: str | None = None) -> str | None:
+                  prev_tool: str | None = None,
+                  tool_result: dict | None = None) -> str | None:
     pattern = str(inp.get('pattern', '')).strip()
     type_ = str(inp.get('type', '')).strip().lower()
+    # Grep results carry both numFiles (file_with_matches mode) and
+    # numLines (content mode). Prefer numFiles when both present —
+    # "found 26 files" reads more naturally than "found 412 lines".
+    # Fall back to numLines when files isn't returned (content-only mode
+    # without grouping).
+    if isinstance(tool_result, dict) and 'numFiles' in tool_result:
+        suffix = _result_count_suffix(tool_result, 'numFiles', 'file', 'files')
+    else:
+        suffix = _result_count_suffix(tool_result, 'numLines', 'match', 'matches')
+
     if not pattern:
-        return 'Searching the code'
+        return f'Searching the code{suffix}'
 
     # Plain identifier (no regex specials beyond \w) -> speak it.
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_\-]{0,40}', pattern):
         if type_:
-            return f'Searching {type_} files for {pattern}'
-        return f'Searching for {pattern}'
+            return f'Searching {type_} files for {pattern}{suffix}'
+        return f'Searching for {pattern}{suffix}'
 
     # TODO/FIXME pattern is a special-case classic.
     if pattern in ('TODO', 'FIXME', 'TODO|FIXME', 'TODO\\|FIXME'):
-        return 'Searching for to-do markers'
+        return f'Searching for to-do markers{suffix}'
 
     # OR-pattern detection: `foo|bar|baz` outside a character class.
     # Common shape when Claude is finding any of N test names / function
@@ -897,18 +934,18 @@ def _narrate_grep(inp: dict, prev_file: str | None,
         if is_simple and len(alts) >= 2:
             n = len(alts)
             if type_:
-                return f'Searching {type_} files for {n} patterns'
-            return f'Searching for {n} different patterns'
+                return f'Searching {type_} files for {n} patterns{suffix}'
+            return f'Searching for {n} different patterns{suffix}'
 
     if 'function' in pattern.lower() and r'\w' in pattern:
-        return 'Searching for function definitions'
+        return f'Searching for function definitions{suffix}'
     if pattern.startswith(('import', 'require')):
-        return 'Searching for imports'
+        return f'Searching for imports{suffix}'
 
     # Anything more complex — don't speak the regex.
     if type_:
-        return f'Searching {type_} files'
-    return 'Searching the code'
+        return f'Searching {type_} files{suffix}'
+    return f'Searching the code{suffix}'
 
 
 def _narrate_webfetch(inp: dict, prev_file: str | None) -> str | None:
@@ -1031,6 +1068,7 @@ def narrate_tool_use(
     tool_name: str,
     tool_input: dict | None,
     prev_call: tuple[str, dict] | None = None,
+    tool_result: dict | None = None,
 ) -> str | None:
     """Return a short spoken phrase for this tool call, or None to skip.
 
@@ -1039,6 +1077,12 @@ def narrate_tool_use(
     Used to suppress same-file repetition: when this call's file_path
     matches the previous call's, the narrator drops the "in <file>"
     suffix to keep consecutive narrations crisp.
+
+    `tool_result` is the structured `toolUseResult` dict from the matching
+    user-side tool_result entry, or None when the result hasn't landed
+    (in-flight on-tool fire) or didn't include the structured field.
+    Currently consumed by Glob + Grep narrators to surface match counts
+    ("found 26 files" / "none found"); other narrators ignore it for now.
     """
     if not tool_name:
         return None
@@ -1063,9 +1107,9 @@ def narrate_tool_use(
     if name == 'write':
         return _narrate_write(inp, prev_file)
     if name == 'glob':
-        return _narrate_glob(inp, prev_file)
+        return _narrate_glob(inp, prev_file, tool_result)
     if name == 'grep':
-        return _narrate_grep(inp, prev_file, prev_tool)
+        return _narrate_grep(inp, prev_file, prev_tool, tool_result)
     if name in ('bash', 'powershell'):
         return narrate_bash(str(inp.get('command', '')))
     if name == 'webfetch':
