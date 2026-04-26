@@ -439,8 +439,9 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Filesystem navigation
     (re.compile(r'^cd\s+(\S+)'),                      r'Switching to \1'),
     (re.compile(r'^pwd\b'),                           'Checking the current directory'),
-    (re.compile(r'^ls(?:\s+-\w+)?\s*$'),              'Listing files'),
-    (re.compile(r'^ls\s+(\S+)'),                      r'Listing \1'),
+    (re.compile(r'^ls(?:\s+-\w+)*\s*$'),              'Listing files'),
+    # Skip leading flags so `ls -lat /path` captures /path, not -lat.
+    (re.compile(r'^ls(?:\s+-\S+)*\s+(\S+)'),          r'Listing \1'),
     (re.compile(r'^mkdir\s+-p\s+(\S+)'),              r'Creating the \1 folder'),
     (re.compile(r'^mkdir\s+(\S+)'),                   r'Creating the \1 folder'),
     (re.compile(r'^rm\s+-r\w*\s+(\S+)'),              r'Removing \1'),
@@ -449,8 +450,14 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'^mv\s+(\S+)'),                      r'Moving \1'),
     (re.compile(r'^touch\s+(\S+)'),                   r'Creating \1'),
     (re.compile(r'^cat\s+(\S+)'),                     r'Reading \1'),
-    (re.compile(r'^head\s+(?:-\w+\s+)?(\S+)'),        r'Looking at the start of \1'),
-    (re.compile(r'^tail\s+(?:-\w+\s+)?(\S+)'),        r'Looking at the end of \1'),
+    # Skip leading flags (`-c 50000`, `-n 30`, `-c50`, `-q`, `--bytes=N`)
+    # so the captured group is the file path, not the flag's value.
+    # Pattern: `(?:-\S+(?:\s+\d+)?\s+)*` accepts any number of leading
+    # flag tokens, each optionally followed by a numeric value.
+    (re.compile(r'^head\s+(?:-\S+(?:\s+\d+)?\s+)*(\S+)'),
+                                                      r'Looking at the start of \1'),
+    (re.compile(r'^tail\s+(?:-\S+(?:\s+\d+)?\s+)*(\S+)'),
+                                                      r'Looking at the end of \1'),
     (re.compile(r'^which\s+(\S+)'),                   r'Finding \1'),
     (re.compile(r'^echo\b'),                          'Printing a value'),
 

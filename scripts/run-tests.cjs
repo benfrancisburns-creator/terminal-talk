@@ -2873,6 +2873,47 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     }
   });
 
+  // ---- Flag-aware path capture (2026-04-26 wrong-token fix) ---------
+  // Before: `ls -lat /path` narrated as "Listing -lat" because the
+  // regex captured the first whitespace-separated token after `ls`,
+  // which is the flag, not the path. Same bug on tail/head with
+  // value-flags like `-c 50000`. Ben heard "Listing dash-l-a-t in a
+  // pipeline" and "Looking at the end of 50000 in a pipeline" —
+  // narration matched the call but with the wrong subject.
+  it('Bash ls captures the path, not the flag', () => {
+    assertEqual(
+      narrate('Bash', { command: 'ls -lat ~/.terminal-talk/queue/ | head -20' }),
+      'Listing ~/.terminal-talk/queue/ (in a pipeline)'
+    );
+  });
+  it('Bash tail with -c value captures the file, not the byte count', () => {
+    const out = narrate('Bash', { command: 'tail -c 50000 ~/.terminal-talk/queue/_hook.log' });
+    if (out.includes('50000')) {
+      throw new Error(`tail narration must not contain the byte count, got: ${out}`);
+    }
+    if (!out.includes('hook.log')) {
+      throw new Error(`tail narration must contain the file name, got: ${out}`);
+    }
+  });
+  it('Bash head with -n value captures the file, not the line count', () => {
+    const out = narrate('Bash', { command: 'head -n 30 README.md' });
+    if (out.includes(' 30')) {
+      throw new Error(`head narration must not contain the line count, got: ${out}`);
+    }
+    if (!out.includes('README')) {
+      throw new Error(`head narration must contain the file name, got: ${out}`);
+    }
+  });
+  it('Bash tail with single-arg flag (`-10`) still captures the file', () => {
+    const out = narrate('Bash', { command: 'tail -10 /var/log/syslog' });
+    if (out.includes('-10')) {
+      throw new Error(`tail narration must not contain the flag, got: ${out}`);
+    }
+    if (!out.includes('syslog')) {
+      throw new Error(`tail narration must contain the file name, got: ${out}`);
+    }
+  });
+
   it('Bash peels leading echo with full diagnostic pipeline shape', () => {
     // The exact shape Ben heard "Printing a value (in a pipeline)" 4×.
     const out = narrate('Bash', {
