@@ -664,6 +664,11 @@ if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
     getQueue: () => queue,
     getCurrentPath: () => audioPlayer.getCurrentPath(),
     getHeardPaths: () => heardPaths,
+    // Session-tab filter — re-uses the same selectedTab the dot strip
+    // and tabs row gate on, so the panel always agrees with whichever
+    // session view the user is currently on.
+    getSelectedTab: () => selectedTab,
+    clipPaths: window.TT_CLIP_PATHS,
     readSidecar: (audioPath) => transcriptSidecarCache.get(audioPath) || null,
     // Initial state from config (panels.transcript_*); persisted via
     // window.api.updateConfig on user toggle so the panel remembers

@@ -58,6 +58,17 @@
         getQueue = () => [],          // [{ path, mtime, ... }] from queueWatcher
         getCurrentPath = () => null,  // path string of clip currently playing
         getHeardPaths = () => new Set(),
+        // Tab filter — when 'all' (default), show clips from every
+        // session. When a session shortId, only that session's clips.
+        // Mirrors the dot strip's per-tab filter so the panel always
+        // agrees with the user's current view.
+        getSelectedTab = () => 'all',
+        // Shared with the dot strip — extractSessionShort(filename)
+        // resolves a clip path's filename to its 8-hex session id, or
+        // null for clips that can't be attributed (J- highlight clips,
+        // neutral / unknown). When null, the per-session filter is
+        // disabled (panel shows everything).
+        clipPaths = null,
 
         // File-system reader (injectable for tests)
         readSidecar = () => null,
@@ -90,6 +101,8 @@
       this._getQueue = getQueue;
       this._getCurrentPath = getCurrentPath;
       this._getHeardPaths = getHeardPaths;
+      this._getSelectedTab = getSelectedTab;
+      this._clipPaths = clipPaths;
       this._readSidecar = readSidecar;
       this._writeClipboard = writeClipboard;
       this._onClickClip = onClickClip;
@@ -184,8 +197,21 @@
 
     _recentClips() {
       const all = this._getQueue() || [];
+      const selectedTab = this._getSelectedTab();
+      const filterSession = (selectedTab && selectedTab !== 'all') ? selectedTab : null;
+      // Per-session filter when a tab is selected. When clipPaths
+      // helper isn't injected (tests / standalone instantiation),
+      // the filter falls back to "show all" rather than throwing.
+      const filtered = filterSession && this._clipPaths && this._clipPaths.extractSessionShort
+        ? all.filter((c) => {
+            if (!c || !c.path) return false;
+            const fname = c.path.split(/[\\/]/).pop();
+            const short = fname ? this._clipPaths.extractSessionShort(fname) : null;
+            return short === filterSession;
+          })
+        : all;
       // newest first by mtime; cap at MAX_CLIPS_SHOWN.
-      return all
+      return filtered
         .slice()
         .sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
         .slice(0, MAX_CLIPS_SHOWN);
