@@ -4,6 +4,10 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.6.0] — 2026-04-26
+
 Major changes since v0.5.0: a **Codex CLI integration** lands alongside
 Claude Code, the **Transcript expandable panel** ships in the toolbar,
 **smart tool narration** gets four iterative phases of richer context,
@@ -13,19 +17,32 @@ symptom-patches. Also: a substantial repo-cleanup pass.
 
 ### Added
 
-- **Codex CLI integration.** `app/lib/codex-session-watcher.js`
-  polls `~/.codex/sessions/` every 1s, reads delta bytes from each
-  rollout `.jsonl`, extracts `event_msg → agent_message` events
-  (phases `commentary` + `final`), and synthesises through the
-  existing edge/OpenAI pipeline. Per-file offset tracking,
-  signature dedup against rewrite-replays, per-session promise
-  tail chain so within-session messages stay ordered while
-  different sessions parallelise. Honours the existing
-  session-registry contract (`loadAssignments()` for per-session
-  voice / muted / speech_includes overrides). Boots up at app
-  ready; tears down on will-quit. Codex sessions show in the
-  Settings panel using the same colour-allocation rules as
-  Claude Code sessions.
+- **Codex CLI integration.** First-class support for OpenAI Codex CLI
+  sessions running alongside Claude Code. Codex sessions appear in
+  the Settings panel, get colour-allocated, are mutable / voiceable /
+  customisable per-session, and have their `agent_message` events
+  synthesised through the existing TTS pipeline.
+  - **Watcher** (`app/lib/codex-session-watcher.js`): polls
+    `~/.codex/sessions/` every 1s, reads delta bytes from each
+    rollout `.jsonl`, extracts `event_msg → agent_message` events
+    (phases `commentary` + `final`). Per-file offset tracking;
+    signature dedup against rewrite-replays; per-session promise
+    tail chain so within-session messages stay ordered while
+    different sessions parallelise. Honours the existing
+    session-registry contract for per-session overrides. Boot-time
+    idempotency: pre-existing files start at `offset = size`.
+  - **Launcher** (`app/codex-launch.ps1`,
+    `app/codex-terminal.psm1`): launches Codex CLI in a new
+    terminal with the TT badge wired so sessions are linked to
+    the toolbar from the moment Codex starts.
+  - **Registry persistence:** watcher touches
+    `session-colours.json` on first sight of a Codex session so
+    the entry stays visible with current `last_seen` and isn't
+    GC'd by the stale-session sweeper.
+  - **Install hint:** post-install banner shows the one-liner to
+    launch Codex with TT badge.
+  - **UI copy update:** empty-session state now reads
+    "assistant / Codex" rather than "Claude" only.
 - **Transcript expandable panel.** New collapsible UI surface in
   the toolbar showing recent clip transcripts with copy buttons
   and a Spoken/Original toggle (the latter reading
@@ -103,6 +120,13 @@ symptom-patches. Also: a substantial repo-cleanup pass.
 - **`.original.txt` sidecar wired through synth call sites** so the
   Transcript panel's "Original" toggle has content to display.
 - **Renderer mic-gate flag arms even during silence.** See above.
+- **Stale `*-working.flag` log spam fixed.** Files are now removed
+  after detection — stops the once-per-second
+  `get-working-sessions: filtered N stale flag(s)` spam that was
+  polluting `_toolbar.log`.
+- **`.tmp_synth/*.partial` cleanup on startup.** `pruneOldFiles()`
+  sweeps these out (>60s old) and rmdirs the empty directory,
+  preventing orphan synth-temp files from accumulating across boots.
 
 ### Internal
 
@@ -118,10 +142,17 @@ symptom-patches. Also: a substantial repo-cleanup pass.
   script tags). File-length baselines ratcheted on `synth_turn.py`,
   `run-tests.cjs`. CI ceiling raised 2050 → 2200 to cover post-merge
   `main.js` size (TEMP — track in next extraction pass).
-- **Test suite grew from ~888 to ~973+ tests.** New coverage
+- **Test suite grew from ~888 to 1003+ tests.** New coverage
   includes echo-peeling, batch-dedup, flag-aware path capture,
   reload-grace IPC suppression, Ctrl+R click-through ordering
-  contract, mic-captured-elsewhere callback ordering contract.
+  contract, mic-captured-elsewhere callback ordering contract,
+  stale-flag cleanup, Codex registry touch, Codex terminal
+  identity helpers, and markdown-table summarisation in both
+  sanitisers.
+- **Inner `app/package.json`** version aligned `0.4.0` → `0.5.0`
+  to match the outer release; outer release now bumped to `0.6.0`.
+- **`/tmp/`** added to `.gitignore` for codex-launch e2e test
+  artefacts.
 - **Memory captured two durable lessons:** runtime-verify UI fixes
   beat source-inspection regex tests; Electron `forward: true` is
   unreliable for cursor-entry events on Windows transparent
