@@ -7749,6 +7749,33 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
   });
 
+  it('renderer.js mic-captured-elsewhere callback MUST NOT early-return before systemAutoPause', () => {
+    // 2026-04-26 regression-class lock: pre-fix, the callback returned
+    // when `!audio.src || audio.ended || audio.paused` BEFORE calling
+    // systemAutoPause. That meant dictating during a silent stretch
+    // never armed `_micCaptured`, so heartbeat fired mid-Wispr-window.
+    // audio-player.js:systemAutoPause sets the flag first, then guards
+    // pause() internally — the renderer must not duplicate that guard.
+    const callbackMatch = rendererSrc.match(
+      /onMicCapturedElsewhere\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)\s*;/
+    );
+    if (!callbackMatch) {
+      throw new Error('mic-captured-elsewhere callback body not found in renderer.js');
+    }
+    const body = callbackMatch[1];
+    const sysPauseIdx = body.indexOf('systemAutoPause');
+    if (sysPauseIdx < 0) {
+      throw new Error('mic-captured-elsewhere callback must call systemAutoPause');
+    }
+    const before = body.slice(0, sysPauseIdx);
+    if (/\breturn\b/.test(before)) {
+      throw new Error(
+        'renderer mic-captured-elsewhere callback must not early-return before '
+        + 'systemAutoPause — that breaks heartbeat suppression during silent dictation'
+      );
+    }
+  });
+
   it('audio-player exposes systemAutoPause + systemAutoResume', () => {
     if (!/systemAutoPause\s*\(\s*\)\s*\{/.test(audioPlayerSrc)) {
       throw new Error('audio-player must export systemAutoPause()');

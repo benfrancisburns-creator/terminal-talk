@@ -1146,8 +1146,12 @@ if (window.api.onPausePlaybackOnly) {
 // gate for auto-resume: a user-initiated pause sets it false, so we
 // don't undo it just because the mic was released.
 if (window.api.onMicCapturedElsewhere) {
+  // Always arm the mic-gate, even when nothing is playing. systemAutoPause
+  // sets `_micCaptured = true` first, then internally guards the
+  // .pause() call — so calling it during silence is safe and necessary:
+  // without the flag arming, heartbeat ticks fire mid-dictation when
+  // there was no in-flight clip to "save" us.
   window.api.onMicCapturedElsewhere(() => {
-    if (!audio.src || audio.ended || audio.paused) return;
     audioPlayer.systemAutoPause();
   });
 }
