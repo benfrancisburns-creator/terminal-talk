@@ -43,6 +43,7 @@ const NEEDS_INSTALL = new Set([
   'PS SESSION-IDENTITY BEHAVIOUR',
   'MARK-WORKING HOOK (UserPromptSubmit)',
   'PS ↔ JS REGISTRY LOCK CROSS-COMPAT',
+  'CODEX TERMINAL IDENTITY',
 ]);
 const INSTALL_DIR = path.join(os.homedir(), '.terminal-talk');
 const APP_DIR = path.join(INSTALL_DIR, 'app');
@@ -142,6 +143,21 @@ function runEdgeTts(voice, text) {
   const size = exists ? fs.statSync(out).size : 0;
   if (exists) try { fs.unlinkSync(out); } catch {}
   return { code: result.status, size, stderr: result.stderr };
+}
+
+function runPowershellBody(scriptBody) {
+  const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const scriptPath = path.join(os.tmpdir(), `tt-pwsh-${nonce}.ps1`);
+  fs.writeFileSync(scriptPath, scriptBody + '\r\n', 'utf8');
+  const result = spawnSync('powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+    { encoding: 'utf8', timeout: 20000 }
+  );
+  try { fs.unlinkSync(scriptPath); } catch {}
+  if (result.status !== 0) {
+    throw new Error(`powershell exit ${result.status}: ${result.stderr || result.stdout}`);
+  }
+  return (result.stdout || '').trim();
 }
 
 // =============================================================================
@@ -6592,7 +6608,7 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
     }
   });
 
-  it('get-working-sessions runtime: drops stale, keeps fresh, logs only when dropped', () => {
+  it('get-working-sessions runtime: drops stale, deletes it, keeps fresh, logs only when dropped', () => {
     // End-to-end. Stub fs + diag via the factory deps. Seed a virtual
     // SESSIONS_DIR with two flag files: one fresh, one stale. Verify
     // return value, captured diag content, and silent-on-empty case.
@@ -6655,8 +6671,10 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
       if (!/bbbb2222\(age=\d+s\)/.test(filterLine)) {
         throw new Error(`diag must include short(age=Ns): got: ${filterLine}`);
       }
-      // Silent-on-empty pass: clear stale flag, re-call, expect no diag.
-      fs.unlinkSync(path.join(tmpDir, 'bbbb2222-working.flag'));
+      if (fs.existsSync(path.join(tmpDir, 'bbbb2222-working.flag'))) {
+        throw new Error('stale working flag should be deleted after filtering');
+      }
+      // Silent-on-empty pass: stale flag was deleted, re-call, expect no diag.
       captured.length = 0;
       handlers['get-working-sessions']({});
       const stillThere = captured.find((l) => l.startsWith('get-working-sessions: filtered'));
@@ -10612,7 +10630,7 @@ describe('EX7d-1 — SessionsTable', () => {
     table.update({ sessionAssignments: {} });
     assertEqual(root._children.length, 1);
     assertEqual(root._children[0].className, 'sessions-empty');
-    assertTruthy(/No active Claude Code sessions/.test(root._children[0].textContent));
+    assertTruthy(/No active assistant sessions/.test(root._children[0].textContent));
     table.unmount();
   });
 
@@ -14227,6 +14245,138 @@ describe('CODEX SESSION WATCHER', () => {
     assertEqual(extractCodexAgentMessageEvent(unsupportedPhase), null);
     assertEqual(extractCodexAgentMessageEvent(blank), null);
     assertEqual(extractCodexAgentMessageEvent('{not json'), null);
+  });
+
+  it('touches the session registry when delivering Codex messages', () => {
+    const watcherSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
+    );
+    if (!/saveAssignments\(assignments,\s*'codex-session-watcher'\)/.test(watcherSrc)) {
+      throw new Error('Codex watcher must persist last_seen via saveAssignments');
+    }
+    if (!/allocatePaletteIndex\(shortId,\s*assignments,\s*24\)/.test(watcherSrc)) {
+      throw new Error('Codex watcher must allocate a registry row for launcher-free sessions');
+    }
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/createCodexSessionWatcher\(\{[\s\S]*?saveAssignments,/.test(mainSrc)) {
+      throw new Error('main.js must inject saveAssignments into createCodexSessionWatcher');
+    }
+  });
+});
+
+describe('CODEX TERMINAL IDENTITY', () => {
+  const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
+  const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
+  const importMod = `Import-Module '${modPath}' -Force -DisableNameChecking`;
+
+  it('Parse-CodexSessionMetaLine extracts session id, short, cwd, and timestamp', () => {
+    const line = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019dcb88-bc99-7082-a04b-a208631d111c',
+        cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+        timestamp: '2026-04-26T20:43:49.294Z',
+      },
+    }).replace(/'/g, "''");
+    const out = runPowershellBody(
+      `${importMod}; $m = Parse-CodexSessionMetaLine -Line '${line}'; $m | ConvertTo-Json -Compress`
+    );
+    const parsed = JSON.parse(out);
+    assertEqual(parsed, {
+      session_id: '019dcb88-bc99-7082-a04b-a208631d111c',
+      short: '019dcb88',
+      cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+      timestamp: '2026-04-26T20:43:49.294Z',
+    });
+  });
+
+  it('Parse-CodexSessionMetaLine rejects malformed or non-session-meta lines', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = Parse-CodexSessionMetaLine -Line '{bad json'; `
+      + `$b = Parse-CodexSessionMetaLine -Line '{"type":"event_msg","payload":{"type":"agent_message"}}'; `
+      + `Write-Output ((@($a, $b) | Where-Object { $_ }).Count)`
+    );
+    assertEqual(out, '0');
+  });
+
+  it('New-ProvisionalCodexShort is stable and emits 8 lowercase hex chars', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = New-ProvisionalCodexShort -CodexPid 1234 -CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -LaunchMs 42; `
+      + `$b = New-ProvisionalCodexShort -CodexPid 1234 -CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -LaunchMs 42; `
+      + `Write-Output "$a|$b"`
+    );
+    const [a, b] = out.split('|');
+    assertEqual(a, b);
+    if (!/^[a-f0-9]{8}$/.test(a)) throw new Error(`expected 8 lowercase hex chars, got ${a}`);
+  });
+
+  it('Select-CodexRolloutCandidate prefers the newest cwd-matching rollout after launch', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$launch = [datetime]'2026-04-26T21:00:00Z'; `
+      + `$candidates = @(`
+      + `[pscustomobject]@{ path = 'older.jsonl'; session_id = 'aaaaaaaa-1111-2222-3333-444444444444'; short = 'aaaaaaaa'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; timestamp = '2026-04-26T21:00:02Z'; mtime_utc = [datetime]'2026-04-26T21:00:02Z' }, `
+      + `[pscustomobject]@{ path = 'newer.jsonl'; session_id = 'bbbbbbbb-1111-2222-3333-444444444444'; short = 'bbbbbbbb'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; timestamp = '2026-04-26T21:00:05Z'; mtime_utc = [datetime]'2026-04-26T21:00:05Z' }, `
+      + `[pscustomobject]@{ path = 'wrong-cwd.jsonl'; session_id = 'cccccccc-1111-2222-3333-444444444444'; short = 'cccccccc'; cwd = 'C:\\Users\\Ben\\Desktop\\other'; timestamp = '2026-04-26T21:00:06Z'; mtime_utc = [datetime]'2026-04-26T21:00:06Z' }`
+      + `); `
+      + `$pick = Select-CodexRolloutCandidate -Candidates $candidates -TargetCwd 'C:\\Users\\Ben\\Desktop\\terminal-talk' -LaunchStartUtc $launch; `
+      + `$pick | ConvertTo-Json -Compress`
+    );
+    const parsed = JSON.parse(out);
+    assertEqual(parsed.path, 'newer.jsonl');
+    assertEqual(parsed.short, 'bbbbbbbb');
+  });
+
+  it('Format-CodexWindowTitle uses the TT slot, label, and short id', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Format-CodexWindowTitle -Short '019dcb88' -Entry ([pscustomobject]@{ index = 1; label = 'Voice output' }) `
+      + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk'`
+    );
+    assertEqual(out, 'TT 02 | Voice output | 019dcb88');
+  });
+
+  it('Format-CodexWindowTitle falls back to attaching + project name before bind', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Format-CodexWindowTitle -Short 'deadbeef' -Entry ([pscustomobject]@{ index = 0; label = '' }) `
+      + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -Attaching`
+    );
+    assertEqual(out, 'TT 01 | Codex | terminal-talk | attaching');
+  });
+
+  it('codex-launch.ps1 parses without PowerShell syntax errors', () => {
+    const launchEsc = launchPath.replace(/'/g, "''");
+    const out = runPowershellBody(
+      `$tokens = $null; $errors = $null; `
+      + `[System.Management.Automation.Language.Parser]::ParseFile('${launchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + `Write-Output $errors.Count`
+    );
+    assertEqual(out, '0');
+  });
+
+  it('codex-launch.ps1 wires into registry, title, pid-file, and Start-Process', () => {
+    const src = fs.readFileSync(launchPath, 'utf8');
+    if (!/Import-Module .*session-registry\.psm1/.test(src)) {
+      throw new Error('codex-launch.ps1 must import session-registry.psm1');
+    }
+    if (!/Import-Module .*codex-terminal\.psm1/.test(src)) {
+      throw new Error('codex-launch.ps1 must import codex-terminal.psm1');
+    }
+    if (!/New-ProvisionalCodexShort/.test(src)) {
+      throw new Error('codex-launch.ps1 must create a provisional short for pre-bind identity');
+    }
+    if (!/Format-CodexWindowTitle/.test(src)) {
+      throw new Error('codex-launch.ps1 must format a Terminal Talk title badge');
+    }
+    if (!/Write-SessionPidFile/.test(src)) {
+      throw new Error('codex-launch.ps1 must stamp a per-PID session file once the rollout binds');
+    }
+    if (!/Start-Process[\s\S]*-NoNewWindow[\s\S]*-PassThru/.test(src)) {
+      throw new Error('codex-launch.ps1 must launch Codex in the current terminal via Start-Process -NoNewWindow -PassThru');
+    }
   });
 });
 

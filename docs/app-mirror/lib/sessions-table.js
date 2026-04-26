@@ -157,7 +157,7 @@
       if (entries.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'sessions-empty';
-        empty.textContent = 'No active Claude Code sessions. Open a Claude Code terminal to see one here.';
+        empty.textContent = 'No active assistant sessions. Open Claude Code or Codex to see one here.';
         this.root.appendChild(empty);
         return;
       }

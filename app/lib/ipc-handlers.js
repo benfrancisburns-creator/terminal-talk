@@ -660,6 +660,7 @@ function createIpcHandlers(deps) {
               out.push(m[1]);
             } else {
               dropped.push(`${m[1]}(age=${age}s)`);
+              try { fs.unlinkSync(full); } catch {}
             }
           } catch {}
         }

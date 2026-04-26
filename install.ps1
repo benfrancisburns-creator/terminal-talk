@@ -356,6 +356,9 @@ Write-Host "  Ctrl+Shift+A   show/hide toolbar"
 Write-Host "  Ctrl+Shift+S   read highlighted text aloud"
 Write-Host "  Ctrl+Shift+J   toggle wake-word listening on/off"
 Write-Host ""
+Write-Host "Codex with TT badge:" -ForegroundColor Cyan
+Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
+Write-Host ""
 Write-Host "Say 'hey jarvis' with text highlighted to trigger speech."
 Write-Host ""
 $launchResp = Get-Consent "Launch Terminal Talk now? [Y/n]" $false

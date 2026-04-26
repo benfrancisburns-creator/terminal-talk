@@ -301,6 +301,20 @@ function pruneOldFiles() {
         } catch {}
       }
     }
+    const synthTmpDir = path.join(QUEUE_DIR, '.tmp_synth');
+    if (fs.existsSync(synthTmpDir)) {
+      for (const f of fs.readdirSync(synthTmpDir)) {
+        if (!f.endsWith('.partial')) continue;
+        const full = path.join(synthTmpDir, f);
+        try {
+          const stat = fs.statSync(full);
+          if (now - stat.mtimeMs > 60_000) fs.unlinkSync(full);
+        } catch {}
+      }
+      try {
+        if (fs.readdirSync(synthTmpDir).length === 0) fs.rmdirSync(synthTmpDir);
+      } catch {}
+    }
   } catch {}
 }
 
@@ -2012,6 +2026,18 @@ const _transcriptWatcher = new TranscriptWatcher({
   pythonExe: 'python',
   diag,
 });
+const { createCodexSessionWatcher } = require('./lib/codex-session-watcher');
+const _codexSessionWatcher = createCodexSessionWatcher({
+  queueDir: QUEUE_DIR,
+  getCFG: () => CFG,
+  loadAssignments,
+  saveAssignments,
+  apiKeyStore,
+  callEdgeTTS,
+  callOpenAITTS,
+  notifyQueue,
+  diag,
+});
 
 // Z2-4 — boot-time SHA-256 of spawned Python helpers. Forensic only —
 // we don't block on mismatch because the install itself is trusted and
@@ -2060,6 +2086,7 @@ app.whenReady().then(() => {
   startWatcher();
   startWatchdog();
   _transcriptWatcher.start();
+  _codexSessionWatcher.start();
 
   const menu = Menu.buildFromTemplate([{
     label: 'Audio',
@@ -2128,6 +2155,7 @@ function _hardKillProc(proc, label) {
 
 app.on('will-quit', () => {
   stopWatchdog();
+  _codexSessionWatcher.stop();
   globalShortcut.unregisterAll();
   if (watcher) watcher.close();
   // #9 — promote will-quit kills from soft SIGTERM to hard taskkill /F /T.

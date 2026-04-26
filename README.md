@@ -15,6 +15,8 @@
 
 **Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
+Terminal Talk also tails local Codex CLI session logs in `~/.codex/sessions/` and speaks assistant `commentary` + `final` messages with the same queue / voice pipeline.
+
 Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signup, no accounts. Microsoft Edge TTS (cloud) for voices, openWakeWord (local) for wake-word detection. Colour-blind friendly palette available in Settings › Playback.
 
 **Try it in your browser (no install):** [live interactive toolbar demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [project landing page](https://benfrancisburns-creator.github.io/terminal-talk/)
@@ -43,7 +45,7 @@ cd terminal-talk
 
 Requires Windows 10/11, Python 3.10+, Node.js 18+, a working microphone. Takes ~3 minutes.
 
-The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, the per-terminal coloured emoji statusline, and auto-launch at login.
+The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, the per-terminal coloured emoji statusline, and auto-launch at login. The Codex launcher script is copied too: `~/.terminal-talk/app/codex-launch.ps1`.
 
 Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
 
@@ -60,6 +62,7 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 ## What it does
 
 - **Auto-speak Claude Code responses.** Starts speaking as Claude generates, not after it finishes — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice).
+- **Also speaks Codex CLI replies.** No Claude-style hook registration needed — Terminal Talk tails Codex's persisted session JSONL and narrates assistant commentary/final messages through the same toolbar queue. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
 - **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
 - **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
 - **Per-session controls.** Mute individual terminals (no synthesis, no clips — truly "cut the wire"), focus one to prioritise its clips in the queue, give each a custom voice, override speech-include behaviour per session (code blocks, URLs, headings, etc.).
@@ -143,6 +146,26 @@ Highlight text, say **"hey jarvis"**, hear it. The 30 MB model lives in `~/.term
 
 Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word-listener.py`. openWakeWord ships `hey_mycroft`, `hey_rhasspy`, `alexa`, `timer`, `weather`.
 
+### Codex launcher
+
+If you want Codex to have a visible Terminal Talk identity inside the terminal itself, launch it via:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.terminal-talk\app\codex-launch.ps1"
+```
+
+Pass normal Codex args straight through:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.terminal-talk\app\codex-launch.ps1" --no-alt-screen
+```
+
+The launcher:
+
+- keeps Codex on the normal Terminal Talk colour/label registry,
+- updates the Windows Terminal tab/title to show the Terminal Talk slot + label,
+- writes the per-PID session file so highlight-to-speak can map the foreground Codex terminal back to the right session once the rollout file is discovered.
+
 ### The toolbar UI
 
 ```
@@ -181,10 +204,10 @@ Click the gear to expand the toolbar into a panel with:
   - **Heartbeat ambient narration** — short spinner verbs ("Percolating", "Moonwalking") + thinking phrases ("Just a moment") played every ~8 s during the silent gap between you submitting a prompt and Claude's response starting. Stops the moment real response audio begins. Toggle here.
   - **Reload toolbar** button — rebuilds the UI from disk without restarting the Electron process. Same thing `Ctrl+R` does.
 - **OpenAI (premium)** — collapsible. See [Premium TTS](#premium-tts-optional) below.
-- **Sessions** — one row per active Claude Code session:
+- **Sessions** — one row per active assistant session:
   - Coloured swatch + 8-character session ID.
-  - Editable label (shows next to the emoji in that terminal's statusline).
-  - **Colour dropdown** — 24 arrangements: 8 solid colours + 8 horizontal splits + 8 vertical splits, with complementary colour pairings on the splits so each is unambiguous. Pick anything; the change is instant on the toolbar and propagates to the statusline within a couple of seconds.
+  - Editable label (shows next to Claude's statusline glyph, and in the Codex launcher title if you launched Codex through `codex-launch.ps1`).
+  - **Colour dropdown** — 24 arrangements: 8 solid colours + 8 horizontal splits + 8 vertical splits, with complementary colour pairings on the splits so each is unambiguous. Pick anything; the change is instant on the toolbar and propagates to the terminal identity surface within a couple of seconds.
   - **Chevron** — expands to per-session voice and speech-includes overrides (see below).
 - **About Terminal Talk** — banner + shortcuts cheat-sheet.
 
@@ -209,9 +232,9 @@ Click the chevron on any session row to expand its per-session controls:
 
 ### How session colours work
 
-When a Claude Code terminal first interacts with Terminal Talk, the Stop hook (or statusline) registers it with the **lowest free colour index** in `~/.terminal-talk/session-colours.json`. The same hash informs both:
+When a terminal session first interacts with Terminal Talk, it gets the **lowest free colour index** in `~/.terminal-talk/session-colours.json`. The same registry entry informs both:
 
-- The emoji at the bottom of the terminal (via Claude Code statusline).
+- The emoji at the bottom of the terminal (via Claude Code statusline), or the title badge if you launched Codex via `codex-launch.ps1`.
 - The dot colour on the toolbar.
 - The colour of the **J** label on highlight-to-speak clips originating from that terminal.
 
