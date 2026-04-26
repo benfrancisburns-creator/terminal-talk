@@ -4,7 +4,128 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
-_No changes yet._
+Major changes since v0.5.0: a **Codex CLI integration** lands alongside
+Claude Code, the **Transcript expandable panel** ships in the toolbar,
+**smart tool narration** gets four iterative phases of richer context,
+**markdown tables** get speakable summaries, and a **chronic Ctrl+R
+freeze bug** is closed at the architectural level after multiple
+symptom-patches. Also: a substantial repo-cleanup pass.
+
+### Added
+
+- **Codex CLI integration.** `app/lib/codex-session-watcher.js`
+  polls `~/.codex/sessions/` every 1s, reads delta bytes from each
+  rollout `.jsonl`, extracts `event_msg → agent_message` events
+  (phases `commentary` + `final`), and synthesises through the
+  existing edge/OpenAI pipeline. Per-file offset tracking,
+  signature dedup against rewrite-replays, per-session promise
+  tail chain so within-session messages stay ordered while
+  different sessions parallelise. Honours the existing
+  session-registry contract (`loadAssignments()` for per-session
+  voice / muted / speech_includes overrides). Boots up at app
+  ready; tears down on will-quit. Codex sessions show in the
+  Settings panel using the same colour-allocation rules as
+  Claude Code sessions.
+- **Transcript expandable panel.** New collapsible UI surface in
+  the toolbar showing recent clip transcripts with copy buttons
+  and a Spoken/Original toggle (the latter reading
+  `<clip>.original.txt` sidecars written at synth time). Backed by
+  `app/lib/transcript-panel.js` + a `read-clip-sidecar` IPC. Filters
+  to the currently selected session tab; doesn't cache empty
+  sidecar reads so freshly-arriving clips fill in correctly.
+- **Smart tool narration — phases 1, 2, 3 + Phase 3 v2.** Tool-call
+  narration moves from "Reading foo.py" to genuinely descriptive
+  phrases:
+  - **Phase 1**: result-aware Glob + Grep counts — narrations
+    include "found N matches" / "found N files".
+  - **Phase 2**: Edit hunk locality from `structuredPatch` — the
+    narration includes which lines changed and how many were
+    added/removed.
+  - **Phase 3**: enclosing-scope detection from patch context —
+    when an Edit lands inside a known function, the narration
+    says so ("Edit to render continuation banner in the renderer
+    file"). PowerShell Verb-Noun naturalisation included.
+  - **Phase 3 v2**: walks the `originalFile` content for
+    enclosing scope when the patch context window is too narrow
+    to reach the function header. Closes the "Phase 3 barely
+    fires" finding from live testing.
+- **Markdown table → speakable summary.** Both Python (`synth_turn.py`)
+  and JS (`app/lib/text.js`) sanitisers replace GFM table blocks
+  with a one-line summary ("Table with 3 rows. Columns: File, Line,
+  Today, With Phase 3 v2.") instead of letting the raw `| col | col |`
+  pipe through to edge-tts which silently refused (rc=1, size=0)
+  and lost the table entirely.
+- **Pipe-tail context + inline-source detection (B4 + B5).** Bash
+  narration now identifies pipeline endpoints as the user-intent
+  command rather than the head, and detects inline-source patterns.
+
+### Changed
+
+- **Tool narration peels echo headers before `;` and `|` separators.**
+  `echo "===HEADER===" ; tail -c X | grep ...` now narrates as
+  "Looking at the end of the hook log file" instead of "Printing a
+  value (in a pipeline)" four times in a row. Previously only `&&`
+  separators were peeled.
+- **Tool narration deduplicates within a batch.** When an assistant
+  turn issues multiple tool calls of the same shape, the listener
+  hears the phrase once instead of N times. Cross-batch dedup is
+  deliberately skipped.
+- **Tool narration captures the path, not the flag.** `ls -lat /path`,
+  `tail -c 50000 file`, `head -n 30 file` now narrate the file rather
+  than capturing the flag's value. The previous regex captured the
+  first whitespace-separated token, which for value-flags was the
+  numeric value (e.g. "Looking at the end of 50000").
+- **Click-through is now driven by main-side cursor polling.**
+  `screen.getCursorScreenPoint()` polls every 80ms and sets
+  `setIgnoreMouseEvents` based on cursor-vs-window-bounds.
+  Replaces the renderer-driven mousemove → setClickthrough loop
+  which had a chronic Windows bug: when in click-through mode,
+  Electron's `forward: true` did not reliably forward cursor-entry
+  events, so the renderer never saw the cursor return to the bar
+  and the toolbar appeared "frozen" indefinitely.
+
+### Fixed
+
+- **Heartbeat fired during Wispr dictation in silent stretches.**
+  Renderer's `onMicCapturedElsewhere` callback returned before
+  arming `_micCaptured` when no audio was currently playing,
+  silently re-introducing the bug `5a26f6f` was supposed to fix.
+  Now arms the flag unconditionally — `audio-player.systemAutoPause()`
+  guards the actual `pause()` call internally.
+- **Ctrl+R froze the toolbar.** Resolved across four iterative fixes:
+  pre-reload `setIgnoreMouseEvents(false)` symmetric to the IPC
+  handler; 5s reload-grace suppressing renderer `setClickthrough(true)`
+  pushes after did-finish-load; and finally the cursor-poll
+  architectural change above which closed the underlying root cause.
+  Source-inspection regression tests added at every layer; lesson
+  recorded that source-inspection isn't enough for UI behaviour
+  bugs without runtime verification.
+- **`.original.txt` sidecar wired through synth call sites** so the
+  Transcript panel's "Original" toggle has content to display.
+- **Renderer mic-gate flag arms even during silence.** See above.
+
+### Internal
+
+- **Repo cleanup pass.** `Claude Assesments/` and `coord/`
+  directories untracked from git (still on disk for active dev use).
+  14 dead remote branches archived as `archive/<name>` tags +
+  deleted from origin (`stream-*`, abandoned dependabot, `feat/hey-tt`,
+  `transcript-panel`, `smart-tool-narration`). Branch count 23 → 9.
+  Full audit trail in `.archive-notes.md`; nothing destroyed —
+  every move documented and recoverable.
+- **CI hygiene.** `knip.json` entry added for the
+  HTML-script-loaded `transcript-panel.js` (knip can't see HTML
+  script tags). File-length baselines ratcheted on `synth_turn.py`,
+  `run-tests.cjs`. CI ceiling raised 2050 → 2200 to cover post-merge
+  `main.js` size (TEMP — track in next extraction pass).
+- **Test suite grew from ~888 to ~973+ tests.** New coverage
+  includes echo-peeling, batch-dedup, flag-aware path capture,
+  reload-grace IPC suppression, Ctrl+R click-through ordering
+  contract, mic-captured-elsewhere callback ordering contract.
+- **Memory captured two durable lessons:** runtime-verify UI fixes
+  beat source-inspection regex tests; Electron `forward: true` is
+  unreliable for cursor-entry events on Windows transparent
+  always-on-top windows.
 
 ## [0.5.0] — 2026-04-24
 
