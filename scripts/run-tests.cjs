@@ -9342,6 +9342,71 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertTruthy(deps._winCalls.some((c) => c[0] === 'reload'), 'should have called reload');
   });
 
+  it('set-clickthrough(true) is SUPPRESSED during reload grace window', () => {
+    // 2026-04-26 Ctrl+R freeze fix: the renderer's mousemove handler
+    // pushes setClickthrough(true) within ~2s of reload (cursor off-bar).
+    // That overrides main's post-reload restore-to-interactive and the
+    // bar appears "frozen" because Electron's forward:true doesn't
+    // reliably forward subsequent cursor-entry events on Windows.
+    // Suppress on=true requests for the grace window so the user has
+    // a moment to interact with the bar after Ctrl+R.
+    const deps = panelDeps({
+      getReloadGraceUntil: () => Date.now() + 5000,
+    });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('set-clickthrough', true);
+    const setCalls = deps._winCalls.filter((c) => c[0] === 'setIgnoreMouseEvents');
+    if (setCalls.length !== 0) {
+      throw new Error(
+        `expected setIgnoreMouseEvents NOT called during grace, got ${setCalls.length} calls`
+      );
+    }
+    // Diag should record the suppression.
+    if (!deps._diagLog.some((m) => /SUPPRESSED/.test(m))) {
+      throw new Error('expected diag log to record SUPPRESSED');
+    }
+  });
+
+  it('set-clickthrough(false) is NEVER suppressed (interactive always allowed)', () => {
+    // The grace only suppresses click-through-ON. Click-through-OFF
+    // requests must always pass through — they restore interactivity.
+    const deps = panelDeps({
+      getReloadGraceUntil: () => Date.now() + 5000,
+    });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('set-clickthrough', false);
+    const setCalls = deps._winCalls.filter((c) => c[0] === 'setIgnoreMouseEvents');
+    if (setCalls.length !== 1) {
+      throw new Error(
+        `expected setIgnoreMouseEvents called once for on=false, got ${setCalls.length}`
+      );
+    }
+    if (setCalls[0][1] !== false) {
+      throw new Error(`expected on=false call, got on=${setCalls[0][1]}`);
+    }
+  });
+
+  it('set-clickthrough(true) PASSES THROUGH after grace expires', () => {
+    const deps = panelDeps({
+      getReloadGraceUntil: () => Date.now() - 1000,  // grace already expired
+    });
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('set-clickthrough', true);
+    const setCalls = deps._winCalls.filter((c) => c[0] === 'setIgnoreMouseEvents');
+    if (setCalls.length !== 1) {
+      throw new Error(
+        `expected setIgnoreMouseEvents called once post-grace, got ${setCalls.length}`
+      );
+    }
+    if (setCalls[0][1] !== true) {
+      throw new Error(`expected on=true call, got on=${setCalls[0][1]}`);
+    }
+    // No SUPPRESSED in diag.
+    if (deps._diagLog.some((m) => /SUPPRESSED/.test(m))) {
+      throw new Error('expected NO SUPPRESSED diag post-grace');
+    }
+  });
+
   it('reload-renderer disables click-through BEFORE reload (deadlock fix)', () => {
     // Defensive 2026-04-23 fix: setIgnoreMouseEvents lives on
     // BrowserWindow not webContents — reload doesn't reset it. If

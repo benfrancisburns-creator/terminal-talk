@@ -71,6 +71,11 @@ function createIpcHandlers(deps) {
     // UX latch (post-v0.4): clicking × on the toolbar hides-and-remembers
     // so passive arrivals don't undo the user's explicit hide.
     setUserHidden = () => {},
+    // Reload-grace getter — returns ms timestamp until which
+    // set-clickthrough(true) IPCs from the renderer should be
+    // suppressed. Injected so main can drive the grace window from
+    // did-finish-load events without a circular import.
+    getReloadGraceUntil = () => 0,
   } = deps;
 
   const WIN_COLLAPSED = { width: 680, height: 114 };
@@ -325,22 +330,10 @@ function createIpcHandlers(deps) {
     ipcMain.handle('reload-renderer', () => {
       const win = getWin();
       if (!win || win.isDestroyed()) return;
-      // Defensive reload-deadlock fix (2026-04-23): Chromium's
-      // setIgnoreMouseEvents flag lives on the BrowserWindow, not on
-      // the renderer content, so webContents.reload() does NOT reset
-      // it. If click-through was ON at reload time (cursor off the
-      // bar), the window stays dead-zoned through the reload; the new
-      // renderer's module-load setClickthrough(false) races main's
-      // handler registration and can land before main is ready to
-      // receive it. Net effect: toolbar visible but unclickable
-      // until something external nudges updateClickthrough() — a
-      // new queue clip, a global-hotkey show, an explicit mousemove
-      // over the bar edge. Forcing mouse events ON main-side BEFORE
-      // the reload guarantees the new renderer starts from a known
-      // interactive state regardless of what the pre-reload state
-      // was. Renderer's own updateClickthrough() takes over as soon
-      // as the first mousemove fires.
-      try { win.setIgnoreMouseEvents(false); } catch {}
+      diag('reload-trace: reload-renderer IPC received (Settings button)');
+      try { win.setIgnoreMouseEvents(false); diag('reload-trace: IPC setIgnoreMouseEvents(false) ok'); }
+      catch (e) { diag(`reload-trace: IPC setIgnoreMouseEvents threw: ${e && e.message}`); }
+      diag('reload-trace: IPC calling webContents.reload()');
       win.webContents.reload();
     });
 
@@ -521,6 +514,25 @@ function createIpcHandlers(deps) {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
       if (testMode) return true;
+      // Reload grace: the renderer's mousemove handler fires within
+      // ~2s of did-finish-load, sees cursor off-bar, pushes
+      // setClickthrough(true). That overrides main's post-reload
+      // restore-to-interactive and re-enables click-through. Then
+      // Electron's forward:true unreliability for cursor-entry events
+      // on Windows means the renderer never sees the cursor enter the
+      // bar to toggle back off — bar appears "frozen" (visible,
+      // animating, but all clicks pass through to apps below).
+      // Suppress on=true requests for the grace window so the user has
+      // a moment to interact post-reload.
+      if (on === true) {
+        const graceUntil = getReloadGraceUntil ? getReloadGraceUntil() : 0;
+        const now = Date.now();
+        if (now < graceUntil) {
+          diag(`reload-trace: set-clickthrough on=true SUPPRESSED (grace ${graceUntil - now}ms left)`);
+          return true;
+        }
+      }
+      diag(`reload-trace: set-clickthrough on=${!!on}`);
       win.setIgnoreMouseEvents(!!on, { forward: true });
       return true;
     });

@@ -520,17 +520,50 @@ function createWindow() {
     if (!input.control || input.alt || input.meta) return;
     if (input.key !== 'r' && input.key !== 'R') return;
     ev.preventDefault();
-    // Symmetric to the reload-renderer IPC defensive fix (2026-04-23,
-    // see ipc-handlers.js): setIgnoreMouseEvents lives on BrowserWindow,
-    // NOT on webContents — reload doesn't reset it. If click-through is
-    // on at the moment Ctrl+R fires (cursor off the bar), the toolbar
-    // reloads into a "visible but unclickable" zombie state. Forcing
-    // mouse events on BEFORE the reload guarantees a known interactive
-    // state; the renderer's own updateClickthrough() takes back over
-    // on the first post-reload mousemove.
-    try { win.setIgnoreMouseEvents(false); } catch {}
+    diag(`reload-trace: ctrl+r received (shift=${!!input.shift})`);
+    try { win.setIgnoreMouseEvents(false); diag('reload-trace: setIgnoreMouseEvents(false) ok'); }
+    catch (e) { diag(`reload-trace: setIgnoreMouseEvents threw: ${e && e.message}`); }
+    diag(`reload-trace: calling webContents.reload${input.shift ? 'IgnoringCache' : ''}()`);
     if (input.shift) win.webContents.reloadIgnoringCache();
     else win.webContents.reload();
+  });
+
+  // Reload-trace: log when the new renderer finishes loading so we can
+  // measure how long the gap is between Ctrl+R and the renderer being
+  // back up, and correlate with the first set-clickthrough push from
+  // the new renderer's module-load line.
+  win.webContents.on('did-finish-load', () => {
+    diag('reload-trace: did-finish-load fired (renderer up)');
+    // Start the reload-grace: for the next 5 seconds, the
+    // set-clickthrough IPC handler suppresses on=true requests from
+    // the renderer's mousemove handler. Without this, the renderer's
+    // first post-reload mousemove (cursor off-bar) flips click-through
+    // back on within ~2s and Electron's forward:true unreliability
+    // for cursor-entry events on Windows means the renderer never
+    // sees the cursor return to the bar — bar stays in click-through
+    // forever, clicks pass through, bar appears "frozen".
+    startReloadGrace(5000);
+    setTimeout(() => {
+      try {
+        win.setIgnoreMouseEvents(false);
+        try { win.focus(); } catch {}
+        diag('reload-trace: post-load setIgnoreMouseEvents(false) + focus ok');
+      } catch (e) {
+        diag(`reload-trace: post-load threw: ${e && e.message}`);
+      }
+    }, 50);
+  });
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    diag(`reload-trace: did-fail-load code=${code} desc="${desc}" url=${url}`);
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    diag(`reload-trace: render-process-gone reason=${details && details.reason}`);
+  });
+  win.webContents.on('unresponsive', () => {
+    diag('reload-trace: webContents UNRESPONSIVE');
+  });
+  win.webContents.on('responsive', () => {
+    diag('reload-trace: webContents responsive again');
   });
 
   // ===========================================================================
@@ -1575,10 +1608,22 @@ function isPathInside(target, base) {
 // so every dep (including late-declared ones like validShort / saveAssignments)
 // is resolvable when register() reads them. Live refs (win, CFG) are passed
 // via getters so handler closures see post-boot reassignments.
+// Reload-grace state: did-finish-load sets this to (now + N ms) so the
+// set-clickthrough IPC handler can suppress on=true requests during
+// the window. Solves Ctrl+R "frozen" bar where the renderer's first
+// post-reload mousemove turned click-through back on with no way to
+// recover (Electron forward:true is unreliable for cursor-entry events).
+let _reloadGraceUntil = 0;
+function startReloadGrace(ms = 5000) {
+  _reloadGraceUntil = Date.now() + ms;
+  diag(`reload-trace: reload grace started (${ms}ms)`);
+}
+
 const { createIpcHandlers } = require('./lib/ipc-handlers');
 createIpcHandlers({
   ipcMain,
   diag,
+  getReloadGraceUntil: () => _reloadGraceUntil,
   callEdgeTTS,
   callOpenAITTS,
   getAppVersion: () => app.getVersion(),
