@@ -4,10 +4,10 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 14131,
+    "scripts/run-tests.cjs": 14238,
     "app/main.js": 2166,
     "app/synth_turn.py": 1628,
-    "app/tool_narration.py": 1409,
+    "app/tool_narration.py": 1432,
     "app/renderer.js": 1288,
     "app/lib/audio-player.js": 854,
     "app/lib/ipc-handlers.js": 810,
@@ -25,8 +25,10 @@
     "app/statusline.ps1": 246,
     "app/lib/text.js": 244,
     "scripts/check-doc-drift.cjs": 235,
+    "app/codex-launch.ps1": 223,
     "scripts/build-hero-svg.cjs": 217,
     "app/tts-helper.psm1": 214,
+    "app/codex-terminal.psm1": 204,
     "app/lib/transcript-watcher.js": 193,
     "scripts/generate-tokens-css.cjs": 190,
     "app/lib/voice-dispatch.js": 187,

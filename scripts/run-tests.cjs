@@ -3352,6 +3352,113 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     );
   });
 
+  // ---- Phase 3 v2: originalFile-based scope walk -------------------
+  // Diff context is only ~3 lines deep so v1 missed enclosing scope on
+  // every edit that wasn't right at the top of a function body. The
+  // toolUseResult also ships `originalFile` (full pre-edit content);
+  // walking it backward from `newStart - 1` reaches the actual
+  // declaration regardless of patch-window depth.
+  it('Edit catches enclosing scope from originalFile (deep edit, v1 missed)', () => {
+    // Edit at line 1500 (deep in file). Patch context only carries
+    // 3 lines either side of the change — nowhere near the `def` at
+    // line 1480. Without originalFile this would fall back to "around
+    // line 1500"; WITH originalFile we walk the actual file backward.
+    const fakeOriginal = [
+      ...Array(1479).fill('# filler line'),
+      'def deep_function_name():',          // line 1480
+      ...Array(19).fill('    # body'),       // 1481-1499
+      '    a = 1',                            // line 1500
+      '    return a',
+    ].join('\n');
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/synth_turn.py',
+        old_string: '    a = 1',
+        new_string: '    a = 1\n    b = 2\n    c = 3\n    d = 4\n    e = 5\n    f = 6\n    g = 7\n    h = 8',
+      }, null, {
+        originalFile: fakeOriginal,
+        structuredPatch: [{
+          oldStart: 1500, oldLines: 1, newStart: 1500, newLines: 8,
+          lines: [
+            '       # body',
+            '       # body',
+            '       # body',
+            '+      a = 1',
+            '+      b = 2',
+            '+      c = 3',
+            '+      d = 4',
+            '+      e = 5',
+          ]
+        }]
+      }),
+      // Function name "deep_function_name" → "deep function name".
+      // When scope is found, the bare line-count fallback uses
+      // scope_target as the locality cue ("Added N lines to <scope>"
+      // rather than "around line N").
+      'Added 7 lines to deep function name in the synth turn file'
+    );
+  });
+
+  it('Edit without originalFile still falls back to v1 patch-context walk', () => {
+    // No originalFile → the v1 path runs. When the patch context DOES
+    // catch the def (edit near top of function body), v1 still works.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: '  return out;',
+        new_string: '  out.push(1);\n  out.push(2);\n  out.push(3);\n  out.push(4);\n  out.push(5);\n  out.push(6);\n  out.push(7);\n  out.push(8);\n  return out;',
+      }, null, {
+        // originalFile NOT provided
+        structuredPatch: [{
+          oldStart: 100, oldLines: 3, newStart: 100, newLines: 11,
+          lines: [
+            ' function buildSessionList(input) {',
+            '   const out = [];',
+            '   const data = input;',
+            '+  out.push(1);',
+            '+  out.push(2);',
+            '+  out.push(3);',
+            '+  out.push(4);',
+            '+  out.push(5);',
+            '+  out.push(6);',
+            '+  out.push(7);',
+            '+  out.push(8);',
+            '   return out;',
+          ]
+        }]
+      }),
+      'Edit to build session list in the renderer file — added 8 lines'
+    );
+  });
+
+  it('Edit with originalFile but module-level edit returns no scope', () => {
+    // Edit at the top of a file (module-level — no enclosing def/class).
+    // Walking originalFile backward from line 5 should find nothing →
+    // falls back to bare line locality.
+    const fakeOriginal = '"""Module docstring."""\n\nimport os\nimport re\n\nCONST = 1\n';
+    const out = narrate('Edit', {
+      file_path: 'app/foo.py',
+      old_string: 'CONST = 1',
+      new_string: 'CONST = 1\nNEW = 2\nMORE = 3\nEXTRA = 4\nMOAR = 5\nFINAL = 6',
+    }, null, {
+      originalFile: fakeOriginal,
+      structuredPatch: [{
+        oldStart: 5, oldLines: 1, newStart: 5, newLines: 6,
+        lines: [
+          ' CONST = 1',
+          '+NEW = 2',
+          '+MORE = 3',
+          '+EXTRA = 4',
+          '+MOAR = 5',
+          '+FINAL = 6',
+        ]
+      }]
+    });
+    if (/ to /.test(out)) {
+      throw new Error(`expected no "to <scope>" for module-level edit, got: ${out}`);
+    }
+  });
+
   it('Edit rename does NOT get locality suffix (qualitative phrase)', () => {
     // Renames are already concise + meaningful; tacking " around line N"
     // adds clip length without adding signal. Same applies to
