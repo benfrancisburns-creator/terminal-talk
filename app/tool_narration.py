@@ -243,6 +243,136 @@ def _detect_rename(old: str, new: str) -> tuple[str, str] | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Semantic structure detection — find function / class / test names in a
+# text blob. Used by _narrate_edit and _narrate_write to give the listener
+# context beyond bare line counts ("Added 130 lines" vs "Added 15 tests
+# starting with 'Bash heredoc with python3'").
+# ---------------------------------------------------------------------------
+
+# Function-declaration patterns. Each captures the name. Cross-language
+# coverage is deliberately narrow — better to miss a few than mis-claim
+# a name. Anchored at start-of-line via re.MULTILINE so we don't pick up
+# function references in prose / call-sites.
+_FUNCTION_DECL_PATTERNS = [
+    re.compile(r'^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(',  re.MULTILINE),  # Python
+    re.compile(r'^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_]\w*)\s*\(', re.MULTILINE),  # JS/TS function decl
+    re.compile(r'^[ \t]*(?:export\s+)?const\s+([A-Za-z_]\w*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>', re.MULTILINE),  # JS arrow
+    re.compile(r'^[ \t]*function\s+([A-Z][A-Za-z]+-[A-Z][A-Za-z]+)', re.MULTILINE),  # PowerShell Verb-Noun
+    re.compile(r'^[ \t]*pub(?:\s+\w+)?\s+fn\s+([A-Za-z_]\w*)', re.MULTILINE),  # Rust
+]
+
+# Class declarations. Tighter — class declarations are unambiguous in
+# every language we cover.
+_CLASS_DECL_PATTERNS = [
+    re.compile(r'^[ \t]*(?:export\s+)?class\s+([A-Z][A-Za-z0-9_]*)', re.MULTILINE),
+    re.compile(r'^[ \t]*(?:export\s+)?interface\s+([A-Z][A-Za-z0-9_]*)', re.MULTILINE),
+]
+
+# Test-name patterns. `it("...")` / `describe("...")` (Mocha/Jest/Vitest)
+# capture the prose label so we can quote it directly. Python `def
+# test_*` captures the function name.
+_TEST_NAME_PATTERNS = [
+    re.compile(r"\bit\s*\(\s*['\"]([^'\"]{1,80})['\"]"),  # Mocha/Jest/Vitest
+    re.compile(r"\bdescribe\s*\(\s*['\"]([^'\"]{1,80})['\"]"),
+    re.compile(r"^[ \t]*def\s+(test_[A-Za-z0-9_]+)", re.MULTILINE),  # pytest
+]
+
+
+def _naturalise_identifier(name: str) -> str:
+    """Turn a code identifier into spoken-friendly English. Programmers
+    use underscores, hyphens, and camelCase because filesystems and
+    parsers don't accept spaces — but the listener doesn't care about
+    that, they just want the words.
+
+      _narrate_heredoc       -> 'narrate heredoc'
+      getToken               -> 'get token'
+      verifySession          -> 'verify session'
+      XMLParser              -> 'XML parser'
+      tool_narration_100     -> 'tool narration 100'
+      _extractFunctionNames  -> 'extract function names'
+
+    Leading underscores (private-by-convention prefix in Python/JS) are
+    stripped — they're a code-style artefact, not information for the
+    listener. Reuses _to_words for the camelCase / snake_case / kebab
+    splits."""
+    if not name:
+        return ''
+    stripped = name.lstrip('_')
+    if not stripped:
+        return ''
+    return _to_words(stripped)
+
+
+def _extract_function_names(text: str) -> set[str]:
+    """Return the set of function names declared in `text`. Cross-language
+    via the patterns table. Names returned in their literal source form
+    (preserves case + hyphens for PowerShell verb-nouns) — caller is
+    expected to run them through _naturalise_identifier before speaking."""
+    if not text:
+        return set()
+    names: set[str] = set()
+    for pat in _FUNCTION_DECL_PATTERNS:
+        for m in pat.finditer(text):
+            names.add(m.group(1))
+    return names
+
+
+def _extract_class_names(text: str) -> set[str]:
+    """Return set of class / interface names declared in `text`."""
+    if not text:
+        return set()
+    names: set[str] = set()
+    for pat in _CLASS_DECL_PATTERNS:
+        for m in pat.finditer(text):
+            names.add(m.group(1))
+    return names
+
+
+def _extract_test_names(text: str) -> list[str]:
+    """Return the list of test labels in `text`, in source order. Used to
+    speak the FIRST test added when narrating bulk test additions."""
+    if not text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for pat in _TEST_NAME_PATTERNS:
+        for m in pat.finditer(text):
+            label = m.group(1)
+            if label not in seen:
+                seen.add(label)
+                found.append(label)
+    return found
+
+
+def _format_name_list(names: list[str], cap: int = 3, naturalise: bool = True) -> str:
+    """Format a list of names for natural speech.
+       1   -> 'foo'
+       2   -> 'foo and bar'
+       3   -> 'foo, bar, and baz'
+       4+  -> 'foo, bar, and 5 more'
+    Caller decides how to wrap (e.g. 'function', 'tests'). When
+    `naturalise=True` (default) each name passes through
+    _naturalise_identifier so 'getToken' speaks as 'get token' rather
+    than 'get-token' or 'getToken' verbatim — programmer-style names
+    don't sound right read aloud. Set False for already-prose names
+    (e.g. test labels from `it("...")` calls)."""
+    if not names:
+        return ''
+    cleaned = [_naturalise_identifier(n) if naturalise else n for n in names]
+    cleaned = [c for c in cleaned if c]
+    if not cleaned:
+        return ''
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f'{cleaned[0]} and {cleaned[1]}'
+    if len(cleaned) == 3:
+        return f'{cleaned[0]}, {cleaned[1]}, and {cleaned[2]}'
+    extra = len(cleaned) - cap
+    return f'{", ".join(cleaned[:cap])}, and {extra} more'
+
+
 def _count_lines(s: str) -> int:
     """Count lines (1-indexed; '' -> 0, 'foo' -> 1, 'foo\\nbar' -> 2)."""
     if not s:
@@ -572,9 +702,14 @@ def _narrate_edit(inp: dict, prev_file: str | None,
         rename = _detect_rename(old, new)
         if rename:
             old_name, new_name = rename
+            # Naturalise names for speech — `verifySession` reads as
+            # "verify session", not "verify cap-S session". Users still
+            # see the literal name in their IDE; audio is for gist.
+            old_spoken = _naturalise_identifier(old_name) or old_name
+            new_spoken = _naturalise_identifier(new_name) or new_name
             if is_repeat_edit:
-                return f'Then renamed {old_name} to {new_name}'
-            return f'Renamed {old_name} to {new_name}{in_file}'
+                return f'Then renamed {old_spoken} to {new_spoken}'
+            return f'Renamed {old_spoken} to {new_spoken}{in_file}'
         if _looks_imports_only(old, new):
             if is_repeat_edit:
                 return 'More import changes'
@@ -584,10 +719,51 @@ def _narrate_edit(inp: dict, prev_file: str | None,
                 return 'More comment changes'
             return f'Updated comments{in_file}' if in_file else 'Updated comments'
 
-    # Generic edit. Speak about size if it's notable.
+    # Generic edit. Before falling back to bare line counts, see if the
+    # change introduces semantic structure (new function, new class,
+    # new tests). If detection succeeds the listener gets meaningful
+    # context ("Added the narrate heredoc function" vs "Added 130
+    # lines"). Detection is conservative via the patterns table — they
+    # all anchor at start-of-line so prose / call-sites won't false-match.
+    #
+    # Structure detection runs without a delta threshold so even small
+    # edits that add a single test or function are caught. The line-
+    # count fallback below STILL has a delta > 5 guard to suppress
+    # noise on trivial edits.
     old_lines = _count_lines(old)
     new_lines = _count_lines(new)
     delta = new_lines - old_lines
+
+    if old and new:
+        new_funcs = _extract_function_names(new) - _extract_function_names(old)
+        new_classes = _extract_class_names(new) - _extract_class_names(old)
+        old_test_set = set(_extract_test_names(old))
+        added_tests = [t for t in _extract_test_names(new) if t not in old_test_set]
+
+        if new_classes:
+            class_list = _format_name_list(sorted(new_classes))  # naturalise=True default
+            target = '' if is_repeat_edit else (in_file or f' to {natural}')
+            return f'Added a new class {class_list}{target}'
+
+        if new_funcs:
+            func_list = _format_name_list(sorted(new_funcs))
+            count = len(new_funcs)
+            noun = 'function' if count == 1 else 'functions'
+            target = '' if is_repeat_edit else (in_file or f' to {natural}')
+            return f'Added the {func_list} {noun}{target}'
+
+        if added_tests:
+            count = len(added_tests)
+            # Test labels come from `it("...")` blocks — already prose,
+            # not identifiers. Don't naturalise.
+            first = added_tests[0]
+            target = '' if is_repeat_edit else (in_file or f' to {natural}')
+            if count == 1:
+                return f'Added a test for "{first}"{target}'
+            return f'Added {count} new tests starting with "{first}"{target}'
+
+    # Fall through to bare line-count narration when no semantic
+    # structure was detected.
     if delta > 5:
         if is_repeat_edit:
             return f'Added {delta} more lines'
@@ -622,15 +798,40 @@ def _narrate_write(inp: dict, prev_file: str | None) -> str | None:
     elif line_count >= 30:
         size_suffix = ''  # mid-size is not worth speaking about
 
+    # Try to surface what the file DEFINES — the listener gets more
+    # value from "defines _narrate_heredoc" than "wrote a new module".
+    # Only attempt for code-shaped files (not markdown/json/config).
+    is_code_file = low.endswith(('.py', '.js', '.ts', '.tsx', '.jsx', '.cjs',
+                                  '.mjs', '.ps1', '.psm1', '.rs', '.go'))
+    primary_defined = ''
+    if is_code_file and line_count >= 10:
+        new_classes = _extract_class_names(content)
+        if new_classes:
+            class_spoken = _naturalise_identifier(sorted(new_classes)[0])
+            primary_defined = f' defining the {class_spoken} class'
+        else:
+            new_funcs = _extract_function_names(content)
+            if new_funcs:
+                func_list = _format_name_list(sorted(new_funcs)[:3])
+                noun = 'function' if len(new_funcs) == 1 else 'functions'
+                primary_defined = f' with the {func_list} {noun}'
+
     if is_test:
+        added_tests = _extract_test_names(content)
+        if added_tests:
+            count = len(added_tests)
+            first = added_tests[0]
+            if count == 1:
+                return f'Wrote a new test for "{first}" in {natural}{size_suffix}'
+            return f'Wrote {count} new tests in {natural} starting with "{first}"{size_suffix}'
         return f'Wrote a new test: {natural}{size_suffix}'
     if low.endswith('.md'):
         return f'Wrote {natural}{size_suffix}'
     if low.endswith(('.json', '.yml', '.yaml', '.toml')):
         return f'Wrote a config file: {natural}{size_suffix}'
     if low.endswith(('.tsx', '.jsx')):
-        return f'Wrote a new component: {natural}{size_suffix}'
-    return f'Wrote a new module: {natural}{size_suffix}'
+        return f'Wrote a new component: {natural}{primary_defined}{size_suffix}'
+    return f'Wrote a new module: {natural}{primary_defined}{size_suffix}'
 
 
 def _narrate_glob(inp: dict, prev_file: str | None) -> str | None:

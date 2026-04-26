@@ -2696,14 +2696,18 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   });
 
   // ---- Edit (semantic detection) -----------------------------------
-  it('Edit detects single-identifier rename', () => {
+  it('Edit detects single-identifier rename and naturalises camelCase for speech', () => {
+    // Identifier names are naturalised before speaking — programmer-style
+    // names like camelCase / snake_case / leading underscores don't read
+    // well aloud. Listener gets "get token" / "verify session" and can
+    // see the literal names in their IDE.
     const out = narrate('Edit', {
       file_path: 'auth/router.ts',
       old_string: 'function getToken() { return null; }',
       new_string: 'function verifySession() { return null; }',
     });
-    if (!out.startsWith('Renamed getToken to verifySession')) {
-      throw new Error(`expected rename narration, got: ${out}`);
+    if (!out.toLowerCase().startsWith('renamed get token to verify session')) {
+      throw new Error(`expected naturalised rename narration, got: ${out}`);
     }
   });
   it('Edit suppresses whitespace-only changes', () => {
@@ -2723,15 +2727,16 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
       throw new Error(`expected imports update, got: ${out}`);
     }
   });
-  it('Edit falls back to generic edit narration when multiple identifiers change', () => {
+  it('Edit falls back to generic edit narration when multiple identifiers change in non-structural code', () => {
+    // No function declaration / class / test in either side — just
+    // identifier shuffling at a value-expression site. Falls through
+    // to the generic edit narration since structure detection finds
+    // nothing meaningful to surface.
     const out = narrate('Edit', {
       file_path: 'app/main.js',
-      old_string: 'function foo() { return alpha; }',
-      new_string: 'function bar() { return beta; }',
+      old_string: 'const result = alpha + beta;',
+      new_string: 'const summed = gamma + delta;',
     });
-    // Two unrelated renames (foo->bar AND alpha->beta) — not a single
-    // rename, not whitespace, not comment, not imports → generic
-    // narration. Expects "Edited..." or line-count narration.
     if (!out || (!out.toLowerCase().includes('edit') && !out.toLowerCase().includes('line'))) {
       throw new Error(`expected generic edit, got: ${out}`);
     }
@@ -2908,6 +2913,71 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     const b = narrate('Task', { description: 'refactor queue', subagent_type: 'general-purpose' });
     assertEqual(a, b);
     if (!a.includes('refactor queue')) throw new Error(`bad sub-agent phrase: ${a}`);
+  });
+
+  // ---- Identifier naturalisation in narrations ----------------------
+  it('Edit rename naturalises identifier names for speech', () => {
+    const out = narrate('Edit', {
+      file_path: 'auth/router.ts',
+      old_string: 'function getToken() { return null; }',
+      new_string: 'function verifySession() { return null; }',
+    });
+    if (!out || !out.toLowerCase().includes('get token') || !out.toLowerCase().includes('verify session')) {
+      throw new Error(`expected naturalised camelCase, got: ${out}`);
+    }
+  });
+  it('Edit detects single new function and naturalises its name', () => {
+    const out = narrate('Edit', {
+      file_path: 'app/foo.py',
+      old_string: '# stub',
+      new_string: '# stub\ndef handle_request(req):\n    return req\n',
+    });
+    if (!out || !out.toLowerCase().includes('handle request') || !out.toLowerCase().includes('function')) {
+      throw new Error(`expected new-function detection with naturalisation, got: ${out}`);
+    }
+  });
+  it('Edit detects multiple new tests and quotes the first label', () => {
+    const out = narrate('Edit', {
+      file_path: 'scripts/run-tests.cjs',
+      old_string: 'foo',
+      new_string: 'foo\nit(\'first new test\', () => {});\nit(\'second test\', () => {});\nit(\'third test\', () => {});',
+    });
+    if (!out || !out.includes('3') || !out.includes('first new test')) {
+      throw new Error(`expected multi-test narration, got: ${out}`);
+    }
+  });
+  it('Edit detects single test addition', () => {
+    const out = narrate('Edit', {
+      file_path: 'scripts/run-tests.cjs',
+      old_string: '});',
+      new_string: '});\nit(\'handles edge case for foo\', () => {});',
+    });
+    if (!out || !out.toLowerCase().includes('test for') || !out.includes('handles edge case')) {
+      throw new Error(`expected single-test narration, got: ${out}`);
+    }
+  });
+  it('Edit strips leading underscore from "private-by-convention" function names', () => {
+    const out = narrate('Edit', {
+      file_path: 'app/tool.py',
+      old_string: '# stub',
+      new_string: '# stub\ndef _private_helper():\n    pass\n',
+    });
+    if (!out || out.includes('_')) {
+      throw new Error(`expected leading-underscore stripped, got: ${out}`);
+    }
+    if (!out.toLowerCase().includes('private helper')) {
+      throw new Error(`expected naturalised underscore name, got: ${out}`);
+    }
+  });
+  it('Write detects class declarations and naturalises the name', () => {
+    const big = '\n'.repeat(20);
+    const out = narrate('Write', {
+      file_path: 'app/lib/narrator-watcher.js',
+      content: 'class NarratorWatcher {}' + big,
+    });
+    if (!out || !out.toLowerCase().includes('narrator watcher class')) {
+      throw new Error(`expected class detection w/ naturalisation, got: ${out}`);
+    }
   });
 
   // ---- Bash heredoc detection (#2 — v0.5 enhancement) ---------------
