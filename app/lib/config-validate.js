@@ -54,6 +54,12 @@ const RULES = [
   // HB1 — heartbeat toggle. Default true in DEFAULTS; users disable
   // via settings or by writing false to config.json.
   { path: 'heartbeat_enabled', type: 'boolean' },
+  // Transcript-panel UI state. Lives under cfg.panels so future
+  // collapsable panels (sessions, advanced, etc.) can share the same
+  // namespace without growing the top-level shape.
+  { path: 'panels',                      type: 'object' },
+  { path: 'panels.transcript_expanded',  type: 'boolean' },
+  { path: 'panels.transcript_view',      type: 'string', maxLen: 16 },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
   { path: 'selected_tab',    type: 'string',  maxLen: 64 },
   { path: 'tabs_expanded',   type: 'boolean' },

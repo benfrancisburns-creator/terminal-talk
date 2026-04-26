@@ -84,6 +84,7 @@
     await loadScript('../app-mirror/lib/sessions-table.js');
     await loadScript('../app-mirror/lib/settings-form.js');
     await loadScript('../app-mirror/lib/audio-player.js');
+    await loadScript('../app-mirror/lib/transcript-panel.js');
     await loadScript('mock-ipc.js');
     await loadScript('../app-mirror/renderer.js');
   } catch (e) {

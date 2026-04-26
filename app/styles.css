@@ -169,6 +169,137 @@ html, body {
   padding: 0 4px;
   overflow: visible;
 }
+
+/* Transcript panel — expandable section under the dot strip showing
+   the text of the last 10 audio clips with copy buttons.
+   Collapsed: just the header row (toggle button + count badge).
+   Expanded: header + scrollable list of clip rows.
+
+   The .bar wraps the toolbar; this panel lives inside it after the
+   dots row so it expands the toolbar height when opened. The Electron
+   main process already auto-resizes the window when content grows
+   (see main.js WIN_COLLAPSED / WIN_EXPANDED — those refer to the
+   settings panel, not this one — so we just let the bar grow
+   naturally and Electron follows). */
+.transcript-panel {
+  -webkit-app-region: no-drag;
+  border-top: 1px solid var(--bar-border, rgba(255,255,255,0.06));
+  background: rgba(0,0,0,0.18);
+  font-size: 12px;
+}
+.transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  height: 26px;
+}
+.transcript-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.transcript-toggle:hover { background: rgba(255,255,255,0.05); }
+.transcript-toggle .chevron {
+  transition: transform 120ms ease;
+}
+.transcript-panel.expanded .transcript-toggle .chevron {
+  transform: rotate(180deg);
+}
+.transcript-count {
+  opacity: 0.55;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+.transcript-count:empty { display: none; }
+.transcript-view-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.transcript-view-toggle:hover {
+  opacity: 1;
+  border-color: rgba(255,255,255,0.25);
+}
+
+.transcript-list {
+  display: none;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+}
+.transcript-panel.expanded .transcript-list {
+  display: block;
+}
+.transcript-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  border-left: 3px solid transparent;
+}
+.transcript-row.current {
+  background: rgba(255,255,255,0.07);
+  border-left-color: var(--mascot-primary, #ffa64d);
+}
+.transcript-body {
+  flex: 1 1 auto;
+  /* User-selectable so they can drag-select a phrase rather than
+     copy-the-whole-clip. white-space: pre-wrap preserves line
+     breaks from the original markdown view. */
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+  line-height: 1.4;
+  /* Soft cap so a giant clip doesn't blow out the panel — overflow
+     scrolls inside the list rather than the whole row. Most clips
+     are well under this. */
+  max-height: 8em;
+  overflow-y: auto;
+}
+.transcript-body.empty {
+  opacity: 0.4;
+  font-style: italic;
+}
+.transcript-copy {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.6;
+  align-self: flex-start;
+}
+.transcript-copy:hover {
+  opacity: 1;
+  border-color: rgba(255,255,255,0.35);
+}
+.bar.collapsed .transcript-panel {
+  display: none;
+}
 .dots {
   display: flex;
   align-items: center;

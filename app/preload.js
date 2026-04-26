@@ -16,6 +16,11 @@ function subscribe(channel, cb, unwrap) {
 
 contextBridge.exposeInMainWorld('api', {
   getQueue: () => ipcRenderer.invoke('get-queue'),
+  // Transcript panel: read the .txt + .original.txt sidecars next to a
+  // queued audio clip. Path is validated main-side against QUEUE_DIR.
+  // Returns { spoken: string, original: string } — both empty if the
+  // sidecars don't exist (older clips, ephemerals, etc.).
+  readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
   deleteFile: (p) => ipcRenderer.invoke('delete-file', p),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   getConfig: () => ipcRenderer.invoke('get-config'),
