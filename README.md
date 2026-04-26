@@ -11,11 +11,11 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.5 beta · solo-maintained.** Works well on my machine, tested in CI (687 unit + 28 E2E green), but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.6 beta · solo-maintained.** Works well on my machine, tested in CI (1019 unit + 28 E2E green), but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
-**Claude Code reads its replies aloud, and _"hey jarvis"_ reads any highlighted text.**
+**Claude Code _and_ OpenAI Codex CLI read their replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
-Terminal Talk also tails local Codex CLI session logs in `~/.codex/sessions/` and speaks assistant `commentary` + `final` messages with the same queue / voice pipeline.
+Two assistants, one toolbar. Terminal Talk auto-speaks Claude Code via hooks _and_ tails local Codex CLI session logs in `~/.codex/sessions/` to speak Codex `commentary` + `final` messages — both go through the same queue, voice pipeline, and per-session colour registry.
 
 Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signup, no accounts. Microsoft Edge TTS (cloud) for voices, openWakeWord (local) for wake-word detection. Colour-blind friendly palette available in Settings › Playback.
 
@@ -28,10 +28,11 @@ Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signu
 |  |  |
 |---|---|
 | 🎙️ **"Hey jarvis" → read highlighted text** — works in any app, offline wake-word | 🔊 **Auto-speaks Claude Code responses** — starts within ~2–3 s, not after the turn ends |
-| 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 📜 **Streaming audio** — transcript-watcher spawns synth as Claude types |
+| 🤖 **Codex CLI integration** — tails Codex rollout sessions, same queue + colours, no hooks needed | 📜 **Transcript panel** — recent clips with copy + Spoken / Original toggle, filtered per session |
+| 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 🛠️ **Smart tool narration** — _"Edit to render banner in renderer.js — added 12 lines"_ |
 | 🎚️ **Master volume + per-clip mix** — heartbeat stays ambient at any master level | 🔕 **Auto-pauses when you dictate** — Wispr / Voice Access / VoIP never get talked over |
 | 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **End-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
-| 💬 **Per-session voice + speech-includes** — 45 Edge voices + 6 OpenAI, 7 per-session toggles | 🛠️ **Tool-call narration** — _"Reading foo.py"_, _"Running npm"_ ephemeral audio |
+| 💬 **Per-session voice + speech-includes** — 45 Edge voices + 6 OpenAI, 7 per-session toggles | 📊 **Markdown-aware sanitiser** — tables, code fences, inline backticks all spoken cleanly |
 
 ---
 
@@ -62,9 +63,12 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 ## What it does
 
 - **Auto-speak Claude Code responses.** Starts speaking as Claude generates, not after it finishes — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice).
-- **Also speaks Codex CLI replies.** No Claude-style hook registration needed — Terminal Talk tails Codex's persisted session JSONL and narrates assistant commentary/final messages through the same toolbar queue. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
+- **Also speaks Codex CLI replies.** No Claude-style hook registration needed — Terminal Talk tails Codex's persisted session JSONL and narrates assistant commentary / final messages through the same toolbar queue. Codex sessions appear in the Settings panel with their own colour entry; per-session voice / mute / speech-includes overrides apply identically. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
 - **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
 - **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
+- **Smart tool-call narration.** When Claude reads a file, the toolbar says "Looking at the renderer file" — not just "Reading renderer.js". Edits surface as "Edit to render continuation banner — added 12 lines" with enclosing-function detection. Glob / Grep narrations include result counts. Bash commands peel echo headers and capture file paths instead of flag values.
+- **Markdown-aware audio sanitiser.** GFM tables don't disappear — they get summarised as "Table with 3 rows. Columns: A, B, C." Code fences are stripped or kept based on the language tag and your `code_blocks` setting. Inline backticks, emphasis, bullets, headings, image-alt — each independently toggle-able per session.
+- **Transcript expandable panel.** Toolbar surface showing the recent clip queue with copy buttons and a Spoken / Original toggle (compare what was synthesised against the original Markdown). Filters to the currently selected session tab.
 - **Per-session controls.** Mute individual terminals (no synthesis, no clips — truly "cut the wire"), focus one to prioritise its clips in the queue, give each a custom voice, override speech-include behaviour per session (code blocks, URLs, headings, etc.).
 - **Auto-pauses when you dictate.** If another app (Wispr Flow, Windows Voice Access, VoIP) grabs the mic, Terminal Talk pauses whatever's playing so it doesn't talk over you. Releases and resumes automatically. New arrivals that land during the dictation window queue up and drain in order once the mic's free — they never burst all at once.
 - **End-of-reply closer.** At the end of each Claude response, Terminal Talk speaks the exact verb from the terminal footer — "Brewed for 8m 49s", "Sautéed for 1m 0s", "Cogitated for 24m 56s". Read directly off the Windows Terminal buffer via UI Automation so the audio matches what you see.
@@ -210,6 +214,16 @@ Click the gear to expand the toolbar into a panel with:
   - **Colour dropdown** — 24 arrangements: 8 solid colours + 8 horizontal splits + 8 vertical splits, with complementary colour pairings on the splits so each is unambiguous. Pick anything; the change is instant on the toolbar and propagates to the terminal identity surface within a couple of seconds.
   - **Chevron** — expands to per-session voice and speech-includes overrides (see below).
 - **About Terminal Talk** — banner + shortcuts cheat-sheet.
+
+#### Transcript panel
+
+A second collapsible surface in the toolbar, separate from Settings. Lists the most recent clips (Claude + Codex + highlight-to-speak) with:
+
+- **Copy buttons** for each clip — grab the spoken text fast.
+- **Spoken / Original toggle** — flip between the sanitised text edge-tts actually saw and the raw Markdown the assistant produced. Useful for confirming the sanitiser kept what mattered (or didn't).
+- **Per-session filtering** — the currently selected session tab scopes the list, so the transcript view stays in lockstep with the dot strip above.
+
+Clips that pre-date the panel show their spoken side only; the Original column populates for any new clip from this version onward.
 
 ### Per-session overrides
 
@@ -393,27 +407,30 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 686-test harness plus 28 Playwright E2E tests exercise the actual installed components:
+A 1019-test harness plus 28 Playwright E2E tests exercise the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
 ```
 
-Coverage:
+Coverage highlights:
 
-- Palette: 24 arrangements all distinct, edge cases (wrap, negatives).
-- Filename parsing: response, question, notification, clip (session-scoped + neutral).
-- Statusline assignment: lowest-free-index, two distinct sessions get different colours, returning sessions keep their slot, label appended to emoji.
-- Edge TTS wrapper: produces real mp3 from text input.
-- Speech-includes (`stripForTTS`): 9 toggle behaviours including content preservation when "On".
-- Voice list validation: every Edge voice in the dropdown actually exists in Microsoft's catalogue, defaults are valid.
-- Per-session merge: 5-row truth table (true/false/null/missing/empty).
-- Registry handling: no UTF-8 BOM written, BOM tolerance on read, voice + speech_includes + muted flag preserved through round-trip writes.
-- Sentence splitter: abbreviation / URL / decimal protection, paragraph-break boundaries, short-merge, hard-split on over-long sentences.
-- synth_turn orchestrator: transcript extraction, tool_use filtering, sanitisation with code_blocks toggle, questions-first extraction, sync state round-trip, mute skip.
-- Pinned sessions: not pruned even if PID dead and `last_seen` stale.
-- Install sanity: required files present, config parses.
-- Self-cleanup watchdog: single-instance lock, 30-min sweep, orphan listener kill.
+- **Codex integration** — rollout-file delta tracking, `agent_message` event extraction (commentary + final phases), per-session promise tail chain ordering, signature dedup against rewrite-replay, registry-touch persistence.
+- **Tool narration** — flag-aware path capture (`ls -lat /path` doesn't capture `-lat`), echo-header peeling for `;` / `|` separators, batch-level dedup of identical phrases, enclosing-scope detection from structuredPatch + originalFile walk.
+- **Sanitiser** — GFM table summarisation in both Python and JS sanitisers, code-fence language detection, inline-code stripping, parity invariant between `synth_turn.py` and `app/lib/text.js`.
+- **Click-through state machine** — Ctrl+R reload ordering contract (setIgnoreMouseEvents must run before reload), 5s reload-grace IPC suppression, mic-captured-elsewhere callback ordering (must arm flag before audio guard), audio-player two-flag split (`_micCaptured` + `_systemAutoPaused`).
+- **Palette** — 24 arrangements all distinct, edge cases (wrap, negatives, hash-mod), colour-blind variant.
+- **Filename parsing** — response, question, notification, clip (session-scoped + neutral, plus `T-` tool-narration and `H-` heartbeat ephemeral prefixes).
+- **Statusline assignment** — lowest-free-index, two distinct sessions get different colours, returning sessions keep their slot, label appended to emoji, PID-migration through `/clear`.
+- **Edge TTS wrapper** — produces real mp3 from text input; OpenAI premium fallback wired through edge↔OpenAI provider routing.
+- **Speech-includes** (`stripForTTS`) — 9 toggle behaviours, content preservation when "On", per-session merge truth table.
+- **Voice list validation** — every Edge voice in the dropdown actually exists in Microsoft's catalogue, defaults are valid.
+- **Registry handling** — no UTF-8 BOM written, BOM tolerance on read, voice + speech_includes + muted flag + pinned preserved through round-trip writes, lock-fail-skip discipline (#26 / #8 root fix).
+- **Sentence splitter** — abbreviation / URL / decimal protection, paragraph-break boundaries, short-merge, hard-split on over-long sentences.
+- **synth_turn orchestrator** — transcript extraction, tool_use filtering, sanitisation with code_blocks toggle, questions-first extraction, sync state round-trip, mute skip, J-S1 `flags.get` fallback alignment with DEFAULT_SPEECH_INCLUDES.
+- **Pinned sessions** — not pruned even if PID dead and `last_seen` stale.
+- **Install sanity** — required files present, config parses, manifest hash check.
+- **Self-cleanup watchdog** — single-instance lock, 30-min sweep, orphan listener kill, hard-kill via taskkill /F /T.
 
 Tests are isolated from the live install — they use a tmp registry path so they can't race with your running statusline.
 
@@ -423,7 +440,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding new tests.
 
 ## How it works
 
-Three Claude Code integration points (hooks + statusline), a floating Electron toolbar, a Python synth orchestrator, and two polling sidecars keep audio aligned with what you see in the terminal.
+Two assistant integration paths, one shared queue:
+
+- **Claude Code** — hooks (UserPromptSubmit / PreToolUse / Stop) plus a transcript-watcher that streams synth as Claude generates. Hooks register into `~/.claude/settings.json` at install time.
+- **Codex CLI** — a 1-second poll on `~/.codex/sessions/`, reading delta bytes from each rollout `.jsonl` and extracting `event_msg → agent_message` events (commentary + final phases). No installation hooks required — purely file-watch.
+
+Both feed the same Electron toolbar, the same audio-player, the same per-session colour registry, the same per-session voice / mute / speech-includes contract. The Python synth orchestrator (`synth_turn.py`) handles Claude turns; the JS Codex watcher (`app/lib/codex-session-watcher.js`) handles Codex turns inline (no Python spawn). Mic-watcher + heartbeat sidecars apply to both paths uniformly.
 
 ```
                        Claude Code turn lifecycle
@@ -444,6 +466,18 @@ Three Claude Code integration points (hooks + statusline), a floating Electron t
         │   • stripForTTS (honours speech_includes)│
         │   • sentence-split + group              │
         │   • parallel edge-tts / OpenAI synth    │
+        │   • writes .mp3 / .wav to queue/        │
+        └────────────────┬───────────────────────┘
+                         │
+                         │  (parallel: Codex CLI integration path)
+                         │
+        ┌────────────────────────────────────────┐
+        │  codex-session-watcher.js  (1 s poll)   │
+        │   • tails ~/.codex/sessions/*.jsonl     │
+        │   • extracts event_msg → agent_message  │
+        │   • per-file offset + signature dedup   │
+        │   • per-session promise tail chain      │
+        │   • inline edge / OpenAI synth          │
         │   • writes .mp3 / .wav to queue/        │
         └────────────────┬───────────────────────┘
                          │
