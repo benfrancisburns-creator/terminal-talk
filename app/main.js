@@ -271,42 +271,10 @@ const _queueWatcher = createQueueWatcher({ queueDir: QUEUE_DIR, maxFiles: MAX_FI
 const getQueueFiles = _queueWatcher.list;
 const getQueueAllPaths = _queueWatcher.listPaths;
 
-function pruneOldFiles() {
-  try {
-    const now = Date.now();
-    for (const f of fs.readdirSync(QUEUE_DIR)) {
-      const full = path.join(QUEUE_DIR, f);
-      // Audio files older than 1 h get pruned.
-      if (isAudioFile(f)) {
-        try {
-          const stat = fs.statSync(full);
-          if (now - stat.mtimeMs > STALE_MS) fs.unlinkSync(full);
-        } catch {}
-        continue;
-      }
-      // Stale `.partial` orphans (crashed mid-write) -- always safe to remove if older than a minute.
-      if (f.endsWith('.partial')) {
-        try {
-          const stat = fs.statSync(full);
-          if (now - stat.mtimeMs > 60_000) fs.unlinkSync(full);
-        } catch {}
-      }
-    }
-  } catch {}
-}
-
-function pruneSessionsDir() {
-  try {
-    if (!fs.existsSync(SESSIONS_DIR)) return;
-    for (const f of fs.readdirSync(SESSIONS_DIR)) {
-      if (!f.endsWith('.json')) continue;
-      const pid = parseInt(f.replace('.json', ''), 10);
-      if (!pid || !isPidAlive(pid)) {
-        try { fs.unlinkSync(path.join(SESSIONS_DIR, f)); } catch {}
-      }
-    }
-  } catch {}
-}
+// Disk pruning extracted to app/lib/prune.js (2026-04-26 — #29 sub-2000 follow-up).
+const { pruneOldFiles, pruneSessionsDir } = require('./lib/prune').createPruner({
+  queueDir: QUEUE_DIR, sessionsDir: SESSIONS_DIR, staleMs: STALE_MS, isAudioFile, isPidAlive,
+});
 
 // Edge snapping: within this many pixels of a screen edge, on move-end we
 // snap to that edge. Pick a threshold big enough to forgive imprecise drags
