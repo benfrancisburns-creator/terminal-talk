@@ -48,10 +48,14 @@ GHRC/
 .claude/
 iNPLAY IMAGES/
 
-# coord/ chatter surfaces — not committed. Durable surfaces
-# (README, STATE, QUEUE, INDEX, MAP/, ACTIVE/, DONE/) ARE committed.
-coord/INBOX/
-coord/LOCKS/
-coord/HANDOVER-*.md
-coord/BEN.md
-coord/IDLE/
+# coord/ — entire dir is internal multi-terminal coordination
+# machinery. Files live in the working tree for active dev use but
+# aren't tracked. Recover historical content via:
+#   git log --all --oneline -- coord/<path>
+#   git show <sha>:coord/<path>
+# See `.archive-notes.md` for the 2026-04-26 untrack rationale.
+coord/
+
+# Empty placeholder dirs that historically existed at root
+Assesments/
+IMAGES/
