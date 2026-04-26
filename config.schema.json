@@ -57,6 +57,14 @@
       "default": true,
       "description": "HB1 — when Claude Code is actively working but the queue has been silent for 15 s, synthesise a single spinner-verb ('Moonwalking', 'Pontificating') as an ephemeral T-prefixed clip so you get audible confirmation the session is alive. Mirrors the mascot's visible word-cloud."
     },
+    "panels": {
+      "type": "object",
+      "description": "UI panel persistence. Each sub-panel records its collapsed/expanded state and view mode so the toolbar restores exactly how the user left it.",
+      "properties": {
+        "transcript_expanded": { "type": "boolean", "default": false, "description": "Whether the transcript panel under the dot strip is open." },
+        "transcript_view":     { "type": "string", "enum": ["spoken", "original"], "default": "spoken", "description": "Which text view the transcript panel shows: 'spoken' (post-strip-for-tts, what the audio actually says) or 'original' (pre-strip markdown source)." }
+      }
+    },
     "window": {
       "type": ["object", "null"],
       "description": "Last-saved window position. Managed by main.js; don't hand-edit.",

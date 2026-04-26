@@ -97,6 +97,15 @@ const DEFAULTS = {
   // the mascot's visible word-cloud. Ephemeral T- prefix; auto-deletes
   // on play-end. Off suppresses emission entirely (zero IPC traffic).
   heartbeat_enabled: true,
+  // UI panel persistence. Each sub-panel records its own collapsed/
+  // expanded state and any view modes here so the toolbar restores
+  // exactly how the user left it. Today only the transcript panel
+  // (under the dot strip) lives here; future panels follow the same
+  // {transcript_*: ...} naming.
+  panels: {
+    transcript_expanded: false,
+    transcript_view: 'spoken',
+  },
   // Experimental: Haiku-backed narrator subagent. Stop hook spawns a
   // separate Claude CLI invocation that converts the just-finished turn
   // into a short speakable summary, dropped in the queue as an N-prefix

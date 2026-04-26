@@ -153,7 +153,11 @@ function Invoke-TtsWithFallback {
         [string]$OpenAiInstructions = 'Speak in a calm, clear, conversational tone.',
         [int]$OpenAiTimeoutSec = 60,
         # 'edge' | 'openai'. Any other value is treated as 'edge'.
-        [string]$Provider = 'edge'
+        [string]$Provider = 'edge',
+        # Optional pre-strip-for-tts text for the transcript-panel feature.
+        # When passed, written to <base>.original.txt alongside the audio
+        # file. The (post-strip) `$Text` is always written to <base>.txt.
+        [string]$OriginalText = ''
     )
     $provider = $Provider.ToLower()
     if ($provider -ne 'openai') { $provider = 'edge' }
@@ -161,15 +165,31 @@ function Invoke-TtsWithFallback {
     $mp3 = "$BasePath.mp3"
     $wav = "$BasePath.wav"
 
+    # Helper: write the .txt + optional .original.txt sidecars next to
+    # the audio file. Used by the transcript-panel feature in the
+    # renderer to show users the text of each clip with copy support.
+    # Failures here never break audio — sidecar is best-effort.
+    $writeSidecar = {
+        param($BaseNoExt, $Spoken, $Original)
+        try {
+            Set-Content -Path "$BaseNoExt.txt" -Value $Spoken -Encoding utf8 -NoNewline
+            if ($Original -and $Original.Trim() -and $Original -ne $Spoken) {
+                Set-Content -Path "$BaseNoExt.original.txt" -Value $Original -Encoding utf8 -NoNewline
+            }
+        } catch {}
+    }
+
     if ($provider -eq 'openai' -and $OpenAiApiKey) {
         # OpenAI-primary: try OpenAI first.
         if (Invoke-OpenAiTts -ApiKey $OpenAiApiKey -Voice $OpenAiVoice -Text $Text `
                              -OutWav $wav -Instructions $OpenAiInstructions `
                              -TimeoutSec $OpenAiTimeoutSec) {
+            & $writeSidecar $BasePath $Text $OriginalText
             return $wav
         }
         # Fall through to edge on failure.
         if (Invoke-EdgeTts -EdgeScriptPath $EdgeScriptPath -Voice $EdgeVoice -Text $Text -OutMp3 $mp3) {
+            & $writeSidecar $BasePath $Text $OriginalText
             return $mp3
         }
         return $null
@@ -178,12 +198,14 @@ function Invoke-TtsWithFallback {
     # Edge-primary (default, also the path when openai was requested but
     # no key is configured).
     if (Invoke-EdgeTts -EdgeScriptPath $EdgeScriptPath -Voice $EdgeVoice -Text $Text -OutMp3 $mp3) {
+        & $writeSidecar $BasePath $Text $OriginalText
         return $mp3
     }
     if (-not $OpenAiApiKey) { return $null }
     if (Invoke-OpenAiTts -ApiKey $OpenAiApiKey -Voice $OpenAiVoice -Text $Text `
                          -OutWav $wav -Instructions $OpenAiInstructions `
                          -TimeoutSec $OpenAiTimeoutSec) {
+        & $writeSidecar $BasePath $Text $OriginalText
         return $wav
     }
     return $null

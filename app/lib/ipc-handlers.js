@@ -94,6 +94,44 @@ function createIpcHandlers(deps) {
       } catch {}
     });
 
+    // Transcript-panel sidecar reader. Takes an audio clip path, returns
+    // { spoken, original } from the matching .txt / .original.txt sidecar
+    // files synth_turn.py and tts-helper.psm1 write next to each clip.
+    // Path validation: only files inside QUEUE_DIR can be read — defends
+    // against any hostile renderer code asking for arbitrary disk reads.
+    // Missing sidecar files (older clips predating the feature, or T-/H-
+    // ephemerals that skip persisting) return empty strings; never throws.
+    ipcMain.handle('read-clip-sidecar', (_e, audioPath) => {
+      try {
+        if (typeof audioPath !== 'string' || !audioPath) {
+          return { spoken: '', original: '' };
+        }
+        if (typeof isPathInside === 'function' && QUEUE_DIR) {
+          if (!isPathInside(audioPath, QUEUE_DIR)) {
+            return { spoken: '', original: '' };
+          }
+        }
+        // Strip the audio extension (.mp3 or .wav) and replace with .txt
+        // / .original.txt. Use path.extname so the path stays platform-
+        // correct (Windows backslashes preserved).
+        const ext = path.extname(audioPath).toLowerCase();
+        if (ext !== '.mp3' && ext !== '.wav') {
+          return { spoken: '', original: '' };
+        }
+        const base = audioPath.slice(0, -ext.length);
+        const spokenPath = base + '.txt';
+        const originalPath = base + '.original.txt';
+        let spoken = '';
+        let original = '';
+        try { spoken = fs.readFileSync(spokenPath, 'utf8'); } catch {}
+        try { original = fs.readFileSync(originalPath, 'utf8'); } catch {}
+        return { spoken, original };
+      } catch (e) {
+        diag(`read-clip-sidecar fail: ${e && e.message}`);
+        return { spoken: '', original: '' };
+      }
+    });
+
     // Two lists, one poll:
     //   files    — newest N (MAX_FILES) with stat metadata, drives the
     //              dot-strip which caps its own render at MAX_VISIBLE_DOTS.

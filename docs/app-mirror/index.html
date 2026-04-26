@@ -98,6 +98,24 @@
     </div>
     <div class="tabs-row"><div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div></div>
     <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
+    <!-- Transcript panel — expandable section showing the spoken text of
+         recent audio clips with copy buttons. Collapsed by default;
+         click the header to expand. Phase 1 (no per-word karaoke
+         highlight): just the text per clip + copy-all + view toggle
+         between spoken (post-strip-for-tts) and original (pre-strip
+         markdown). Sidecar files (.txt / .original.txt) are written
+         by synth_turn.py + tts-helper.psm1 next to each audio clip. -->
+    <div id="transcriptPanel" class="transcript-panel" aria-expanded="false">
+      <div class="transcript-header">
+        <button id="transcriptToggle" type="button" class="transcript-toggle" aria-pressed="false" aria-controls="transcriptList" title="Show recent clip transcripts with copy buttons">
+          <svg class="chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <span>Transcript</span>
+          <span id="transcriptCount" class="transcript-count" aria-live="polite"></span>
+        </button>
+        <button id="transcriptViewToggle" type="button" class="transcript-view-toggle" aria-label="View mode: spoken" title="Toggle between spoken (TTS-cleaned) and original (markdown source) text">Spoken</button>
+      </div>
+      <div id="transcriptList" class="transcript-list" role="list" aria-label="Recent clip transcripts"></div>
+    </div>
   </div>
   <div class="panel" id="panel">
     <div class="panel-inner">
@@ -292,6 +310,7 @@
   <script src="lib/sessions-table.js"></script>
   <script src="lib/settings-form.js"></script>
   <script src="lib/audio-player.js"></script>
+  <script src="lib/transcript-panel.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
