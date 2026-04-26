@@ -709,6 +709,12 @@ def _narrate_edit(inp: dict, prev_file: str | None,
     structured_patch = tool_result.get('structuredPatch') if isinstance(tool_result, dict) else None
     locality = _patch_locality_suffix(structured_patch)
     patch_added, patch_removed = _patch_line_counts(structured_patch)
+    # Phase 3 — enclosing function/class detected from the patch
+    # context lines. When found, replaces the bare "around line N"
+    # locality with the more meaningful "to <function name>" — the
+    # function name IS the locality cue a listener wants.
+    enclosing = _extract_enclosing_scope(structured_patch)
+    scope_target = f' to {enclosing}' if enclosing else ''
 
     if old and new:
         rename = _detect_rename(old, new)
@@ -780,6 +786,12 @@ def _narrate_edit(inp: dict, prev_file: str | None,
     # mislead (delete 5 + add 7 reads as delta=+2 but the patch shows
     # 7 added / 5 removed). Without a patch (on-tool in-flight, missing
     # field), fall through to the input-side delta as before.
+    #
+    # Phase 3: when an enclosing function was detected, the function
+    # name takes the place of "around line N" locality — the function
+    # name IS the locality cue. Keeps clips from saying both "to render
+    # continuation banner" AND "around line 670" (redundant).
+    locality_for_phrase = '' if enclosing else locality
     if structured_patch and (patch_added > 5 or patch_removed > 5):
         # Phrase shape: "+X −Y" when both happened; just "added X" / "removed Y" otherwise.
         if patch_added > 0 and patch_removed > 0:
@@ -789,23 +801,29 @@ def _narrate_edit(inp: dict, prev_file: str | None,
         else:
             counts = f'removed {patch_removed} lines'
         if is_repeat_edit:
-            return f'Then {counts}{locality}'
+            return f'Then {counts}{scope_target}{locality_for_phrase}'
         target = in_file or f' to {natural}'
-        return f'Edit{target} — {counts}{locality}'
+        return f'Edit{scope_target}{target} — {counts}{locality_for_phrase}'
 
     if delta > 5:
         if is_repeat_edit:
-            return f'Added {delta} more lines{locality}'
-        return f'Added {delta} lines{in_file}{locality}' if in_file else f'Added {delta} lines to {natural}{locality}'
+            return f'Added {delta} more lines{scope_target}{locality_for_phrase}'
+        return (f'Added {delta} lines{scope_target}{in_file}{locality_for_phrase}'
+                if in_file else
+                f'Added {delta} lines{scope_target} to {natural}{locality_for_phrase}')
     if delta < -5:
         if is_repeat_edit:
-            return f'Removed {-delta} more lines{locality}'
-        return f'Removed {-delta} lines{in_file}{locality}' if in_file else f'Removed {-delta} lines from {natural}{locality}'
+            return f'Removed {-delta} more lines{scope_target}{locality_for_phrase}'
+        return (f'Removed {-delta} lines{scope_target}{in_file}{locality_for_phrase}'
+                if in_file else
+                f'Removed {-delta} lines{scope_target} from {natural}{locality_for_phrase}')
 
     if is_repeat_edit:
-        return f'Another change to the same file{locality}'
+        return f'Another change{scope_target}{locality_for_phrase}' if scope_target else f'Another change to the same file{locality_for_phrase}'
     if natural:
-        return f'Edited {natural}{locality}'
+        if enclosing:
+            return f'Edited {enclosing} in {natural}'
+        return f'Edited {natural}{locality_for_phrase}'
     return 'Edited a file'
 
 
@@ -861,6 +879,66 @@ def _narrate_write(inp: dict, prev_file: str | None) -> str | None:
     if low.endswith(('.tsx', '.jsx')):
         return f'Wrote a new component: {natural}{primary_defined}{size_suffix}'
     return f'Wrote a new module: {natural}{primary_defined}{size_suffix}'
+
+
+def _extract_enclosing_scope(structured_patch) -> str | None:
+    """Find the function or class the change is inside by walking
+    backwards through the patch's context lines (those NOT prefixed with
+    + or -). Returns a naturalised name like "render continuation
+    banner" or None if no enclosing scope is detectable from the patch.
+
+    Phase 3 — gives the listener "what part of the code are we touching"
+    without doing any disk I/O. Diff context typically holds 3-5 lines
+    around each change; when the change is near the top of a function
+    that window catches the `def`/`function` declaration. Deep edits
+    inside long functions miss; the narrator falls back to bare line
+    locality from Phase 2.
+
+    Heuristics:
+      - Use the FIRST hunk only (where the listener cares).
+      - Walk backward from the first +/- line through unchanged context.
+      - Match against the same _FUNCTION_DECL_PATTERNS and
+        _CLASS_DECL_PATTERNS used by the existing semantic detector.
+      - Functions win over classes (more specific).
+    """
+    if not isinstance(structured_patch, list) or not structured_patch:
+        return None
+    h = structured_patch[0]
+    if not isinstance(h, dict):
+        return None
+    raw_lines = h.get('lines') or []
+    if not isinstance(raw_lines, list):
+        return None
+
+    # Find the first changed line — that's our anchor for "current
+    # position in the function".
+    first_change = None
+    for i, line in enumerate(raw_lines):
+        if isinstance(line, str) and (line.startswith('+') or line.startswith('-')):
+            first_change = i
+            break
+    if first_change is None:
+        return None
+
+    # Walk backward through context lines (not + / -). Strip the diff
+    # prefix (single space) before pattern matching — declarations have
+    # to start at column 0 OR with proper indentation.
+    for i in range(first_change - 1, -1, -1):
+        line = raw_lines[i]
+        if not isinstance(line, str) or not line:
+            continue
+        if line[0] not in (' ', '\t'):
+            continue  # skip non-context (a + or -, defensive)
+        stripped = line[1:] if line[0] == ' ' else line
+        for pat in _FUNCTION_DECL_PATTERNS:
+            m = pat.match(stripped)
+            if m:
+                return _naturalise_identifier(m.group(1)) or m.group(1)
+        for pat in _CLASS_DECL_PATTERNS:
+            m = pat.match(stripped)
+            if m:
+                return _naturalise_identifier(m.group(1)) or m.group(1)
+    return None
 
 
 def _patch_locality_suffix(structured_patch) -> str:

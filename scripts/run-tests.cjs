@@ -3004,6 +3004,131 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     );
   });
 
+  // ---- Edit enclosing scope (Phase 3: extract function from patch) -
+  // The diff context lines (those NOT prefixed with + or -) often hold
+  // the enclosing function declaration. Phase 3 walks backwards from
+  // the first changed line to find a `def` / `function` / `class`
+  // declaration in context; when found, the function name replaces
+  // the bare "around line N" locality cue.
+  it('Edit names the enclosing function when patch context catches it', () => {
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/tool_narration.py',
+        old_string: '    return None',
+        new_string: '    return None\n    # extra comment\n    return None\n    # extra2\n    return None\n    # extra3\n    return None\n    # extra4',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 670, oldLines: 5, newStart: 670, newLines: 13,
+          lines: [
+            '   def render_continuation_banner():',
+            '       """Build the banner."""',
+            '       if not data:',
+            '+          # extra comment',
+            '+          # extra2',
+            '+          # extra3',
+            '+          # extra4',
+            '+          # extra5',
+            '+          # extra6',
+            '+          # extra7',
+            '+          # extra8',
+            '       return None',
+          ]
+        }]
+      }),
+      // Function name "render_continuation_banner" → "render continuation banner"
+      // No "around line N" because the function name is the locality cue
+      'Edit to render continuation banner in the tool narration file — added 8 lines'
+    );
+  });
+
+  it('Edit deep inside long function falls back to line locality (no scope catch)', () => {
+    // Change is far from any def — patch context window doesn't reach
+    // the enclosing function declaration. Phase 2 line-locality applies.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/main.js',
+        old_string: '    a\n    b\n    c',
+        new_string: '    a\n    b\n    c\n    d\n    e\n    f\n    g\n    h\n    i\n    j',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 1500, oldLines: 3, newStart: 1500, newLines: 10,
+          lines: [
+            '       const x = 1;',
+            '       const y = 2;',
+            '       const z = 3;',
+            '+      const a = 4;',
+            '+      const b = 5;',
+            '+      const c = 6;',
+            '+      const d = 7;',
+            '+      const e = 8;',
+            '+      const f = 9;',
+            '+      const g = 10;',
+            '+      const h = 11;',
+          ]
+        }]
+      }),
+      'Edit in the app main file — added 8 lines around line 1500'
+    );
+  });
+
+  it('Edit catches JS-style function declaration in patch context', () => {
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: '  return out;',
+        new_string: '  out.push(1);\n  out.push(2);\n  out.push(3);\n  out.push(4);\n  out.push(5);\n  out.push(6);\n  out.push(7);\n  out.push(8);\n  return out;',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 100, oldLines: 3, newStart: 100, newLines: 11,
+          lines: [
+            ' function buildSessionList(input) {',
+            '   const out = [];',
+            '   const data = input;',
+            '+  out.push(1);',
+            '+  out.push(2);',
+            '+  out.push(3);',
+            '+  out.push(4);',
+            '+  out.push(5);',
+            '+  out.push(6);',
+            '+  out.push(7);',
+            '+  out.push(8);',
+            '   return out;',
+          ]
+        }]
+      }),
+      'Edit to build session list in the renderer file — added 8 lines'
+    );
+  });
+
+  it('Edit catches PowerShell Verb-Noun function declaration', () => {
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/session-registry.psm1',
+        old_string: '    Write-Output $assignments',
+        new_string: '    Write-Output $assignments\n    # extra1\n    # extra2\n    # extra3\n    # extra4\n    # extra5\n    # extra6\n    # extra7',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 50, oldLines: 1, newStart: 50, newLines: 8,
+          lines: [
+            ' function Read-Registry {',
+            '     param($RegistryPath)',
+            '     $assignments = @{}',
+            '+    # extra1',
+            '+    # extra2',
+            '+    # extra3',
+            '+    # extra4',
+            '+    # extra5',
+            '+    # extra6',
+            '+    # extra7',
+            '     Write-Output $assignments',
+          ]
+        }]
+      }),
+      // PowerShell Verb-Noun "Read-Registry" naturalises through identifier helper
+      'Edit to read registry in the session registry file — added 7 lines'
+    );
+  });
+
   it('Edit rename does NOT get locality suffix (qualitative phrase)', () => {
     // Renames are already concise + meaningful; tacking " around line N"
     // adds clip length without adding signal. Same applies to
