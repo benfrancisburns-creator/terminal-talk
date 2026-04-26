@@ -129,9 +129,6 @@ try {
     Log "terminal footer scrape failed: $($_.Exception.Message)"
 }
 
-$claudePid = 0
-try { $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId } catch {}
-
 if ($sessionShort -and $sessionShort.Length -eq 8) {
     $registryPath = Join-Path $ttHome 'session-colours.json'
     $sessionsDir = Join-Path $ttHome 'sessions'
@@ -142,6 +139,13 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
     # Write-Atomic + per-PID stamp. Replaces ~80 lines of duplication that
     # used to live here AND in speak-on-tool.ps1 AND in statusline.ps1.
     Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
+
+    # Walk up to the long-lived claude.exe pid (see Get-StableClaudePid in
+    # session-registry.psm1). speak-response historically reached claude
+    # in 1 hop so raw ParentProcessId worked, but using the helper makes
+    # all three hooks symmetrical and robust to future spawn-tree changes.
+    $claudePid = 0
+    try { $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else { Get-StableClaudePid } } catch {}
 
     # Read-Update-Save must be lock-guarded -- toolbar can be mid-write
     # and would otherwise be stomped. See app/lib/registry-lock.js for

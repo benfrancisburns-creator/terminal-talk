@@ -249,6 +249,87 @@ describe('FILENAME PARSING', () => {
   });
 });
 
+describe('PRUNE LIB (#29 sub-2000 extract)', () => {
+  const { createPruner } = require(path.join(__dirname, '..', 'app', 'lib', 'prune'));
+  const isAudio = (f) => /\.(mp3|wav)$/i.test(f);
+
+  function setupQueue() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-q-'));
+    const old = path.join(dir, 'old.mp3');
+    const fresh = path.join(dir, 'fresh.mp3');
+    const oldPartial = path.join(dir, 'crashed.partial');
+    const freshPartial = path.join(dir, 'recent.partial');
+    const config = path.join(dir, 'config.json');
+    fs.writeFileSync(old, 'x'); fs.writeFileSync(fresh, 'x');
+    fs.writeFileSync(oldPartial, 'x'); fs.writeFileSync(freshPartial, 'x');
+    fs.writeFileSync(config, 'x');
+    const past = (Date.now() - 10 * 60_000) / 1000;
+    const recent = (Date.now() - 5_000) / 1000;
+    fs.utimesSync(old, past, past);
+    fs.utimesSync(fresh, recent, recent);
+    fs.utimesSync(oldPartial, (Date.now() - 5 * 60_000) / 1000, (Date.now() - 5 * 60_000) / 1000);
+    fs.utimesSync(freshPartial, recent, recent);
+    return { dir, old, fresh, oldPartial, freshPartial, config };
+  }
+
+  it('throws on missing required deps', () => {
+    let threw = 0;
+    for (const args of [
+      {},
+      { queueDir: '/x' },
+      { queueDir: '/x', sessionsDir: '/y' },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 1000 },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 1000, isAudioFile: isAudio },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 0, isAudioFile: isAudio, isPidAlive: () => true },
+    ]) {
+      try { createPruner(args); } catch { threw++; }
+    }
+    assertEqual(threw, 6);
+  });
+
+  it('pruneOldFiles removes stale audio + .partial, keeps fresh + non-matching', () => {
+    const t = setupQueue();
+    const p = createPruner({ queueDir: t.dir, sessionsDir: t.dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(t.old), 'stale audio must be unlinked');
+    assertTruthy(fs.existsSync(t.fresh), 'fresh audio must survive');
+    assertFalsy(fs.existsSync(t.oldPartial), 'stale .partial must be unlinked');
+    assertTruthy(fs.existsSync(t.freshPartial), 'fresh .partial must survive (< 60 s)');
+    assertTruthy(fs.existsSync(t.config), 'unrelated files must survive');
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it('pruneOldFiles tolerates missing queueDir + read errors', () => {
+    const dir = path.join(os.tmpdir(), 'tt-prune-nope-' + Date.now());
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+  });
+
+  it('pruneSessionsDir removes <pid>.json for dead PIDs only', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-s-'));
+    const live = path.join(dir, '1234.json');
+    const dead = path.join(dir, '5678.json');
+    const notSession = path.join(dir, 'notes.txt');
+    const malformed = path.join(dir, 'NaN.json');
+    fs.writeFileSync(live, '{}'); fs.writeFileSync(dead, '{}');
+    fs.writeFileSync(notSession, 'x'); fs.writeFileSync(malformed, '{}');
+    const isAlive = (pid) => pid === 1234;
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: isAlive });
+    p.pruneSessionsDir();
+    assertTruthy(fs.existsSync(live), 'live PID file must survive');
+    assertFalsy(fs.existsSync(dead), 'dead PID file must be unlinked');
+    assertTruthy(fs.existsSync(notSession), 'non-.json files must survive');
+    assertFalsy(fs.existsSync(malformed), 'unparseable PID is treated as dead and unlinked');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('pruneSessionsDir is a no-op when sessionsDir does not exist', () => {
+    const dir = path.join(os.tmpdir(), 'tt-prune-no-sess-' + Date.now());
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneSessionsDir();
+  });
+});
+
 describe('STATUSLINE ASSIGNMENT', () => {
   {
     it('assigns lowest free index to a new session', () => {
@@ -776,6 +857,33 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS(md);
     if (out.includes('Table with')) throw new Error(`false-positive table summary: "${out}"`);
     if (!out.includes('foo | bar')) throw new Error(`bare pipe prose mangled: "${out}"`);
+  });
+
+  it('#18 (J-S1): synth_turn.sanitize() flags.get fallbacks match DEFAULT_SPEECH_INCLUDES', () => {
+    // Forcing function for the J-S1 drift class. The sanitize() function reads
+    // partial flag dicts via `flags.get(k, fallback)`. If a fallback ever
+    // disagrees with DEFAULT_SPEECH_INCLUDES[k], a future caller passing a
+    // partial dict re-introduces the original Python↔JS audio drift the
+    // line-728 comment describes. Catch it by source inspection, not behaviour.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'synth_turn.py'), 'utf8');
+    const defBlock = src.match(/DEFAULT_SPEECH_INCLUDES\s*=\s*\{([\s\S]*?)\n\}/);
+    if (!defBlock) throw new Error('could not locate DEFAULT_SPEECH_INCLUDES in synth_turn.py');
+    const defaults = {};
+    for (const m of defBlock[1].matchAll(/'([^']+)'\s*:\s*(True|False)/g)) {
+      defaults[m[1]] = m[2] === 'True';
+    }
+    if (Object.keys(defaults).length === 0) throw new Error('parsed zero DEFAULT_SPEECH_INCLUDES keys');
+    let checked = 0;
+    for (const m of src.matchAll(/flags\.get\(['"]([^'"]+)['"]\s*,\s*(True|False)\s*\)/g)) {
+      const [, key, fbStr] = m;
+      if (!(key in defaults)) continue;
+      const fb = fbStr === 'True';
+      if (fb !== defaults[key]) {
+        throw new Error(`#18 drift: synth_turn flags.get('${key}', ${fbStr}) ≠ DEFAULT_SPEECH_INCLUDES['${key}']=${defaults[key]}`);
+      }
+      checked++;
+    }
+    if (checked < 2) throw new Error(`#18: expected ≥2 flags.get fallback sites; found ${checked}`);
   });
 });
 
@@ -5025,13 +5133,18 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
   const toolHook     = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-on-tool.ps1'), 'utf8');
   const moduleSrc    = fs.readFileSync(modulePath, 'utf8');
 
-  it('module exports the six canonical functions', () => {
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
+  it('module exports the seven canonical functions', () => {
+    const REQUIRED = [
+      'Read-Registry', 'Update-SessionAssignment', 'Save-Registry',
+      'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock',
+      'Get-StableClaudePid',
+    ];
+    for (const fn of REQUIRED) {
       if (!moduleSrc.includes(`function ${fn}`)) {
         throw new Error(`session-registry.psm1 missing function ${fn}`);
       }
     }
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
+    for (const fn of REQUIRED) {
       if (!new RegExp(`Export-ModuleMember[\\s\\S]*${fn}`).test(moduleSrc)) {
         throw new Error(`session-registry.psm1 must Export-ModuleMember ${fn}`);
       }
@@ -5059,6 +5172,22 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
       }
       if (!/Save-Registry/.test(c.src)) {
         throw new Error(`${c.name}: does not call Save-Registry`);
+      }
+    });
+    it(`${c.name} sources claude_pid via Get-StableClaudePid (not raw ParentProcessId)`, () => {
+      // 2026-04-26 regression: Claude Code invokes statusLine + PostToolUse
+      // through a worker child whose pid rotates per call, so raw
+      // (Get-CimInstance Win32_Process ... ParentProcessId) returns an
+      // ephemeral pid that never matches across /clear → PID-migration
+      // never fires → user loses session label/colour/pinned state every
+      // /clear. Get-StableClaudePid walks up to the long-lived claude.exe.
+      if (!/\bGet-StableClaudePid\b/.test(c.src)) {
+        throw new Error(`${c.name}: must source claude_pid via Get-StableClaudePid`);
+      }
+      // Permit the helper itself (in session-registry.psm1) to use the raw
+      // CIM call, but consumer scripts must NOT — they should delegate.
+      if (/Get-CimInstance[^\n]*Win32_Process[^\n]*ParentProcessId/.test(c.src)) {
+        throw new Error(`${c.name}: still has raw ParentProcessId lookup; use Get-StableClaudePid`);
       }
     });
     it(`${c.name} no longer carries the lowest-free-index loop`, () => {
@@ -6352,6 +6481,135 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       assertEqual(after.assignments.aabbccdd.label, label,
         'unicode label must survive PS round-trip byte-for-byte');
     } finally { try { fs.unlinkSync(regPath); } catch {} }
+  });
+});
+
+// =============================================================================
+// PS Get-StableClaudePid PARENT-WALK (2026-04-26 regression)
+//
+// Background: hooks used to call
+//   (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+// directly. Empirically Claude Code runs statusLine + PostToolUse via a
+// pooled worker `claude.exe` whose pid rotates per invocation, so that
+// raw lookup returned an EPHEMERAL pid that never matched across /clear.
+// PID-migration in Update-SessionAssignment therefore never fired and
+// every /clear orphaned the user's session label/pinned/colour state.
+//
+// Get-StableClaudePid walks up the parent chain and returns the OUTERMOST
+// claude.exe / node.exe ancestor — the long-lived CLI pid that DOES
+// survive /clear. These tests drive the algorithm with a stub
+// ProcessLookup so they don't touch the real OS process tree.
+// =============================================================================
+describe('PS Get-StableClaudePid PARENT-WALK', () => {
+  const MODULE_PATH = path.join(APP_DIR, 'session-registry.psm1');
+
+  if (!fs.existsSync(MODULE_PATH)) {
+    it('session-registry.psm1 missing — cannot exercise PS behaviour', () => {
+      throw new Error(`expected module at ${MODULE_PATH}`);
+    });
+    return;
+  }
+
+  // Drive Get-StableClaudePid with a hashtable-backed ProcessLookup. Each
+  // entry maps pid -> { Name, ParentProcessId }. Returns the helper's
+  // emitted int via stdout. We route through a temp .ps1 file (same
+  // pattern as the SESSION-IDENTITY block) to dodge -Command quoting.
+  function runWalk({ chain, startPid }) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const scriptPath = path.join(os.tmpdir(), `tt-test-walk-${nonce}.ps1`);
+    const psEscape = (s) => String(s).replace(/'/g, "''");
+    const tableLines = Object.entries(chain).map(([pid, { Name, ParentProcessId }]) =>
+      `  ${Number(pid)} = @{ Name = '${psEscape(Name)}'; ParentProcessId = ${Number(ParentProcessId) | 0} }`
+    );
+    const script = [
+      `Import-Module '${psEscape(MODULE_PATH)}' -Force`,
+      `$tree = @{`,
+      ...tableLines,
+      `}`,
+      `$lookup = { param([int]$LookupPid) if ($tree.ContainsKey($LookupPid)) { $tree[$LookupPid] } else { $null } }`,
+      `$out = Get-StableClaudePid -StartPid ${Number(startPid) | 0} -ProcessLookup $lookup`,
+      `Write-Output $out`,
+      '',
+    ].join("\r\n");
+    fs.writeFileSync(scriptPath, script, 'utf8');
+    const r = spawnSync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      { encoding: 'utf8', timeout: 20000 }
+    );
+    try { fs.unlinkSync(scriptPath); } catch {}
+    if (r.status !== 0) {
+      throw new Error(`PS exited ${r.status}: ${r.stderr || r.stdout}`);
+    }
+    return parseInt(r.stdout.trim().split(/\s+/).pop(), 10);
+  }
+
+  it('returns the outermost claude.exe ancestor (statusline through worker)', () => {
+    const pid = runWalk({
+      startPid: 9001,
+      chain: {
+        9001:  { Name: 'powershell.exe', ParentProcessId: 26388 },
+        26388: { Name: 'claude.exe',     ParentProcessId: 25092 },
+        25092: { Name: 'claude.exe',     ParentProcessId: 13292 },
+        13292: { Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 25092);
+  });
+
+  it('reaches a 1-hop claude.exe (Stop hook tree, the case that already worked)', () => {
+    const pid = runWalk({
+      startPid: 7777,
+      chain: {
+        7777: { Name: 'powershell.exe', ParentProcessId: 24772 },
+        24772:{ Name: 'claude.exe',     ParentProcessId: 13292 },
+        13292:{ Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 24772);
+  });
+
+  it('falls back to 1-hop ParentProcessId when no claude/node ancestor exists', () => {
+    const pid = runWalk({
+      startPid: 5555,
+      chain: {
+        5555: { Name: 'powershell.exe', ParentProcessId: 4444 },
+        4444: { Name: 'cmd.exe',        ParentProcessId: 3333 },
+        3333: { Name: 'explorer.exe',   ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 4444);
+  });
+
+  it('handles node.exe ancestors as well as claude.exe (npm-installed CLI variant)', () => {
+    const pid = runWalk({
+      startPid: 8001,
+      chain: {
+        8001: { Name: 'powershell.exe', ParentProcessId: 8002 },
+        8002: { Name: 'node.exe',       ParentProcessId: 8003 },
+        8003: { Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 8002);
+  });
+
+  it('respects MaxHops ceiling so a cyclic OS table cannot hang the hook', () => {
+    const pid = runWalk({
+      startPid: 100,
+      chain: {
+        100: { Name: 'a.exe', ParentProcessId: 200 },
+        200: { Name: 'b.exe', ParentProcessId: 100 },  // cycle
+      },
+    });
+    // No claude in the cycle — fallback is the 1-hop ParentProcessId (200).
+    assertEqual(pid, 200);
+  });
+
+  it('returns 0 when StartPid is not findable (hook fired before tree exists)', () => {
+    const pid = runWalk({
+      startPid: 9999,
+      chain: {},  // empty — lookup returns null for everything
+    });
+    assertEqual(pid, 0);
   });
 });
 
@@ -14159,6 +14417,42 @@ ${body}
       if (!whitelist.has(a)) {
         throw new Error(`whitelist rejected good action: ${JSON.stringify(a)}`);
       }
+    }
+  });
+
+  it('#28: phraseToAction values ⊆ VOICE_COMMAND_ALLOWED — JS↔PS vocab forcing function', () => {
+    // Source-inspection forcing function for the F2 follow-up from #27.
+    // Recognizer (voice-command-recognize.ps1) emits {action: <value>} JSON
+    // payloads. Watcher (main.js VOICE_COMMAND_ALLOWED) drops anything not
+    // in its whitelist. If a contributor adds a phrase to recognizer with a
+    // new action value but forgets to allowlist it in main.js (or vice
+    // versa), voice commands silently fail. Catch by source diff at CI.
+    const recognizerSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'voice-command-recognize.ps1'), 'utf8');
+    const ptaBlock = recognizerSrc.match(/\$phraseToAction\s*=\s*@\{([\s\S]*?)\n\}/);
+    if (!ptaBlock) throw new Error('#28: could not locate $phraseToAction in voice-command-recognize.ps1');
+    const phraseValues = new Set();
+    for (const m of ptaBlock[1].matchAll(/'([^']+)'\s*=\s*'([^']+)'/g)) {
+      phraseValues.add(m[2]);
+    }
+    if (phraseValues.size === 0) throw new Error('#28: parsed zero phraseToAction values');
+
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const allowBlock = mainSrc.match(/VOICE_COMMAND_ALLOWED\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    if (!allowBlock) throw new Error('#28: could not locate VOICE_COMMAND_ALLOWED in main.js');
+    const allowed = new Set();
+    for (const m of allowBlock[1].matchAll(/'([^']+)'/g)) {
+      allowed.add(m[1]);
+    }
+    if (allowed.size === 0) throw new Error('#28: parsed zero VOICE_COMMAND_ALLOWED values');
+
+    const missing = [...phraseValues].filter(v => !allowed.has(v));
+    if (missing.length > 0) {
+      throw new Error(`#28 vocab drift: phraseToAction values not in VOICE_COMMAND_ALLOWED: ${JSON.stringify(missing)}`);
+    }
+    const extra = [...allowed].filter(v => !phraseValues.has(v));
+    if (extra.length > 0) {
+      throw new Error(`#28 vocab drift: VOICE_COMMAND_ALLOWED entries with no phraseToAction source: ${JSON.stringify(extra)}`);
     }
   });
 });
