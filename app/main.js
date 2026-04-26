@@ -520,6 +520,15 @@ function createWindow() {
     if (!input.control || input.alt || input.meta) return;
     if (input.key !== 'r' && input.key !== 'R') return;
     ev.preventDefault();
+    // Symmetric to the reload-renderer IPC defensive fix (2026-04-23,
+    // see ipc-handlers.js): setIgnoreMouseEvents lives on BrowserWindow,
+    // NOT on webContents — reload doesn't reset it. If click-through is
+    // on at the moment Ctrl+R fires (cursor off the bar), the toolbar
+    // reloads into a "visible but unclickable" zombie state. Forcing
+    // mouse events on BEFORE the reload guarantees a known interactive
+    // state; the renderer's own updateClickthrough() takes back over
+    // on the first post-reload mousemove.
+    try { win.setIgnoreMouseEvents(false); } catch {}
     if (input.shift) win.webContents.reloadIgnoringCache();
     else win.webContents.reload();
   });

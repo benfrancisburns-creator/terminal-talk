@@ -7749,6 +7749,33 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
   });
 
+  it('main.js Ctrl+R handler disables click-through before reload (symmetric fix)', () => {
+    // Same deadlock fix as ipc-handlers.js reload-renderer: the
+    // keyboard Ctrl+R path must also setIgnoreMouseEvents(false) BEFORE
+    // webContents.reload(), or hitting Ctrl+R while the cursor is off
+    // the bar reloads into the visible-but-unclickable zombie state.
+    const mainSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+    );
+    // Find the before-input-event Ctrl+R handler block.
+    const m = mainSrc.match(
+      /before-input-event[\s\S]*?input\.key\s*!==\s*['"]r['"][\s\S]*?\}\s*\)\s*;/
+    );
+    if (!m) throw new Error('Ctrl+R before-input-event handler not found in main.js');
+    const block = m[0];
+    const setIdx = block.search(/setIgnoreMouseEvents\s*\(\s*false\s*\)/);
+    const reloadIdx = block.search(/webContents\.reload(?:IgnoringCache)?\s*\(/);
+    if (setIdx < 0) {
+      throw new Error('Ctrl+R handler must call win.setIgnoreMouseEvents(false) before reload');
+    }
+    if (reloadIdx < 0) {
+      throw new Error('Ctrl+R handler must call webContents.reload');
+    }
+    if (setIdx >= reloadIdx) {
+      throw new Error('Ctrl+R handler: setIgnoreMouseEvents(false) must run BEFORE reload');
+    }
+  });
+
   it('renderer.js mic-captured-elsewhere callback MUST NOT early-return before systemAutoPause', () => {
     // 2026-04-26 regression-class lock: pre-fix, the callback returned
     // when `!audio.src || audio.ended || audio.paused` BEFORE calling
@@ -9313,6 +9340,27 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     createIpcHandlers(deps).register();
     deps.ipcMain.invoke('reload-renderer');
     assertTruthy(deps._winCalls.some((c) => c[0] === 'reload'), 'should have called reload');
+  });
+
+  it('reload-renderer disables click-through BEFORE reload (deadlock fix)', () => {
+    // Defensive 2026-04-23 fix: setIgnoreMouseEvents lives on
+    // BrowserWindow not webContents — reload doesn't reset it. If
+    // click-through is on at reload time, the toolbar reloads into a
+    // visible-but-unclickable zombie state. Order matters: setIgnore
+    // must come before reload so the new renderer starts in a known
+    // interactive state.
+    const deps = panelDeps();
+    createIpcHandlers(deps).register();
+    deps.ipcMain.invoke('reload-renderer');
+    const setIdx = deps._winCalls.findIndex(
+      (c) => c[0] === 'setIgnoreMouseEvents' && c[1] === false
+    );
+    const reloadIdx = deps._winCalls.findIndex((c) => c[0] === 'reload');
+    if (setIdx < 0) throw new Error('reload-renderer must call setIgnoreMouseEvents(false)');
+    if (reloadIdx < 0) throw new Error('reload-renderer must call reload');
+    if (setIdx >= reloadIdx) {
+      throw new Error('setIgnoreMouseEvents(false) must run BEFORE reload');
+    }
   });
 
   it('reload-renderer is no-op when window is destroyed', () => {
