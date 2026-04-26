@@ -469,6 +469,29 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def dedup_phrases(phrases: list[str]) -> list[str]:
+    """Remove duplicate narration phrases within a batch, preserving order.
+
+    Multiple tool calls of the same shape (4× `echo X | grep Y`) all
+    produce identical narrations once peeled. Saying the same line 4×
+    is wasted audio time. This helper drops repeats; the first
+    occurrence is kept so the listener still hears what's happening.
+
+    None and empty strings are filtered out.
+
+    Cross-batch dedup is the caller's responsibility — same phrase in
+    two separate hook fires usually reflects genuinely separate user
+    intents (e.g. two consecutive turns each running tests)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in phrases:
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
 def _strip_env_assignments(cmd: str) -> str:
     """Skip leading `FOO=bar` assignments so the matched command starts at
     the real verb. `FOO=bar npm test` -> `npm test`."""
@@ -522,15 +545,22 @@ def _narrate_heredoc(cmd: str) -> str | None:
 # Match a leading `echo "..."` (or `echo '...'` or unquoted echo) followed
 # by ` && `. Used to strip noisy "echo === HEADER ===" framing from
 # multi-stage chains so the meaningful work surfaces in the narration.
-_ECHO_HEAD_RE = re.compile(r'''^echo\s+(?:"[^"]*"|'[^']*'|[^&|;]+?)\s+&&\s+(.+)$''', re.DOTALL)
+_ECHO_HEAD_RE = re.compile(
+    r'''^echo\s+(?:"[^"]*"|'[^']*'|[^&|;]+?)\s*(?:&&|;|\|)\s*(.+)$''',
+    re.DOTALL,
+)
 
 
 def _strip_leading_echo(cmd: str) -> str:
-    """If the command starts with an `echo "..."` stage followed by `&&`,
-    drop the echo so the rest of the chain narrates as the head action.
-    Common pattern: `echo "=== heading ===" && actual_command`. Recurses
-    once so back-to-back echo headers (`echo "A" && echo "B" && cmd`) all
-    get peeled."""
+    """If the command starts with an `echo "..."` stage followed by a chain
+    separator (`&&`, `;`, or `|`), drop the echo so the rest narrates as
+    the head action. Common patterns: `echo "=== heading ===" && cmd`,
+    `echo "===" ; tail | grep`, `echo "input" | program`. The separator
+    indicates the echo is framing/header context, not the user-intent —
+    the next command is what we want to describe.
+
+    Recurses so back-to-back echo headers (`echo "A" && echo "B" && cmd`)
+    all get peeled."""
     m = _ECHO_HEAD_RE.match(cmd)
     if m:
         rest = m.group(1).strip()

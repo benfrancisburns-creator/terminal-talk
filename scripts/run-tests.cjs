@@ -2814,6 +2814,79 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     }
   });
 
+  // ---- Echo-header peeling (2026-04-26 thin-context fix) ------------
+  // Before: `echo "===HEADER===" ; tail -c X | grep` narrated as
+  // "Printing a value (in a pipeline)" because _strip_leading_echo only
+  // peeled `echo X && cmd`, not `;` or `|` separators. Common diagnostic
+  // bash pattern; user heard "Printing a value (in a pipeline)" 4 times
+  // in a row when the actual intent was "Looking at the end of <file>"
+  // / "Searching for ..." / etc. Peeling all three separators fixes it.
+  it('Bash peels leading echo header before semicolon separator', () => {
+    const out = narrate('Bash', {
+      command: 'echo "===HEADER===" ; tail -c 5000 ~/.terminal-talk/queue/_toolbar.log',
+    });
+    if (out.startsWith('Printing a value')) {
+      throw new Error(`expected echo to be peeled, got: ${out}`);
+    }
+    if (!out.toLowerCase().includes('looking at the end')) {
+      throw new Error(`expected tail narration after peel, got: ${out}`);
+    }
+  });
+  it('Bash peels leading echo header before pipe separator', () => {
+    const out = narrate('Bash', {
+      command: 'echo "test input" | grep foo',
+    });
+    if (out.startsWith('Printing a value')) {
+      throw new Error(`expected echo to be peeled, got: ${out}`);
+    }
+    // Whatever phrase comes out, it shouldn't be the echo phrase —
+    // the whole point is that the post-pipe command drives narration.
+    if (!out.toLowerCase().includes('grep')) {
+      throw new Error(`expected post-pipe (grep) narration after peel, got: ${out}`);
+    }
+  });
+  it('dedup_phrases collapses identical narrations preserving order', () => {
+    // 2026-04-26 batch-dedup fix: 4 sequential `echo X | grep` calls
+    // all narrate identically; saying it 4× wastes audio time. Helper
+    // collapses repeats while preserving first-occurrence order.
+    const code = `${pyPrelude.replace('narrate_tool_use', 'dedup_phrases')}` +
+      `import json; ` +
+      `r = dedup_phrases(['Searching for foo', 'Searching for foo', 'Reading bar', 'Searching for foo', 'Reading bar']); ` +
+      `print(json.dumps(r))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    const out = JSON.parse(r.stdout.trim());
+    if (JSON.stringify(out) !== JSON.stringify(['Searching for foo', 'Reading bar'])) {
+      throw new Error(`expected dedup to ['Searching for foo', 'Reading bar'], got: ${JSON.stringify(out)}`);
+    }
+  });
+  it('dedup_phrases filters out None and empty strings', () => {
+    const code = `${pyPrelude.replace('narrate_tool_use', 'dedup_phrases')}` +
+      `import json; ` +
+      `r = dedup_phrases(['x', None, '', 'y', 'x']); ` +
+      `print(json.dumps(r))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    const out = JSON.parse(r.stdout.trim());
+    if (JSON.stringify(out) !== JSON.stringify(['x', 'y'])) {
+      throw new Error(`expected ['x', 'y'], got: ${JSON.stringify(out)}`);
+    }
+  });
+
+  it('Bash peels leading echo with full diagnostic pipeline shape', () => {
+    // The exact shape Ben heard "Printing a value (in a pipeline)" 4×.
+    const out = narrate('Bash', {
+      command: 'echo "===TT3 last 5 messages==="; tail -c 200000 ~/.claude/projects/foo.jsonl | grep -a "user" | tail -3 | python -c "import sys; print(sys.stdin.read()[:500])"',
+    });
+    if (out.startsWith('Printing a value')) {
+      throw new Error(`expected echo peeled, got: ${out}`);
+    }
+    // Should describe the actual work — tail / grep / python — not echo.
+    if (!/looking at the end|searching|running/i.test(out)) {
+      throw new Error(`expected real-work narration after peel, got: ${out}`);
+    }
+  });
+
   // ---- Grep (smart pattern detection) ------------------------------
   it('Grep speaks plain identifiers', () => {
     assertEqual(narrate('Grep', { pattern: 'narrator' }), 'Searching for narrator');

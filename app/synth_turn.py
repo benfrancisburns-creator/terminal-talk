@@ -1438,6 +1438,16 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                 # Mark handled even if narration was None so we don't
                 # reconsider the same entry on the next hook fire.
                 tool_indices_done.append(tool_idx)
+            # Batch-level phrase dedup: when an assistant turn issues
+            # multiple bash calls of the same shape (e.g. 4× echo + grep
+            # diagnostic shells, each producing "Searching for X (in a
+            # pipeline)"), narrating each one wastes audio time on
+            # redundant content. Drop phrases identical to one already
+            # emitted in this batch. Cross-batch dedup is deliberately
+            # NOT done — same phrase across separate hook fires usually
+            # reflects genuinely separate user intents.
+            from tool_narration import dedup_phrases
+            tool_narrations = dedup_phrases(tool_narrations)
         elif new_tool_entries:
             # tool_calls disabled: still mark as handled.
             tool_indices_done.extend(i for i, _, _, _ in new_tool_entries)
