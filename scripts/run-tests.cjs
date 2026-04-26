@@ -2842,10 +2842,14 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   it('Bash strips leading env assignments before matching', () => {
     assertEqual(narrate('Bash', { command: 'NODE_ENV=test npm test' }), 'Running the tests');
   });
-  it('Bash detects pipelines and tags them', () => {
+  it('Bash detects pipelines (post-B5: tagged OR named-tail)', () => {
+    // Pre-B5 every pipeline got a generic "(in a pipeline)" tag. Post-B5
+    // a recognised tail like `head -5` becomes "and taking the first 5"
+    // — both shapes are valid pipeline narrations. The unrecognised-tail
+    // case still falls back to the generic tag (see B5 fallback test).
     const out = narrate('Bash', { command: 'git status | head -5' });
-    if (!out.includes('pipeline')) {
-      throw new Error(`expected pipeline tag, got: ${out}`);
+    if (!/(in a pipeline|and taking the first)/.test(out)) {
+      throw new Error(`expected pipeline narration, got: ${out}`);
     }
   });
   it('Bash falls back gracefully on unknown commands', () => {
@@ -2922,9 +2926,12 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
   // pipeline" and "Looking at the end of 50000 in a pipeline" —
   // narration matched the call but with the wrong subject.
   it('Bash ls captures the path, not the flag', () => {
+    // Post-B5 (pipe-tail narration), the trailing `| head -20` now
+    // surfaces as "and taking the first 20" instead of the generic
+    // "(in a pipeline)" — pin the new richer shape.
     assertEqual(
       narrate('Bash', { command: 'ls -lat ~/.terminal-talk/queue/ | head -20' }),
-      'Listing ~/.terminal-talk/queue/ (in a pipeline)'
+      'Listing ~/.terminal-talk/queue/ and taking the first 20'
     );
   });
   it('Bash tail with -c value captures the file, not the byte count', () => {
@@ -2967,6 +2974,67 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     if (!/looking at the end|searching|running/i.test(out)) {
       throw new Error(`expected real-work narration after peel, got: ${out}`);
     }
+  });
+
+  // ---- B4: inline-source bash (python -c, node -e, pwsh -c) ----------
+  // Ben heard "Running c=m.get('content','')" — the narrator was reading
+  // the inline Python source as if it were the command name. New explicit
+  // patterns should hit BEFORE the generic `python <file>.py` rule.
+  it('Bash python -c narrates as a Python snippet, not the source', () => {
+    const out = narrate('Bash', { command: 'python -c "import json; print(json.dumps({}))"' });
+    if (!/inline Python snippet/i.test(out)) {
+      throw new Error(`expected inline Python snippet narration, got: ${out}`);
+    }
+    if (out.includes('json.dumps')) {
+      throw new Error(`Python source leaked into narration: ${out}`);
+    }
+  });
+  it('Bash node -e narrates as a Node snippet', () => {
+    const out = narrate('Bash', { command: 'node -e "console.log(42)"' });
+    if (!/inline Node snippet/i.test(out)) {
+      throw new Error(`expected inline Node snippet narration, got: ${out}`);
+    }
+  });
+  it('Bash pwsh -c narrates as a PowerShell snippet', () => {
+    const out = narrate('Bash', { command: 'pwsh -c "Get-Process"' });
+    if (!/inline PowerShell snippet/i.test(out)) {
+      throw new Error(`expected inline PowerShell snippet narration, got: ${out}`);
+    }
+  });
+
+  // ---- B5: pipe-tail narration (what's in the pipeline?) -------------
+  // Ben asked: every "(in a pipeline)" should describe WHAT the next
+  // stage does. New `_narrate_pipe_tail` maps common shapes (wc, head,
+  // tail, grep, sort, uniq, jq, xargs, python -c) to "and …" suffixes.
+  it('Bash | wc -l → "and counting lines"', () => {
+    const out = narrate('Bash', { command: 'cat /tmp/log | wc -l' });
+    if (!/and counting lines/.test(out)) throw new Error(`expected counting lines, got: ${out}`);
+    if (out.includes('(in a pipeline)')) throw new Error(`generic pipeline tag leaked: ${out}`);
+  });
+  it('Bash | head -20 → "and taking the first 20"', () => {
+    const out = narrate('Bash', { command: 'ls /tmp | head -20' });
+    if (!/and taking the first 20/.test(out)) throw new Error(`expected taking first 20, got: ${out}`);
+  });
+  it('Bash | grep PATTERN → "and filtering for PATTERN"', () => {
+    const out = narrate('Bash', { command: 'tail -n 200 file.log | grep error' });
+    if (!/and filtering for error/.test(out)) throw new Error(`expected filtering for error, got: ${out}`);
+  });
+  it('Bash | grep -v PATTERN → "and filtering out PATTERN"', () => {
+    const out = narrate('Bash', { command: 'cat data | grep -v ERROR' });
+    if (!/and filtering out ERROR/.test(out)) throw new Error(`expected filtering out, got: ${out}`);
+  });
+  it('Bash | grep with leading -a flag captures the pattern, not the flag', () => {
+    const out = narrate('Bash', { command: 'cat data | grep -a user' });
+    if (!/and filtering for user/.test(out)) throw new Error(`expected filtering for user, got: ${out}`);
+    if (/-a/.test(out)) throw new Error(`flag leaked into pattern: ${out}`);
+  });
+  it('Bash | xargs CMD → "and running CMD on each"', () => {
+    const out = narrate('Bash', { command: 'find . -name "*.py" | xargs wc -l' });
+    if (!/and running wc on each/.test(out)) throw new Error(`expected xargs phrase, got: ${out}`);
+  });
+  it('Bash unrecognised pipe tail still falls back to generic tag', () => {
+    const out = narrate('Bash', { command: 'cat foo | someweirdcommand --magic' });
+    if (!/in a pipeline/.test(out)) throw new Error(`fallback tag missing, got: ${out}`);
   });
 
   // ---- Grep (smart pattern detection) ------------------------------
@@ -13967,6 +14035,91 @@ ${body}
         throw new Error(`whitelist rejected good action: ${JSON.stringify(a)}`);
       }
     }
+  });
+});
+
+describe('CODEX SESSION WATCHER', () => {
+  const {
+    parseSessionIdFromRolloutPath,
+    extractCodexAgentMessageEvent,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'));
+
+  it('parses the trailing Codex session id from a rollout filename', () => {
+    const full = String.raw`C:\Users\Ben\.codex\sessions\2026\04\26\rollout-2026-04-26T21-43-49-019dcb88-bc99-7082-a04b-a208631d111c.jsonl`;
+    assertEqual(
+      parseSessionIdFromRolloutPath(full),
+      '019dcb88-bc99-7082-a04b-a208631d111c',
+      'should extract the UUID-like Codex session id from the filename tail',
+    );
+  });
+
+  it('returns null when the filename does not end in a Codex rollout id', () => {
+    assertEqual(parseSessionIdFromRolloutPath('notes.jsonl'), null);
+    assertEqual(parseSessionIdFromRolloutPath('rollout-2026-04-26T21-43-49-not-a-session.jsonl'), null);
+  });
+
+  it('extracts commentary agent_message payloads from session jsonl lines', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-04-26T20:48:20.341Z',
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: 'commentary',
+        message: 'Inspecting the repo and mapping the hook path.',
+      },
+    });
+    assertDeepEqual(
+      extractCodexAgentMessageEvent(line),
+      {
+        timestamp: '2026-04-26T20:48:20.341Z',
+        phase: 'commentary',
+        message: 'Inspecting the repo and mapping the hook path.',
+      },
+      'commentary line should collapse to the watcher payload',
+    );
+  });
+
+  it('extracts final agent_message payloads and trims surrounding whitespace', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-04-26T20:55:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: 'final',
+        message: '  Wired up Codex session speech.  ',
+      },
+    });
+    assertDeepEqual(
+      extractCodexAgentMessageEvent(line),
+      {
+        timestamp: '2026-04-26T20:55:00.000Z',
+        phase: 'final',
+        message: 'Wired up Codex session speech.',
+      },
+      'final line should survive with trimmed message text',
+    );
+  });
+
+  it('ignores non-agent lines, unsupported phases, blank messages, and malformed json', () => {
+    const responseItem = JSON.stringify({
+      timestamp: '2026-04-26T20:48:20.342Z',
+      type: 'response_item',
+      payload: { type: 'message', role: 'assistant' },
+    });
+    const unsupportedPhase = JSON.stringify({
+      timestamp: '2026-04-26T20:48:20.343Z',
+      type: 'event_msg',
+      payload: { type: 'agent_message', phase: 'analysis', message: 'secret' },
+    });
+    const blank = JSON.stringify({
+      timestamp: '2026-04-26T20:48:20.344Z',
+      type: 'event_msg',
+      payload: { type: 'agent_message', phase: 'commentary', message: '   ' },
+    });
+    assertEqual(extractCodexAgentMessageEvent(responseItem), null);
+    assertEqual(extractCodexAgentMessageEvent(unsupportedPhase), null);
+    assertEqual(extractCodexAgentMessageEvent(blank), null);
+    assertEqual(extractCodexAgentMessageEvent('{not json'), null);
   });
 });
 

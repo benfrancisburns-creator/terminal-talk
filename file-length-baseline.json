@@ -4,10 +4,10 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 13978,
-    "app/main.js": 2153,
+    "scripts/run-tests.cjs": 14131,
+    "app/main.js": 2166,
     "app/synth_turn.py": 1612,
-    "app/tool_narration.py": 1318,
+    "app/tool_narration.py": 1409,
     "app/renderer.js": 1288,
     "app/lib/audio-player.js": 854,
     "app/lib/ipc-handlers.js": 810,
@@ -17,6 +17,7 @@
     "app/session-registry.psm1": 516,
     "hooks/speak-response.ps1": 472,
     "app/lib/sessions-table.js": 446,
+    "app/lib/codex-session-watcher.js": 378,
     "app/lib/transcript-panel.js": 313,
     "app/lib/tabs.js": 289,
     "app/sentence_split.py": 282,

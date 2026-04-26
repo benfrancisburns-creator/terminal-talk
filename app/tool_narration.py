@@ -461,7 +461,17 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'^which\s+(\S+)'),                   r'Finding \1'),
     (re.compile(r'^echo\b'),                          'Printing a value'),
 
-    # Languages / runtimes
+    # Languages / runtimes — inline-source forms FIRST so they win over
+    # the generic `python <file>.py` / `node <file>.js` patterns. Without
+    # these the narration falls through to "Running python" then captures
+    # the inline source as if it were a file argument, producing gibberish
+    # phrases like "Running c=m.get('content','')".
+    (re.compile(r'^python\d?\s+-c\b'),                'Running an inline Python snippet'),
+    (re.compile(r'^node\s+-e\b'),                     'Running an inline Node snippet'),
+    (re.compile(r'^pwsh\s+-c\b'),                     'Running an inline PowerShell snippet'),
+    (re.compile(r'^powershell(?:\.exe)?\s+-Command\b'), 'Running an inline PowerShell command'),
+    (re.compile(r'^bash\s+-c\b'),                     'Running an inline shell snippet'),
+    (re.compile(r'^sh\s+-c\b'),                       'Running an inline shell snippet'),
     (re.compile(r'^python\d?\s+(\S+\.py)'),           r'Running the \1 script'),
     (re.compile(r'^node\s+(\S+\.(?:js|cjs|mjs))'),    r'Running \1'),
     (re.compile(r'^node\s+--version\b'),              'Checking the node version'),
@@ -474,6 +484,74 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'^bash\s+scripts/'),                 'Running a project script'),
     (re.compile(r'^node\s+scripts/'),                 'Running a project script'),
 ]
+
+
+# Pipe-tail narration. Maps the head of the post-`|` portion of a
+# pipeline to a meaningful "and …" suffix so the listener hears WHAT the
+# pipeline is doing, not just that there IS one. Without this, every
+# pipeline narrates as "(in a pipeline)" — generic noise. With it, common
+# shapes ("| wc -l", "| head -20", "| grep foo", "| python -c") get
+# spoken as "and counting lines", "and taking the first 20",
+# "and filtering for foo", "and processing with Python".
+#
+# Patterns are checked in order; first match wins. Anchored to start of
+# the tail so a tail of `wc -l` matches but `xargs wc -l` doesn't.
+_PIPE_TAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'^wc\s+-l\b'),                    'and counting lines'),
+    (re.compile(r'^wc\s+-c\b'),                    'and counting bytes'),
+    (re.compile(r'^wc\s+-w\b'),                    'and counting words'),
+    (re.compile(r'^wc\b'),                         'and counting'),
+    (re.compile(r'^head\s+-n?\s*(\d+)\b'),         r'and taking the first \1'),
+    (re.compile(r'^head\s+-(\d+)\b'),              r'and taking the first \1'),
+    (re.compile(r'^tail\s+-n?\s*(\d+)\b'),         r'and taking the last \1'),
+    (re.compile(r'^tail\s+-(\d+)\b'),              r'and taking the last \1'),
+    (re.compile(r'^head\b'),                       'and taking the first lines'),
+    (re.compile(r'^tail\b'),                       'and taking the last lines'),
+    # grep — skip leading single-letter flags (so `grep -a user` captures
+    # `user` not `-a`); fall back to bare "and filtering" when only flags
+    # follow `grep` and no pattern is captured.
+    (re.compile(r'^grep\s+-v\s+(?:-[a-zA-Z]+\s+)*(\S+)'),  r'and filtering out \1'),
+    (re.compile(r'^grep\s+-c\b'),                          'and counting matches'),
+    (re.compile(r'^grep\s+(?:-[a-zA-Z]+\s+)*(\S+)'),       r'and filtering for \1'),
+    (re.compile(r'^grep\b'),                               'and filtering'),
+    (re.compile(r'^sort\s+-u\b'),                  'and sorting unique'),
+    (re.compile(r'^sort\b'),                       'and sorting'),
+    (re.compile(r'^uniq\s+-c\b'),                  'and counting duplicates'),
+    (re.compile(r'^uniq\b'),                       'and removing duplicates'),
+    (re.compile(r'^xargs\s+(\S+)'),                r'and running \1 on each'),
+    (re.compile(r'^awk\b'),                        'and processing with awk'),
+    (re.compile(r'^sed\b'),                        'and editing with sed'),
+    (re.compile(r'^jq\s+(\S+)'),                   r'and extracting \1'),
+    (re.compile(r'^jq\b'),                         'and processing JSON'),
+    (re.compile(r'^cut\s+-d\S*\s+-f(\d+)'),        r'and extracting field \1'),
+    (re.compile(r'^tee\s+(\S+)'),                  r'and saving to \1'),
+    (re.compile(r'^python\d?\s+-c\b'),             'and processing with Python'),
+    (re.compile(r'^node\s+-e\b'),                  'and processing with Node'),
+    (re.compile(r'^python\d?\b'),                  'and piping into Python'),
+    (re.compile(r'^node\b'),                       'and piping into Node'),
+]
+
+
+def _narrate_pipe_tail(tail: str) -> str | None:
+    """Return a spoken descriptor for the FIRST stage of a pipe-tail
+    (e.g. `wc -l`, `head -20`, `grep foo`). Returns None if no pattern
+    matches — caller falls back to the generic "(in a pipeline)" suffix.
+
+    Multi-stage pipes only describe the first tail stage; cluttering the
+    narration with every stage of a 4-stage pipe would over-narrate.
+    """
+    if not tail:
+        return None
+    # Take only the FIRST stage of the tail; ignore further `|` chains.
+    first_stage = re.split(r'\s\|\s|\s;\s', tail, maxsplit=1)[0].strip()
+    for pat, template in _PIPE_TAIL_PATTERNS:
+        m = pat.match(first_stage)
+        if m:
+            try:
+                return m.expand(template)
+            except re.error:
+                return template
+    return None
 
 
 def dedup_phrases(phrases: list[str]) -> list[str]:
@@ -658,14 +736,27 @@ def narrate_bash(command: str) -> str | None:
         # AND-chain detected but couldn't extract 2+ meaningful phrases —
         # fall through to single-command on the head (existing behaviour).
 
-    # 4. Pipe (`|`) or semicolon (`;`) — describe the head + tag.
+    # 4. Pipe (`|`) or semicolon (`;`) — describe the head, then try to
+    #    name the FIRST tail stage too so the listener hears WHAT the
+    #    pipeline is doing ("and counting lines", "and filtering for X")
+    #    rather than the generic "(in a pipeline)". Falls back to the
+    #    generic tag when the tail isn't a recognised pattern.
     is_pipeline = bool(re.search(r'\s\|\s|\s;\s', cmd))
-    head = re.split(r'\s\|\s|\s;\s', cmd, maxsplit=1)[0].strip() if is_pipeline else cmd
+    if is_pipeline:
+        parts = re.split(r'\s\|\s|\s;\s', cmd, maxsplit=1)
+        head = parts[0].strip()
+        tail = parts[1].strip() if len(parts) > 1 else ''
+    else:
+        head = cmd
+        tail = ''
 
     phrase = _narrate_single_command(head)
     if not phrase:
         return 'Running a command'
     if is_pipeline:
+        tail_phrase = _narrate_pipe_tail(tail)
+        if tail_phrase:
+            return f'{phrase} {tail_phrase}'
         return f'{phrase} (in a pipeline)'
     return phrase
 
