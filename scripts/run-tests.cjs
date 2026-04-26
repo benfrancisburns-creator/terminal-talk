@@ -12923,6 +12923,42 @@ ${body}
       }
     }
   });
+
+  it('#28: phraseToAction values ⊆ VOICE_COMMAND_ALLOWED — JS↔PS vocab forcing function', () => {
+    // Source-inspection forcing function for the F2 follow-up from #27.
+    // Recognizer (voice-command-recognize.ps1) emits {action: <value>} JSON
+    // payloads. Watcher (main.js VOICE_COMMAND_ALLOWED) drops anything not
+    // in its whitelist. If a contributor adds a phrase to recognizer with a
+    // new action value but forgets to allowlist it in main.js (or vice
+    // versa), voice commands silently fail. Catch by source diff at CI.
+    const recognizerSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'voice-command-recognize.ps1'), 'utf8');
+    const ptaBlock = recognizerSrc.match(/\$phraseToAction\s*=\s*@\{([\s\S]*?)\n\}/);
+    if (!ptaBlock) throw new Error('#28: could not locate $phraseToAction in voice-command-recognize.ps1');
+    const phraseValues = new Set();
+    for (const m of ptaBlock[1].matchAll(/'([^']+)'\s*=\s*'([^']+)'/g)) {
+      phraseValues.add(m[2]);
+    }
+    if (phraseValues.size === 0) throw new Error('#28: parsed zero phraseToAction values');
+
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const allowBlock = mainSrc.match(/VOICE_COMMAND_ALLOWED\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    if (!allowBlock) throw new Error('#28: could not locate VOICE_COMMAND_ALLOWED in main.js');
+    const allowed = new Set();
+    for (const m of allowBlock[1].matchAll(/'([^']+)'/g)) {
+      allowed.add(m[1]);
+    }
+    if (allowed.size === 0) throw new Error('#28: parsed zero VOICE_COMMAND_ALLOWED values');
+
+    const missing = [...phraseValues].filter(v => !allowed.has(v));
+    if (missing.length > 0) {
+      throw new Error(`#28 vocab drift: phraseToAction values not in VOICE_COMMAND_ALLOWED: ${JSON.stringify(missing)}`);
+    }
+    const extra = [...allowed].filter(v => !phraseValues.has(v));
+    if (extra.length > 0) {
+      throw new Error(`#28 vocab drift: VOICE_COMMAND_ALLOWED entries with no phraseToAction source: ${JSON.stringify(extra)}`);
+    }
+  });
 });
 
 console.log('\n----------------------------------------');
