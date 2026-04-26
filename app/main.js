@@ -1633,12 +1633,19 @@ function startReloadGrace(ms = 5000) {
 // alive. screen.getCursorScreenPoint() works regardless of
 // click-through state, so polling cursor in main is reliable.
 //
-// The renderer still pushes setClickthrough via its mousemove
-// handler — those calls remain as a fast path when forward:true
-// happens to work. Main's poll wins on the next tick if they
-// disagree. State change is logged so we can verify the poll
-// is actually driving toggles.
-let _cursorPollState = null;  // null=unknown, true=clickthrough, false=interactive
+// Authoritative driver: main calls setIgnoreMouseEvents on EVERY
+// poll based purely on cursor-vs-window-bounds. The renderer's
+// setClickthrough IPC is honoured immediately but main overrides
+// on the next tick if it disagrees. Without this we had a state
+// desync bug — the renderer's setClickthrough(true) (cursor over
+// transparent margin) flipped the OS state to true, but main's
+// state-change-only optimisation cached false, so cursor-poll
+// never re-applied false when cursor moved back onto the bar.
+//
+// Calling setIgnoreMouseEvents 12×/s when state hasn't changed is
+// a no-op in Chromium and cheap. State changes still log so we
+// can observe the toggle pattern; same-state calls log nothing.
+let _cursorPollLastLogged = null;
 const CURSOR_POLL_MS = 80;
 function startCursorPollDriver() {
   setInterval(() => {
@@ -1653,13 +1660,20 @@ function startCursorPollDriver() {
                     && c.y >= bounds.y
                     && c.y < bounds.y + bounds.height;
     const wantClickthrough = !overWindow;
-    if (wantClickthrough === _cursorPollState) return;
-    _cursorPollState = wantClickthrough;
     try {
+      // Always set, not just on change. Cheap; eliminates desync
+      // when the renderer's setClickthrough flips the OS state
+      // out from under us.
       win.setIgnoreMouseEvents(wantClickthrough, { forward: true });
-      diag(`reload-trace: cursor-poll over=${overWindow} ignoreMouseEvents=${wantClickthrough}`);
     } catch (e) {
       diag(`reload-trace: cursor-poll setIgnoreMouseEvents threw: ${e && e.message}`);
+      return;
+    }
+    // Log only on state CHANGE so the log isn't flooded with
+    // identical lines 12×/s.
+    if (wantClickthrough !== _cursorPollLastLogged) {
+      _cursorPollLastLogged = wantClickthrough;
+      diag(`reload-trace: cursor-poll over=${overWindow} ignoreMouseEvents=${wantClickthrough}`);
     }
   }, CURSOR_POLL_MS);
 }
