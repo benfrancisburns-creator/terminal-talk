@@ -154,10 +154,11 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   (F1 exit-code comment, F2 stale lock-step reference). · AXIS=1,6,7 · OWNER=tt2
   STATUS=audit-done · ACTIVE=`ACTIVE/27-voice-command-pipeline-audit.md`
 
-- [ ] **#28 voice-command-vocab-forcing-test** (#27 F2 follow-up) — add a test that
-  asserts phraseToAction values in `voice-command-recognize.ps1` exactly match
-  `VOICE_COMMAND_ALLOWED` in main.js, by reading both source files and comparing sets.
-  Catches future drift as a CI red flag. · AXIS=7 · OWNER=TBD · STATUS=queued
+- [x] **#28 voice-command-vocab-forcing-test** — **CLOSED 2026-04-26 by TT2 @ `6834562`.**
+  New test in VOICE COMMAND (Phase 1) describe group: parses `$phraseToAction` value-set
+  from voice-command-recognize.ps1 + `VOICE_COMMAND_ALLOWED` from main.js, asserts mutual
+  subset. Source-inspection forcing function — catches drift by diff, not behaviour. Same
+  shape as #18. 889 → 890 tests. · AXIS=7 · OWNER=tt2 · STATUS=done
 
 - [ ] **#14 playback-controls-audit** (Surface H) — completed: no BROKEN findings. 3 minor
   UX notes (H-P1 button-vs-voice play parity, H-P2 no keyboard shortcut for ±10s, H-P3 undo
