@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 13937,
+    "scripts/run-tests.cjs": 13978,
     "app/main.js": 2153,
     "app/synth_turn.py": 1612,
     "app/tool_narration.py": 1318,
@@ -22,8 +22,8 @@
     "app/sentence_split.py": 282,
     "app/key_helper.py": 273,
     "app/statusline.ps1": 246,
+    "app/lib/text.js": 244,
     "scripts/check-doc-drift.cjs": 235,
-    "app/lib/text.js": 228,
     "scripts/build-hero-svg.cjs": 217,
     "app/tts-helper.psm1": 214,
     "app/lib/transcript-watcher.js": 193,

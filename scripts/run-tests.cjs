@@ -720,6 +720,47 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     if (out.includes('```')) throw new Error(`code fence leaked: "${out}"`);
     if (/\bjs\b/.test(out.split('Try')[1].split('Done')[0])) throw new Error(`language tag leaked into spoken text: "${out}"`);
   });
+
+  // ---- GFM markdown table → speakable summary (2026-04-26 audio loss) ---
+  // Real bug: a 3-row table in a Claude response produced clip 0002 with
+  // the raw `| col | col |` content; edge-tts refused (rc=1, size=0); no
+  // audio AND no .txt sidecar — listener silently lost the table. Fix
+  // converts tables to "Table with N rows. Columns: ..." in the
+  // sanitiser BEFORE TTS sees them.
+  it('GFM table replaced with speakable summary (rows + columns)', () => {
+    const md = [
+      '3 phrases would change:',
+      '',
+      '| File | Line | Today | With Phase 3 v2 |',
+      '|---|---|---|---|',
+      '| sentence_group.py | 87 | A | B |',
+      '| palette.js | 48 | A | B |',
+      '| SessionsTable.jsx | 128 | A | B |',
+      '',
+      'The other 20 hunks correctly stay.',
+    ].join('\n');
+    const out = stripForTTS(md);
+    if (out.includes('|')) throw new Error(`raw pipe characters leaked: "${out}"`);
+    if (!/Table with 3 rows/.test(out)) throw new Error(`row count missing: "${out}"`);
+    if (!/Columns: File, Line, Today, With Phase 3 v2/.test(out)) {
+      throw new Error(`columns missing: "${out}"`);
+    }
+    if (!out.includes('3 phrases would change')) throw new Error(`pre-table prose lost: "${out}"`);
+    if (!out.includes('The other 20 hunks correctly stay')) throw new Error(`post-table prose lost: "${out}"`);
+  });
+  it('table with 1 row says singular "row"', () => {
+    const md = '| A | B |\n|---|---|\n| 1 | 2 |';
+    const out = stripForTTS(md);
+    if (!/Table with 1 row\b/.test(out)) throw new Error(`expected singular: "${out}"`);
+  });
+  it('non-table pipe content is left alone', () => {
+    // Bare `|` in prose without the alignment-separator row should not
+    // trigger the table replacement (no table → no summary).
+    const md = 'See foo | bar in the docs.';
+    const out = stripForTTS(md);
+    if (out.includes('Table with')) throw new Error(`false-positive table summary: "${out}"`);
+    if (!out.includes('foo | bar')) throw new Error(`bare pipe prose mangled: "${out}"`);
+  });
 });
 
 describe('VOICE LIST VALIDATION', () => {

@@ -39,6 +39,22 @@ function stripForTTS(text, includes) {
   const inc = { ...DEFAULTS, ...(includes || {}) };
   let t = String(text == null ? '' : text);
 
+  // GFM markdown tables → speakable summary line. Without this transform
+  // the raw `| col | col |` lines pass through and edge-tts refuses the
+  // resulting clip (rc=1, size=0) — listener loses the whole table
+  // silently. Replace with "Table with N rows. Columns: A, B, C." so the
+  // tabular content is at least announced. Mirror in app/synth_turn.py.
+  t = t.replace(
+    /^[ \t]*\|(.+)\|[ \t]*\r?\n^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*\r?\n((?:^[ \t]*\|.+\|[ \t]*\r?\n?)+)/gm,
+    (_full, header, rowsBlock) => {
+      const headerCells = header.split('|').map((c) => c.trim()).filter(Boolean);
+      const rowCount = (rowsBlock.match(/^[ \t]*\|/gm) || []).length;
+      if (headerCells.length === 0) return `Table with ${rowCount} rows.\n`;
+      const plural = rowCount === 1 ? 'row' : 'rows';
+      return `Table with ${rowCount} ${plural}. Columns: ${headerCells.join(', ')}.\n`;
+    },
+  );
+
   // Code blocks: three-way decision per fenced block. See synth_turn.py
   // for the full rationale. Short version: stripping 100% of fenced
   // content silently drops LLM "handoff message" / "quoted log" blocks
