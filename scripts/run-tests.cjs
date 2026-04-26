@@ -2901,6 +2901,128 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     );
   });
 
+  // ---- Edit hunk locality (Phase 2: structuredPatch from Ctrl+O) ---
+  // tool_result.structuredPatch carries oldStart/newStart line numbers
+  // and per-hunk lines[] with +/- prefixes. Edit narrator surfaces
+  // "around line N" for single-hunk edits, "in N spots" for multi-
+  // hunk; falls through gracefully when patch is absent.
+  it('Edit appends locality "around line N" for single-hunk patch', () => {
+    // Bare line-count fallback (no semantic structure) — should pick
+    // up patch counts AND locality.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: 'a\nb\nc',
+        new_string: 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 670, oldLines: 3, newStart: 670, newLines: 15,
+          lines: ['  a', '  b', '  c', '+ d', '+ e', '+ f', '+ g', '+ h', '+ i', '+ j', '+ k', '+ l', '+ m', '+ n', '+ o']
+        }]
+      }),
+      'Edit in the renderer file — added 12 lines around line 670'
+    );
+  });
+
+  it('Edit appends "in N spots" for multi-hunk patch', () => {
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/main.js',
+        old_string: 'foo\nbar\nbaz\nqux',
+        new_string: 'foo\nbar\nbaz\nqux\nnew1\nnew2\nnew3\nnew4\nnew5\nnew6\nnew7\nnew8\nnew9\nnew10',
+      }, null, {
+        structuredPatch: [
+          { oldStart: 100, oldLines: 2, newStart: 100, newLines: 7,
+            lines: ['  a', '+ x', '+ x', '+ x', '+ x', '+ x', '  b'] },
+          { oldStart: 500, oldLines: 2, newStart: 505, newLines: 7,
+            lines: ['  a', '+ x', '+ x', '+ x', '+ x', '+ x', '  b'] },
+          { oldStart: 800, oldLines: 0, newStart: 810, newLines: 0,
+            lines: ['  a', '+ x', '+ x', '+ x', '+ x', '+ x', '  b'] },
+        ]
+      }),
+      'Edit in the app main file — added 15 lines in 3 spots'
+    );
+  });
+
+  it('Edit semantic phrase keeps function name AND adds locality', () => {
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: '// existing\n',
+        new_string: '// existing\nfunction renderContinuationBanner() {\n  return null;\n}\n',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 670, oldLines: 1, newStart: 670, newLines: 4,
+          lines: ['  // existing', '+ function renderContinuationBanner() {', '+   return null;', '+ }']
+        }]
+      }),
+      'Added the render continuation banner function in the renderer file around line 670'
+    );
+  });
+
+  it('Edit with replace-style patch reports both added AND removed', () => {
+    // delete 5 + add 7 reads as delta=+2 from input-side, but the
+    // structured patch shows the truth: 7 added, 5 removed.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: 'a\nb\nc\nd\ne\nf\ng',
+        new_string: 'a\nb\nc\nd\ne\nf\ng\nh\nx',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 100, oldLines: 7, newStart: 100, newLines: 9,
+          lines: ['  a', '+ A', '+ B', '+ C', '+ D', '+ E', '+ F', '+ G', '- a', '- b', '- c', '- d', '- e', '- f']
+        }]
+      }),
+      'Edit in the renderer file — added 7, removed 6 around line 100'
+    );
+  });
+
+  it('Edit without tool_result falls through to current input-only narration', () => {
+    // In-flight on-tool fire: no result yet. Narrator must still emit
+    // a sensible phrase from input alone (existing behaviour).
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: 'a\nb\nc',
+        new_string: 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no',
+      }, null, null),
+      'Added 12 lines in the renderer file'
+    );
+  });
+
+  it('Edit malformed structuredPatch ignored (defensive)', () => {
+    // Patch is not a list → no locality, no patch counts, falls back
+    // to input-side delta narration.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: 'a\nb\nc',
+        new_string: 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no',
+      }, null, { structuredPatch: 'not-a-list' }),
+      'Added 12 lines in the renderer file'
+    );
+  });
+
+  it('Edit rename does NOT get locality suffix (qualitative phrase)', () => {
+    // Renames are already concise + meaningful; tacking " around line N"
+    // adds clip length without adding signal. Same applies to
+    // imports-only and comment-only phrases.
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/renderer.js',
+        old_string: 'getSession()',
+        new_string: 'verifySession()',
+      }, null, {
+        structuredPatch: [{
+          oldStart: 200, oldLines: 1, newStart: 200, newLines: 1,
+          lines: ['- getSession()', '+ verifySession()']
+        }]
+      }),
+      'Renamed get session to verify session in the renderer file'
+    );
+  });
+
   // ---- Web tools ---------------------------------------------------
   it('WebFetch extracts bare domain (no www)', () => {
     assertEqual(narrate('WebFetch', { url: 'https://www.example.com/path?q=1' }), 'Fetching from example.com');

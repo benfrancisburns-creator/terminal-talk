@@ -681,7 +681,8 @@ def _narrate_read(inp: dict, prev_file: str | None,
 
 
 def _narrate_edit(inp: dict, prev_file: str | None,
-                  prev_tool: str | None = None) -> str | None:
+                  prev_tool: str | None = None,
+                  tool_result: dict | None = None) -> str | None:
     path = str(inp.get('file_path', ''))
     old = str(inp.get('old_string', ''))
     new = str(inp.get('new_string', ''))
@@ -697,6 +698,17 @@ def _narrate_edit(inp: dict, prev_file: str | None,
     # so the audio doesn't repeat the filename 5 times in a row when
     # Claude makes multiple incremental changes to one file.
     is_repeat_edit = (prev_tool == 'edit' and prev_file == path and bool(path))
+
+    # Phase 2 — pull line locality + accurate +/- counts from
+    # toolUseResult.structuredPatch. Mirrors what Ctrl+O shows
+    # (line numbers + diff stats); falls back gracefully when the
+    # result hasn't landed yet (in-flight on-tool fire) or the field
+    # is absent. Skip locality for rename / imports / comment phrases
+    # below — those are qualitative and a "around line 200" tail just
+    # adds clip length without adding signal.
+    structured_patch = tool_result.get('structuredPatch') if isinstance(tool_result, dict) else None
+    locality = _patch_locality_suffix(structured_patch)
+    patch_added, patch_removed = _patch_line_counts(structured_patch)
 
     if old and new:
         rename = _detect_rename(old, new)
@@ -743,14 +755,14 @@ def _narrate_edit(inp: dict, prev_file: str | None,
         if new_classes:
             class_list = _format_name_list(sorted(new_classes))  # naturalise=True default
             target = '' if is_repeat_edit else (in_file or f' to {natural}')
-            return f'Added a new class {class_list}{target}'
+            return f'Added a new class {class_list}{target}{locality}'
 
         if new_funcs:
             func_list = _format_name_list(sorted(new_funcs))
             count = len(new_funcs)
             noun = 'function' if count == 1 else 'functions'
             target = '' if is_repeat_edit else (in_file or f' to {natural}')
-            return f'Added the {func_list} {noun}{target}'
+            return f'Added the {func_list} {noun}{target}{locality}'
 
         if added_tests:
             count = len(added_tests)
@@ -759,24 +771,41 @@ def _narrate_edit(inp: dict, prev_file: str | None,
             first = added_tests[0]
             target = '' if is_repeat_edit else (in_file or f' to {natural}')
             if count == 1:
-                return f'Added a test for "{first}"{target}'
-            return f'Added {count} new tests starting with "{first}"{target}'
+                return f'Added a test for "{first}"{target}{locality}'
+            return f'Added {count} new tests starting with "{first}"{target}{locality}'
 
-    # Fall through to bare line-count narration when no semantic
-    # structure was detected.
+    # Bare line-count fallback. Prefer the structuredPatch +/- counts
+    # when present — they reflect what Ctrl+O actually displays and are
+    # accurate for replace-style edits where input-side delta would
+    # mislead (delete 5 + add 7 reads as delta=+2 but the patch shows
+    # 7 added / 5 removed). Without a patch (on-tool in-flight, missing
+    # field), fall through to the input-side delta as before.
+    if structured_patch and (patch_added > 5 or patch_removed > 5):
+        # Phrase shape: "+X −Y" when both happened; just "added X" / "removed Y" otherwise.
+        if patch_added > 0 and patch_removed > 0:
+            counts = f'added {patch_added}, removed {patch_removed}'
+        elif patch_added > 0:
+            counts = f'added {patch_added} lines'
+        else:
+            counts = f'removed {patch_removed} lines'
+        if is_repeat_edit:
+            return f'Then {counts}{locality}'
+        target = in_file or f' to {natural}'
+        return f'Edit{target} — {counts}{locality}'
+
     if delta > 5:
         if is_repeat_edit:
-            return f'Added {delta} more lines'
-        return f'Added {delta} lines{in_file}' if in_file else f'Added {delta} lines to {natural}'
+            return f'Added {delta} more lines{locality}'
+        return f'Added {delta} lines{in_file}{locality}' if in_file else f'Added {delta} lines to {natural}{locality}'
     if delta < -5:
         if is_repeat_edit:
-            return f'Removed {-delta} more lines'
-        return f'Removed {-delta} lines{in_file}' if in_file else f'Removed {-delta} lines from {natural}'
+            return f'Removed {-delta} more lines{locality}'
+        return f'Removed {-delta} lines{in_file}{locality}' if in_file else f'Removed {-delta} lines from {natural}{locality}'
 
     if is_repeat_edit:
-        return 'Another change to the same file'
+        return f'Another change to the same file{locality}'
     if natural:
-        return f'Edited {natural}'
+        return f'Edited {natural}{locality}'
     return 'Edited a file'
 
 
@@ -832,6 +861,51 @@ def _narrate_write(inp: dict, prev_file: str | None) -> str | None:
     if low.endswith(('.tsx', '.jsx')):
         return f'Wrote a new component: {natural}{primary_defined}{size_suffix}'
     return f'Wrote a new module: {natural}{primary_defined}{size_suffix}'
+
+
+def _patch_locality_suffix(structured_patch) -> str:
+    """Build a ' around line N' / ' in N spots' suffix from structuredPatch.
+    Returns '' if patch is missing or malformed.
+
+    structuredPatch is a list of hunks; each hunk has `newStart` (line
+    number where the hunk starts in the new file). One hunk → speak the
+    line number ("around line 670"). Multiple hunks → speak the count
+    ("in 3 spots"). The listener gets a Ctrl+O-equivalent locality cue
+    without us spelling out the diff."""
+    if not isinstance(structured_patch, list) or not structured_patch:
+        return ''
+    if len(structured_patch) == 1:
+        h = structured_patch[0]
+        if isinstance(h, dict):
+            n = h.get('newStart')
+            if isinstance(n, int) and n > 0:
+                return f' around line {n}'
+        return ''
+    return f' in {len(structured_patch)} spots'
+
+
+def _patch_line_counts(structured_patch) -> tuple[int, int]:
+    """Sum (added, removed) across all hunks via +/- prefix counting on
+    `lines[]`. More accurate than the input-side `_count_lines(new) -
+    _count_lines(old)` delta for edits that REPLACE content (delete 5 +
+    add 7 reads as delta=+2 but the patch shows 7 added / 5 removed).
+
+    Returns (0, 0) if patch is missing/malformed — caller should then
+    fall through to the input-side delta as before."""
+    if not isinstance(structured_patch, list):
+        return (0, 0)
+    added = removed = 0
+    for h in structured_patch:
+        if not isinstance(h, dict):
+            continue
+        for line in (h.get('lines') or []):
+            if not isinstance(line, str):
+                continue
+            if line.startswith('+'):
+                added += 1
+            elif line.startswith('-'):
+                removed += 1
+    return (added, removed)
 
 
 def _result_count_suffix(tool_result: dict | None,
@@ -1103,7 +1177,7 @@ def narrate_tool_use(
     if name == 'read':
         return _narrate_read(inp, prev_file, prev_tool)
     if name == 'edit':
-        return _narrate_edit(inp, prev_file, prev_tool)
+        return _narrate_edit(inp, prev_file, prev_tool, tool_result)
     if name == 'write':
         return _narrate_write(inp, prev_file)
     if name == 'glob':
