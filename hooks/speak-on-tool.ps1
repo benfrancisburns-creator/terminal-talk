@@ -49,9 +49,6 @@ if (-not ($sessionShort -match '^[a-f0-9]{8}$')) {
 # --- Session registry refresh (parallels speak-response.ps1 lines 31-137) ---
 # Keeping this in PreToolUse means the toolbar learns about a session as soon
 # as it starts using tools, not only when the first Stop hook fires.
-$claudePid = 0
-try { $claudePid = [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId } catch {}
-
 $registryPath = Join-Path $ttHome 'session-colours.json'
 $sessionsDir = Join-Path $ttHome 'sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
@@ -61,6 +58,13 @@ $now = [long][double]::Parse((Get-Date -UFormat %s))
 # Write-Atomic + per-PID stamp. Replaces ~80 lines of logic that used
 # to be duplicated here AND in speak-response.ps1 AND in statusline.ps1.
 Import-Module (Join-Path $ttHome 'app\session-registry.psm1') -Force -ErrorAction SilentlyContinue
+
+# Walk up to the long-lived claude.exe pid that survives /clear. Raw
+# ParentProcessId would be the per-invocation PowerShell host pid,
+# which never matches across /clear and breaks PID-migration. See
+# Get-StableClaudePid doc in session-registry.psm1.
+$claudePid = 0
+try { $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else { Get-StableClaudePid } } catch {}
 
 # Read-Update-Save must be lock-guarded as a whole -- the Electron toolbar
 # can be mid-write during the window between Read and Save, and without

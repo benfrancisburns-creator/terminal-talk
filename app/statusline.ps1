@@ -70,10 +70,12 @@ Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -ErrorAct
 $sessionsDir = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 try {
-    $myPid = $PID
-    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else {
-        [int](Get-CimInstance Win32_Process -Filter "ProcessId=$myPid").ParentProcessId
-    }
+    # Walk up to the OUTERMOST claude.exe / node.exe ancestor — Claude Code
+    # invokes statusLine via a worker child whose pid rotates per call, so
+    # raw ParentProcessId is ephemeral and never matches across /clear.
+    # Get-StableClaudePid finds the long-lived CLI pid that DOES survive,
+    # which is what Update-SessionAssignment needs for PID-migration.
+    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else { Get-StableClaudePid }
     $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
     Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid -SessionId $sessionId -Short $short -Now $nowSec
 } catch {}
@@ -144,9 +146,10 @@ $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
 # PID-migration path in Update-SessionAssignment). Never set in prod.
 $claudePid = 0
 try {
-    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else {
-        [int](Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
-    }
+    # Same outermost-CLI walk as the Write-SessionPidFile block above —
+    # see Get-StableClaudePid in session-registry.psm1 for why the raw
+    # ParentProcessId is unstable for statusLine invocations.
+    $claudePid = if ($env:TT_FAKE_CLAUDE_PID) { [int]$env:TT_FAKE_CLAUDE_PID } else { Get-StableClaudePid }
 } catch {}
 
 function Test-ProcessAlive($p) {

@@ -513,4 +513,74 @@ function Write-SessionPidFile {
     }
 }
 
-Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile, Enter-RegistryLock, Exit-RegistryLock
+function Get-StableClaudePid {
+    <#
+    .SYNOPSIS
+    Walk the parent-process chain from $StartPid and return the OUTERMOST
+    `claude.exe` (or `node.exe`) ancestor — the long-lived Claude Code CLI
+    process whose pid survives `/clear`.
+
+    Why: hooks used to call
+        (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+    and store that as `claude_pid`. Empirically, statusLine + PostToolUse
+    hooks are invoked through a worker `claude.exe` that the CLI rotates
+    per call, so `ParentProcessId` is an EPHEMERAL pid — different on every
+    invocation, never matches across `/clear`, and breaks PID-migration
+    inside Update-SessionAssignment. Stop hooks (speak-response) happen to
+    reach claude.exe directly so their `ParentProcessId` was stable; this
+    helper closes the gap by always returning the same outermost
+    ancestor regardless of how the hook was invoked.
+
+    Algorithm: walk up to $MaxHops parents. Record every ancestor whose
+    Name is `claude.exe` or `node.exe`. Return the LAST (outermost) one
+    encountered. If no such ancestor exists, fall back to the original
+    1-hop ParentProcessId so behaviour degrades gracefully (matches
+    pre-fix output rather than returning 0).
+
+    Parameters:
+      -StartPid       PID to walk from (default $PID).
+      -MaxHops        Hard ceiling so a loop in OS data can't hang us
+                      (default 8 — production trees observed at 2-3).
+      -ProcessLookup  Test seam: scriptblock ([int]) -> { Name, ParentProcessId }.
+                      Defaults to the live CIM query. Tests pass a
+                      hashtable-backed stub so the algorithm runs without
+                      touching the real OS process tree.
+
+    Returns: int pid (0 if no parent reachable at all).
+    #>
+    param(
+        [int]$StartPid = $PID,
+        [int]$MaxHops = 8,
+        [scriptblock]$ProcessLookup = {
+            param([int]$LookupPid)
+            try {
+                Get-CimInstance Win32_Process -Filter "ProcessId=$LookupPid" -ErrorAction Stop |
+                    Select-Object -First 1 |
+                    Select-Object Name, ProcessId, ParentProcessId
+            } catch { $null }
+        }
+    )
+    if ($StartPid -le 0) { return 0 }
+
+    $cur = $StartPid
+    $lastClaude = 0
+    $oneHopFallback = 0
+    for ($hop = 0; $hop -le $MaxHops; $hop++) {
+        $proc = & $ProcessLookup $cur
+        if (-not $proc) { break }
+        if ($hop -eq 1) { $oneHopFallback = $cur }
+        if ($hop -ge 1) {
+            $name = [string]$proc.Name
+            if ($name -eq 'claude.exe' -or $name -eq 'node.exe') {
+                $lastClaude = $cur
+            }
+        }
+        $next = [int]$proc.ParentProcessId
+        if ($next -le 0 -or $next -eq $cur) { break }
+        $cur = $next
+    }
+    if ($lastClaude -gt 0) { return $lastClaude }
+    return $oneHopFallback
+}
+
+Export-ModuleMember -Function Read-Registry, Update-SessionAssignment, Save-Registry, Write-SessionPidFile, Enter-RegistryLock, Exit-RegistryLock, Get-StableClaudePid

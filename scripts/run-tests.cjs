@@ -3929,13 +3929,18 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
   const toolHook     = fs.readFileSync(path.join(INSTALL_DIR, 'hooks', 'speak-on-tool.ps1'), 'utf8');
   const moduleSrc    = fs.readFileSync(modulePath, 'utf8');
 
-  it('module exports the six canonical functions', () => {
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
+  it('module exports the seven canonical functions', () => {
+    const REQUIRED = [
+      'Read-Registry', 'Update-SessionAssignment', 'Save-Registry',
+      'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock',
+      'Get-StableClaudePid',
+    ];
+    for (const fn of REQUIRED) {
       if (!moduleSrc.includes(`function ${fn}`)) {
         throw new Error(`session-registry.psm1 missing function ${fn}`);
       }
     }
-    for (const fn of ['Read-Registry', 'Update-SessionAssignment', 'Save-Registry', 'Write-SessionPidFile', 'Enter-RegistryLock', 'Exit-RegistryLock']) {
+    for (const fn of REQUIRED) {
       if (!new RegExp(`Export-ModuleMember[\\s\\S]*${fn}`).test(moduleSrc)) {
         throw new Error(`session-registry.psm1 must Export-ModuleMember ${fn}`);
       }
@@ -3963,6 +3968,22 @@ describe('PS SESSION-REGISTRY MODULE IS CANONICAL', () => {
       }
       if (!/Save-Registry/.test(c.src)) {
         throw new Error(`${c.name}: does not call Save-Registry`);
+      }
+    });
+    it(`${c.name} sources claude_pid via Get-StableClaudePid (not raw ParentProcessId)`, () => {
+      // 2026-04-26 regression: Claude Code invokes statusLine + PostToolUse
+      // through a worker child whose pid rotates per call, so raw
+      // (Get-CimInstance Win32_Process ... ParentProcessId) returns an
+      // ephemeral pid that never matches across /clear → PID-migration
+      // never fires → user loses session label/colour/pinned state every
+      // /clear. Get-StableClaudePid walks up to the long-lived claude.exe.
+      if (!/\bGet-StableClaudePid\b/.test(c.src)) {
+        throw new Error(`${c.name}: must source claude_pid via Get-StableClaudePid`);
+      }
+      // Permit the helper itself (in session-registry.psm1) to use the raw
+      // CIM call, but consumer scripts must NOT — they should delegate.
+      if (/Get-CimInstance[^\n]*Win32_Process[^\n]*ParentProcessId/.test(c.src)) {
+        throw new Error(`${c.name}: still has raw ParentProcessId lookup; use Get-StableClaudePid`);
       }
     });
     it(`${c.name} no longer carries the lowest-free-index loop`, () => {
@@ -5256,6 +5277,135 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       assertEqual(after.assignments.aabbccdd.label, label,
         'unicode label must survive PS round-trip byte-for-byte');
     } finally { try { fs.unlinkSync(regPath); } catch {} }
+  });
+});
+
+// =============================================================================
+// PS Get-StableClaudePid PARENT-WALK (2026-04-26 regression)
+//
+// Background: hooks used to call
+//   (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+// directly. Empirically Claude Code runs statusLine + PostToolUse via a
+// pooled worker `claude.exe` whose pid rotates per invocation, so that
+// raw lookup returned an EPHEMERAL pid that never matched across /clear.
+// PID-migration in Update-SessionAssignment therefore never fired and
+// every /clear orphaned the user's session label/pinned/colour state.
+//
+// Get-StableClaudePid walks up the parent chain and returns the OUTERMOST
+// claude.exe / node.exe ancestor — the long-lived CLI pid that DOES
+// survive /clear. These tests drive the algorithm with a stub
+// ProcessLookup so they don't touch the real OS process tree.
+// =============================================================================
+describe('PS Get-StableClaudePid PARENT-WALK', () => {
+  const MODULE_PATH = path.join(APP_DIR, 'session-registry.psm1');
+
+  if (!fs.existsSync(MODULE_PATH)) {
+    it('session-registry.psm1 missing — cannot exercise PS behaviour', () => {
+      throw new Error(`expected module at ${MODULE_PATH}`);
+    });
+    return;
+  }
+
+  // Drive Get-StableClaudePid with a hashtable-backed ProcessLookup. Each
+  // entry maps pid -> { Name, ParentProcessId }. Returns the helper's
+  // emitted int via stdout. We route through a temp .ps1 file (same
+  // pattern as the SESSION-IDENTITY block) to dodge -Command quoting.
+  function runWalk({ chain, startPid }) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const scriptPath = path.join(os.tmpdir(), `tt-test-walk-${nonce}.ps1`);
+    const psEscape = (s) => String(s).replace(/'/g, "''");
+    const tableLines = Object.entries(chain).map(([pid, { Name, ParentProcessId }]) =>
+      `  ${Number(pid)} = @{ Name = '${psEscape(Name)}'; ParentProcessId = ${Number(ParentProcessId) | 0} }`
+    );
+    const script = [
+      `Import-Module '${psEscape(MODULE_PATH)}' -Force`,
+      `$tree = @{`,
+      ...tableLines,
+      `}`,
+      `$lookup = { param([int]$LookupPid) if ($tree.ContainsKey($LookupPid)) { $tree[$LookupPid] } else { $null } }`,
+      `$out = Get-StableClaudePid -StartPid ${Number(startPid) | 0} -ProcessLookup $lookup`,
+      `Write-Output $out`,
+      '',
+    ].join("\r\n");
+    fs.writeFileSync(scriptPath, script, 'utf8');
+    const r = spawnSync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      { encoding: 'utf8', timeout: 20000 }
+    );
+    try { fs.unlinkSync(scriptPath); } catch {}
+    if (r.status !== 0) {
+      throw new Error(`PS exited ${r.status}: ${r.stderr || r.stdout}`);
+    }
+    return parseInt(r.stdout.trim().split(/\s+/).pop(), 10);
+  }
+
+  it('returns the outermost claude.exe ancestor (statusline through worker)', () => {
+    const pid = runWalk({
+      startPid: 9001,
+      chain: {
+        9001:  { Name: 'powershell.exe', ParentProcessId: 26388 },
+        26388: { Name: 'claude.exe',     ParentProcessId: 25092 },
+        25092: { Name: 'claude.exe',     ParentProcessId: 13292 },
+        13292: { Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 25092);
+  });
+
+  it('reaches a 1-hop claude.exe (Stop hook tree, the case that already worked)', () => {
+    const pid = runWalk({
+      startPid: 7777,
+      chain: {
+        7777: { Name: 'powershell.exe', ParentProcessId: 24772 },
+        24772:{ Name: 'claude.exe',     ParentProcessId: 13292 },
+        13292:{ Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 24772);
+  });
+
+  it('falls back to 1-hop ParentProcessId when no claude/node ancestor exists', () => {
+    const pid = runWalk({
+      startPid: 5555,
+      chain: {
+        5555: { Name: 'powershell.exe', ParentProcessId: 4444 },
+        4444: { Name: 'cmd.exe',        ParentProcessId: 3333 },
+        3333: { Name: 'explorer.exe',   ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 4444);
+  });
+
+  it('handles node.exe ancestors as well as claude.exe (npm-installed CLI variant)', () => {
+    const pid = runWalk({
+      startPid: 8001,
+      chain: {
+        8001: { Name: 'powershell.exe', ParentProcessId: 8002 },
+        8002: { Name: 'node.exe',       ParentProcessId: 8003 },
+        8003: { Name: 'pwsh.exe',       ParentProcessId: 0 },
+      },
+    });
+    assertEqual(pid, 8002);
+  });
+
+  it('respects MaxHops ceiling so a cyclic OS table cannot hang the hook', () => {
+    const pid = runWalk({
+      startPid: 100,
+      chain: {
+        100: { Name: 'a.exe', ParentProcessId: 200 },
+        200: { Name: 'b.exe', ParentProcessId: 100 },  // cycle
+      },
+    });
+    // No claude in the cycle — fallback is the 1-hop ParentProcessId (200).
+    assertEqual(pid, 200);
+  });
+
+  it('returns 0 when StartPid is not findable (hook fired before tree exists)', () => {
+    const pid = runWalk({
+      startPid: 9999,
+      chain: {},  // empty — lookup returns null for everything
+    });
+    assertEqual(pid, 0);
   });
 });
 
