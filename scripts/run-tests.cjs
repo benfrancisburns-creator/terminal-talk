@@ -4470,7 +4470,7 @@ import synth_turn
 # synthesize_parallel is the single call site for clip writing; replace with a
 # recorder that captures (phrase-list, prefix) tuples.
 captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy'):
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy', originals=None, original_full=None):
     captured.append((list(phrases), prefix))
 synth_turn.synthesize_parallel = fake_synth
 rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
@@ -4506,7 +4506,7 @@ import sys, random
 sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
 import synth_turn
 captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy'):
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy', originals=None, original_full=None):
     captured.append((list(phrases), prefix))
 synth_turn.synthesize_parallel = fake_synth
 # Seed random so the fallback verb is deterministic for asserting.

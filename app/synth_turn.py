@@ -1026,6 +1026,14 @@ def synthesize_parallel(
     # ignored. Pure additive — callers that don't pass it just don't
     # get the .original.txt sidecar.
     originals: list[str] | None = None,
+    # Whole-turn fallback: when a per-clip mapping isn't available
+    # (sanitiser + sentence-grouper turn one chunk into N clips, so the
+    # 1:1 mapping is lossy), callers can pass the entire pre-sanitiser
+    # markdown source for the turn. Same string is written to every
+    # clip's .original.txt so the transcript-panel "Original" toggle
+    # always has SOMETHING to show — listener loses per-clip granularity
+    # but gains visibility into the markdown that was supposed to play.
+    original_full: str | None = None,
 ) -> int:
     """Synthesize each sentence; write to queue in order as they finish.
 
@@ -1068,12 +1076,17 @@ def synthesize_parallel(
         sidecars next to the audio clip. Used by the transcript-panel
         feature in the renderer to show users the text of each clip
         with copy support. Failures here never break audio playback —
-        the text panel just won't have content for that clip."""
+        the text panel just won't have content for that clip.
+
+        Per-clip `original` wins; falls back to `original_full` (the
+        whole-turn markdown source) so even when the caller can't
+        provide a 1:1 mapping the panel still has something to show."""
         try:
             base = audio_path.with_suffix('')
             base.with_suffix('.txt').write_text(sentence, encoding='utf-8')
-            if original is not None and original.strip() and original != sentence:
-                base.with_suffix('.original.txt').write_text(original, encoding='utf-8')
+            chosen = original if original is not None else original_full
+            if chosen and chosen.strip() and chosen != sentence:
+                base.with_suffix('.original.txt').write_text(chosen, encoding='utf-8')
         except Exception as e:
             _log(f'sidecar write fail for {audio_path.name}: {e}')
 
@@ -1229,7 +1242,8 @@ def _do_stream(
         f'{len(all_clips)} body clips, {len(fully_done)} line(s) fully done'
     )
     synthesize_parallel(all_clips, voice, session_short, openai_key,
-                        provider=provider, openai_voice=openai_voice)
+                        provider=provider, openai_voice=openai_voice,
+                        original_full='\n\n'.join(body_text_chunks))
 
     state['partial_text_offsets'] = updated_offsets
     state['synthesized_line_indices'].extend(fully_done)
@@ -1519,9 +1533,10 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         # sentences up to ~300 chars while respecting paragraph
         # boundaries (NG1).
         body_clips: list[str] = []
+        body_combined_raw: str = ''
         if pending:
-            combined = '\n'.join(t for _, t in pending)
-            clean = sanitize(combined, flags)
+            body_combined_raw = '\n'.join(t for _, t in pending)
+            clean = sanitize(body_combined_raw, flags)
             if clean:
                 body_clips = group_sentences_for_tts(clean)
 
@@ -1558,7 +1573,8 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                                 prefix='T-', provider=provider, openai_voice=openai_voice)
         if body_clips:
             synthesize_parallel(body_clips, voice, session_short, openai_key,
-                                provider=provider, openai_voice=openai_voice)
+                                provider=provider, openai_voice=openai_voice,
+                                original_full=body_combined_raw or None)
 
         # Update sync state. Both dimensions tracked independently:
         # synthesized_line_indices for assistant-text entries,
