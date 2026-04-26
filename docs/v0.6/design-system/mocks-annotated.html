@@ -1,0 +1,395 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Terminal Talk — Mock screenshots</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    ═══════════════════════════════════════════════════════════════════════════
+    S5 — mocks-annotated as iframe wrapper around the kit
+    ═══════════════════════════════════════════════════════════════════════════
+
+    Before: 1,051 lines of hand-written HTML + CSS reproducing the shipping
+    toolbar's pixel geometry. Every product change risked drift and the
+    bundle review (pass-1 §8d, pass-2 F23/F24) called it out.
+
+    Now:     Each shot iframes docs/ui-kit/index.html?seed=<name>&chrome=0.
+             The kit's React App() reads ?seed and boots into a preset state
+             matching this page's annotations. When the shipping toolbar
+             changes, R1 (tokens.json) + R2 (kit components) propagate
+             automatically to the iframe — mocks stay in sync.
+             SEEDS live in docs/ui-kit/index.html; one per shot below.
+  */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 56px 40px 96px;
+    font-family: 'Inter', system-ui, sans-serif;
+    background:
+      radial-gradient(ellipse at 18% 22%, #27324a 0%, transparent 55%),
+      radial-gradient(ellipse at 82% 78%, #322043 0%, transparent 55%),
+      #0b0c10;
+    color: #fff; min-height: 100vh;
+  }
+
+  .page-title {
+    max-width: 1280px; margin: 0 auto 40px;
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .page-title h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 700; letter-spacing: 0.01em;
+    margin: 0; color: rgba(255,255,255,0.94);
+  }
+  .page-title .meta {
+    font-size: 11.5px; color: rgba(255,255,255,0.4);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .grid {
+    max-width: 1280px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 80px;
+  }
+
+  .shot-head {
+    display: flex; align-items: baseline; gap: 18px;
+    margin-bottom: 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .shot-head .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 42px; font-weight: 700;
+    color: #ffd93d;
+    letter-spacing: -0.03em;
+    line-height: 0.9;
+  }
+  .shot-head .title {
+    font-size: 22px; font-weight: 600;
+    color: rgba(255,255,255,0.98);
+    letter-spacing: -0.01em;
+  }
+  .shot-head .caption {
+    font-size: 14px;
+    color: rgba(255,255,255,0.55);
+    margin-left: auto;
+    max-width: 520px;
+    text-align: right;
+    line-height: 1.5;
+  }
+  .shot-head .caption code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #fff;
+  }
+
+  /* Stage: iframed kit on the left, annotation column on the right */
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 40px;
+    align-items: center;
+  }
+  .stage.full {
+    align-items: stretch;
+  }
+
+  /* Iframe container — borderless letterbox matching the original
+     .floating shell look (radial gradient + soft shadow). The kit's
+     own body provides the gradient, so we just provide the rounded
+     clipping + shadow. */
+  .shot-frame {
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 40px 80px -20px rgba(0,0,0,0.55);
+    background: #0e0f13;
+  }
+  .shot-frame iframe {
+    display: block;
+    width: 100%;
+    border: 0;
+    /* Height varies per shot; set via inline style on the <iframe>. */
+  }
+  .shot-frame.short iframe { height: 260px; }
+  .shot-frame.tall  iframe { height: 620px; }
+  .shot-frame.snap  iframe { height: 320px; }
+
+  /* Annotation column */
+  .annotations {
+    display: flex; flex-direction: column; gap: 22px;
+    padding: 6px 0;
+  }
+  .annotations dl {
+    margin: 0;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .annotations dl > div {
+    display: block;
+  }
+  .annotations dt {
+    font-size: 13px; font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    margin-bottom: 4px;
+    letter-spacing: -0.005em;
+  }
+  .annotations dd {
+    margin: 0;
+    font-size: 13px; line-height: 1.55;
+    color: rgba(255,255,255,0.62);
+  }
+  .annotations dd code, .annotations dt code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #fff;
+  }
+  .annotations dd b { color: rgba(255,255,255,0.88); font-weight: 600; }
+  .annotations dd i { color: rgba(255,255,255,0.85); font-style: italic; }
+
+  /* Footnote below the grid */
+  .footnote {
+    max-width: 1280px; margin: 56px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    color: rgba(255,255,255,0.42);
+    line-height: 1.6;
+  }
+  .footnote code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>Terminal Talk — annotated mocks</h1>
+  <div class="meta">v0.2 · 5 shots · live-iframed from ../ui-kit/</div>
+</div>
+
+<div class="grid">
+
+  <!-- ═══════════════  01 — IDLE  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">01</div>
+      <div class="title">Idle</div>
+      <div class="caption">Default state. Toggle with <code>Ctrl+Shift+A</code>.</div>
+    </div>
+    <div class="stage">
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=idle&chrome=0" title="Idle toolbar" loading="lazy"></iframe>
+      </div>
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Frameless two-row pill</dt>
+            <dd>680 × ~114, always-on-top, frameless. The whole pill is a drag surface — grab anywhere the buttons aren't.</dd>
+          </div>
+          <div>
+            <dt>Controls row</dt>
+            <dd>Back-10 · Play/Pause · Fwd-10 · scrubber · elapsed / total · clear-played · settings · close. The close button only hides the window — the listener keeps running; <code>Ctrl+Shift+A</code> brings it back.</dd>
+          </div>
+          <div>
+            <dt>Dot strip (empty here)</dt>
+            <dd>Every clip lands here as one dot. Oldest on the left, newest on the right. See shot 02 for how multi-session queues cluster.</dd>
+          </div>
+          <div>
+            <dt>Snap to edge</dt>
+            <dd>Drag near the top or bottom edge of the screen and the bar snaps flush. Horizontal layout only — dragging the bar off the edges of every display just rescues it back to the primary display's centre.</dd>
+          </div>
+          <div>
+            <dt>Idle auto-collapse</dt>
+            <dd>After 15 s with no interaction the bar shrinks to a thin strip and becomes <i>click-through</i> (mouse passes through to the window behind). Hover the strip to bring it back.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════  02 — QUEUE WITH RUN CLUSTERING  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">02</div>
+      <div class="title">Queue with three sessions</div>
+      <div class="caption">Clips from the same terminal cluster together; a gap marks a change of speaker.</div>
+    </div>
+    <div class="stage">
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=three-sessions&chrome=0" title="Three-session queue" loading="lazy"></iframe>
+      </div>
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Oldest left, newest right</dt>
+            <dd>Arrival order, never re-sorted. The leftmost dot is what's playing now (Terminal A's first clip of 3).</dd>
+          </div>
+          <div>
+            <dt>Run clustering</dt>
+            <dd>Consecutive clips from the same terminal sit side-by-side. A small gap is inserted only when the next clip's session differs — so the timeline reads as <b>A A A — B B B — C C</b> without any colour confusion.</dd>
+          </div>
+          <div>
+            <dt>Colour = session identity</dt>
+            <dd>Each terminal picks one of the 24 arrangements (8 solids + 8 horizontal splits + 8 vertical splits). Playing dots pulse with a white ring; the base colour never changes so you always know <i>who</i> is talking.</dd>
+          </div>
+          <div>
+            <dt>When this hurts you</dt>
+            <dd>If Terminal C has the important message but Terminal A is rambling 3 clips deep, you'd wait through all of A + B first. That's what the focus-star on the sessions panel (shot 04) is for.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════  03 — MIXED STATES  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">03</div>
+      <div class="title">Mixed states in one queue</div>
+      <div class="caption">A realistic timeline: 3 red (2 already heard + 1 playing), 2 yellow queued, 2 green queued, and one blue “hey jarvis” clip.</div>
+    </div>
+    <div class="stage">
+      <div class="shot-frame short">
+        <iframe src="../ui-kit/index.html?seed=mixed-states&chrome=0" title="Mixed queue states" loading="lazy"></iframe>
+      </div>
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>How to read the strip</dt>
+            <dd>Oldest on the left, newest on the right — always arrival order, never re-sorted. Runs of same-colour dots = clips from one terminal; a small gap marks a change of speaker. So this strip says: <b>A sent 3, B sent 2, C sent 2, plus one highlight-to-speak</b>.</dd>
+          </div>
+          <div>
+            <dt>1 · Heard (first two reds)</dt>
+            <dd>Already played. The dot stays in place so you can click it to replay or right-click to delete. It disappears on its own after the auto-prune window (3–600 s, default 20 s). Flip auto-prune off in Playback if you want clips to stack up for review instead.</dd>
+          </div>
+          <div>
+            <dt>2 · Playing (third red)</dt>
+            <dd>Slightly larger pulsing ring. The base colour <i>stays</i> the session colour — the ring is layered on top, not a replacement — so you always know which terminal is currently talking.</dd>
+          </div>
+          <div>
+            <dt>3 · Queued (yellows + greens)</dt>
+            <dd>Plain flat discs. When the current red ends, Terminal B's two yellows play next (oldest first), then Terminal C's two greens. Unless a focus ★ is set (shot 04) or a hey-jarvis clip arrives, which jumps to the front.</dd>
+          </div>
+          <div>
+            <dt>4 · J-clip (blue, on the right)</dt>
+            <dd>Highlight-to-speak clip — you selected text and said <i>"hey jarvis"</i> or pressed <code>Ctrl+Shift+S</code>. The small <b>J</b> glyph marks it. Colour inherits from the Claude Code terminal the selection came from (blue here); grey if triggered from outside a Claude session (browser, PDF, Slack). J-clips have the highest playback priority — they jump the entire queue.</dd>
+          </div>
+          <div>
+            <dt>Muted sessions never appear</dt>
+            <dd>When a session is <code>🔇</code>-muted in the panel, its clips are dropped at arrival — no synthesis, no file on disk, no dot, no audio. The statusline in that terminal shows a <code>🔇</code> prefix so you remember. Unmuting resumes on the next clip the terminal produces.</dd>
+          </div>
+          <div>
+            <dt>Click / right-click</dt>
+            <dd>Left-click any dot to (re)play it manually. Right-click to remove it from the queue immediately without waiting for auto-prune. Both work on heard clips and queued clips.</dd>
+          </div>
+          <div>
+            <dt>Clear all</dt>
+            <dd>The ✕ (trash) button in the controls row wipes <i>every</i> clip at once — useful when three chatty terminals fire at the same time and you just want quiet. Held clips (currently playing) finish first; the rest drop.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════  04 — SETTINGS PANEL OPEN  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">04</div>
+      <div class="title">Settings panel open</div>
+      <div class="caption">Click the gear icon to expand. Per-session voice + speech-includes overrides live behind each row's chevron.</div>
+    </div>
+    <div class="stage full">
+      <div class="shot-frame tall">
+        <iframe src="../ui-kit/index.html?seed=settings-panel&chrome=0" title="Settings panel open" loading="lazy"></iframe>
+      </div>
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Playback — speed + auto-prune</dt>
+            <dd>Speed slider 0.5–2.5×. Auto-prune toggle + seconds (3–600, default 20) — when on, played clips disappear from the strip after that many seconds. Flip off if you're stepping away and want clips to stack up for review.</dd>
+          </div>
+          <div>
+            <dt>Sessions row · 7 columns</dt>
+            <dd>Chevron · swatch · 8-char session ID · editable label · colour dropdown (24 arrangements) · focus star · mute. The × at the very end removes the session (frees its colour slot).</dd>
+          </div>
+          <div>
+            <dt>★ Focus (priority)</dt>
+            <dd>This is the answer to <i>"Terminal C has the important message but Terminal A is 3 clips deep and B is another 3".</i> Star Terminal C and its unplayed clips jump the queue — they play before any pending clip from other sessions. It never interrupts the clip that's currently speaking. Only one session can be starred at a time; clicking another star swaps focus. Active row picks up a subtle gold tint.</dd>
+          </div>
+          <div>
+            <dt>🔊 / 🔇 Mute</dt>
+            <dd>Silences one session completely: no synthesis, no file, no dot, no audio. Muted rows fade to 55 % and the terminal's statusline shows a <code>🔇</code> prefix next to its emoji. Use it for backgrounding a chatty agent while you focus elsewhere.</dd>
+          </div>
+          <div>
+            <dt>Playback precedence</dt>
+            <dd>When the player picks the next clip: (1) highlight-to-speak (<i>hey jarvis</i> / <code>Ctrl+Shift+S</code>) always wins · (2) unplayed clips from the ★ session · (3) oldest unplayed clip from any unmuted session.</dd>
+          </div>
+          <div>
+            <dt>Expanded row (chevron ▾)</dt>
+            <dd>Reveals per-session <b>Voice</b> (45 Edge Neural voices — pick one per terminal so you can tell them apart by ear) and 6 tri-state <b>Speech-includes</b> toggles: code blocks · inline code · URLs · headings · bullet markers · image alt-text.</dd>
+          </div>
+          <div>
+            <dt>Global shortcuts</dt>
+            <dd><code>Ctrl+Shift+A</code> show/hide toolbar · <code>Ctrl+Shift+S</code> read selection · <code>Ctrl+Shift+J</code> toggle mic · <code>Ctrl+Shift+P</code> pause/resume · <code>Ctrl+Shift+O</code> pause-only. All global, so they work from any app.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════  05 — SNAPPED TO TOP  ═══════════════ -->
+  <section>
+    <div class="shot-head">
+      <div class="num">05</div>
+      <div class="title">Snapped to the top edge</div>
+      <div class="caption">Drag near the top of the screen — the bar snaps flush and stays there on the next launch.</div>
+    </div>
+    <div class="stage">
+      <div class="shot-frame snap">
+        <iframe src="../ui-kit/index.html?seed=snapped-top&chrome=0" title="Snapped to top edge" loading="lazy"></iframe>
+      </div>
+      <div class="annotations">
+        <dl>
+          <div>
+            <dt>Trigger</dt>
+            <dd>Drag the bar within ~20 px of the top edge of the current screen. On <i>release</i> it snaps flush; the top corners go square so it reads as docked.</dd>
+          </div>
+          <div>
+            <dt>Same layout</dt>
+            <dd>Top-snap keeps the default two-row letterbox — all controls still fit. The snap is purely positional.</dd>
+          </div>
+          <div>
+            <dt>Persistence</dt>
+            <dd>The snap edge is written to <code>~/.terminal-talk/config.json</code> (<code>window.dock: "top"</code>) so the bar comes back to the same place on relaunch, even across display changes.</dd>
+          </div>
+          <div>
+            <dt>Unsnapping</dt>
+            <dd>Drag away from the edge. The round pill shape returns the moment it's more than a few pixels clear of the top.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="footnote">
+  Each shot above is a live iframe of <code>../ui-kit/index.html?seed=&lt;name&gt;</code>. The kit's React components render the same DOM the shipping Electron renderer does, driven by <code>app/lib/tokens.json</code>. Change the product → R1/R2 pipeline regenerates the kit → these mocks update on refresh. No hand-coded duplicate CSS.
+</div>
+
+</body>
+</html>

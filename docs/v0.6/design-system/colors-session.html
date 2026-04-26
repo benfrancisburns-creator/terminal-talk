@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:#0f1014;font-family:var(--tt-font-ui);color:var(--tt-fg-2)}
+  .stage{padding:20px 24px 24px;display:flex;flex-direction:column;gap:18px}
+  .header{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .cap{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5)}
+  .count{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5);font-family:var(--tt-font-mono)}
+  .count b{color:var(--tt-fg-2);font-weight:600}
+
+  .section-label{
+    font-family:var(--tt-font-mono);
+    font-size:10px;
+    color:rgba(255,255,255,0.42);
+    letter-spacing:0.04em;
+    display:flex;align-items:center;gap:8px;
+    margin-top:4px;
+  }
+  .section-label::after{
+    content:'';flex:1;height:1px;background:rgba(255,255,255,0.06);
+  }
+
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .dot{
+    width:34px;height:34px;border-radius:50%;
+    border:1px solid rgba(255,255,255,0.1);
+    box-shadow:
+      inset 0 0 0 1px rgba(0,0,0,0.15),
+      0 1px 2px rgba(0,0,0,0.4);
+  }
+  .label{
+    font-family:var(--tt-font-mono);
+    font-size:9.5px;color:rgba(255,255,255,0.45);
+    letter-spacing:0.02em;
+    text-align:center;
+  }
+  .idx{
+    font-family:var(--tt-font-mono);
+    font-size:9px;color:rgba(255,255,255,0.28);
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="header">
+    <div class="cap">The 24 session-dot arrangements — 8 solid + 8 horizontal split + 8 vertical split</div>
+    <div class="count">24 <b>unique</b> sessions</div>
+  </div>
+
+  <!-- ─── 8 solids ─── -->
+  <div class="section-label">01 · solid (8)</div>
+  <div class="grid" id="g-solid"></div>
+
+  <!-- ─── 8 h-splits ─── -->
+  <div class="section-label">02 · horizontal split (8) — top ↑ / bottom ↓ · complementary pairs</div>
+  <div class="grid" id="g-hsplit"></div>
+
+  <!-- ─── 8 v-splits ─── -->
+  <div class="section-label">03 · vertical split (8) — left ← / right → · complementary pairs</div>
+  <div class="grid" id="g-vsplit"></div>
+</div>
+
+<script>
+  // Base palette — "brown" is now richer copper (#c97b50).
+  const BASE = {
+    red:    '#ff5e5e',
+    orange: '#ffa726',
+    yellow: '#ffd93d',
+    green:  '#4ade80',
+    blue:   '#60a5fa',
+    purple: '#c084fc',
+    brown:  '#c97b50',
+    white:  '#e0e0e0',
+  };
+  const ORDER = ['red','orange','yellow','green','blue','purple','brown','white'];
+  const SHORT = { red:'red', orange:'orng', yellow:'ylw', green:'grn', blue:'blu', purple:'prpl', brown:'brn', white:'wht' };
+
+  // Complementary pairings (explicit — no arbitrary modular offsets).
+  // hsplit (top/bottom): 4 pairs × 2 reverses = 8
+  const HSPLIT_PAIRS = [
+    ['red','green'], ['green','red'],
+    ['orange','blue'], ['blue','orange'],
+    ['yellow','purple'], ['purple','yellow'],
+    ['brown','white'], ['white','brown'],
+  ];
+  // vsplit (left/right): 4 pairs × 2 reverses = 8
+  const VSPLIT_PAIRS = [
+    ['red','blue'], ['blue','red'],
+    ['orange','purple'], ['purple','orange'],
+    ['yellow','brown'], ['brown','yellow'],
+    ['green','white'], ['white','green'],
+  ];
+
+  function dotBg(kind, cs) {
+    if (kind === 'solid')  return cs[0];
+    if (kind === 'hsplit') return `linear-gradient(to bottom, ${cs[0]} 50%, ${cs[1]} 50%)`;
+    if (kind === 'vsplit') return `linear-gradient(to right,  ${cs[0]} 50%, ${cs[1]} 50%)`;
+  }
+
+  function cell(idx, kind, cs, labelText) {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.innerHTML = `
+      <div class="dot" style="background:${dotBg(kind, cs)}"></div>
+      <div class="label">${labelText}</div>
+      <div class="idx">${String(idx).padStart(2,'0')}</div>
+    `;
+    return el;
+  }
+
+  // 00–07  solid
+  const gSolid = document.getElementById('g-solid');
+  ORDER.forEach((name, i) => {
+    gSolid.append(cell(i, 'solid', [BASE[name]], SHORT[name]));
+  });
+
+  // 08–15  hsplit
+  const gH = document.getElementById('g-hsplit');
+  HSPLIT_PAIRS.forEach(([a, b], k) => {
+    gH.append(cell(8 + k, 'hsplit', [BASE[a], BASE[b]], `${SHORT[a]} / ${SHORT[b]}`));
+  });
+
+  // 16–23  vsplit
+  const gV = document.getElementById('g-vsplit');
+  VSPLIT_PAIRS.forEach(([a, b], k) => {
+    gV.append(cell(16 + k, 'vsplit', [BASE[a], BASE[b]], `${SHORT[a]} / ${SHORT[b]}`));
+  });
+</script>
+</body>
+</html>

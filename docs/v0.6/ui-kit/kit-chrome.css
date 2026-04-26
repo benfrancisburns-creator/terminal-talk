@@ -1,0 +1,82 @@
+/* D2-3 — minimal demo chrome for the kit. Purple-gradient background
+   (matches the previous kit demo's feel) + the add-fake-clip control
+   bar. The toolbar + panel rendering itself comes from app/styles.css
+   + app/lib/palette-classes.css which the kit loads verbatim. */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 22%, #26324a 0%, transparent 55%),
+    radial-gradient(circle at 75% 80%, #30203e 0%, transparent 55%),
+    #0e0f13;
+  color: #fff;
+  color-scheme: dark;
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* The bar is position:fixed in app/styles.css — it anchors to the
+   viewport edges by design in the Electron window. For the kit demo
+   we want it positioned normally so iframes size correctly and the
+   demo controls sit below. Override to static flow. */
+.bar {
+  position: static !important;
+  margin: 18px auto 0 !important;
+  left: auto !important;
+  top: auto !important;
+}
+.panel {
+  position: static !important;
+  margin: 0 auto !important;
+  left: auto !important;
+  /* v0.3.7 — release the height cap in the kit. app/styles.css sets
+     max-height: calc(100vh - 72px) + overflow-y: auto so the panel
+     can scroll independently inside the chromeless Electron window.
+     In a browser the bar above the panel is in normal flow (see
+     `position: static` above), so the 72 px budget is wrong — on
+     short viewports the panel capped at ~viewport height, the
+     "About Terminal Talk" section truncated, and the demo controls
+     below the panel got pushed off-screen because the panel
+     absorbed wheel events instead of the body. Letting the panel
+     render at content height + having body handle all scrolling is
+     the browser-native behaviour users already expect. */
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+/* Demo controls strip — only shown when ?chrome=0 is NOT set.
+   mock-ipc.js mounts this below the bar + panel. */
+.kit-demo-controls {
+  max-width: 680px;
+  margin: 18px auto 40px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  flex-wrap: wrap;
+}
+.kit-demo-controls button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s ease, color .15s ease;
+}
+.kit-demo-controls button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.kit-demo-controls .caption {
+  margin-left: auto;
+  opacity: 0.6;
+  font-family: 'Cascadia Mono', 'Consolas', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}

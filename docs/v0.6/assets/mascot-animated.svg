@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Terminal Talk animated mascot.
+
+     Same rectangular-pixel mascot the live toolbar renders (see
+     app/index.html #scrubberMascot), cycling through the 8 solid
+     palette colours + 4 split arrangements — exactly what users see
+     in the product when they have multiple Claude Code sessions
+     open. Pixelated cloud speech bubble (matching the desktop
+     wallpaper hero at docs/assets/wallpaper/) crossfades through 7
+     phrases Claude Code actually says. Pure CSS animation via
+     embedded <style>, no JS — works in GitHub's README renderer.
+
+     Palette source: app/lib/tokens.json BASE_COLOURS.
+     Edit the @keyframes stops below to change the cycle.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of Claude Code phrases">
+  <style><![CDATA[
+    /* Colour-cycle via two CSS custom properties on the root element.
+       Eight 1.25s stops in a 10s loop, one per base palette colour
+       (matches app/lib/tokens.json BASE_COLOURS). Body rects use
+       currentColor; shadow rects use var(--mascot-shadow) and cycle
+       in sync with a pre-darkened variant of the active colour, so
+       the 3D-pixel drop shadow stays thematically correct on every
+       stop (dark red under red, dark mustard under yellow, etc.). */
+    svg {
+      color: #ffa726;                /* start on orange — matches wallpaper hero */
+      --mascot-shadow: #a85e00;
+      animation: cycleBody 10s steps(1, end) infinite,
+                 cycleShadow 10s steps(1, end) infinite;
+    }
+
+    @keyframes cycleBody {
+      0%,   12.5% { color: #ff5e5e; }  /* red */
+      12.5%, 25%  { color: #ffa726; }  /* orange */
+      25%,   37.5% { color: #ffd93d; } /* yellow */
+      37.5%, 50%  { color: #4ade80; }  /* green */
+      50%,   62.5% { color: #60a5fa; } /* blue */
+      62.5%, 75%  { color: #ee2bbd; }  /* magenta */
+      75%,   87.5% { color: #c97b50; } /* brown */
+      87.5%, 100% { color: #e0e0e0; }  /* bone */
+    }
+
+    @keyframes cycleShadow {
+      /* Each stop is a hand-picked darker tint of the body colour,
+         NOT a mechanical brightness() filter — the reference
+         wallpaper's shadow reads as dark-brown-orange under orange,
+         dark-mustard under yellow, etc. Keeps the retro feel
+         consistent across the full palette. */
+      0%,   12.5% { --mascot-shadow: #9c2020; }  /* dark red */
+      12.5%, 25%  { --mascot-shadow: #a85e00; }  /* dark orange-brown */
+      25%,   37.5% { --mascot-shadow: #8c6f00; } /* dark mustard */
+      37.5%, 50%  { --mascot-shadow: #166534; }  /* dark green */
+      50%,   62.5% { --mascot-shadow: #1e40af; } /* dark blue */
+      62.5%, 75%  { --mascot-shadow: #86188f; }  /* dark magenta */
+      75%,   87.5% { --mascot-shadow: #5d2f14; } /* dark brown */
+      87.5%, 100% { --mascot-shadow: #6b7280; }  /* slate (bone shadow) */
+    }
+
+    /* Speech-bubble phrase crossfade. Seven phrases sharing one 10s
+       cycle — each visible ~1.43s with 0.2s fade in / out. Because
+       SVG text content can't be animated in pure CSS, we stack 7
+       <text> elements and stagger their opacity keyframes. The
+       anonymous class names .p1..p7 map to the cycle position. */
+    .phrase { opacity: 0; animation: phraseFade 10s linear infinite; }
+    .phrase.p1 { animation-delay:  0s; }
+    .phrase.p2 { animation-delay:  1.43s; }
+    .phrase.p3 { animation-delay:  2.86s; }
+    .phrase.p4 { animation-delay:  4.29s; }
+    .phrase.p5 { animation-delay:  5.72s; }
+    .phrase.p6 { animation-delay:  7.15s; }
+    .phrase.p7 { animation-delay:  8.58s; }
+
+    @keyframes phraseFade {
+      0%    { opacity: 0; }
+      2%    { opacity: 1; }
+      12.5% { opacity: 1; }
+      14.5% { opacity: 0; }
+      100%  { opacity: 0; }
+    }
+
+    /* Respect the user's motion preference — GitHub respects these
+       preferences in README rendering on many platforms. */
+    @media (prefers-reduced-motion: reduce) {
+      svg { animation: none; color: #ffa726; --mascot-shadow: #a85e00; }
+      .phrase { animation: none; }
+      .phrase.p1 { opacity: 1; }
+    }
+  ]]></style>
+
+  <!-- Two-step chunky pixel drop shadow for the cloud, matching the
+       wallpaper hero's filter: drop-shadow(4,4) drop-shadow(8,8). Hard
+       stepped shadows (stdDeviation=0) keep the pixel-art feel; no
+       Gaussian softness. -->
+  <defs>
+    <filter id="cloud-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="4" dy="4" stdDeviation="0" flood-color="#0a0f19" flood-opacity="0.85"/>
+      <feDropShadow dx="8" dy="8" stdDeviation="0" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Mascot, positioned on the left. Geometry mirrors the live toolbar's
+       #scrubberMascot rectangles. Two layers:
+         1. SHADOW layer, same shapes offset (4, 4) down-right, filled
+            with the mascot-shadow custom property. Rendered first so
+            the body overlays it, leaving only the bottom-right offset
+            visible as the classic 8-bit 3D pixel drop shadow seen in
+            the wallpaper hero (docs/assets/wallpaper/).
+         2. BODY layer, same shapes filled with currentColor, which
+            animates through the 8 palette colours.
+       Face (eyes + smile) sits above both, always black. -->
+  <g transform="translate(30, 28)">
+    <!-- 1. Shadow layer (rendered behind). -->
+    <g transform="translate(4, 4)">
+      <rect x="13"  y="0"  width="114" height="88" fill="var(--mascot-shadow)"/>
+      <rect x="0"   y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="127" y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
+      <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+    </g>
+    <!-- 2. Body layer (rendered on top). Single-colour body matching
+         the reference image — no top/bottom split here; the in-app
+         mascot handles multi-session splits separately via its own
+         mascot-secondary variable. -->
+    <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
+    <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
+    <rect x="19"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="46"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="79"  y="88" width="16"  height="32" fill="currentColor"/>
+    <rect x="106" y="88" width="16"  height="32" fill="currentColor"/>
+    <!-- Eyes + smile — always dark charcoal so they read on any body
+         colour (including bone). -->
+    <rect x="36"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="88"  y="26" width="16"  height="16" fill="#1a1a1a"/>
+    <rect x="44"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="88"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
+    <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
+  </g>
+
+  <!-- Pixelated cloud speech bubble — same 30×11 grid the wallpaper
+       hero uses (see scripts/wallpaper.html), scaled 6× so the cloud
+       body is 180×66 display px. Tail sticks out one unit to the left,
+       pointing back at the mascot. Two-step pixel drop shadow via the
+       cloud-shadow filter; text sits centred on the body interior. -->
+  <g transform="translate(190, 52)" filter="url(#cloud-shadow)">
+    <g transform="scale(6)">
+      <!-- Top puffs (bumpy cloud top) -->
+      <rect x="4"  y="0"  width="4"  height="1" fill="#ffffff"/>
+      <rect x="11" y="0"  width="5"  height="1" fill="#ffffff"/>
+      <rect x="19" y="0"  width="4"  height="1" fill="#ffffff"/>
+      <!-- Rising row — wider -->
+      <rect x="2"  y="1"  width="26" height="1" fill="#ffffff"/>
+      <!-- Main body -->
+      <rect x="1"  y="2"  width="28" height="7" fill="#ffffff"/>
+      <!-- Bottom contour -->
+      <rect x="2"  y="9"  width="26" height="1" fill="#ffffff"/>
+      <rect x="4"  y="10" width="4"  height="1" fill="#ffffff"/>
+      <rect x="12" y="10" width="5"  height="1" fill="#ffffff"/>
+      <!-- Tail (chunky pixel tail pointing back to mascot) -->
+      <rect x="0"  y="7"  width="1"  height="1" fill="#ffffff"/>
+      <rect x="0"  y="8"  width="1"  height="1" fill="#ffffff"/>
+    </g>
+  </g>
+
+  <!-- Seven phrases crossfading inside the cloud body. Centred at
+       display (280, 92) — group translate (190, 52) plus cloud-grid
+       centre (15 × 6 = 90, 6.6 × 6 ≈ 40). Branding phrase HEY JARVIS
+       uppercased to match the wallpaper; runtime narrations keep
+       mixed casing ("Reading foo.py", "Cooked for 49s") because
+       that's literally what Claude Code emits. Rendered AFTER the
+       filtered cloud group so the filter doesn't double-drop-shadow
+       the text. -->
+  <g font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
+    <text class="phrase p1" x="280" y="92" font-size="16" letter-spacing="1">HEY JARVIS</text>
+    <text class="phrase p2" x="280" y="92" font-size="14">Cooked for 49s</text>
+    <text class="phrase p3" x="280" y="92" font-size="14">Reading foo.py</text>
+    <text class="phrase p4" x="280" y="92" font-size="14">Moonwalking</text>
+    <text class="phrase p5" x="280" y="92" font-size="13">Running npm test</text>
+    <text class="phrase p6" x="280" y="92" font-size="14">Brewed for 8m 4s</text>
+    <text class="phrase p7" x="280" y="92" font-size="13">Sautéed for 1m 0s</text>
+  </g>
+</svg>
