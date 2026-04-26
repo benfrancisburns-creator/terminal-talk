@@ -605,6 +605,87 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
 });
 audioPlayer.mount();
 
+// Transcript panel — expandable section under the dot strip showing
+// the text of recent audio clips with copy buttons. Sidecar text
+// (.txt / .original.txt) is written by synth_turn.py + tts-helper.psm1
+// next to each audio clip; here we maintain a synchronous cache that
+// the panel reads on render. IPC fetch happens when the queue updates;
+// missing entries show a placeholder until the fetch lands.
+const transcriptSidecarCache = new Map();
+const transcriptInflight = new Set();
+
+function fetchSidecarsForRecent() {
+  // Only prefetch sidecars for the clips the panel will actually show,
+  // bounded by MAX_CLIPS_SHOWN (10). Keeps the IPC chatter modest even
+  // when the queue grows long.
+  const recent = queue.slice().sort((a, b) => (b.mtime || 0) - (a.mtime || 0)).slice(0, 10);
+  for (const f of recent) {
+    if (!f || !f.path) continue;
+    if (transcriptSidecarCache.has(f.path)) continue;
+    if (transcriptInflight.has(f.path)) continue;
+    transcriptInflight.add(f.path);
+    window.api.readClipSidecar(f.path).then((res) => {
+      transcriptInflight.delete(f.path);
+      transcriptSidecarCache.set(f.path, {
+        spoken: (res && typeof res.spoken === 'string') ? res.spoken : '',
+        original: (res && typeof res.original === 'string') ? res.original : '',
+      });
+      // Trigger a re-render now that we have content.
+      if (transcriptPanel) transcriptPanel.refresh();
+    }).catch(() => {
+      transcriptInflight.delete(f.path);
+      transcriptSidecarCache.set(f.path, { spoken: '', original: '' });
+    });
+  }
+  // Bound the cache: drop entries for paths no longer in the queue,
+  // so a long session doesn't hold every clip's text in memory forever.
+  if (transcriptSidecarCache.size > 100) {
+    const liveSet = new Set(queue.map((f) => f.path));
+    for (const k of transcriptSidecarCache.keys()) {
+      if (!liveSet.has(k)) transcriptSidecarCache.delete(k);
+    }
+  }
+}
+
+const transcriptPanelEl = document.getElementById('transcriptPanel');
+const transcriptToggleBtn = document.getElementById('transcriptToggle');
+const transcriptViewToggleBtn = document.getElementById('transcriptViewToggle');
+const transcriptListEl = document.getElementById('transcriptList');
+const transcriptCountEl = document.getElementById('transcriptCount');
+
+let transcriptPanel = null;
+if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
+  transcriptPanel = new window.TT_TRANSCRIPT_PANEL.TranscriptPanel({
+    panelEl: transcriptPanelEl,
+    toggleBtn: transcriptToggleBtn,
+    viewToggleBtn: transcriptViewToggleBtn,
+    listEl: transcriptListEl,
+    countEl: transcriptCountEl,
+    getQueue: () => queue,
+    getCurrentPath: () => audioPlayer.getCurrentPath(),
+    getHeardPaths: () => heardPaths,
+    readSidecar: (audioPath) => transcriptSidecarCache.get(audioPath) || null,
+    // Initial state from config (panels.transcript_*); persisted via
+    // window.api.updateConfig on user toggle so the panel remembers
+    // across reloads.
+    getInitialExpanded: () => false,  // wired up after first config load
+    getInitialView: () => 'spoken',   // same
+    setPersistedFlag: (key, value) => {
+      try {
+        const partial = { panels: {} };
+        if (key === 'expanded') partial.panels.transcript_expanded = value;
+        if (key === 'view')     partial.panels.transcript_view = value;
+        window.api.updateConfig(partial);
+      } catch {}
+    },
+    // Click-to-play: delegate to the same userPlay path the dot strip
+    // uses so the existing auto-continue / manual-vs-userClick semantics
+    // apply identically.
+    onClickClip: (path) => userPlay(path),
+  });
+  transcriptPanel.mount();
+}
+
 function renderDots() {
   // Defensive fallback: if the persisted selectedTab points at a short
   // that no longer appears in either queue or sessionAssignments, revert
@@ -654,6 +735,9 @@ function renderDots() {
     selectedTab,
     expanded: tabsExpanded,
   });
+  // Transcript panel: refresh in lock-step with the dot strip so the
+  // current-clip highlight updates on every audio-event-driven render.
+  if (transcriptPanel) transcriptPanel.refresh();
 }
 
 function playPath(p, manual = false, userClick = false) {
@@ -874,6 +958,14 @@ window.api.onQueueUpdated((payload) => {
     .filter(f => !prevPaths.has(f.path) && !playedPaths.has(f.path))
     .sort((a, b) => a.mtime - b.mtime);
   queue = files;
+  // Transcript panel: kick a sidecar prefetch + refresh on every queue
+  // update. fetchSidecarsForRecent only IPCs paths it hasn't fetched
+  // yet, so this is cheap on subsequent calls. The async fetch's then()
+  // calls refresh() once the text lands.
+  if (transcriptPanel) {
+    fetchSidecarsForRecent();
+    transcriptPanel.refresh();
+  }
 
   for (const f of newArrivals) {
     if (priorityPaths.has(f.path)) continue;
@@ -1068,6 +1160,18 @@ async function loadSettings() {
   window.TT_CONFIG_SNAPSHOT = cfg;
   settingsForm.update({ cfg });
   restoreTabsState(cfg);
+  // Transcript panel: restore expand/view state from config. Stored
+  // under cfg.panels.{transcript_expanded, transcript_view}.
+  if (transcriptPanel && cfg && cfg.panels && typeof cfg.panels === 'object') {
+    if (typeof cfg.panels.transcript_expanded === 'boolean') {
+      transcriptPanel.setExpanded(cfg.panels.transcript_expanded);
+    }
+    if (cfg.panels.transcript_view === 'spoken' || cfg.panels.transcript_view === 'original') {
+      transcriptPanel.setView(cfg.panels.transcript_view);
+    }
+    fetchSidecarsForRecent();
+    transcriptPanel.refresh();
+  }
   renderDots();
 }
 
