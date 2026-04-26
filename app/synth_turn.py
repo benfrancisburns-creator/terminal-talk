@@ -953,6 +953,14 @@ def synthesize_parallel(
     # ignored the user's Settings dropdown pick. Now honours it.
     provider: str = 'edge',
     openai_voice: str = 'alloy',
+    # Optional pre-strip-for-tts text for the transcript-panel feature.
+    # When provided, written to <base>.original.txt alongside the
+    # audio file so the renderer can show the user the source text
+    # (with markdown intact) in addition to the spoken text. Length
+    # must match `sentences` 1:1; mismatched length is silently
+    # ignored. Pure additive — callers that don't pass it just don't
+    # get the .original.txt sidecar.
+    originals: list[str] | None = None,
 ) -> int:
     """Synthesize each sentence; write to queue in order as they finish.
 
@@ -986,6 +994,24 @@ def synthesize_parallel(
     # mtimes in release order to guarantee playback matches text order.
     last_mtime = [time.time()]
 
+    # Validate `originals` length matches sentences; ignore if mismatched
+    # (defensive — a buggy caller shouldn't kill the whole turn).
+    use_originals = bool(originals) and len(originals or []) == len(sentences)
+
+    def _write_text_sidecar(audio_path: Path, sentence: str, original: str | None) -> None:
+        """Persist .txt (spoken) + optionally .original.txt (pre-strip)
+        sidecars next to the audio clip. Used by the transcript-panel
+        feature in the renderer to show users the text of each clip
+        with copy support. Failures here never break audio playback —
+        the text panel just won't have content for that clip."""
+        try:
+            base = audio_path.with_suffix('')
+            base.with_suffix('.txt').write_text(sentence, encoding='utf-8')
+            if original is not None and original.strip() and original != sentence:
+                base.with_suffix('.original.txt').write_text(original, encoding='utf-8')
+        except Exception as e:
+            _log(f'sidecar write fail for {audio_path.name}: {e}')
+
     def _release_ready():
         """Move completed clips to queue dir in seq order. Called under lock."""
         while next_release[0] in results:
@@ -1007,6 +1033,11 @@ def synthesize_parallel(
                 os.utime(final, (next_mtime, next_mtime))
                 last_mtime[0] = next_mtime
                 written_count[0] += 1
+                # Transcript-panel sidecar — written AFTER the audio
+                # file is in place so the renderer's queue-watcher
+                # always sees a complete (audio + .txt) pair atomically.
+                original = (originals or [None] * len(sentences))[seq] if use_originals else None
+                _write_text_sidecar(final, sentences[seq], original)
             except Exception as e:
                 _log(f'release move fail seq={seq}: {e}')
 
