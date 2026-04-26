@@ -233,6 +233,87 @@ describe('FILENAME PARSING', () => {
   });
 });
 
+describe('PRUNE LIB (#29 sub-2000 extract)', () => {
+  const { createPruner } = require(path.join(__dirname, '..', 'app', 'lib', 'prune'));
+  const isAudio = (f) => /\.(mp3|wav)$/i.test(f);
+
+  function setupQueue() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-q-'));
+    const old = path.join(dir, 'old.mp3');
+    const fresh = path.join(dir, 'fresh.mp3');
+    const oldPartial = path.join(dir, 'crashed.partial');
+    const freshPartial = path.join(dir, 'recent.partial');
+    const config = path.join(dir, 'config.json');
+    fs.writeFileSync(old, 'x'); fs.writeFileSync(fresh, 'x');
+    fs.writeFileSync(oldPartial, 'x'); fs.writeFileSync(freshPartial, 'x');
+    fs.writeFileSync(config, 'x');
+    const past = (Date.now() - 10 * 60_000) / 1000;
+    const recent = (Date.now() - 5_000) / 1000;
+    fs.utimesSync(old, past, past);
+    fs.utimesSync(fresh, recent, recent);
+    fs.utimesSync(oldPartial, (Date.now() - 5 * 60_000) / 1000, (Date.now() - 5 * 60_000) / 1000);
+    fs.utimesSync(freshPartial, recent, recent);
+    return { dir, old, fresh, oldPartial, freshPartial, config };
+  }
+
+  it('throws on missing required deps', () => {
+    let threw = 0;
+    for (const args of [
+      {},
+      { queueDir: '/x' },
+      { queueDir: '/x', sessionsDir: '/y' },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 1000 },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 1000, isAudioFile: isAudio },
+      { queueDir: '/x', sessionsDir: '/y', staleMs: 0, isAudioFile: isAudio, isPidAlive: () => true },
+    ]) {
+      try { createPruner(args); } catch { threw++; }
+    }
+    assertEqual(threw, 6);
+  });
+
+  it('pruneOldFiles removes stale audio + .partial, keeps fresh + non-matching', () => {
+    const t = setupQueue();
+    const p = createPruner({ queueDir: t.dir, sessionsDir: t.dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(t.old), 'stale audio must be unlinked');
+    assertTruthy(fs.existsSync(t.fresh), 'fresh audio must survive');
+    assertFalsy(fs.existsSync(t.oldPartial), 'stale .partial must be unlinked');
+    assertTruthy(fs.existsSync(t.freshPartial), 'fresh .partial must survive (< 60 s)');
+    assertTruthy(fs.existsSync(t.config), 'unrelated files must survive');
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it('pruneOldFiles tolerates missing queueDir + read errors', () => {
+    const dir = path.join(os.tmpdir(), 'tt-prune-nope-' + Date.now());
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+  });
+
+  it('pruneSessionsDir removes <pid>.json for dead PIDs only', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-s-'));
+    const live = path.join(dir, '1234.json');
+    const dead = path.join(dir, '5678.json');
+    const notSession = path.join(dir, 'notes.txt');
+    const malformed = path.join(dir, 'NaN.json');
+    fs.writeFileSync(live, '{}'); fs.writeFileSync(dead, '{}');
+    fs.writeFileSync(notSession, 'x'); fs.writeFileSync(malformed, '{}');
+    const isAlive = (pid) => pid === 1234;
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: isAlive });
+    p.pruneSessionsDir();
+    assertTruthy(fs.existsSync(live), 'live PID file must survive');
+    assertFalsy(fs.existsSync(dead), 'dead PID file must be unlinked');
+    assertTruthy(fs.existsSync(notSession), 'non-.json files must survive');
+    assertFalsy(fs.existsSync(malformed), 'unparseable PID is treated as dead and unlinked');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('pruneSessionsDir is a no-op when sessionsDir does not exist', () => {
+    const dir = path.join(os.tmpdir(), 'tt-prune-no-sess-' + Date.now());
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneSessionsDir();
+  });
+});
+
 describe('STATUSLINE ASSIGNMENT', () => {
   {
     it('assigns lowest free index to a new session', () => {
