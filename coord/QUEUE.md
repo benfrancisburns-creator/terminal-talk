@@ -89,11 +89,12 @@ and their ACTIVE file moves to DONE/. New items can appear at any priority as re
   `bullet_markers` are True but DEFAULTS are False); J-S2 unaudited cross-sanitiser parity.
   · AXIS=1,7 · OWNER=tt2 · STATUS=audit-done · ACTIVE=`ACTIVE/13-speech-includes-filter-audit.md`
 
-- [ ] **#18 sanitizer-fallback-drift** — `app/synth_turn.py:652,:680` — `flags.get('image_alt', True)`
-  + `flags.get('bullet_markers', True)` don't match DEFAULTS (both False). Latent; fires only
-  if a caller passes partial flags. Fix: change fallbacks to False; add forcing-function
-  invariant test that compares every `flags.get(k, fallback)` to `DEFAULT_SPEECH_INCLUDES[k]`
-  by source inspection. **Surfaced by #13 audit.** · AXIS=7 · OWNER=TBD · STATUS=queued
+- [x] **#18 sanitizer-fallback-drift** — **CLOSED 2026-04-26 by TT2 @ `ef42731`.** Both
+  fallbacks (`image_alt`, `bullet_markers`) flipped True→False to match DEFAULTS. New
+  forcing-function test in SPEECH INCLUDES describe group parses DEFAULT_SPEECH_INCLUDES +
+  every `flags.get('<k>', <bool>)` site from synth_turn.py source and asserts agreement —
+  any future drift fails CI by inspection. 888 → 889 tests. Surfaced by #13 audit.
+  · AXIS=7 · OWNER=tt2 · STATUS=done
 
 - [x] **#19 sanitizer-cross-parity-audit** — **CLOSED 2026-04-25.** 4 divergences found, all
   fixed on JS side to match Python: D1 (looksLikeCode counting) @ `439d8ea`, D2+D3 (URL
