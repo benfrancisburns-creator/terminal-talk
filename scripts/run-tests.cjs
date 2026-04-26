@@ -4768,10 +4768,13 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
   const FRESH = NOW - 30;    // 30 s ago — well inside the 600 s window
   const STALE = NOW - 601;   // just outside the window
 
-  it('/clear migration: new short inherits palette slot + every metadata field', () => {
-    // Covers the core bug: the user's terminal does /clear, session_id
-    // rotates, but the same CLI process means claude_pid is stable. Every
-    // piece of metadata the user has set on that terminal must survive.
+  it('/clear migration: visual identity migrates silently, voice + speech stash into pending_adopt', () => {
+    // Option C (audit 2026-04-26): label / pinned / muted / focus / palette-
+    // slot all migrate silently — those are the "visual identity" the user
+    // almost always wants to follow them across /clear. Voice and speech_
+    // includes are higher-stakes (different work context might warrant
+    // different audio settings), so they get stashed into a pending_adopt
+    // field that the renderer surfaces as an Adopt / Keep-separate banner.
     const seed = {
       'oldshort': {
         index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
@@ -4789,15 +4792,22 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     }
     const migrated = assignments['newshort'];
     if (!migrated) throw new Error('new short entry missing after migration');
+    // Visual identity migrated silently.
     assertEqual(migrated.index, 7);
     assertEqual(migrated.label, 'MATE.AIN brain');
     assertEqual(migrated.pinned, true);
     assertEqual(migrated.muted, true);
     assertEqual(migrated.focus, true);
-    assertEqual(migrated.voice, 'en-GB-RyanNeural');
-    assertDeepEqual(migrated.speech_includes, { urls: true, code_blocks: false, headings: true });
-    assertEqual(migrated.session_id, 'newshort-uuid');  // refreshed to new UUID
-    assertEqual(migrated.claude_pid, 1234);             // pid carried forward
+    assertEqual(migrated.session_id, 'newshort-uuid');
+    assertEqual(migrated.claude_pid, 1234);
+    // Voice + speech stripped from the entry — must NOT be active until adopted.
+    if (migrated.voice) throw new Error(`voice should be stashed into pending_adopt, got direct voice=${migrated.voice}`);
+    if (migrated.speech_includes) throw new Error('speech_includes should be stashed into pending_adopt');
+    // Stashed for the user to adopt or decline.
+    if (!migrated.pending_adopt) throw new Error('pending_adopt missing — voice/speech overrides should be stashed for user consent');
+    assertEqual(migrated.pending_adopt.voice, 'en-GB-RyanNeural');
+    assertDeepEqual(migrated.pending_adopt.speech_includes, { urls: true, code_blocks: false, headings: true });
+    assertEqual(migrated.pending_adopt.from_short, 'oldshort');
   });
 
   it('stale pid (last_seen outside the 600 s freshness window) does NOT migrate', () => {
@@ -4890,11 +4900,16 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(Object.keys(after2.assignments).length, 1);
     assertTruthy(after2.assignments['cafebabe']);
     assertEqual(after2.assignments['cafebabe'].label, 'persistent');
-    assertEqual(after2.assignments['cafebabe'].voice, 'en-GB-RyanNeural');
+    // Option C: voice is stashed in pending_adopt across /clear, not active.
+    // Visual identity (label / pinned / palette slot) still migrates silently.
+    if (after2.assignments['cafebabe'].voice) {
+      throw new Error('voice should remain stashed in pending_adopt through repeat migrations');
+    }
+    assertEqual(after2.assignments['cafebabe'].pending_adopt.voice, 'en-GB-RyanNeural');
     assertEqual(after2.assignments['cafebabe'].pinned, true);
   });
 
-  it('per-session voice survives /clear migration', () => {
+  it('per-session voice migrates into pending_adopt (Option C continuation prompt)', () => {
     const seed = {
       'voicedcd': {
         index: 9, session_id: 'old-uuid', claude_pid: 7777,
@@ -4905,10 +4920,12 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { assignments } = runUpdate({
       seed, short: 'newvoice', sessionId: 'new-uuid', claudePid: 7777, now: NOW,
     });
-    assertEqual(assignments['newvoice'].voice, 'shimmer');
+    if (assignments['newvoice'].voice) throw new Error('voice should not migrate silently — must be stashed into pending_adopt');
+    assertEqual(assignments['newvoice'].pending_adopt.voice, 'shimmer');
+    assertEqual(assignments['newvoice'].pending_adopt.from_short, 'voicedcd');
   });
 
-  it('per-session speech_includes survives /clear migration', () => {
+  it('per-session speech_includes migrates into pending_adopt (Option C continuation prompt)', () => {
     const seed = {
       'incl0000': {
         index: 2, session_id: 'old-uuid', claude_pid: 8888,
@@ -4920,9 +4937,33 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { assignments } = runUpdate({
       seed, short: 'inclnewe', sessionId: 'new-uuid', claudePid: 8888, now: NOW,
     });
-    assertDeepEqual(assignments['inclnewe'].speech_includes, {
+    if (assignments['inclnewe'].speech_includes) {
+      throw new Error('speech_includes should not migrate silently — must be stashed into pending_adopt');
+    }
+    assertDeepEqual(assignments['inclnewe'].pending_adopt.speech_includes, {
       urls: true, code_blocks: true, headings: false, bullet_markers: true,
     });
+  });
+
+  it('migration with no overrides creates no pending_adopt field', () => {
+    // Bare entry (only label + pinned, no voice/speech_includes) migrates
+    // cleanly — no banner should appear because there's nothing for the
+    // user to adopt or decline.
+    const seed = {
+      'plainold': {
+        index: 4, session_id: 'old-uuid', claude_pid: 9999,
+        label: 'Plain', pinned: true, muted: false, focus: false,
+        last_seen: FRESH,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'plainnew', sessionId: 'new-uuid', claudePid: 9999, now: NOW,
+    });
+    if (assignments['plainnew'].pending_adopt) {
+      throw new Error('pending_adopt should not exist when there are no voice/speech overrides');
+    }
+    assertEqual(assignments['plainnew'].label, 'Plain');
+    assertEqual(assignments['plainnew'].pinned, true);
   });
 
   it('multi-terminal isolation: migration touches ONLY the matching pid', () => {
@@ -4950,14 +4991,19 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const b = assignments['termbbbb'];
     assertEqual(a.index, 3);
     assertEqual(a.label, 'terminal A');
-    assertEqual(a.voice, 'en-GB-RyanNeural');
-    // B stays untouched
+    // Option C: A's voice override is stashed in pending_adopt, not active yet.
+    if (a.voice) throw new Error('terminal A voice should be stashed into pending_adopt, not active');
+    assertEqual(a.pending_adopt && a.pending_adopt.voice, 'en-GB-RyanNeural');
+    // B stays completely untouched — its voice/speech overrides are still active
+    // (no migration happened on B, only A's pid matched). pending_adopt only
+    // fires for the migrating terminal.
     assertEqual(b.index, 7);
     assertEqual(b.label, 'terminal B');
     assertEqual(b.muted, true);
     assertEqual(b.voice, 'en-GB-SoniaNeural');
     assertDeepEqual(b.speech_includes, { urls: false });
     assertEqual(b.claude_pid, 2222);
+    if (b.pending_adopt) throw new Error('terminal B should not have pending_adopt — it did not migrate');
   });
 
   it('no matching pid: falls through to lowest-free palette slot', () => {
@@ -8586,6 +8632,92 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('set-session-include', missing, 'urls', true), false);
   });
 
+  // resolve-session-continuation — Option C continuation-prompt resolver
+  // (2026-04-26). Accept copies pending_adopt voice + speech_includes onto
+  // the entry; decline drops them. Both branches clear pending_adopt so
+  // the renderer banner disappears.
+  it('resolve-session-continuation accept copies pending_adopt overrides onto the entry', () => {
+    const deps = mutationDeps({
+      registry: {
+        aabbccdd: {
+          index: 3, session_id: 'x', claude_pid: 0, label: 'TT', pinned: true,
+          pending_adopt: {
+            voice: 'en-GB-RyanNeural',
+            speech_includes: { urls: true, code_blocks: false },
+            from_short: 'oldshort', created_at: 1,
+          },
+        },
+      },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'aabbccdd', 'accept'), true);
+    const e = deps._registry.aabbccdd;
+    assertEqual(e.voice, 'en-GB-RyanNeural');
+    assertDeepEqual(e.speech_includes, { urls: true, code_blocks: false });
+    assertFalsy(e.pending_adopt, 'pending_adopt cleared after accept');
+    assertEqual(e.pinned, true);
+  });
+
+  it('resolve-session-continuation decline drops pending_adopt without copying', () => {
+    const deps = mutationDeps({
+      registry: {
+        aabbccdd: {
+          index: 3, session_id: 'x', claude_pid: 0, label: 'TT', pinned: true,
+          pending_adopt: { voice: 'shimmer', from_short: 'oldshort', created_at: 1 },
+        },
+      },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'aabbccdd', 'decline'), true);
+    const e = deps._registry.aabbccdd;
+    assertFalsy(e.voice, 'declined voice not copied onto entry');
+    assertFalsy(e.pending_adopt, 'pending_adopt cleared after decline');
+  });
+
+  it('resolve-session-continuation rejects bad action / missing entry / no pending_adopt', () => {
+    const deps = mutationDeps({
+      registry: {
+        aabbccdd: { index: 3, session_id: 'x', claude_pid: 0 },  // no pending_adopt
+        eeff0011: { index: 4, session_id: 'y', claude_pid: 0,
+          pending_adopt: { voice: 'shimmer', from_short: 'oldshort', created_at: 1 } },
+      },
+    });
+    createIpcHandlers(deps).register();
+    // Invalid action
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'eeff0011', 'maybe'), false);
+    // Missing entry
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', '12345678', 'accept'), false);
+    // Entry exists but no pending_adopt to resolve
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'aabbccdd', 'accept'), false);
+    // Invalid shortId format
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'BAD', 'accept'), false);
+  });
+
+  it('resolve-session-continuation accept filters out invalid speech-includes keys', () => {
+    // Defence-in-depth: even if a corrupt pending_adopt smuggled in an
+    // unknown key past sanitiseEntry, the resolver must ALLOWED_INCLUDE_
+    // KEYS-filter on copy so the entry's real speech_includes never
+    // contains a key main.js wouldn't accept on next round-trip.
+    const deps = mutationDeps({
+      registry: {
+        aabbccdd: {
+          index: 3, session_id: 'x', claude_pid: 0,
+          pending_adopt: {
+            speech_includes: { urls: true, sneaky_key: true, code_blocks: false },
+            from_short: 'oldshort', created_at: 1,
+          },
+        },
+      },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('resolve-session-continuation', 'aabbccdd', 'accept'), true);
+    const e = deps._registry.aabbccdd;
+    assertDeepEqual(e.speech_includes, { urls: true, code_blocks: false });
+    if ('sneaky_key' in (e.speech_includes || {})) {
+      throw new Error('unknown speech_includes key leaked through resolver');
+    }
+  });
+
   // -----------------------------------------------------------------
   // End-to-end settings-persistence round-trip. The 'tool_calls'
   // regression (IPC write-gate missing the key while the UI exposed
@@ -8607,21 +8739,29 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
   // -----------------------------------------------------------------
   it('every per-session setting survives a disk round-trip (write → load → sanitise)', () => {
     const fs = require('fs');
-    // Pull the real sanitiseEntry body + its dependent constants from
-    // main.js. Can't require() main.js directly — it boots Electron.
-    // Regex extraction keeps this test honest: if someone edits
-    // sanitiseEntry or VALID_INCLUDE_KEYS / VOICE_KEY_RE in main.js,
-    // the next test run picks that change up automatically.
+    // sanitiseEntry was extracted to app/lib/registry-sanitise.js
+    // (2026-04-26) — require the factory directly. We still pull the
+    // dependent constants out of main.js by regex so a drift in the
+    // VOICE / INCLUDE / SHORT-key allowlists in main.js fails this test
+    // (the original intent).
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
     const voiceMatch   = mainSrc.match(/const VOICE_KEY_RE\s*=\s*\/[^\n]+/);
     const includeMatch = mainSrc.match(/const VALID_INCLUDE_KEYS\s*=\s*new Set\([^)]+\);/);
-    const fnMatch      = mainSrc.match(/function sanitiseEntry\(e\) \{[\s\S]*?\n\}/);
+    const shortMatch   = mainSrc.match(/const SHORT_KEY_RE\s*=\s*\/[^\n]+/);
     if (!voiceMatch)   throw new Error('could not extract VOICE_KEY_RE from main.js');
     if (!includeMatch) throw new Error('could not extract VALID_INCLUDE_KEYS from main.js');
-    if (!fnMatch)      throw new Error('could not extract sanitiseEntry body from main.js');
-    const sanitiseEntry = new Function(
-      `${voiceMatch[0]}\n${includeMatch[0]}\n${fnMatch[0]}\nreturn sanitiseEntry;`
+    if (!shortMatch)   throw new Error('could not extract SHORT_KEY_RE from main.js');
+    const constants = new Function(
+      `${voiceMatch[0]}\n${includeMatch[0]}\n${shortMatch[0]}\nreturn { VOICE_KEY_RE, VALID_INCLUDE_KEYS, SHORT_KEY_RE };`
     )();
+    const { createRegistrySanitiser } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'registry-sanitise.js')
+    );
+    const { sanitiseEntry } = createRegistrySanitiser({
+      shortKeyRe: constants.SHORT_KEY_RE,
+      voiceKeyRe: constants.VOICE_KEY_RE,
+      validIncludeKeys: constants.VALID_INCLUDE_KEYS,
+    });
 
     // Seed a real entry — index is required or sanitiseEntry returns
     // null (mirrors loadAssignments dropping malformed entries).

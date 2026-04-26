@@ -247,10 +247,39 @@ function Update-SessionAssignment {
             $migrated.session_id = $SessionId
             $migrated.claude_pid = $ClaudePid
             $migrated.last_seen  = $Now
+            # Continuation prompt (Option C, audit 2026-04-26): when the
+            # old session has explicit user-set voice or speech_includes
+            # overrides, those don't migrate silently — they get stashed
+            # into `pending_adopt` for the user to confirm via the
+            # renderer banner. label / colour-index / pinned migrate
+            # silently because those are the "visual identity" pieces
+            # the user almost always wants to follow them across /clear.
+            # Voice + speech tweaks are higher-stakes (different work
+            # context might warrant different audio settings) so we
+            # surface the choice rather than assuming.
+            $hasVoice = $migrated.PSObject.Properties['voice'] -and $migrated.voice
+            $hasSpeech = $false
+            if ($migrated.PSObject.Properties['speech_includes']) {
+                $sp = $migrated.speech_includes
+                if ($sp -and $sp.PSObject.Properties.Count -gt 0) { $hasSpeech = $true }
+            }
+            if ($hasVoice -or $hasSpeech) {
+                $pending = @{}
+                if ($hasVoice)  { $pending.voice = $migrated.voice }
+                if ($hasSpeech) { $pending.speech_includes = $migrated.speech_includes }
+                $pending.from_short = $oldShort
+                $pending.created_at = $Now
+                # Strip the overrides off the migrated entry — user must
+                # explicitly accept via banner to bring them back.
+                if ($hasVoice)  { $migrated.PSObject.Properties.Remove('voice') }
+                if ($hasSpeech) { $migrated.PSObject.Properties.Remove('speech_includes') }
+                $migrated | Add-Member -NotePropertyName 'pending_adopt' -NotePropertyValue $pending -Force
+            }
             $Assignments[$Short] = $migrated
             [void]$Assignments.Remove($oldShort)
             $idxM = [int]$migrated.index
-            _LogBranch "pid-migration<-$oldShort" $idxM
+            $branch = if ($hasVoice -or $hasSpeech) { "pid-migration<-$oldShort+pending-adopt" } else { "pid-migration<-$oldShort" }
+            _LogBranch $branch $idxM
             return $idxM
         }
     }

@@ -97,6 +97,16 @@
     </button>
     </div>
     <div class="tabs-row"><div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div></div>
+    <!-- Continuation prompt banner — appears when a /clear migration
+         carried over voice / speech-includes overrides that need
+         explicit user consent (Option C from the design discussion).
+         Hidden by default; renderer.js shows it when any session
+         entry has a `pending_adopt` field set. -->
+    <div id="continuationBanner" class="continuation-banner hidden" role="alert">
+      <span class="continuation-banner-text" id="continuationBannerText"></span>
+      <button type="button" id="continuationAdoptBtn" class="continuation-btn primary">Adopt</button>
+      <button type="button" id="continuationDeclineBtn" class="continuation-btn">Keep separate</button>
+    </div>
     <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
   </div>
   <div class="panel" id="panel">

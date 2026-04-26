@@ -280,6 +280,53 @@ function createIpcHandlers(deps) {
     });
 
     // Per-session voice override. voiceId=null/empty clears (follow global).
+    // Continuation prompt resolution. When a /clear migrates a session
+    // (PID-match in Update-SessionAssignment) AND the previous session
+    // had voice / speech_includes overrides, those are stashed in a
+    // `pending_adopt` field on the new entry rather than copied
+    // silently. The renderer renders a banner asking the user whether
+    // to adopt those overrides; these two handlers resolve the
+    // prompt either way.
+    //
+    // 'accept' copies voice + speech_includes from pending_adopt into
+    // the entry's real fields (and clears pending_adopt).
+    // 'decline' just clears pending_adopt — entry keeps its global
+    // defaults for voice / speech_includes.
+    ipcMain.handle('resolve-session-continuation', (_e, shortId, action) => {
+      if (!allowMutation('resolve-session-continuation')) return null;
+      if (!validShort(shortId)) return false;
+      if (action !== 'accept' && action !== 'decline') return false;
+      const all = loadAssignments();
+      const entry = all[shortId];
+      if (!entry || !entry.pending_adopt) return false;
+      if (action === 'accept') {
+        const pending = entry.pending_adopt;
+        if (pending.voice && validVoice(pending.voice)) {
+          entry.voice = pending.voice;
+        }
+        if (pending.speech_includes && typeof pending.speech_includes === 'object') {
+          // Preserve only ALLOWED keys with valid boolean values.
+          const cleaned = {};
+          for (const [k, v] of Object.entries(pending.speech_includes)) {
+            if (ALLOWED_INCLUDE_KEYS.has(k) && (v === true || v === false)) {
+              cleaned[k] = v;
+            }
+          }
+          if (Object.keys(cleaned).length > 0) {
+            entry.speech_includes = cleaned;
+          }
+        }
+        entry.pinned = true;
+      }
+      // Both branches clear pending_adopt — accept already migrated
+      // the values, decline drops them on the floor.
+      delete entry.pending_adopt;
+      const ok = saveAssignments(all, 'resolve-session-continuation');
+      const win = getWin();
+      if (ok && win && !win.isDestroyed()) notifyQueue();
+      return ok;
+    });
+
     ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
       if (!allowMutation('set-session-voice')) return null;
       if (!validShort(shortId)) return false;

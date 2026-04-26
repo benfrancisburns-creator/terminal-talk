@@ -737,6 +737,7 @@ const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
 const { withRegistryLock } = require('./lib/registry-lock');
 const { createRegistryGuard } = require('./lib/registry-guard');
+const { createRegistrySanitiser } = require('./lib/registry-sanitise');
 const { createOpenaiInvalidWatcher } = require('./lib/openai-invalid-watcher');
 const { createVoiceCommandWatcher } = require('./lib/voice-command-watcher');
 const { createMicWatcher } = require('./lib/mic-watcher');
@@ -1178,35 +1179,13 @@ const _guardUserIntent = _registryGuard.guardUserIntent;
 const VOICE_KEY_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$|^(alloy|echo|fable|onyx|nova|shimmer)$/;
 const VALID_INCLUDE_KEYS = new Set(['code_blocks','inline_code','urls','headings','bullet_markers','image_alt','tool_calls']);
 
-// Validate + sanitise one registry entry. Returns null if malformed enough to drop.
-function sanitiseEntry(e) {
-  if (!e || typeof e !== 'object') return null;
-  const idx = Number(e.index);
-  if (!Number.isFinite(idx) || idx < 0 || idx > 23) return null;
-  const out = {
-    index: Math.floor(idx),
-    session_id: typeof e.session_id === 'string' ? e.session_id.slice(0, 80) : '',
-    claude_pid: Number.isFinite(Number(e.claude_pid)) ? Number(e.claude_pid) : 0,
-    label: typeof e.label === 'string' ? e.label.slice(0, 60) : '',
-    pinned: e.pinned === true,
-    muted: e.muted === true,
-    focus: e.focus === true,
-    last_seen: Number.isFinite(Number(e.last_seen)) ? Number(e.last_seen) : 0
-  };
-  if (typeof e.voice === 'string' && e.voice.length <= 80 && VOICE_KEY_RE.test(e.voice)) {
-    out.voice = e.voice;
-  }
-  if (e.speech_includes && typeof e.speech_includes === 'object') {
-    const inc = {};
-    for (const k of Object.keys(e.speech_includes)) {
-      if (VALID_INCLUDE_KEYS.has(k) && typeof e.speech_includes[k] === 'boolean') {
-        inc[k] = e.speech_includes[k];
-      }
-    }
-    if (Object.keys(inc).length > 0) out.speech_includes = inc;
-  }
-  return out;
-}
+// #30 — sanitiseEntry extracted to app/lib/registry-sanitise.js (2026-04-26).
+// Pure function; constants are injected so they stay defined exactly once.
+const { sanitiseEntry } = createRegistrySanitiser({
+  shortKeyRe: SHORT_KEY_RE,
+  voiceKeyRe: VOICE_KEY_RE,
+  validIncludeKeys: VALID_INCLUDE_KEYS,
+});
 
 // Archive a registry file we couldn't read. Keeps forensic data for the
 // user ("why did my colours reset?") and prevents silent loss when the

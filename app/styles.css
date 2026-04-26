@@ -154,6 +154,59 @@ html, body {
   outline-offset: 1px;
 }
 
+/* Continuation banner — shown after a /clear PID migration when the
+   old session had explicit voice / speech-includes overrides. Sits
+   between the tabs row and dots row so it doesn't shift other UI. */
+.continuation-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 4px 4px 2px;
+  border-radius: 8px;
+  background: rgba(201, 123, 80, 0.18);
+  border: 1px solid rgba(201, 123, 80, 0.55);
+  color: #fdf3ec;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.continuation-banner.hidden { display: none; }
+.continuation-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.continuation-btn {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.continuation-btn:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(0, 0, 0, 0.55);
+}
+.continuation-btn.primary {
+  background: #c97b50;
+  border-color: #c97b50;
+  color: #1a0c04;
+  font-weight: 600;
+}
+.continuation-btn.primary:hover {
+  background: #d68a60;
+  border-color: #d68a60;
+}
+.continuation-btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
 /* Full-width dot strip on the bottom row. Up to ~30 standard dots; if
    more arrive the row clips at the right edge (auto-prune usually keeps
    count well under that). Oldest left, newest right — matches playback

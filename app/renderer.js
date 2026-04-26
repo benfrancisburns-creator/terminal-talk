@@ -51,6 +51,10 @@ function setDynamicStyle(selector, cssText) {
 const audio = document.getElementById('audio');
 const dotsEl = document.getElementById('dots');
 const tabsEl = document.getElementById('tabs');
+const continuationBannerEl = document.getElementById('continuationBanner');
+const continuationBannerTextEl = document.getElementById('continuationBannerText');
+const continuationAdoptBtn = document.getElementById('continuationAdoptBtn');
+const continuationDeclineBtn = document.getElementById('continuationDeclineBtn');
 const playPauseBtn = document.getElementById('playPause');
 const playIcon = document.getElementById('playIcon');
 const pauseIcon = document.getElementById('pauseIcon');
@@ -653,6 +657,62 @@ function renderDots() {
     sessionAssignments,
     selectedTab,
     expanded: tabsExpanded,
+  });
+
+  renderContinuationBanner();
+}
+
+// Continuation banner — surfaces when a /clear PID-migration carried
+// over user-set voice / speech-includes overrides into a new session
+// (Option C: silent on label/colour/pinned, prompt on overrides).
+// Shows the first session with a `pending_adopt` field; once resolved
+// the next pending session takes its place. Hidden when none.
+let _continuationActiveShort = null;
+function renderContinuationBanner() {
+  if (!continuationBannerEl) return;
+  let activeShort = null;
+  let activeEntry = null;
+  for (const [short, entry] of Object.entries(sessionAssignments)) {
+    if (entry && entry.pending_adopt) {
+      activeShort = short;
+      activeEntry = entry;
+      break;
+    }
+  }
+  if (!activeShort || !activeEntry) {
+    continuationBannerEl.classList.add('hidden');
+    _continuationActiveShort = null;
+    return;
+  }
+  _continuationActiveShort = activeShort;
+  const pending = activeEntry.pending_adopt || {};
+  const fromShort = pending.from_short || activeShort;
+  const carried = [];
+  if (pending.voice) carried.push('voice');
+  if (pending.speech_includes && Object.keys(pending.speech_includes).length > 0) {
+    carried.push('speech preferences');
+  }
+  const list = carried.length > 0 ? carried.join(' + ') : 'overrides';
+  const label = activeEntry.label ? `"${activeEntry.label}"` : `TT ${activeEntry.index}`;
+  continuationBannerTextEl.textContent =
+    `${label} carried over ${list} from session ${fromShort}. Adopt for the new session?`;
+  continuationBannerEl.classList.remove('hidden');
+}
+
+if (continuationAdoptBtn && continuationDeclineBtn) {
+  continuationAdoptBtn.addEventListener('click', async () => {
+    const short = _continuationActiveShort;
+    if (!short) return;
+    try {
+      await window.api.resolveSessionContinuation(short, 'accept');
+    } catch {}
+  });
+  continuationDeclineBtn.addEventListener('click', async () => {
+    const short = _continuationActiveShort;
+    if (!short) return;
+    try {
+      await window.api.resolveSessionContinuation(short, 'decline');
+    } catch {}
   });
 }
 

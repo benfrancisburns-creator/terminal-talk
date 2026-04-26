@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('api', {
   setSessionInclude: (shortId, key, value) => ipcRenderer.invoke('set-session-include', shortId, key, value),
   setSessionVoice: (shortId, voiceId) => ipcRenderer.invoke('set-session-voice', shortId, voiceId),
   setSessionMuted: (shortId, muted) => ipcRenderer.invoke('set-session-muted', shortId, muted),
+  // Resolve the /clear continuation prompt. action: 'accept' copies the
+  // pending_adopt voice + speech_includes into the entry; 'decline'
+  // drops them. Both clear the pending_adopt field so the banner
+  // disappears.
+  resolveSessionContinuation: (shortId, action) => ipcRenderer.invoke('resolve-session-continuation', shortId, action),
   setSessionFocus: (shortId, focus) => ipcRenderer.invoke('set-session-focus', shortId, focus),
   removeSession: (shortId) => ipcRenderer.invoke('remove-session', shortId),
   // Settings panel "OpenAI (premium)" section.
