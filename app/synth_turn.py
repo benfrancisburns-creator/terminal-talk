@@ -600,6 +600,31 @@ _IMG_RE = re.compile(r'!\[([^\]]*)\]\([^\)]+\)')
 # All common keyboard modifiers in one regex — used to rewrite
 # `Modifier+Key` into spoken words. Without this, `Ctrl+Shift+A` only
 # translates the first segment and TTS reads the rest as "shift plus A".
+# GFM markdown tables. Match a header row, an alignment-separator row
+# (---|---|---), and one or more body rows. Without this transform the
+# raw `| col | col |` lines pass through as one giant clip that edge-tts
+# refuses (rc=1, size=0) — the listener loses the entire table silently.
+# Replacement is a one-line speakable summary so the tabular content is
+# at least announced. Anchored to start-of-line in MULTILINE mode.
+_MARKDOWN_TABLE_RE = re.compile(
+    r'^[ \t]*\|(?P<header>.+)\|[ \t]*\n'
+    r'^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*\n'
+    r'(?P<rows>(?:^[ \t]*\|.+\|[ \t]*\n?)+)',
+    re.MULTILINE,
+)
+
+
+def _table_summary(m: 're.Match[str]') -> str:
+    """Replace a markdown table block with one speakable summary line."""
+    header_cells = [c.strip() for c in m.group('header').split('|') if c.strip()]
+    row_count = sum(1 for ln in m.group('rows').splitlines() if ln.strip().startswith('|'))
+    if not header_cells:
+        return f'Table with {row_count} rows.'
+    cols = ', '.join(header_cells)
+    plural = 'row' if row_count == 1 else 'rows'
+    return f'Table with {row_count} {plural}. Columns: {cols}.\n'
+
+
 _KBD_MODIFIER_RE = re.compile(
     r'\b(Ctrl|Control|Cmd|Command|Shift|Alt|Option|Win|Windows|Super|Meta)\+',
     re.IGNORECASE,
@@ -619,6 +644,11 @@ def sanitize(text: str, flags: dict) -> str:
     if not text:
         return ''
     t = text
+
+    # Markdown tables → speakable summary line. Must run before code-fence
+    # processing so a table inside a fenced block still gets summarised
+    # if the fence body survives.
+    t = _MARKDOWN_TABLE_RE.sub(_table_summary, t)
 
     # Code blocks. Three-way decision per fenced block:
     #   1. If `code_blocks=true` → always keep body (user opted in to code audio).
