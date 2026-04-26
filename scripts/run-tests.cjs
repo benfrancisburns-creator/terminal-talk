@@ -720,6 +720,32 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     if (out.includes('```')) throw new Error(`code fence leaked: "${out}"`);
     if (/\bjs\b/.test(out.split('Try')[1].split('Done')[0])) throw new Error(`language tag leaked into spoken text: "${out}"`);
   });
+  it('#18 (J-S1): synth_turn.sanitize() flags.get fallbacks match DEFAULT_SPEECH_INCLUDES', () => {
+    // Forcing function for the J-S1 drift class. The sanitize() function reads
+    // partial flag dicts via `flags.get(k, fallback)`. If a fallback ever
+    // disagrees with DEFAULT_SPEECH_INCLUDES[k], a future caller passing a
+    // partial dict re-introduces the original Python↔JS audio drift the
+    // line-728 comment describes. Catch it by source inspection, not behaviour.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'synth_turn.py'), 'utf8');
+    const defBlock = src.match(/DEFAULT_SPEECH_INCLUDES\s*=\s*\{([\s\S]*?)\n\}/);
+    if (!defBlock) throw new Error('could not locate DEFAULT_SPEECH_INCLUDES in synth_turn.py');
+    const defaults = {};
+    for (const m of defBlock[1].matchAll(/'([^']+)'\s*:\s*(True|False)/g)) {
+      defaults[m[1]] = m[2] === 'True';
+    }
+    if (Object.keys(defaults).length === 0) throw new Error('parsed zero DEFAULT_SPEECH_INCLUDES keys');
+    let checked = 0;
+    for (const m of src.matchAll(/flags\.get\(['"]([^'"]+)['"]\s*,\s*(True|False)\s*\)/g)) {
+      const [, key, fbStr] = m;
+      if (!(key in defaults)) continue;
+      const fb = fbStr === 'True';
+      if (fb !== defaults[key]) {
+        throw new Error(`#18 drift: synth_turn flags.get('${key}', ${fbStr}) ≠ DEFAULT_SPEECH_INCLUDES['${key}']=${defaults[key]}`);
+      }
+      checked++;
+    }
+    if (checked < 2) throw new Error(`#18: expected ≥2 flags.get fallback sites; found ${checked}`);
+  });
 });
 
 describe('VOICE LIST VALIDATION', () => {

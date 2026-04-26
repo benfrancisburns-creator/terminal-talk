@@ -649,7 +649,7 @@ def sanitize(text: str, flags: dict) -> str:
     t = t.replace('`', '')
 
     # Images: alt text or strip entirely
-    if flags.get('image_alt', True):  # noqa: SIM108
+    if flags.get('image_alt', False):  # noqa: SIM108  # fallback matches DEFAULT_SPEECH_INCLUDES
         t = _IMG_RE.sub(lambda m: m.group(1), t)
     else:
         t = _IMG_RE.sub('', t)
@@ -677,7 +677,7 @@ def sanitize(text: str, flags: dict) -> str:
     # whole bullet line and emit "content." (adding an implicit period if
     # the author didn't end the bullet with terminator punctuation) so
     # sentence_split splits each bullet as its own sentence.
-    if not flags.get('bullet_markers', True):
+    if not flags.get('bullet_markers', False):  # fallback matches DEFAULT_SPEECH_INCLUDES
         def _bullet_line_repl(m: re.Match) -> str:
             content = m.group(1).rstrip()
             if not content:
