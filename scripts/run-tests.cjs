@@ -1702,6 +1702,7 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     hotkeys:         {},
     playback:        { speed: 1.25, tts_provider: 'edge' },
     speech_includes: { code_blocks: false },
+    panels:          { transcript_expanded: false, transcript_view: 'spoken' },
     heartbeat_enabled: true,
     openai_api_key:    null,
     selected_tab:      'all',
@@ -1726,6 +1727,19 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     const loaded = store.load();
     assertEqual(loaded.selected_tab, '7e5c9a', 'selected_tab must round-trip');
     assertEqual(loaded.tabs_expanded, true,    'tabs_expanded must round-trip');
+    clean();
+  });
+
+  it('panels survive save → load', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({
+      ...DEFAULTS,
+      panels: { transcript_expanded: true, transcript_view: 'original' },
+    });
+    const loaded = store.load();
+    assertEqual(loaded.panels.transcript_expanded, true, 'panels.transcript_expanded must round-trip');
+    assertEqual(loaded.panels.transcript_view, 'original', 'panels.transcript_view must round-trip');
     clean();
   });
 
@@ -9890,7 +9904,7 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     const win = {
       isDestroyed: () => false,
       getPosition: () => [100, 200],
-      getSize: () => [680, 114],
+      getSize: () => [680, 144],
       setBounds: (b) => { calls.push(['setBounds', b]); },
       setSize: (w, h, anim) => { calls.push(['setSize', w, h, anim]); },
       setIgnoreMouseEvents: (on, opts) => { calls.push(['setIgnoreMouseEvents', on, opts]); },
@@ -10053,20 +10067,25 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
         hotkeys: { toggle: 'A' },
         playback: { speed: 1 },
         speech_includes: { urls: false },
+        panels: { transcript_expanded: false, transcript_view: 'spoken' },
       },
     });
     createIpcHandlers(deps).register();
     const out = deps.ipcMain.invoke('update-config', {
       voices: { edge_response: 'new' },
       playback: { speed: 2 },
+      panels: { transcript_expanded: true },
     });
     assertEqual(out.voices.edge_response, 'new');
     assertEqual(out.hotkeys.toggle, 'A');          // unchanged
     assertEqual(out.playback.speed, 2);
     assertEqual(out.speech_includes.urls, false);   // unchanged
+    assertEqual(out.panels.transcript_expanded, true);
+    assertEqual(out.panels.transcript_view, 'spoken');
     assertEqual(out.openai_api_key, null);
     // setCFG must have received the merged object
     assertEqual(deps._cfgRef().voices.edge_response, 'new');
+    assertEqual(deps._savedConfigs[0].panels.transcript_expanded, true);
   });
 
   it('update-config routes openai_api_key through apiKeyStore and nulls the field', () => {
@@ -10118,14 +10137,16 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertEqual(call[2], { forward: true });
   });
 
-  it('set-panel-open uses setSize for non-bottom docks', () => {
+  it('set-panel-open uses setBounds for non-bottom docks', () => {
     const deps = panelDeps({ cfg: { window: { dock: 'top' } } });
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
-    const call = deps._winCalls.find((c) => c[0] === 'setSize');
-    assertTruthy(call, 'should call setSize');
-    assertEqual(call[1], 680);  // expanded width
-    assertEqual(call[2], 618);  // expanded height
+    const call = deps._winCalls.find((c) => c[0] === 'setBounds');
+    assertTruthy(call, 'should call setBounds');
+    assertEqual(call[1].x, 100);
+    assertEqual(call[1].y, 200);
+    assertEqual(call[1].width, 680);  // expanded width
+    assertEqual(call[1].height, 618);  // expanded height
     // no dock adjustment expected
     assertEqual(deps._dockCalls, []);
   });
@@ -10136,8 +10157,8 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
     const call = deps._winCalls.find((c) => c[0] === 'setBounds');
     assertTruthy(call, 'should call setBounds');
-    // curY=200, curH=114, newH=618 -> newY = 200 + (114 - 618) = -304
-    assertEqual(call[1].y, -304);
+    // curY=200, curH=144, newH=618 -> newY = 200 + (144 - 618) = -274
+    assertEqual(call[1].y, -274);
     assertEqual(call[1].width, 680);
     assertEqual(call[1].height, 618);
     // applying-dock latch must flip true then eventually back to false
@@ -14670,7 +14691,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Format-CodexWindowTitle -Short 'deadbeef' -Entry ([pscustomobject]@{ index = 0; label = '' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -Attaching`
     );
-    assertEqual(out, 'TT 1 (Codex) | terminal-talk | attaching');
+    assertEqual(out, 'TT 1 (Codex) | deadbeef | terminal-talk | attaching');
   });
 
   it('Codex launcher scripts parse without PowerShell syntax errors', () => {
@@ -14721,8 +14742,11 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/--tabColor/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must pass --tabColor to wt.exe');
     }
-    if (!/--suppressApplicationTitle/.test(src)) {
-      throw new Error('codex-wt-launch.ps1 must keep PowerShell/Codex from overwriting the TT tab title');
+    if (/--suppressApplicationTitle/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must allow codex-launch.ps1 to update the tab title after bind');
+    }
+    if (!/Format-CodexWindowTitle[\s\S]*-Attaching/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must format the initial title with the reserved short id');
     }
     if (!/PreassignedShort/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must hand the reserved short to codex-launch.ps1');

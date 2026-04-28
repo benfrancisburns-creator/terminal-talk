@@ -221,7 +221,6 @@ function Start-CodexTerminal {
       '-w', 'new',
       'new-tab',
       '--title', 'Terminal Talk Codex',
-      '--suppressApplicationTitle',
       '--startingDirectory', $Root,
       $powershellExe,
       '-NoProfile',

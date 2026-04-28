@@ -134,6 +134,11 @@ function Stamp {
   Get-Date -Format 'yyyyMMddTHHmmssfff'
 }
 
+function Write-Utf8NoBom([string]$Path, [string]$Value) {
+  $encoding = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $Value, $encoding)
+}
+
 function Get-FfmpegPath {
   $cmd = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
   if ($cmd) { return $cmd.Source }
@@ -230,12 +235,12 @@ function New-DemoHome([string]$Name, [int]$ToolbarX, [int]$ToolbarY) {
     window = [ordered]@{ x = $ToolbarX; y = $ToolbarY; dock = $null }
     panels = $panels
   }
-  $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $demoHome 'config.json') -Encoding utf8
+  Write-Utf8NoBom -Path (Join-Path $demoHome 'config.json') -Value ($config | ConvertTo-Json -Depth 8)
 
   if ($Name -eq 'openai') {
-    @{ openai_api_key = 'sk-demo-hidden-for-video-only' } |
-      ConvertTo-Json -Depth 3 |
-      Set-Content -LiteralPath (Join-Path $demoHome 'config.secrets.json') -Encoding utf8
+    Write-Utf8NoBom -Path (Join-Path $demoHome 'config.secrets.json') -Value (
+      @{ openai_api_key = 'sk-demo-hidden-for-video-only' } | ConvertTo-Json -Depth 3
+    )
   }
 
   $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
@@ -258,7 +263,7 @@ function New-DemoHome([string]$Name, [int]$ToolbarX, [int]$ToolbarY) {
       }
     }
   }
-  $registry | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $demoHome 'session-colours.json') -Encoding utf8
+  Write-Utf8NoBom -Path (Join-Path $demoHome 'session-colours.json') -Value ($registry | ConvertTo-Json -Depth 8)
 
   if ($Name -eq 'transcript') {
     Seed-TranscriptQueue $demoHome
@@ -280,10 +285,11 @@ function Drop-DemoClip([string]$DemoHome, [string]$Short, [int]$Index, [string]$
   $target = Join-Path $queue $name
   Copy-Item -LiteralPath $source -Destination "$target.partial" -Force
   Move-Item -LiteralPath "$target.partial" -Destination $target -Force
-  Set-Content -LiteralPath ([System.IO.Path]::ChangeExtension($target, '.txt')) -Value $Spoken -Encoding utf8
+  (Get-Item -LiteralPath $target).LastWriteTime = Get-Date
+  Write-Utf8NoBom -Path ([System.IO.Path]::ChangeExtension($target, '.txt')) -Value $Spoken
   if ($Original) {
     $base = $target.Substring(0, $target.Length - [System.IO.Path]::GetExtension($target).Length)
-    Set-Content -LiteralPath "$base.original.txt" -Value $Original -Encoding utf8
+    Write-Utf8NoBom -Path "$base.original.txt" -Value $Original
   }
 }
 
@@ -435,7 +441,7 @@ function Ensure-Narration([string]$Name, [string]$Text) {
   $out = Join-Path $AudioDir "$Name-narration.mp3"
   if ((Test-Path $out) -and (Get-Item -LiteralPath $out).Length -gt 1000) { return $out }
   $tmpText = Join-Path $AudioDir "$Name-narration.txt"
-  Set-Content -LiteralPath $tmpText -Value $Text.Trim() -Encoding utf8
+  Write-Utf8NoBom -Path $tmpText -Value $Text.Trim()
   Get-Content -Raw -LiteralPath $tmpText | python (Join-Path $Root 'app\edge_tts_speak.py') 'en-GB-RyanNeural' $out
   if ($LASTEXITCODE -ne 0 -or !(Test-Path $out)) { throw "Narration synthesis failed for $Name" }
   return $out

@@ -94,7 +94,7 @@ Five annotated mocks rendered from [`docs/design-system/mocks-annotated.html`](d
   <img src="docs/screenshots/toolbar-idle.png" alt="Idle toolbar: empty two-row letterbox with controls on top and an empty dot strip below" width="900">
 </p>
 
-The baseline. 680 × 114 frameless two-row pill, always-on-top, drag anywhere to move. Close just hides the window — the listener keeps running and `Ctrl+Shift+A` brings it back.
+The baseline. 680 × 144 frameless two-row pill, always-on-top, drag anywhere to move. Close just hides the window — the listener keeps running and `Ctrl+Shift+A` brings it back.
 
 ### 02 · Queue with three sessions
 

@@ -699,7 +699,7 @@ Large quality-of-life release built iteratively in one long session. Everything 
 - `install.ps1` registers the new PreToolUse hook; `uninstall.ps1` cleans it up.
 
 ### Added — toolbar UX redesign
-- **Two-row layout.** 680 × 114 window: controls on top (play/pause, ±10 s, scrubber, time, clear, settings, close), dots on the bottom strip — ~30 dots fit before any clipping. Dot order flipped to oldest-left, newest-right so the row reads in playback order.
+- **Two-row layout.** 680 × 144 window: controls on top (play/pause, ±10 s, scrubber, time, clear, settings, close), dots on the bottom strip — ~30 dots fit before any clipping. Dot order flipped to oldest-left, newest-right so the row reads in playback order.
 - **Session-run grouping.** Visual gaps on the dot strip between runs from different terminals, so you see at a glance which terminal said what without reordering playback.
 - **Edge snapping.** Drag the toolbar anywhere; release within 20 px of the top or bottom edge and it snaps flush. Horizontal-only (no left / right vertical dock — that was shipped then pulled in the pre-release for an unrecoverable-state bug on multi-monitor setups). Position and dock edge persist across launches.
 - **Auto-collapse / hover-expand.** 15 s of no interaction → bar shrinks to a 14 px strip and becomes click-through so clicks pass to apps below. Hover, new clip, or keystroke → expands back. Deferred while audio is playing or unplayed clips remain in the queue, so streaming sessions don't flicker.

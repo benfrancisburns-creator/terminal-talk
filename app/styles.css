@@ -31,7 +31,7 @@ html, body {
 
 /* Collapsed: bar shrinks to a slim hover-target. Content hidden but the
    strip stays visible enough to find — the old 35% opacity was too faint,
-   users couldn't see where to hover. Window stays the same size (114 px)
+   users couldn't see where to hover. Window stays the same size (144 px)
    but becomes click-through via setIgnoreMouseEvents so the area below
    the strip doesn't block interaction with other apps. */
 .bar.collapsed {

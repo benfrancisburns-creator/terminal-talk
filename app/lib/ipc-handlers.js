@@ -79,7 +79,7 @@ function createIpcHandlers(deps) {
     getReloadGraceUntil = () => 0,
   } = deps;
 
-  const WIN_COLLAPSED = { width: 680, height: 114 };
+  const WIN_COLLAPSED = { width: 680, height: 144 };
   const WIN_EXPANDED = { width: 680, height: 618 };
 
   function register() {
@@ -508,6 +508,7 @@ function createIpcHandlers(deps) {
           hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
           playback: { ...cur.playback, ...(partial.playback || {}) },
           speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
+          panels: { ...(cur.panels || {}), ...(partial.panels || {}) },
           heartbeat_enabled: keepScalar('heartbeat_enabled'),
           selected_tab:      keepScalar('selected_tab'),
           tabs_expanded:     keepScalar('tabs_expanded'),
@@ -595,7 +596,8 @@ function createIpcHandlers(deps) {
         win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
         setTimeout(() => { setApplyingDock(false); }, 300);
       } else {
-        win.setSize(dim.width, dim.height, true);
+        const [curX, curY] = win.getPosition();
+        win.setBounds({ x: curX, y: curY, width: dim.width, height: dim.height });
       }
       return true;
     });

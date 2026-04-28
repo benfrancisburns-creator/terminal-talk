@@ -61,6 +61,7 @@ if (-not $entry) {
 }
 
 $identity = Get-TerminalTalkIdentityText -Entry $entry -FallbackLabel 'Codex'
+$tabTitle = Format-CodexWindowTitle -Short $provisionalShort -Entry $entry -CurrentDir $currentDir -Attaching
 $tabHex = Get-TerminalTalkPaletteHex -Index ([int]$entry.index)
 $codexLaunch = Join-Path $PSScriptRoot 'codex-launch.ps1'
 $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -82,10 +83,9 @@ if ($wt) {
     $wtArgs = @(
         'new-tab',
         '--title',
-        $identity,
+        $tabTitle,
         '--tabColor',
         "#$tabHex",
-        '--suppressApplicationTitle',
         '--startingDirectory',
         $currentDir,
         $powershellExe
@@ -93,7 +93,7 @@ if ($wt) {
     $wtArgumentLine = Join-ProcessArguments -Items $wtArgs
     try {
         Start-Process -FilePath $wt.Source -ArgumentList $wtArgumentLine -WorkingDirectory $currentDir
-        Log "started wt title=$identity tabColor=#$tabHex short=$provisionalShort args=$wtArgumentLine"
+        Log "started wt title=$tabTitle tabColor=#$tabHex short=$provisionalShort args=$wtArgumentLine"
         exit 0
     } catch {
         Log "wt launch failed: $($_.Exception.Message)"
@@ -102,7 +102,7 @@ if ($wt) {
 
 try {
     Start-Process -FilePath $powershellExe -ArgumentList (Join-ProcessArguments -Items $launchArgs) -WorkingDirectory $currentDir
-    Log "started powershell fallback title=$identity short=$provisionalShort"
+    Log "started powershell fallback title=$tabTitle short=$provisionalShort"
 } catch {
     Write-Error "failed to launch Terminal Talk Codex: $($_.Exception.Message)"
     exit 1

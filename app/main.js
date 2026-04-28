@@ -302,7 +302,7 @@ function saveWindowPosition() {
   } catch (e) { diag(`saveWindowPosition fail: ${e.message}`); }
 }
 
-// Window dimensions for each orientation. Horizontal stays the 680×114
+// Window dimensions for each orientation. Horizontal stays the 680×144
 // letterbox we've always shipped. Vertical is a 56 px wide column that's
 // as tall as the workArea minus margins — fits all controls stacked plus
 // room for dots running downward.
@@ -355,7 +355,7 @@ function applyDock(edge) {
   if (!win || win.isDestroyed()) return;
   if (edge !== 'top' && edge !== 'bottom') return;  // horizontal-only
   const work = screen.getPrimaryDisplay().workArea;
-  // Preserve the current height (collapsed 114 vs expanded ~618 when the
+  // Preserve the current height (collapsed 144 vs expanded ~618 when the
   // settings panel is open) so bottom-snapping with the panel visible
   // doesn't force it shut. Bottom anchor uses the current height so the
   // bar sits flush at the bottom with the panel tucked above it.
@@ -440,7 +440,7 @@ function createWindow() {
   const { width } = display.workAreaSize;
   const workArea = display.workArea;
   const winWidth = 680;
-  const winHeight = 114;  // 36 controls + 4 gap + 44 dot row + 14 padding + 12 margin + halo breathing
+  const winHeight = DIM_HORIZONTAL.height;
   // Restore last-saved position + dock orientation if present and still
   // on-screen. Falls back to centered top.
   const saved = CFG.window || {};
@@ -2080,7 +2080,8 @@ app.whenReady().then(() => {
     const cfgKeys = (() => {
       try {
         const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-        const parsed = JSON.parse(raw);
+        const text = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+        const parsed = JSON.parse(text);
         return Object.keys(parsed).sort().join(',');
       } catch { return 'load-failed'; }
     })();

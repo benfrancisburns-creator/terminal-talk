@@ -75,6 +75,9 @@ const isWindowMode = urlParams.get('windowMode') === '1';
 const autoOpenSettingsMs = Number(urlParams.get('autoOpenSettingsMs') || 0);
 const isSettingsDemoMode = isWindowMode && urlParams.get('demoSettings') === '1';
 const settingsDemoVariant = (urlParams.get('demoSettingsVariant') || 'settings').toLowerCase();
+function shouldAutoplayQueue() {
+  return !(isSettingsDemoMode && settingsDemoVariant === 'transcript');
+}
 const settingsDemoUseStartFlag = urlParams.get('demoSettingsStartFlag') === '1';
 const settingsDemoFallbackMs = Number(urlParams.get('demoSettingsFallbackMs') || 0);
 const settingsDemoVisualDurationMs = Number(urlParams.get('demoSettingsVisualDurationMs') || 0);
@@ -163,7 +166,7 @@ async function updateClickthrough() {
   // Click-through ON (pass clicks to app below) whenever the cursor
   // is NOT over the visible bar pixels. This is what lets the user
   // interact with other apps while the toolbar is visible — the
-  // 680 × 114 window becomes effectively "only the bar rectangle
+  // 680 × 144 window becomes effectively "only the bar rectangle
   // is mine; everything else is transparent".
   const overBar = isMouseOverBar();
   const want = !overBar;
@@ -637,7 +640,9 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
     if (isSettingsDemoMode) triggerSettingsDemoTimeline();
   },
   onClipEnded: (p, { manual }) => scheduleAutoDelete(p, manual),
-  onPlayNextPending: () => playNextPending(),
+  onPlayNextPending: () => {
+    if (shouldAutoplayQueue()) playNextPending();
+  },
   onRenderDots: () => renderDots(),
 });
 audioPlayer.mount();
@@ -983,7 +988,14 @@ async function initialLoad() {
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
   }
   renderDots();
-  if (audioPlayer.isIdle()) {
+  if (transcriptPanel) {
+    fetchSidecarsForRecent();
+    transcriptPanel.refresh();
+  }
+  // Capture-only transcript demos need the seeded clips to stay in the
+  // queue so the panel can show spoken/original rows while the external
+  // narration runs. Normal app boots and other demos keep autoplay.
+  if (audioPlayer.isIdle() && shouldAutoplayQueue()) {
     playNextPending();
   }
 }
@@ -1030,7 +1042,7 @@ window.api.onQueueUpdated((payload) => {
   }
   renderDots();
 
-  if (audioPlayer.isIdle()) {
+  if (audioPlayer.isIdle() && shouldAutoplayQueue()) {
     playNextPending();
   }
 });
@@ -1055,7 +1067,7 @@ window.api.onPriorityPlay((paths) => {
   const aborted = audioPlayer.abortIfAutoPlayed();
   if (aborted) playedPaths.delete(aborted);
   renderDots();
-  if (audioPlayer.isIdle()) playNextPending();
+  if (audioPlayer.isIdle() && shouldAutoplayQueue()) playNextPending();
 });
 
 

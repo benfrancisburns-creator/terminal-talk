@@ -8,7 +8,7 @@
  *   DOC_RULES — scanned across .md/.html/.js/.css/.txt under docs/,
  *               README files, CHANGELOG, wallpaper.html. Catches
  *               documentation claims that no longer match the code
- *               (e.g. "toolbar is 680×64" when it's 680×114).
+ *               (e.g. "toolbar is 680×64" when it's 680×144).
  *
  *   CODE_COMMENT_RULES — scanned across .js/.cjs/.py/.ps1/.psm1
  *               under app/, hooks/, scripts/. Catches source-code
@@ -61,7 +61,7 @@ const DOC_RULES = [
   },
   {
     pattern: /680\s*[×x]\s*64\b/,
-    description: 'toolbar window is 680 × 114 (two-row letterbox), not 680 × 64. Audit R3.8.',
+    description: 'toolbar window is 680 × 144 (two-row letterbox), not 680 × 64. Audit R3.8.',
     skip: ['CHANGELOG.md']
   },
   {

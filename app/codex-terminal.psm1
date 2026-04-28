@@ -244,6 +244,7 @@ function Format-CodexWindowTitle {
 
     $parts = @($identity)
     if ($Attaching) {
+        if ($shortText) { $parts += $shortText }
         if ($project) { $parts += $project }
         $parts += 'attaching'
     } elseif ($shortText) {
