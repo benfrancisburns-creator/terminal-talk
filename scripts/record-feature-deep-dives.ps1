@@ -395,13 +395,13 @@ function Start-Recorder([string]$OutPath, [string]$StartedFlag, [int]$DurationMs
   $stderr = [System.IO.Path]::ChangeExtension($StartedFlag, '.stderr.log')
   Remove-Item -LiteralPath $stdout -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $stderr -Force -ErrorAction SilentlyContinue
-  $args = @(
+  $recorderArgs = @(
     $RecorderScript,
     '--out', $OutPath,
     '--started', $StartedFlag,
     '--duration-ms', [string]$DurationMs
   )
-  return Start-Process -FilePath $Electron -ArgumentList $args -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  return Start-Process -FilePath $Electron -ArgumentList $recorderArgs -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 }
 
 function Wait-RecorderStarted([string]$StartedFlag) {

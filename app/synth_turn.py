@@ -614,7 +614,7 @@ _MARKDOWN_TABLE_RE = re.compile(
 )
 
 
-def _table_summary(m: 're.Match[str]') -> str:
+def _table_summary(m: re.Match[str]) -> str:
     """Replace a markdown table block with one speakable summary line."""
     header_cells = [c.strip() for c in m.group('header').split('|') if c.strip()]
     row_count = sum(1 for ln in m.group('rows').splitlines() if ln.strip().startswith('|'))

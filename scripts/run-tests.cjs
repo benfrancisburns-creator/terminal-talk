@@ -40,6 +40,7 @@ const NEEDS_INSTALL = new Set([
   // These spawn `powershell.exe` and only run against the installed
   // module tree. Linux CI nodes have neither — skip cleanly rather
   // than fail with "module missing" / ENOENT for powershell.exe.
+  'PS Get-StableClaudePid PARENT-WALK',
   'PS SESSION-IDENTITY BEHAVIOUR',
   'MARK-WORKING HOOK (UserPromptSubmit)',
   'PS ↔ JS REGISTRY LOCK CROSS-COMPAT',
@@ -250,7 +251,7 @@ describe('FILENAME PARSING', () => {
 });
 
 describe('PRUNE LIB (#29 sub-2000 extract)', () => {
-  const { createPruner } = require(path.join(__dirname, '..', 'app', 'lib', 'prune'));
+  const { createPruner } = require('../app/lib/prune');
   const isAudio = (f) => /\.(mp3|wav)$/i.test(f);
 
   function setupQueue() {
@@ -14487,7 +14488,7 @@ describe('CODEX SESSION WATCHER', () => {
   const {
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
-  } = require(path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'));
+  } = require('../app/lib/codex-session-watcher.js');
 
   it('parses the trailing Codex session id from a rollout filename', () => {
     const full = String.raw`C:\Users\Ben\.codex\sessions\2026\04\26\rollout-2026-04-26T21-43-49-019dcb88-bc99-7082-a04b-a208631d111c.jsonl`;

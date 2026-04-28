@@ -1,5 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ExistingTerminalTitle', Justification = 'Used when -UseExistingTerminal is selected inside Get-CodexTerminal.')]
 param(
   [int]$DurationSec = 105,
   [int]$PromptDelaySec = 12,
@@ -134,7 +135,7 @@ function Find-ExistingTerminal([string]$TitleContains) {
   $patterns = @()
   if ($TitleContains) { $patterns += $TitleContains }
   $patterns += @('Terminal Talk Codex', 'Codex', 'TT ')
-  $matches = @()
+  $terminalMatches = @()
   foreach ($pattern in ($patterns | Select-Object -Unique)) {
     $handles = @([TTLiveVideoWin]::FindWindowsByTitle($pattern))
     foreach ($handle in $handles) {
@@ -143,7 +144,7 @@ function Find-ExistingTerminal([string]$TitleContains) {
       if ($windowPid -and $windowPid -ne $PID) {
         $processName = ''
         try { $processName = (Get-Process -Id $windowPid -ErrorAction Stop).ProcessName } catch {}
-        $matches += [pscustomobject]@{
+        $terminalMatches += [pscustomobject]@{
           Id = $windowPid
           MainWindowHandle = $handle
           ProcessName = $processName
@@ -154,7 +155,7 @@ function Find-ExistingTerminal([string]$TitleContains) {
       }
     }
   }
-  return $matches | Sort-Object Priority, Title | Select-Object -First 1
+  return $terminalMatches | Sort-Object Priority, Title | Select-Object -First 1
 }
 
 function Stop-TerminalTalkProcesses {
@@ -233,8 +234,8 @@ function Start-CodexTerminal {
     if ($terminal) { return $terminal }
   }
 
-  $args = Join-ProcessArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', $codexLaunch)
-  $proc = Start-Process -FilePath $powershellExe -ArgumentList $args -WorkingDirectory $Root -PassThru
+  $processArgs = Join-ProcessArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', $codexLaunch)
+  $proc = Start-Process -FilePath $powershellExe -ArgumentList $processArgs -WorkingDirectory $Root -PassThru
   for ($i = 0; $i -lt 120; $i++) {
     try { $proc.Refresh() } catch {}
     if ($proc.MainWindowHandle -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
@@ -263,8 +264,8 @@ function Start-Recorder([string]$OutPath, [string]$StartedFlag, [int]$DurationMs
   $stderr = [System.IO.Path]::ChangeExtension($StartedFlag, '.stderr.log')
   Remove-Item -LiteralPath $stdout -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $stderr -Force -ErrorAction SilentlyContinue
-  $args = @($RecorderScript, '--out', $OutPath, '--started', $StartedFlag, '--duration-ms', [string]$DurationMs)
-  return Start-Process -FilePath $Electron -ArgumentList $args -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $recorderArgs = @($RecorderScript, '--out', $OutPath, '--started', $StartedFlag, '--duration-ms', [string]$DurationMs)
+  return Start-Process -FilePath $Electron -ArgumentList $recorderArgs -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 }
 
 function Wait-RecorderStarted([string]$StartedFlag) {

@@ -78,7 +78,7 @@ try { Wait-Process -Id $renderProc.Id -Timeout 5 -ErrorAction SilentlyContinue }
 
 Write-Host "[local-ad] building dialogue track"
 $items = Get-Content -Raw $Manifest | ConvertFrom-Json
-$args = @('-y', '-hide_banner', '-loglevel', 'error')
+$ffmpegArgs = @('-y', '-hide_banner', '-loglevel', 'error')
 $filters = @()
 $mixInputs = ''
 $index = 0
@@ -86,13 +86,13 @@ foreach ($item in $items) {
   $audioPath = Join-Path $Bundle $item.audio
   if (!(Test-Path -LiteralPath $audioPath)) { throw "Missing dialogue audio: $audioPath" }
   $delay = Convert-TimeToMs $item.start
-  $args += @('-i', $audioPath)
+  $ffmpegArgs += @('-i', $audioPath)
   $filters += "[$index`:a]adelay=$delay|$delay,volume=1.15[a$index]"
   $mixInputs += "[a$index]"
   $index++
 }
 $dialogueFilter = ($filters -join ';') + ";${mixInputs}amix=inputs=$index`:duration=longest:normalize=0,apad,atrim=duration=$DurationSec,alimiter=limit=0.94[a]"
-& $ffmpeg @args -filter_complex $dialogueFilter -map '[a]' -ar 48000 -ac 2 $Dialogue
+& $ffmpeg @ffmpegArgs -filter_complex $dialogueFilter -map '[a]' -ar 48000 -ac 2 $Dialogue
 if ($LASTEXITCODE -ne 0 -or !(Test-Path $Dialogue)) { throw "dialogue mix failed" }
 
 Write-Host "[local-ad] building music bed"

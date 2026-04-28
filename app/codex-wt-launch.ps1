@@ -60,7 +60,6 @@ if (-not $entry) {
     $entry = [pscustomobject]@{ index = 0; label = '' }
 }
 
-$identity = Get-TerminalTalkIdentityText -Entry $entry -FallbackLabel 'Codex'
 $tabTitle = Format-CodexWindowTitle -Short $provisionalShort -Entry $entry -CurrentDir $currentDir -Attaching
 $tabHex = Get-TerminalTalkPaletteHex -Index ([int]$entry.index)
 $codexLaunch = Join-Path $PSScriptRoot 'codex-launch.ps1'

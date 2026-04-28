@@ -417,13 +417,13 @@ function Start-Recorder([string]$OutPath, [string]$StartedFlag, [int]$DurationMs
   $stderr = [System.IO.Path]::ChangeExtension($StartedFlag, '.stderr.log')
   Remove-Item -LiteralPath $stdout -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $stderr -Force -ErrorAction SilentlyContinue
-  $args = @(
+  $recorderArgs = @(
     $RecorderScript,
     '--out', $OutPath,
     '--started', $StartedFlag,
     '--duration-ms', [string]$DurationMs
   )
-  return Start-Process -FilePath $Electron -ArgumentList $args -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  return Start-Process -FilePath $Electron -ArgumentList $recorderArgs -WorkingDirectory $Root -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 }
 
 function Wait-RecorderStarted([string]$StartedFlag) {
@@ -606,11 +606,11 @@ function Build-SettingsNarrationTrack([int]$DurationMs) {
   $out = Join-Path $TmpRoot 'settings-narration.wav'
   Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
 
-  $args = @('-y', '-hide_banner', '-loglevel', 'error')
+  $ffmpegArgs = @('-y', '-hide_banner', '-loglevel', 'error')
   foreach ($src in $sources) {
     $path = Join-Path $AudioDir $src.File
     if (!(Test-Path -LiteralPath $path)) { throw "Missing narration source: $path" }
-    $args += @('-i', $path)
+    $ffmpegArgs += @('-i', $path)
   }
 
   $filters = @()
@@ -623,7 +623,7 @@ function Build-SettingsNarrationTrack([int]$DurationMs) {
   $durationSec = ([double]($DurationMs / 1000.0)).ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture)
   $filter = ($filters -join ';') + ";${mixInputs}amix=inputs=$($sources.Count):duration=longest:normalize=0,apad,atrim=duration=$durationSec,volume=6dB,alimiter=limit=0.95,asetpts=N/SR/TB[a]"
 
-  & $ffmpeg @args -filter_complex $filter -map '[a]' -ar 48000 -ac 2 $out
+  & $ffmpeg @ffmpegArgs -filter_complex $filter -map '[a]' -ar 48000 -ac 2 $out
   if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)) {
     throw "ffmpeg narration build failed"
   }
