@@ -1351,6 +1351,7 @@ if (isSettingsDemoMode) {
   let demoSelectPopup = null;
 
   function closeDemoSelectPopup() {
+    setDynamicStyle('#demoSelectPopover', null);
     if (demoSelectPopup && demoSelectPopup.select) {
       try { demoSelectPopup.select.blur(); } catch {}
     }
@@ -1384,7 +1385,7 @@ if (isSettingsDemoMode) {
     const rowHeight = 28;
     const popoverHeight = Math.min(options.length, maxRows) * rowHeight + 8;
     const popover = document.createElement('div');
-    popover.className = 'demo-select-popover';
+    popover.id = 'demoSelectPopover'; popover.className = 'demo-select-popover';
 
     for (const opt of options) {
       const item = document.createElement('div');
@@ -1403,8 +1404,6 @@ if (isSettingsDemoMode) {
       if (row && row.parentElement) row.insertAdjacentElement('afterend', popover);
       else document.body.appendChild(popover);
     } else {
-      popover.style.left = `${Math.max(8, rect.left)}px`;
-      popover.style.width = `${Math.max(190, rect.width)}px`;
       const belowTop = rect.bottom + 4;
       const aboveTop = rect.top - popoverHeight - 4;
       const top = placement === 'below'
@@ -1412,7 +1411,8 @@ if (isSettingsDemoMode) {
         : belowTop + popoverHeight <= window.innerHeight - 10
         ? belowTop
         : Math.max(10, aboveTop);
-      popover.style.top = `${top}px`;
+      const popupCss = `left: ${Math.max(8, rect.left)}px; width: ${Math.max(190, rect.width)}px; top: ${top}px;`;
+      setDynamicStyle('#demoSelectPopover', popupCss);
       document.body.appendChild(popover);
     }
     demoSelectPopup = { popover, select };
