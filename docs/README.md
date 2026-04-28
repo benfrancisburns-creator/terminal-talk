@@ -43,18 +43,26 @@ docs/
 │   ├── kit-chrome.css              purple-gradient demo backdrop
 │   └── tokens.mjs                  generated ESM palette (for any hand-rolled consumer)
 │
+├── videos/                         recorded desktop demos
+│   ├── terminal-talk-overview.webm
+│   ├── terminal-talk-queue-jarvis.webm
+│   └── terminal-talk-settings-sessions.webm
+│
 └── screenshots/                    rendered product shots (PNG)
     └── ...                         (mock renders from mocks-annotated.html)
 ```
 
 ## How these are used
 
-- **README hero** — `docs/assets/wallpaper/terminal-talk-wallpaper.png` — the 1280 × 800 wallpaper with coloured ASCII "TERMINAL TALK", pixel mascot and "HEY JARVIS" speech bubble. Regeneration instructions live in `assets/wallpaper/README.md`.
+- **README hero** — `docs/assets/wallpaper/terminal-talk-wallpaper.png` — the 1280 × 800 wallpaper with coloured ASCII "TERMINAL TALK", pixel mascot, assistant/Codex/Claude phrases, and "HEY JARVIS" speech bubble. Regeneration instructions live in `assets/wallpaper/README.md`.
 - **Repo social card** — the same wallpaper PNG doubles as the GitHub OG image; set it in repo **Settings → Social preview** to override the default.
 - **Favicon** — `favicon-32.svg`, used by the GitHub Pages landing site.
 - **Design-system pages** — open the `.html` files directly in a browser. Each is self-contained.
 - **Annotated mocks** — `design-system/mocks-annotated.html` renders four live HTML/SVG mockups of the toolbar (Idle / Three sessions / Mixed states / Settings panel open) with annotations to the right of each. Rendered PNG versions are embedded in the top-level README. The source HTML trails the shipping UI — newer features (focus mode, auto-prune toggle, pause hotkeys, per-session mute) may not be represented yet.
 - **UI kit** — open `ui-kit/index.html` in a browser. The page loads the real `app/renderer.js` with an in-memory mock of the Electron IPC surface, so every demo is the shipping behaviour: four-tier playback precedence, real auto-prune timing, real `renderSessionsTable` with focus bail and palette classes, real Constructable Stylesheet for mascot position. Audio playback is the one thing that doesn't work — the mock paths aren't real files — but every visual + interaction is genuine.
+- **Demo videos** — `videos/terminal-talk-overview.webm`, `videos/terminal-talk-queue-jarvis.webm`, and `videos/terminal-talk-settings-sessions.webm` are embedded on the landing page as short walkthroughs with spoken narration.
+- **Video production plan** — `VIDEO_PRODUCTION_PLAN.md` maps the real toolbar/settings features into the next polished video set and defines the capture-mode requirements.
+- **Settings/session guide** — `CLAUDE_CODE_SETTINGS_GUIDE.md` describes the shot order and narration structure for the settings + sessions walkthrough, including the Claude and Codex session positioning.
 
 ## In lock-step with the source
 

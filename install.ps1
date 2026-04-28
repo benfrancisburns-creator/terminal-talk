@@ -9,10 +9,10 @@
   - Runs npm install for Electron.
   - Copies app + hooks + config example.
   - Optionally registers Claude Code hooks in ~/.claude/settings.json.
-  - Optionally adds a Startup shortcut so the toolbar auto-launches on login.
+  - Adds Start Menu / optional Desktop shortcuts and can add a Startup shortcut for login auto-launch.
 .PARAMETER Unattended
   Skip ALL interactive prompts and apply sensible defaults
-  (hooks yes, statusline yes, startup no). Use for CI / automation.
+  (hooks yes, statusline yes, desktop shortcut yes, startup no). Use for CI / automation.
 .PARAMETER HooksYes
   In unattended mode, register Claude Code hooks. Default: $true.
 .PARAMETER StatuslineYes
@@ -21,6 +21,8 @@
   In unattended mode, add a Startup shortcut. Default: $false
   (deliberate -- auto-launch is a per-user choice, not something
   unattended installs should make for you).
+.PARAMETER DesktopShortcutYes
+  In unattended mode, add a Desktop shortcut. Default: $true.
 .NOTES
   Run from the terminal-talk/ folder (the one containing install.ps1).
   Re-running is safe: existing install dir is updated in place.
@@ -35,7 +37,8 @@ param(
     [switch]$Unattended,
     [bool]$HooksYes      = $true,
     [bool]$StatuslineYes = $true,
-    [bool]$StartupYes    = $false
+    [bool]$StartupYes    = $false,
+    [bool]$DesktopShortcutYes = $true
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,13 +67,43 @@ $hooksDir = Join-Path $installDir 'hooks'
 $queueDir = Join-Path $installDir 'queue'
 $configPath = Join-Path $installDir 'config.json'
 $startupFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+$programsFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $vbsStartup = Join-Path $startupFolder 'terminal-talk.vbs'
+$launcherVbs = Join-Path $installDir 'terminal-talk.vbs'
+$startMenuShortcut = Join-Path $programsFolder 'Terminal Talk.lnk'
+$codexShortcut = Join-Path $programsFolder 'Terminal Talk Codex.lnk'
+$desktopDir = [Environment]::GetFolderPath('DesktopDirectory')
+$desktopShortcut = Join-Path $desktopDir 'Terminal Talk.lnk'
+$desktopCodexShortcut = Join-Path $desktopDir 'Terminal Talk Codex.lnk'
 $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
 
 function Write-Step($msg) { Write-Host ""; Write-Host ">> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "   OK  $msg" -ForegroundColor Green }
 function Write-Warn2($msg) { Write-Host "   !!  $msg" -ForegroundColor Yellow }
 function Write-Fail($msg) { Write-Host "   ERR $msg" -ForegroundColor Red }
+
+function New-Shortcut {
+    param(
+        [Parameter(Mandatory = $true)] [string]$Path,
+        [Parameter(Mandatory = $true)] [string]$TargetPath,
+        [string]$Arguments = '',
+        [string]$WorkingDirectory = '',
+        [string]$IconLocation = '',
+        [string]$Description = ''
+    )
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($Path)
+    $shortcut.TargetPath = $TargetPath
+    if ($Arguments) { $shortcut.Arguments = $Arguments }
+    if ($WorkingDirectory) { $shortcut.WorkingDirectory = $WorkingDirectory }
+    if ($IconLocation) { $shortcut.IconLocation = $IconLocation }
+    if ($Description) { $shortcut.Description = $Description }
+    $shortcut.Save()
+}
 
 Write-Host ""
 Write-Host "=================================================" -ForegroundColor Cyan
@@ -106,6 +139,7 @@ Write-Ok "Directories ready"
 Write-Step "Copying files"
 Copy-Item -Recurse -Force (Join-Path $repoRoot 'app') $installDir
 Copy-Item -Recurse -Force (Join-Path $repoRoot 'hooks') $installDir
+Copy-Item -Force (Join-Path $repoRoot 'scripts\start-toolbar.vbs') $launcherVbs
 if (-not (Test-Path $configPath)) {
     Copy-Item -Force (Join-Path $repoRoot 'config.example.json') $configPath
     Write-Ok "config.json created (from config.example.json)"
@@ -340,15 +374,54 @@ if ($slResp -eq '' -or $slResp -match '^[Yy]') {
     }
 }
 
-# 7. Startup shortcut
+# 7. Windows shortcuts
+Write-Step "Windows shortcuts"
+$terminalTalkExe = Join-Path $appDir 'node_modules\electron\dist\terminal-talk.exe'
+$wscriptExe = Join-Path $env:SystemRoot 'System32\wscript.exe'
+$powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$codexWtLauncher = Join-Path $appDir 'codex-wt-launch.ps1'
+New-Shortcut -Path $startMenuShortcut `
+             -TargetPath $wscriptExe `
+             -Arguments "`"$launcherVbs`"" `
+             -WorkingDirectory $installDir `
+             -IconLocation $terminalTalkExe `
+             -Description 'Launch Terminal Talk'
+Write-Ok "Start Menu shortcut installed"
+
+New-Shortcut -Path $codexShortcut `
+             -TargetPath $powershellExe `
+             -Arguments "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$codexWtLauncher`"" `
+             -WorkingDirectory $env:USERPROFILE `
+             -IconLocation $terminalTalkExe `
+             -Description 'Launch Codex CLI with Terminal Talk session identity and tab colour'
+Write-Ok "Codex launcher shortcut installed"
+
+$desktopResp = Get-Consent "Create a Desktop shortcut for Terminal Talk? [Y/n]" $DesktopShortcutYes
+if ($desktopResp -eq '' -or $desktopResp -match '^[Yy]') {
+    New-Shortcut -Path $desktopShortcut `
+                 -TargetPath $wscriptExe `
+                 -Arguments "`"$launcherVbs`"" `
+                 -WorkingDirectory $installDir `
+                 -IconLocation $terminalTalkExe `
+                 -Description 'Launch Terminal Talk'
+    New-Shortcut -Path $desktopCodexShortcut `
+                 -TargetPath $powershellExe `
+                 -Arguments "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$codexWtLauncher`"" `
+                 -WorkingDirectory $env:USERPROFILE `
+                 -IconLocation $terminalTalkExe `
+                 -Description 'Launch Codex CLI with Terminal Talk session identity and tab colour'
+    Write-Ok "Desktop shortcuts installed"
+}
+
+# 8. Startup shortcut
 Write-Step "Auto-start on login"
 $startupResp = Get-Consent "Launch Terminal Talk automatically when Windows starts? [Y/n]" $StartupYes
 if ($startupResp -eq '' -or $startupResp -match '^[Yy]') {
-    Copy-Item -Force (Join-Path $repoRoot 'scripts\start-toolbar.vbs') $vbsStartup
+    Copy-Item -Force $launcherVbs $vbsStartup
     Write-Ok "Startup shortcut installed"
 }
 
-# 8. First launch
+# 9. First launch
 Write-Step "Installation complete"
 Write-Host ""
 Write-Host "Hotkeys:" -ForegroundColor Cyan
@@ -362,8 +435,10 @@ Write-Host "  (Stop, Notification, PreToolUse, UserPromptSubmit). Just"
 Write-Host "  start a Claude Code terminal -- the toolbar narrates"
 Write-Host "  responses + tool calls automatically."
 Write-Host ""
-Write-Host "Codex CLI (with TT badge in terminal tab):" -ForegroundColor Cyan
-Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
+Write-Host "Codex CLI (with TT tab title and colour):" -ForegroundColor Cyan
+Write-Host "  Start Menu -> Terminal Talk Codex"
+Write-Host "  or Desktop -> Terminal Talk Codex"
+Write-Host "  or: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
 Write-Host "  (or just run codex directly -- the watcher tails ~/.codex/sessions/"
 Write-Host "  every 1s and speaks commentary/final messages with no hooks needed)"
 Write-Host ""
@@ -371,8 +446,8 @@ Write-Host "Highlight any text + say 'hey jarvis' (or press Ctrl+Shift+S) to rea
 Write-Host ""
 $launchResp = Get-Consent "Launch Terminal Talk now? [Y/n]" $false
 if ($launchResp -eq '' -or $launchResp -match '^[Yy]') {
-    Start-Process wscript.exe -ArgumentList "`"$vbsStartup`"" -ErrorAction SilentlyContinue
-    if (-not (Test-Path $vbsStartup)) {
+    Start-Process wscript.exe -ArgumentList "`"$launcherVbs`"" -ErrorAction SilentlyContinue
+    if (-not (Test-Path $launcherVbs)) {
         Start-Process wscript.exe -ArgumentList "`"$(Join-Path $repoRoot 'scripts\start-toolbar.vbs')`""
     }
     Write-Ok "Launched"

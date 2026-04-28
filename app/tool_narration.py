@@ -1069,7 +1069,7 @@ def _extract_enclosing_scope(structured_patch, original_file: str | None = None)
         return None
     first_change = None
     for i, line in enumerate(raw_lines):
-        if isinstance(line, str) and (line.startswith('+') or line.startswith('-')):
+        if isinstance(line, str) and line.startswith(('+', '-')):
             first_change = i
             break
     if first_change is None:

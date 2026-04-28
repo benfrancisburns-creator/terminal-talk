@@ -14,7 +14,7 @@ terminal-talk/
 ├── config.example.json           Default config copied on first install
 ├── package.json                  npm scripts (test, etc.)
 ├── app/                          Electron + Python runtime
-│   ├── main.js                   Main process: hotkeys, IPC, queue watcher, TTS dispatch
+│   ├── main.js                   Main process: hotkeys, IPC, queue/Codex watchers, TTS dispatch
 │   ├── preload.js                IPC bridge (contextIsolation = true)
 │   ├── renderer.js               Renderer: settings panel, dot rendering
 │   ├── index.html                Toolbar + settings panel markup
@@ -27,6 +27,9 @@ terminal-talk/
 │   ├── synth_turn.py             Streaming synthesis orchestrator (parallel edge-tts
 │   │                             with rolling in-order release + sync state)
 │   ├── lib/text.js               Canonical stripForTTS (markdown → speakable prose)
+│   ├── lib/codex-session-watcher.js  Codex rollout watcher + inline synth dispatch
+│   ├── codex-launch.ps1          Optional Codex launcher with Terminal Talk title badge
+│   ├── codex-terminal.psm1       Codex rollout/session-title helpers
 │   ├── session-registry.psm1     Shared PS module — Read-Registry /
 │   │                             Update-SessionAssignment / Save-Registry /
 │   │                             Write-SessionPidFile
@@ -36,10 +39,10 @@ terminal-talk/
 │   ├── speak-on-tool.ps1         Claude Code PreToolUse hook (streaming spawn)
 │   └── speak-notification.ps1    Claude Code Notification hook
 ├── scripts/
-│   ├── start-toolbar.vbs         Silent Electron launcher (used by Startup shortcut)
+│   ├── start-toolbar.vbs         Silent Electron launcher (Start Menu/Desktop/Startup)
 │   ├── render-mocks.cjs          Chrome-headless mock renderer
-│   └── run-tests.cjs             177-test harness
-├── tests/e2e/                    Playwright end-to-end tests (13 specs)
+│   └── run-tests.cjs             Unit/integration harness
+├── tests/e2e/                    Playwright end-to-end tests
 └── docs/                         Design system, ui-kit, screenshots, landing site
 ```
 
@@ -63,7 +66,7 @@ copy hooks\<changed>.ps1 "$env:USERPROFILE\.terminal-talk\hooks\"
 
 # 3. Restart the toolbar (only needed for main.js / renderer.js / index.html / styles.css)
 taskkill /F /IM terminal-talk.exe
-wscript "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\terminal-talk.vbs"
+wscript "$env:USERPROFILE\.terminal-talk\terminal-talk.vbs"
 ```
 
 PowerShell hooks (`speak-response.ps1`, `speak-notification.ps1`, `statusline.ps1`) are re-read on every invocation, so no restart needed.
@@ -104,10 +107,10 @@ Tests that exercise the real PowerShell scripts spawn `powershell.exe` via `spaw
 
 If you change one of these, expect things to break in surprising ways:
 
-1. **Single source of truth for session colours**: `~/.terminal-talk/session-colours.json`. Owners that may write: the Stop hook, the statusline, and `main.js`'s `ensureAssignmentsForFiles`. All three must use the same prune rule (`pinned OR PID alive OR last_seen within 4 h`).
+1. **Single source of truth for session colours**: `~/.terminal-talk/session-colours.json`. Owners that may write: Claude hooks/statusline, the Codex watcher/launcher, and Electron user edits. All writers must preserve labels, voice, mute/focus, speech-includes, and pinned colour intent.
 2. **Filename encoding**: `<timestamp>-<sessionShort>.{wav,mp3}` for responses, `-Q-` prefix for questions, `-notif-` for notifications, `-clip-<short|neutral>-<idx>` for highlight-to-speak. The renderer's regex assumes this exactly.
 3. **PowerShell file writes use `[IO.File]::WriteAllText` with `UTF8Encoding($false)`** to avoid the BOM that Node's `JSON.parse` rejects. There's a regression test for this.
-4. **The hook is the authoritative writer of session colour assignments.** Statusline updates an existing entry; `main.js` only adds when it sees a filename for an unknown session.
+4. **Registry writes must be lock-disciplined.** Claude and Codex use different identity surfaces, but both must converge on the same registry and session PID file contract so `hey jarvis` can colour clips correctly.
 5. **`speech_includes` and `voice` per-session keys must be preserved** through every load → modify → save cycle. Tests cover this; PowerShell's hashtable conversion drops unknown fields silently if you don't explicitly copy them.
 
 ## Code style

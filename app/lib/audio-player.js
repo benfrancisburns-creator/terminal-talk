@@ -361,6 +361,10 @@
 
     positionScrubberMascot() { this._positionScrubberMascot(); }
 
+    emitDemoSpinnerVerbCloud(now = performance.now(), options = {}) {
+      this._emitSpinnerVerbCloud(now, { force: true, ...options });
+    }
+
     // ---- Mount / Unmount ---------------------------------------------
 
     _onMount() {
@@ -652,12 +656,12 @@
       if (this._scrubberJarvis) this._setDynamicStyle('#scrubberJarvis', `left: ${leftPx}px;`);
     }
 
-    // The mascot is reserved for Claude Code responses. When the
+    // The mascot is reserved for assistant response clips. When the
     // currently-playing audio originated from a highlight-to-speak
     // trigger ("hey jarvis" or Ctrl+Shift+S) — identified by the
     // `-clip-` filename segment — swap the mascot for a plain "J" badge
-    // so the mascot's visual identity stays tied to Claude-sourced
-    // content. Called whenever currentPath changes.
+    // so manual read-aloud clips stay visually distinct. Called whenever
+    // currentPath changes.
     _updateScrubberMode() {
       if (!this._scrubberWrap) return;
       const name = this._currentPath ? this._currentPath.split(/[\\/]/).pop() : '';
@@ -707,9 +711,9 @@
     // once placed, it stays put while the mascot continues walking
     // forward, so the words look like a trail he's leaving behind.
     // Auto-removed on animationend.
-    _emitSpinnerVerbCloud(now) {
+    _emitSpinnerVerbCloud(now, options = {}) {
       if (!this._scrubberWrap || !this._scrubberMascot) return;
-      if (this._audio.paused || this._audio.ended || this._userScrubbing) return;
+      if (!options.force && (this._audio.paused || this._audio.ended || this._userScrubbing)) return;
       if (now < this._nextVerbEmitAt) return;
       const rail = this._scrubber.getBoundingClientRect();
       const wrap = this._scrubberWrap.getBoundingClientRect();
@@ -733,7 +737,12 @@
         this._setDynamicStyle(`#${wordId}`, null);
       }, { once: true });
 
-      this._nextVerbEmitAt = now + 850 + Math.random() * 650;
+      const fixedIntervalMs = Number(options.intervalMs);
+      this._nextVerbEmitAt = now + (
+        Number.isFinite(fixedIntervalMs) && fixedIntervalMs > 0
+          ? fixedIntervalMs
+          : 850 + Math.random() * 650
+      );
     }
 
     _scrubberTick() {

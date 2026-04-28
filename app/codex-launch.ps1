@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$CodexArgs = @()
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+    [string[]]$CodexArgs = @(),
+    [string]$PreassignedShort = '',
+    [string]$PreassignedSessionId = ''
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -174,8 +176,13 @@ try {
     exit 1
 }
 
-$provisionalShort = New-ProvisionalCodexShort -CodexPid $proc.Id -CurrentDir $currentDir -LaunchMs $launchMs
-$provisionalEntry = Sync-CodexAssignment -Short $provisionalShort -SessionId "codex-provisional-$($proc.Id)" -CodexPid $proc.Id
+$preassigned = ''
+if ($PreassignedShort -and $PreassignedShort -match '^[a-fA-F0-9]{8}$') {
+    $preassigned = $PreassignedShort.ToLowerInvariant()
+}
+$provisionalShort = if ($preassigned) { $preassigned } else { New-ProvisionalCodexShort -CodexPid $proc.Id -CurrentDir $currentDir -LaunchMs $launchMs }
+$provisionalSessionId = if ($PreassignedSessionId) { $PreassignedSessionId } else { "codex-provisional-$($proc.Id)" }
+$provisionalEntry = Sync-CodexAssignment -Short $provisionalShort -SessionId $provisionalSessionId -CodexPid $proc.Id
 $lastTitle = ''
 $boundShort = ''
 $boundSessionId = ''

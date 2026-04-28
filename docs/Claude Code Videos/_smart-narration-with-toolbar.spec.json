@@ -1,0 +1,90 @@
+{
+  "title": "Terminal Talk — Smart Tool Narration",
+  "windowTitle": "Claude Code — Terminal Talk hears every tool call",
+  "out": "docs/Claude Code Videos/smart-tool-narration-with-toolbar.webm",
+  "durationMs": 56000,
+  "terminalHeight": 360,
+  "fontSize": 17,
+  "cardWidth": 540,
+  "cardAlign": "left",
+  "chips": ["real toolbar", "real queued audio", "real cursor"],
+  "states": [
+    {
+      "at": 0,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Six tool calls. Terminal Talk speaks each one.</span>",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 4000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Reading source files…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Reading audio-player.js</span></span>",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 11000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Searching with result counts…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Searching for system auto pause — found 14 matches</span></span>",
+        "<span class=\"blue\">Glob and Grep speak the count, not just the action.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 19000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Edit with function-name locality…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Edit to handle mic captured</span></span>",
+        "<span class=\"blue\">Walks <code>originalFile</code> from <code>newStart</code> back to the <code>function</code>.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 28000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Bash with smart pipe-tail context…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Running the tests, then counting matches</span></span>",
+        "<span class=\"blue\">No more generic \"in a pipeline\" tag.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 37000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Markdown tables in replies…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Table with 3 rows. Columns: file, line, today, with Phase 3 v2.</span></span>",
+        "<span class=\"blue\">They used to drop silently — now they get summarised.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 47000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline\"</span>",
+        "<span class=\"dim\">Six tool calls. You heard every one of them.</span>",
+        "<span class=\"accent\">Less staring. More listening. More flow.</span>",
+        "",
+        "",
+        ""
+      ]
+    }
+  ]
+}

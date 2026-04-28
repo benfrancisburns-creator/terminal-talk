@@ -246,6 +246,9 @@ section { padding: 80px 24px; }
   object-fit: cover;
   background: #07080c;
 }
+.demo-frame video.demo-video-contain {
+  object-fit: contain;
+}
 .demo-frame .play-dot {
   width: 64px; height: 64px; border-radius: 50%; background: rgba(201,123,80,0.18);
   display: flex; align-items: center; justify-content: center;
@@ -548,6 +551,30 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <article class="demo-card">
         <div class="demo-frame">
           <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
+            <source src="videos/terminal-talk-local-command-center-ad.mp4" type="video/mp4">
+            <source src="videos/terminal-talk-local-command-center-ad.webm" type="video/webm">
+            Demo video unavailable. Open the video directly.
+          </video>
+        </div>
+        <h3>Local command center</h3>
+        <p>A second mascot-led hero cut showing Terminal Talk coordinating terminal sessions from a command-center view.</p>
+        <p class="demo-caption"><a href="videos/terminal-talk-local-command-center-ad.mp4">Open directly</a></p>
+      </article>
+      <article class="demo-card">
+        <div class="demo-frame">
+          <video class="demo-video demo-video-contain" controls playsinline preload="metadata" width="1080" height="1920" poster="assets/wallpaper/terminal-talk-wallpaper.png">
+            <source src="videos/terminal-talk-user-hero.mp4" type="video/mp4">
+            <source src="videos/terminal-talk-user-hero.webm" type="video/webm">
+            Demo video unavailable. Open the video directly.
+          </video>
+        </div>
+        <h3>Portrait hero cut</h3>
+        <p>The vertical hero clip added from the supplied video asset.</p>
+        <p class="demo-caption"><a href="videos/terminal-talk-user-hero.mp4">Open directly</a></p>
+      </article>
+      <article class="demo-card">
+        <div class="demo-frame">
+          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
             <source src="videos/terminal-talk-overview.mp4" type="video/mp4">
             <source src="videos/terminal-talk-overview.webm" type="video/webm">
             Demo video unavailable. Open the video directly.
@@ -580,6 +607,42 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <h3>Settings + sessions</h3>
         <p>Cursor-guided walkthrough of playback toggles, naming sessions, voice selection, and speech-include controls.</p>
         <p class="demo-caption"><a href="videos/terminal-talk-settings-sessions.mp4?v=20260427-natural">Open directly</a></p>
+      </article>
+      <article class="demo-card">
+        <div class="demo-frame">
+          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
+            <source src="videos/terminal-talk-openai-api-key.mp4?v=20260428-audio" type="video/mp4">
+            <source src="videos/terminal-talk-openai-api-key.webm?v=20260428-audio" type="video/webm">
+            Demo video unavailable. Open the video directly.
+          </video>
+        </div>
+        <h3>OpenAI API key</h3>
+        <p>How Terminal Talk stores the OpenAI key, flips provider routing, keeps Edge as fallback, and tests premium voices.</p>
+        <p class="demo-caption"><a href="videos/terminal-talk-openai-api-key.mp4?v=20260428-audio">Open directly</a></p>
+      </article>
+      <article class="demo-card">
+        <div class="demo-frame">
+          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
+            <source src="videos/terminal-talk-session-sync-controls.mp4?v=20260428-audio" type="video/mp4">
+            <source src="videos/terminal-talk-session-sync-controls.webm?v=20260428-audio" type="video/webm">
+            Demo video unavailable. Open the video directly.
+          </video>
+        </div>
+        <h3>Session sync</h3>
+        <p>Claude Code and Codex share session identity, colours, labels, focus, mute, and per-session voice controls.</p>
+        <p class="demo-caption"><a href="videos/terminal-talk-session-sync-controls.mp4?v=20260428-audio">Open directly</a></p>
+      </article>
+      <article class="demo-card">
+        <div class="demo-frame">
+          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
+            <source src="videos/terminal-talk-transcript-spoken-original.mp4?v=20260428-audio" type="video/mp4">
+            <source src="videos/terminal-talk-transcript-spoken-original.webm?v=20260428-audio" type="video/webm">
+            Demo video unavailable. Open the video directly.
+          </video>
+        </div>
+        <h3>Transcript review</h3>
+        <p>Review recent clips, copy the spoken text, switch to original markdown, and filter the transcript by session.</p>
+        <p class="demo-caption"><a href="videos/terminal-talk-transcript-spoken-original.mp4?v=20260428-audio">Open directly</a></p>
       </article>
     </div>
   </div>

@@ -68,6 +68,7 @@ function createIpcHandlers(deps) {
     isPathInside,
     getWatchdog,
     getWatchdogIntervalMs,
+    captureMode = false,
     // UX latch (post-v0.4): clicking × on the toolbar hides-and-remembers
     // so passive arrivals don't undo the user's explicit hide.
     setUserHidden = () => {},
@@ -78,7 +79,7 @@ function createIpcHandlers(deps) {
     getReloadGraceUntil = () => 0,
   } = deps;
 
-  const WIN_COLLAPSED = { width: 680, height: 114 };
+  const WIN_COLLAPSED = { width: 680, height: 144 };
   const WIN_EXPANDED = { width: 680, height: 618 };
 
   function register() {
@@ -507,6 +508,7 @@ function createIpcHandlers(deps) {
           hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
           playback: { ...cur.playback, ...(partial.playback || {}) },
           speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
+          panels: { ...(cur.panels || {}), ...(partial.panels || {}) },
           heartbeat_enabled: keepScalar('heartbeat_enabled'),
           selected_tab:      keepScalar('selected_tab'),
           tabs_expanded:     keepScalar('tabs_expanded'),
@@ -551,7 +553,7 @@ function createIpcHandlers(deps) {
     ipcMain.handle('set-clickthrough', (_e, on) => {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
-      if (testMode) return true;
+      if (testMode || captureMode) return true;
       // Reload grace: the renderer's mousemove handler fires within
       // ~2s of did-finish-load, sees cursor off-bar, pushes
       // setClickthrough(true). That overrides main's post-reload
@@ -578,6 +580,7 @@ function createIpcHandlers(deps) {
     ipcMain.handle('set-panel-open', (_e, open) => {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
+      if (captureMode) return true;
       const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
       // If the bar is docked to the bottom edge, keep its bottom edge
       // pinned while the panel opens/closes — otherwise opening the
@@ -593,7 +596,8 @@ function createIpcHandlers(deps) {
         win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
         setTimeout(() => { setApplyingDock(false); }, 300);
       } else {
-        win.setSize(dim.width, dim.height, true);
+        const [curX, curY] = win.getPosition();
+        win.setBounds({ x: curX, y: curY, width: dim.width, height: dim.height });
       }
       return true;
     });

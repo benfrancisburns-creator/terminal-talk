@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/terminal-talk-hero.svg" alt="Terminal Talk — coloured ASCII TERMINAL TALK wordmark with an animated pixel mascot cycling through the 8-colour session palette and a pixelated cloud speech bubble crossfading through phrases Claude Code says during a turn — HEY JARVIS, Cooked for 49s, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s" width="900">
+  <img src="docs/assets/terminal-talk-hero.svg" alt="Terminal Talk — coloured ASCII TERMINAL TALK wordmark with an animated pixel mascot cycling through the 8-colour session palette and a pixelated cloud speech bubble crossfading through assistant phrases — HEY JARVIS, Codex commentary, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s" width="900">
 </p>
 
 <p align="center">
@@ -11,13 +11,13 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.6 beta · solo-maintained.** Works well on my machine, tested in CI (1019 unit + 28 E2E green), but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.6 beta · solo-maintained.** Works well on my machine, covered by a large unit harness plus 28 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Claude Code _and_ OpenAI Codex CLI read their replies aloud, and _"hey jarvis"_ reads any highlighted text.**
 
 Two assistants, one toolbar. Terminal Talk auto-speaks Claude Code via hooks _and_ tails local Codex CLI session logs in `~/.codex/sessions/` to speak Codex `commentary` + `final` messages — both go through the same queue, voice pipeline, and per-session colour registry.
 
-Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signup, no accounts. Microsoft Edge TTS (cloud) for voices, openWakeWord (local) for wake-word detection. Colour-blind friendly palette available in Settings › Playback.
+Hands-free voice output for terminal coding agents on Windows. Free, MIT licensed, no signup, no accounts. Microsoft Edge TTS (cloud) for voices, openWakeWord (local) for wake-word detection. Colour-blind friendly palette available in Settings › Playback.
 
 **Try it in your browser (no install):** [live interactive toolbar demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [project landing page](https://benfrancisburns-creator.github.io/terminal-talk/)
 
@@ -29,9 +29,9 @@ Hands-free voice output for Claude Code on Windows. Free, MIT licensed, no signu
 |---|---|
 | 🟧 **Claude Code integration** — Stop / PreToolUse / UserPromptSubmit hooks + transcript-watcher streams audio mid-turn | 🤖 **Codex CLI integration** — tails Codex rollout sessions, same queue + colours, no hooks needed |
 | 🎙️ **"Hey jarvis" → read highlighted text** — works in any app, offline wake-word | 📜 **Transcript panel** — recent clips with copy + Spoken / Original toggle, filtered per session |
-| 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 🛠️ **Smart tool narration** — _"Edit to render banner in renderer.js — added 12 lines"_ |
+| 🎨 **Per-session colours + tabs** — 24-arrangement palette, colour-blind variant built in | 🛠️ **Claude tool narration** — _"Edit to render banner in renderer.js — added 12 lines"_ |
 | 🎚️ **Master volume + per-clip mix** — heartbeat stays ambient at any master level | 🔕 **Auto-pauses when you dictate** — Wispr / Voice Access / VoIP never get talked over |
-| 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **End-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
+| 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **Claude end-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
 | 💬 **Per-session voice + speech-includes** — 45 Edge voices + 6 OpenAI, 7 per-session toggles | 📊 **Markdown-aware sanitiser** — tables, code fences, inline backticks all spoken cleanly |
 
 ---
@@ -46,7 +46,7 @@ cd terminal-talk
 
 Requires Windows 10/11, Python 3.10+, Node.js 18+, a working microphone. Takes ~3 minutes.
 
-The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, the per-terminal coloured emoji statusline, and auto-launch at login. The Codex launcher script is copied too: `~/.terminal-talk/app/codex-launch.ps1`.
+The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, the per-terminal coloured statusline, Desktop shortcuts, and auto-launch at login. It also adds Start Menu shortcuts for **Terminal Talk** and **Terminal Talk Codex**.
 
 Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
 
@@ -62,17 +62,27 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 ## What it does
 
-- **Claude Code integration.** First-class support via three hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) registered into `~/.claude/settings.json` at install time, plus a transcript-watcher that streams synth as Claude generates — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline emoji so you can identify sessions by ear (and optionally give each its own voice). Per-session muting / focus / voice / speech-includes overrides all wired through.
-- **Codex CLI integration.** First-class support via a 1-second poll on `~/.codex/sessions/` — no hook registration needed. Terminal Talk tails Codex's persisted rollout JSONL and narrates assistant `commentary` + `final` messages through the same toolbar queue. Codex sessions appear in the Settings panel with their own colour entry; per-session voice / mute / speech-includes overrides apply identically. Launch Codex through `~/.terminal-talk/app/codex-launch.ps1` if you also want a Terminal Talk identity badge in the terminal tab/title.
+- **Claude Code integration.** First-class support via three hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) registered into `~/.claude/settings.json` at install time, plus a transcript-watcher that streams synth as Claude generates — audio begins ~2–3 seconds in, not 6–24 seconds after the turn ends. Each terminal gets a unique colour dot + matching statusline glyph so you can identify sessions by ear (and optionally give each its own voice). Per-session muting / focus / voice / speech-includes overrides all wired through.
+- **Codex CLI integration.** First-class support via a 1-second poll on `~/.codex/sessions/` — no hook registration needed. Terminal Talk tails Codex's persisted rollout JSONL and narrates assistant `commentary` + `final` messages through the same toolbar queue. Codex sessions appear in the Settings panel with their own colour entry; per-session voice / mute / speech-includes overrides apply identically. Run Codex normally, or use **Terminal Talk Codex** from the Desktop / Start Menu to launch Codex with the same TT slot, label, short id and Windows Terminal tab colour.
 - **"Hey jarvis" → read highlighted text.** Works in any app — browser, PDF, VS Code, Slack. Select text, say the wake word (or press `Ctrl+Shift+S`), hear it read. `Ctrl+Shift+J` toggles the mic listener cleanly on and off.
-- **Permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
-- **Smart tool-call narration.** When Claude reads a file, the toolbar says "Looking at the renderer file" — not just "Reading renderer.js". Edits surface as "Edit to render continuation banner — added 12 lines" with enclosing-function detection. Glob / Grep narrations include result counts. Bash commands peel echo headers and capture file paths instead of flag values.
+- **Claude Code permission-prompt alerts.** When Claude Code asks to use a tool, a short voice notification fires so you don't have to watch the screen waiting for a prompt.
+- **Claude Code smart tool-call narration.** When Claude reads a file, the toolbar says "Looking at the renderer file" — not just "Reading renderer.js". Edits surface as "Edit to render continuation banner — added 12 lines" with enclosing-function detection. Glob / Grep narrations include result counts. Bash commands peel echo headers and capture file paths instead of flag values.
 - **Markdown-aware audio sanitiser.** GFM tables don't disappear — they get summarised as "Table with 3 rows. Columns: A, B, C." Code fences are stripped or kept based on the language tag and your `code_blocks` setting. Inline backticks, emphasis, bullets, headings, image-alt — each independently toggle-able per session.
 - **Transcript expandable panel.** Toolbar surface showing the recent clip queue with copy buttons and a Spoken / Original toggle (compare what was synthesised against the original Markdown). Filters to the currently selected session tab.
 - **Per-session controls.** Mute individual terminals (no synthesis, no clips — truly "cut the wire"), focus one to prioritise its clips in the queue, give each a custom voice, override speech-include behaviour per session (code blocks, URLs, headings, etc.).
 - **Auto-pauses when you dictate.** If another app (Wispr Flow, Windows Voice Access, VoIP) grabs the mic, Terminal Talk pauses whatever's playing so it doesn't talk over you. Releases and resumes automatically. New arrivals that land during the dictation window queue up and drain in order once the mic's free — they never burst all at once.
-- **End-of-reply closer.** At the end of each Claude response, Terminal Talk speaks the exact verb from the terminal footer — "Brewed for 8m 49s", "Sautéed for 1m 0s", "Cogitated for 24m 56s". Read directly off the Windows Terminal buffer via UI Automation so the audio matches what you see.
+- **Claude Code end-of-reply closer.** At the end of each Claude response, Terminal Talk speaks the exact verb from the terminal footer — "Brewed for 8m 49s", "Sautéed for 1m 0s", "Cogitated for 24m 56s". Read directly off the Windows Terminal buffer via UI Automation so the audio matches what you see.
 - **Runs in the background.** Small always-on-top toolbar snaps to the top or bottom edge, auto-collapses after 15 s of idle, becomes click-through when hidden. `Ctrl+Shift+A` is the universal show/hide recovery hotkey.
+
+### Assistant support matrix
+
+| Capability | Claude Code | OpenAI Codex CLI |
+|---|---|---|
+| Assistant replies spoken aloud | Hooks + transcript-watcher streaming | `~/.codex/sessions/` watcher, 1-second poll |
+| Shared queue, transcript, session colours, voices, mute/focus | Yes | Yes |
+| Terminal identity | Claude statusline glyph + label | TT tab title + Windows Terminal tab colour via **Terminal Talk Codex** |
+| "Hey jarvis" from the active terminal inherits session colour | Yes, via statusline/PID file | Yes when launched via Terminal Talk Codex; otherwise falls back to recent-session matching |
+| Tool-call narration, permission alerts, heartbeat, footer closer | Yes, Claude hook path | Not yet exposed by Codex session logs |
 
 ## UI states
 
@@ -84,7 +94,7 @@ Five annotated mocks rendered from [`docs/design-system/mocks-annotated.html`](d
   <img src="docs/screenshots/toolbar-idle.png" alt="Idle toolbar: empty two-row letterbox with controls on top and an empty dot strip below" width="900">
 </p>
 
-The baseline. 680 × 114 frameless two-row pill, always-on-top, drag anywhere to move. Close just hides the window — the listener keeps running and `Ctrl+Shift+A` brings it back.
+The baseline. 680 × 144 frameless two-row pill, always-on-top, drag anywhere to move. Close just hides the window — the listener keeps running and `Ctrl+Shift+A` brings it back.
 
 ### 02 · Queue with three sessions
 
@@ -122,7 +132,7 @@ Drag within ~20 px of the top or bottom edge and the bar snaps flush on release.
 
 ## Who it's for
 
-- **Claude Code users** working in the terminal who want responses read aloud (primary).
+- **Claude Code and Codex CLI users** working in the terminal who want assistant replies read aloud.
 - **Anyone** who wants a fast "select text, hear it" keystroke — no agent required.
 - **Voice-first workflows** — combine with a speech-to-text tool and you barely touch the keyboard. See [Companion dictation tools](#companion-dictation-tools-optional) near the bottom.
 
@@ -150,15 +160,19 @@ Highlight text, say **"hey jarvis"**, hear it. The 30 MB model lives in `~/.term
 
 Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word-listener.py`. openWakeWord ships `hey_mycroft`, `hey_rhasspy`, `alexa`, `timer`, `weather`.
 
-### Codex launcher
+### Codex CLI
 
-If you want Codex to have a visible Terminal Talk identity inside the terminal itself, launch it via:
+Codex auto-speak is built in. Run `codex` normally and Terminal Talk tails `~/.codex/sessions/` for assistant `commentary` and `final` messages.
+
+For the cleanest terminal identity, launch Codex from **Terminal Talk Codex** on the Desktop or Start Menu. That shortcut pre-reserves a Terminal Talk slot, opens Windows Terminal with the matching tab colour when `wt.exe` is available, updates the tab title to the real TT label + Codex short id, and writes the PID mapping used by highlight-to-speak session colouring. If Windows Terminal is not available, it falls back to a normal PowerShell terminal with the same TT title.
+
+Advanced/manual equivalent for the full Windows Terminal path:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.terminal-talk\app\codex-launch.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.terminal-talk\app\codex-wt-launch.ps1"
 ```
 
-Pass normal Codex args straight through:
+To launch inside the current terminal instead, use the direct launcher. It keeps the TT title and PID mapping, but cannot recolour an already-open Windows Terminal tab:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.terminal-talk\app\codex-launch.ps1" --no-alt-screen
@@ -167,8 +181,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.termi
 The launcher:
 
 - keeps Codex on the normal Terminal Talk colour/label registry,
-- updates the Windows Terminal tab/title to show the Terminal Talk slot + label,
+- updates the terminal title to show the Terminal Talk slot, label, Codex short id and product name,
 - writes the per-PID session file so highlight-to-speak can map the foreground Codex terminal back to the right session once the rollout file is discovered.
+
+Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the glyph inside Claude's footer. Codex CLI currently exposes configurable status-line items, not a Terminal Talk command hook, so Terminal Talk keeps Codex identity in the tab title/colour instead of claiming a Claude-style footer.
+
+### Close, quit, and reopen
+
+- The toolbar **X** hides the window; audio, wake-word listening, and background watchers keep running. Press `Ctrl+Shift+A`, use the tray icon, or open **Start Menu › Terminal Talk** to show it again.
+- To fully exit, right-click the tray icon and choose **Quit**, or stop `terminal-talk.exe` in Task Manager.
+- After a full quit or Task Manager kill, reopen from the **Terminal Talk** Desktop or Start Menu shortcut. No terminal command is required.
+- **Terminal Talk Codex** is a separate Desktop / Start Menu shortcut for launching Codex with Terminal Talk session identity; it is not required for the base toolbar to run.
+- The optional Startup shortcut only controls launch-on-login.
 
 ### The toolbar UI
 
@@ -190,7 +214,7 @@ The launcher:
 - **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
 - **Session tabs row** (above the dots) — when two or more terminals are active, a row of colour-pill tabs appears so you can filter the dot strip per terminal. Click a tab to see only that session's clips; click "All" to re-show everything. Each tab carries a small unread-count badge derived from the current queue state.
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
-- Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken Claude responses.
+- Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken assistant responses.
 - Up to ~30 dots visible; beyond that the oldest drop off.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 - **🗑 Clear played** — one-click removal of every heard clip (currently-playing clip is kept). A toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive. The `X` on the toast dismisses without restoring.
@@ -205,12 +229,12 @@ Click the gear to expand the toolbar into a panel with:
   - **Auto-prune** on/off + seconds input (3–600 s). Applies to body clips only — tool narrations (T-prefixed) and heartbeat verbs (H-prefixed) always auto-delete on play-end regardless. Off = body clips stack up until you clear them manually.
   - **Auto-continue after clicking** — when a clip you clicked ends, chain forward through the remaining clips in time order. Default on. Turn off if you want one-clip-at-a-time click-to-replay.
   - **Colour-blind friendly palette** — swap the default 8-colour palette for Paul Tol's "muted" scheme, proven distinguishable under deutan / protan / tritan colour-blindness. Default palette stays for everyone else.
-  - **Heartbeat ambient narration** — short spinner verbs ("Percolating", "Moonwalking") + thinking phrases ("Just a moment") played every ~8 s during the silent gap between you submitting a prompt and Claude's response starting. Stops the moment real response audio begins. Toggle here.
+  - **Claude heartbeat ambient narration** — short spinner verbs ("Percolating", "Moonwalking") + thinking phrases ("Just a moment") played every ~8 s during the silent gap between you submitting a Claude prompt and Claude's response starting. Stops the moment real response audio begins. Toggle here.
   - **Reload toolbar** button — rebuilds the UI from disk without restarting the Electron process. Same thing `Ctrl+R` does.
 - **OpenAI (premium)** — collapsible. See [Premium TTS](#premium-tts-optional) below.
 - **Sessions** — one row per active assistant session:
   - Coloured swatch + 8-character session ID.
-  - Editable label (shows next to Claude's statusline glyph, and in the Codex launcher title if you launched Codex through `codex-launch.ps1`).
+  - Editable label (shows next to Claude's statusline glyph, and in the Codex tab title if you launched Codex through **Terminal Talk Codex**).
   - **Colour dropdown** — 24 arrangements: 8 solid colours + 8 horizontal splits + 8 vertical splits, with complementary colour pairings on the splits so each is unambiguous. Pick anything; the change is instant on the toolbar and propagates to the terminal identity surface within a couple of seconds.
   - **Chevron** — expands to per-session voice and speech-includes overrides (see below).
 - **About Terminal Talk** — banner + shortcuts cheat-sheet.
@@ -248,13 +272,13 @@ Click the chevron on any session row to expand its per-session controls:
 
 When a terminal session first interacts with Terminal Talk, it gets the **lowest free colour index** in `~/.terminal-talk/session-colours.json`. The same registry entry informs both:
 
-- The emoji at the bottom of the terminal (via Claude Code statusline), or the title badge if you launched Codex via `codex-launch.ps1`.
+- The glyph at the bottom of the Claude terminal, or the TT tab title / Windows Terminal tab colour if you launched Codex via **Terminal Talk Codex**.
 - The dot colour on the toolbar.
 - The colour of the **J** label on highlight-to-speak clips originating from that terminal.
 
-Sessions only release their colour when the Claude Code process actually closes (and a 4-hour grace period elapses to absorb stale-PID windows). You can also pin a colour manually via the Sessions table dropdown — pinned colours never get reassigned.
+Sessions only release their colour when the assistant process actually closes (and a 4-hour grace period elapses to absorb stale-PID windows). You can also pin a colour manually via the Sessions table dropdown — pinned colours never get reassigned.
 
-When a "hey jarvis" / `Ctrl+Shift+S` fires from somewhere outside a Claude Code terminal (browser, PDF), the J dot renders **neutral grey**. From inside a Claude Code terminal, it inherits that terminal's colour.
+When a "hey jarvis" / `Ctrl+Shift+S` fires from somewhere outside a tracked assistant terminal (browser, PDF), the J dot renders **neutral grey**. From inside a Claude Code or Terminal Talk Codex terminal, it inherits that terminal's colour.
 
 ---
 
@@ -284,7 +308,7 @@ The key is stored encrypted via [Electron safeStorage](https://www.electronjs.or
 
 ### 🎙️ Voice-in + voice-out (bonus)
 
-Install a speech-to-text tool from the [Companion dictation tools](#companion-dictation-tools-optional) table near the bottom. Say _"Claude, refactor this function"_ → Claude Code processes → Terminal Talk reads the answer back. Fully hands-free. When you activate your dictation tool mid-playback, Terminal Talk auto-pauses so you're not talking over yourself.
+Install a speech-to-text tool from the [Companion dictation tools](#companion-dictation-tools-optional) table near the bottom. Say _"Claude, refactor this function"_ or _"Codex, write the test"_ → your assistant processes → Terminal Talk reads the answer back. Fully hands-free. When you activate your dictation tool mid-playback, Terminal Talk auto-pauses so you're not talking over yourself.
 
 ---
 
@@ -335,8 +359,8 @@ Key fields worth calling out:
 - **`playback.master_volume`** (0.0–1.0, default 1.0) — master output volume. Heartbeat clips stay at 0.45× this value so the ambient mix ratio is preserved at any master level.
 - **`playback.palette_variant`** (`"default"` | `"cb"`, default `"default"`) — swaps the 8-colour session palette for Paul Tol's "muted" scheme under deutan / protan / tritan colour-blindness.
 - **`playback.tts_provider`** (`"edge"` | `"openai"`, default `"edge"`) — which TTS provider to try first. The other becomes the fallback on failure. Needs a saved `openai_api_key` (in safeStorage, NOT in this file) to set to `"openai"`.
-- **`speech_includes.tool_calls`** (default `true`) — narrate each tool Claude is about to call as an ephemeral clip (e.g. _"Reading synth_turn.py"_, _"Running npm test --verbose"_, _"Searching for pattern"_). Plays at the PreToolUse hook, auto-deletes on play-end so long tool chains don't flood the dot strip.
-- **`heartbeat_enabled`** (default `true`) — during the silent gap between submitting a prompt and hearing Claude's response, play short spinner-verb + thinking-phrase clips every ~8 s so you know Claude is working, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins.
+- **`speech_includes.tool_calls`** (default `true`) — narrate each Claude Code tool call as an ephemeral clip (e.g. _"Reading synth_turn.py"_, _"Running npm test --verbose"_, _"Searching for pattern"_). Plays at the PreToolUse hook, auto-deletes on play-end so long tool chains don't flood the dot strip.
+- **`heartbeat_enabled`** (default `true`) — during the silent gap between submitting a Claude Code prompt and hearing Claude's response, play short spinner-verb + thinking-phrase clips every ~8 s so you know Claude is working, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins.
 - **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice` and an optional `speech_includes` partial:
@@ -358,7 +382,7 @@ Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed b
 Restart the toolbar after editing config.json by hand:
 ```powershell
 taskkill /F /IM terminal-talk.exe
-wscript "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\terminal-talk.vbs"
+wscript "$env:USERPROFILE\.terminal-talk\terminal-talk.vbs"
 ```
 
 ---
@@ -407,7 +431,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A 1019-test harness plus 28 Playwright E2E tests exercise the actual installed components:
+A large unit/integration harness plus 28 Playwright E2E tests exercise the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose
@@ -440,94 +464,43 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding new tests.
 
 ## How it works
 
-Two assistant integration paths, one shared queue:
-
-- **Claude Code** — hooks (UserPromptSubmit / PreToolUse / Stop) plus a transcript-watcher that streams synth as Claude generates. Hooks register into `~/.claude/settings.json` at install time.
-- **Codex CLI** — a 1-second poll on `~/.codex/sessions/`, reading delta bytes from each rollout `.jsonl` and extracting `event_msg → agent_message` events (commentary + final phases). No installation hooks required — purely file-watch.
-
-Both feed the same Electron toolbar, the same audio-player, the same per-session colour registry, the same per-session voice / mute / speech-includes contract. The Python synth orchestrator (`synth_turn.py`) handles Claude turns; the JS Codex watcher (`app/lib/codex-session-watcher.js`) handles Codex turns inline (no Python spawn). Mic-watcher + heartbeat sidecars apply to both paths uniformly.
+Terminal Talk is the hub. Claude Code, Codex CLI, and highlight-to-speak are separate inputs that feed the same local queue and toolbar:
 
 ```
-                       Claude Code turn lifecycle
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ Claude Code                  │      │ OpenAI Codex CLI             │
+│ UserPromptSubmit / PreToolUse│      │ ~/.codex/sessions/*.jsonl    │
+│ Stop hooks + transcript watch│      │ 1 s rollout watcher          │
+└──────────────┬───────────────┘      └──────────────┬───────────────┘
+               │                                     │
+               ▼                                     ▼
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ synth_turn.py                │      │ codex-session-watcher.js     │
+│ streaming body, questions,   │      │ commentary/final messages,   │
+│ tool clips, footer closer    │      │ inline Edge/OpenAI synth     │
+└──────────────┬───────────────┘      └──────────────┬───────────────┘
+               │                                     │
+               └──────────────┬──────────────────────┘
+                              ▼
+                  ~/.terminal-talk/queue/
+                  .mp3 / .wav / metadata / logs
+                              │
+                              ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│  UserPromptSubmit  →   PreToolUse (× N)    →    Stop    →    …    │
-│        │                    │                     │               │
-│        ▼                    ▼                     ▼               │
-│  mark-working.ps1    speak-on-tool.ps1     speak-response.ps1     │
-│  writes flag         ad-hoc synth for      clears flag, scrapes   │
-│                      in-progress text      footer, final synth    │
-└────────────────────────────────────────────────────────────────────┘
-        │                    │                     │
-        └────────────────────┼─────────────────────┘
-                             ▼
-        ┌────────────────────────────────────────┐
-        │  synth_turn.py   (per-turn orchestrator)│
-        │   • reads transcript.jsonl              │
-        │   • stripForTTS (honours speech_includes)│
-        │   • sentence-split + group              │
-        │   • parallel edge-tts / OpenAI synth    │
-        │   • writes .mp3 / .wav to queue/        │
-        └────────────────┬───────────────────────┘
-                         │
-                         │  (parallel: Codex CLI integration path)
-                         │
-        ┌────────────────────────────────────────┐
-        │  codex-session-watcher.js  (1 s poll)   │
-        │   • tails ~/.codex/sessions/*.jsonl     │
-        │   • extracts event_msg → agent_message  │
-        │   • per-file offset + signature dedup   │
-        │   • per-session promise tail chain      │
-        │   • inline edge / OpenAI synth          │
-        │   • writes .mp3 / .wav to queue/        │
-        └────────────────┬───────────────────────┘
-                         │
-┌────────────────────────┼────────────────────────────────────────┐
-│  transcript-watcher.js │  (polls 500 ms)                         │
-│   spawns synth_turn    │  ─ on-stream mode, mid-turn             │
-│   when working-flag    │  ─ starts audio within ~2-3 s of text   │
-│   file is present      │                                         │
-└────────────────────────┴────────────────────────────────────────┘
-                         │
-                         ▼ fs.watch
-        ┌──────────────────────────────────┐
-        │  ~/.terminal-talk/queue/          │
-        │  .mp3 / .wav / .flag / _*.log     │
-        └───────────────┬──────────────────┘
-                        │ queue-updated IPC
-                        ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  Electron toolbar   (floating, always-on-top)                      │
-│   • renderer.js ─ dot strip + tabs + mascot + scrubber             │
-│   • audio-player  ─ auto-play, master volume, ephemeral-clip mix   │
-│   • mic-watcher.ps1 sidecar ─ auto-pause on external mic capture   │
-│   • heartbeat timer ─ ambient verbs during silent-but-active gaps  │
+│ Terminal Talk Electron toolbar                                     │
+│ dot strip, tabs, transcript panel, session controls, audio-player  │
+│ mic auto-pause, master volume, tray, Desktop/Start Menu relaunch   │
 └────────────────────────────────────────────────────────────────────┘
 
-                       "Hey jarvis" / Ctrl+Shift+S
-                                 │
-        ┌────────────────────────┴────────────────────────┐
-        ▼                                                 ▼
-┌──────────────────────┐                     ┌────────────────────────┐
-│ wake-word-listener   │                     │ Electron globalShortcut│
-│ (Python, openWakeWord│ ─ ctypes Ctrl+Shift+S ─► sendCtrlC via       │
-│  CPU, offline)       │                     │ key_helper.py           │
-└──────────────────────┘                     │  → poll clipboard       │
-                                             │  → detectActiveSession  │
-                                             │    (Win32 GetForeground │
-                                             │    + process tree walk) │
-                                             │  → stripForTTS          │
-                                             │  → synth → queue        │
-                                             └────────────────────────┘
-
-        Session registry ( ~/.terminal-talk/session-colours.json )
-        Single source of truth; written by the Stop hook (canonical)
-        + PS statusline (bookkeeping touches) + Electron (user edits).
-        File-locked JSON; PID-migration preserves colour + label + voice
-        through /clear; LRU eviction respects user intent (pinned OR
-        any label / voice / mute / focus / speech-includes override).
+┌──────────────────────────────┐
+│ "Hey jarvis" / Ctrl+Shift+S  │
+│ openWakeWord + global hotkey │
+│ clipboard capture + session  │
+│ detection -> same queue      │
+└──────────────────────────────┘
 ```
 
-The hook is the **single source of truth** for session colour assignment. The statusline reads the registry. The Electron main process reads the registry. The transcript-watcher's streaming synth + the PreToolUse hook's mid-turn synth share `partial_text_offsets` via per-session sync state so the same sentence is never synthesised twice.
+The shared registry lives at `~/.terminal-talk/session-colours.json`. Claude hooks/statusline, the Codex watcher/launcher, and Electron user edits all read and write that registry under a file lock, so colours, labels, voices, mute/focus state, and speech-includes stay consistent across agent paths. Claude-only extensions currently include tool-call narration, permission prompts, heartbeat verbs, and the terminal footer closer because those rely on Claude Code hook and terminal-buffer surfaces that Codex does not expose yet.
 
 ---
 
@@ -542,6 +515,7 @@ The hook is the **single source of truth** for session colour assignment. The st
 | Clipboard stays empty after "hey jarvis" | Some apps (very few) don't respond to programmatic Ctrl+C. Try a different app or `Ctrl+Shift+S` manually. |
 | Dropdown text invisible (white-on-white) | Indicates Electron's `nativeTheme.themeSource` didn't apply on your build. Reinstall to update. |
 | Two terminals on the same colour | Run `node terminal-talk/scripts/run-tests.cjs` — if statusline tests fail, edge-tts service is unreachable. If they pass, restart both terminals. |
+| I killed Terminal Talk in Task Manager and need it back | Open **Terminal Talk** from the Desktop or Start Menu. Use **Terminal Talk Codex** only when you want to start a Codex terminal with the TT title and tab colour. |
 
 ---
 
@@ -551,14 +525,14 @@ The hook is the **single source of truth** for session colour assignment. The st
 .\uninstall.ps1
 ```
 
-Stops running processes (only those in `~/.terminal-talk/`), removes the Startup shortcut, strips Terminal Talk hooks from `~/.claude/settings.json` (with timestamped backup), optionally deletes `~/.terminal-talk/`.
+Stops running processes (only those in `~/.terminal-talk/`), removes Startup / Start Menu / Desktop shortcuts, strips Terminal Talk hooks from `~/.claude/settings.json` (with timestamped backup), optionally deletes `~/.terminal-talk/`.
 
 ---
 
 ## Companion dictation tools (optional)
 
-Terminal Talk is text-to-speech — Claude → audio. For the reverse
-(your voice → Claude Code input) and fully hands-free use, pair it with a
+Terminal Talk is text-to-speech — assistant output → audio. For the reverse
+(your voice → Claude Code or Codex input) and fully hands-free use, pair it with a
 dictation tool. A few options, ranked by free-tier generosity:
 
 | Tool | Free tier | Paid | Platform | Notes |
@@ -585,12 +559,10 @@ a little character who walks along the scrubber while audio plays,
 leaving random verbs from that list floating above his head. The mouth
 is added because, unlike the Claude Code spinner, he actually speaks.
 
-**He only appears when Claude Code is the source.** If you're playing a
-highlight-to-speak clip (you said "hey jarvis" or pressed
-<kbd>Ctrl+Shift+S</kbd>), the scrubber thumb is a plain **J** badge
-instead — the mascot is reserved for audio that originated inside a
-Claude Code session, so the visual identity stays tied to Claude-sourced
-content.
+**He appears for assistant response clips from Claude Code and Codex.** If
+you're playing a highlight-to-speak clip (you said "hey jarvis" or pressed
+<kbd>Ctrl+Shift+S</kbd>), the scrubber thumb is a plain **J** badge instead
+so manual read-aloud clips stay visually distinct from agent replies.
 
 No affiliation with Anthropic; this is a solo open-source project by an
 enthusiastic Claude Code user. It's here because Claude Code's own sense

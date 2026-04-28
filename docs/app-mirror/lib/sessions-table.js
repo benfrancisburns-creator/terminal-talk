@@ -8,7 +8,7 @@
 //   - Focus-bail: skip the paint if an input/select inside the table
 //     currently has focus (don't yank the caret or snap a dropdown).
 //   - Run-order sort by entry.index (stable colour-arrangement).
-//   - Sessions empty state ("No active Claude Code sessions…").
+//   - Sessions empty state ("No active assistant sessions…").
 //   - aria-row / aria-pressed / aria-expanded wiring for screen readers.
 //   - Expanded-session latch survives re-renders (internal state).
 //

@@ -40,6 +40,7 @@ const NEEDS_INSTALL = new Set([
   // These spawn `powershell.exe` and only run against the installed
   // module tree. Linux CI nodes have neither — skip cleanly rather
   // than fail with "module missing" / ENOENT for powershell.exe.
+  'PS Get-StableClaudePid PARENT-WALK',
   'PS SESSION-IDENTITY BEHAVIOUR',
   'MARK-WORKING HOOK (UserPromptSubmit)',
   'PS ↔ JS REGISTRY LOCK CROSS-COMPAT',
@@ -250,7 +251,7 @@ describe('FILENAME PARSING', () => {
 });
 
 describe('PRUNE LIB (#29 sub-2000 extract)', () => {
-  const { createPruner } = require(path.join(__dirname, '..', 'app', 'lib', 'prune'));
+  const { createPruner } = require('../app/lib/prune');
   const isAudio = (f) => /\.(mp3|wav)$/i.test(f);
 
   function setupQueue() {
@@ -1702,6 +1703,7 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     hotkeys:         {},
     playback:        { speed: 1.25, tts_provider: 'edge' },
     speech_includes: { code_blocks: false },
+    panels:          { transcript_expanded: false, transcript_view: 'spoken' },
     heartbeat_enabled: true,
     openai_api_key:    null,
     selected_tab:      'all',
@@ -1726,6 +1728,19 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     const loaded = store.load();
     assertEqual(loaded.selected_tab, '7e5c9a', 'selected_tab must round-trip');
     assertEqual(loaded.tabs_expanded, true,    'tabs_expanded must round-trip');
+    clean();
+  });
+
+  it('panels survive save → load', () => {
+    clean();
+    const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
+    store.save({
+      ...DEFAULTS,
+      panels: { transcript_expanded: true, transcript_view: 'original' },
+    });
+    const loaded = store.load();
+    assertEqual(loaded.panels.transcript_expanded, true, 'panels.transcript_expanded must round-trip');
+    assertEqual(loaded.panels.transcript_view, 'original', 'panels.transcript_view must round-trip');
     clean();
   });
 
@@ -4586,15 +4601,20 @@ describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
     }
   });
 
-  it('renderer settingsBtn click calls settingsForm.onPanelOpen() when opening', () => {
-    // Match the settingsBtn click handler. Within the `if (open)`
-    // branch, settingsForm.onPanelOpen() must be called so the
-    // collapse decision re-applies.
-    const m = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
-    if (!m) throw new Error('settingsBtn click handler not found');
-    const body = m[0];
+  it('renderer settings open path calls settingsForm.onPanelOpen() when opening', () => {
+    // The click handler delegates to setSettingsOpen(open). The lifecycle
+    // call may live in that helper as long as it is still gated to the
+    // opening path so the collapse decision re-applies once per panel open.
+    const helper = rendererSrc.match(/async function setSettingsOpen\s*\(\s*open\s*\)\s*\{[\s\S]*?\n\}/);
+    if (!helper) throw new Error('setSettingsOpen(open) helper not found');
+    const body = helper[0];
     if (!/if\s*\(open\)[\s\S]*?settingsForm\.onPanelOpen\(\)/.test(body)) {
-      throw new Error('settingsBtn click handler must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+      throw new Error('setSettingsOpen(open) must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+    }
+    const click = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
+    if (!click) throw new Error('settingsBtn click handler not found');
+    if (!/setSettingsOpen\s*\(\s*open\s*\)/.test(click[0])) {
+      throw new Error('settingsBtn click handler must delegate to setSettingsOpen(open) — see #25');
     }
   });
 
@@ -9885,7 +9905,7 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     const win = {
       isDestroyed: () => false,
       getPosition: () => [100, 200],
-      getSize: () => [680, 114],
+      getSize: () => [680, 144],
       setBounds: (b) => { calls.push(['setBounds', b]); },
       setSize: (w, h, anim) => { calls.push(['setSize', w, h, anim]); },
       setIgnoreMouseEvents: (on, opts) => { calls.push(['setIgnoreMouseEvents', on, opts]); },
@@ -10048,20 +10068,25 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
         hotkeys: { toggle: 'A' },
         playback: { speed: 1 },
         speech_includes: { urls: false },
+        panels: { transcript_expanded: false, transcript_view: 'spoken' },
       },
     });
     createIpcHandlers(deps).register();
     const out = deps.ipcMain.invoke('update-config', {
       voices: { edge_response: 'new' },
       playback: { speed: 2 },
+      panels: { transcript_expanded: true },
     });
     assertEqual(out.voices.edge_response, 'new');
     assertEqual(out.hotkeys.toggle, 'A');          // unchanged
     assertEqual(out.playback.speed, 2);
     assertEqual(out.speech_includes.urls, false);   // unchanged
+    assertEqual(out.panels.transcript_expanded, true);
+    assertEqual(out.panels.transcript_view, 'spoken');
     assertEqual(out.openai_api_key, null);
     // setCFG must have received the merged object
     assertEqual(deps._cfgRef().voices.edge_response, 'new');
+    assertEqual(deps._savedConfigs[0].panels.transcript_expanded, true);
   });
 
   it('update-config routes openai_api_key through apiKeyStore and nulls the field', () => {
@@ -10113,14 +10138,16 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertEqual(call[2], { forward: true });
   });
 
-  it('set-panel-open uses setSize for non-bottom docks', () => {
+  it('set-panel-open uses setBounds for non-bottom docks', () => {
     const deps = panelDeps({ cfg: { window: { dock: 'top' } } });
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
-    const call = deps._winCalls.find((c) => c[0] === 'setSize');
-    assertTruthy(call, 'should call setSize');
-    assertEqual(call[1], 680);  // expanded width
-    assertEqual(call[2], 618);  // expanded height
+    const call = deps._winCalls.find((c) => c[0] === 'setBounds');
+    assertTruthy(call, 'should call setBounds');
+    assertEqual(call[1].x, 100);
+    assertEqual(call[1].y, 200);
+    assertEqual(call[1].width, 680);  // expanded width
+    assertEqual(call[1].height, 618);  // expanded height
     // no dock adjustment expected
     assertEqual(deps._dockCalls, []);
   });
@@ -10131,8 +10158,8 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
     const call = deps._winCalls.find((c) => c[0] === 'setBounds');
     assertTruthy(call, 'should call setBounds');
-    // curY=200, curH=114, newH=618 -> newY = 200 + (114 - 618) = -304
-    assertEqual(call[1].y, -304);
+    // curY=200, curH=144, newH=618 -> newY = 200 + (144 - 618) = -274
+    assertEqual(call[1].y, -274);
     assertEqual(call[1].width, 680);
     assertEqual(call[1].height, 618);
     // applying-dock latch must flip true then eventually back to false
@@ -14461,7 +14488,7 @@ describe('CODEX SESSION WATCHER', () => {
   const {
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
-  } = require(path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'));
+  } = require('../app/lib/codex-session-watcher.js');
 
   it('parses the trailing Codex session id from a rollout filename', () => {
     const full = String.raw`C:\Users\Ben\.codex\sessions\2026\04\26\rollout-2026-04-26T21-43-49-019dcb88-bc99-7082-a04b-a208631d111c.jsonl`;
@@ -14561,6 +14588,7 @@ describe('CODEX SESSION WATCHER', () => {
 describe('CODEX TERMINAL IDENTITY', () => {
   const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
   const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
+  const wtLaunchPath = path.join(__dirname, '..', 'app', 'codex-wt-launch.ps1');
   const importMod = `Import-Module '${modPath}' -Force -DisableNameChecking`;
 
   it('Parse-CodexSessionMetaLine extracts session id, short, cwd, and timestamp', () => {
@@ -14629,7 +14657,33 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Format-CodexWindowTitle -Short '019dcb88' -Entry ([pscustomobject]@{ index = 1; label = 'Voice output' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk'`
     );
-    assertEqual(out, 'TT 02 | Voice output | 019dcb88');
+    assertEqual(out, 'TT 2 (Voice output) | 019dcb88 | Codex');
+  });
+
+  it('Get-TerminalTalkIdentityText does not duplicate an existing TT label', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Get-TerminalTalkIdentityText -Entry ([pscustomobject]@{ index = 1; label = 'TT 2 (Voice output)' })`
+    );
+    assertEqual(out, 'TT 2 (Voice output)');
+  });
+
+  it('Get-TerminalTalkIdentityText reads registry hashtables as well as objects', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Get-TerminalTalkIdentityText -Entry @{ index = 6; label = '' } -FallbackLabel Codex`
+    );
+    assertEqual(out, 'TT 7 (Codex)');
+  });
+
+  it('Get-TerminalTalkPaletteHex maps split slots back to their primary colour', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = Get-TerminalTalkPaletteHex -Index 4; `
+      + `$b = Get-TerminalTalkPaletteHex -Index 12; `
+      + `Write-Output "$a|$b"`
+    );
+    assertEqual(out, '60a5fa|60a5fa');
   });
 
   it('Format-CodexWindowTitle falls back to attaching + project name before bind', () => {
@@ -14638,14 +14692,16 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Format-CodexWindowTitle -Short 'deadbeef' -Entry ([pscustomobject]@{ index = 0; label = '' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -Attaching`
     );
-    assertEqual(out, 'TT 01 | Codex | terminal-talk | attaching');
+    assertEqual(out, 'TT 1 (Codex) | deadbeef | terminal-talk | attaching');
   });
 
-  it('codex-launch.ps1 parses without PowerShell syntax errors', () => {
+  it('Codex launcher scripts parse without PowerShell syntax errors', () => {
     const launchEsc = launchPath.replace(/'/g, "''");
+    const wtLaunchEsc = wtLaunchPath.replace(/'/g, "''");
     const out = runPowershellBody(
       `$tokens = $null; $errors = $null; `
       + `[System.Management.Automation.Language.Parser]::ParseFile('${launchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + `[System.Management.Automation.Language.Parser]::ParseFile('${wtLaunchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
       + `Write-Output $errors.Count`
     );
     assertEqual(out, '0');
@@ -14663,13 +14719,52 @@ describe('CODEX TERMINAL IDENTITY', () => {
       throw new Error('codex-launch.ps1 must create a provisional short for pre-bind identity');
     }
     if (!/Format-CodexWindowTitle/.test(src)) {
-      throw new Error('codex-launch.ps1 must format a Terminal Talk title badge');
+      throw new Error('codex-launch.ps1 must format a Terminal Talk title');
+    }
+    if (!/PreassignedShort/.test(src)) {
+      throw new Error('codex-launch.ps1 must accept preassigned identity from the Windows Terminal launcher');
     }
     if (!/Write-SessionPidFile/.test(src)) {
       throw new Error('codex-launch.ps1 must stamp a per-PID session file once the rollout binds');
     }
     if (!/Start-Process[\s\S]*-NoNewWindow[\s\S]*-PassThru/.test(src)) {
       throw new Error('codex-launch.ps1 must launch Codex in the current terminal via Start-Process -NoNewWindow -PassThru');
+    }
+  });
+
+  it('codex-wt-launch.ps1 reserves registry identity and passes tab colour to Windows Terminal', () => {
+    const src = fs.readFileSync(wtLaunchPath, 'utf8');
+    if (!/Update-SessionAssignment/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must reserve a registry slot before opening Windows Terminal');
+    }
+    if (!/Get-TerminalTalkPaletteHex/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must derive tab colour from the same Terminal Talk palette');
+    }
+    if (!/--tabColor/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must pass --tabColor to wt.exe');
+    }
+    if (/--suppressApplicationTitle/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must allow codex-launch.ps1 to update the tab title after bind');
+    }
+    if (!/Format-CodexWindowTitle[\s\S]*-Attaching/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must format the initial title with the reserved short id');
+    }
+    if (!/PreassignedShort/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must hand the reserved short to codex-launch.ps1');
+    }
+  });
+
+  it('install and uninstall scripts manage Terminal Talk Codex shortcuts', () => {
+    const installSrc = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
+    const uninstallSrc = fs.readFileSync(path.join(__dirname, '..', 'uninstall.ps1'), 'utf8');
+    if (!/codex-wt-launch\.ps1/.test(installSrc)) {
+      throw new Error('install.ps1 must route Terminal Talk Codex shortcuts through codex-wt-launch.ps1');
+    }
+    if (!/DesktopDirectory/.test(installSrc) || !/Terminal Talk Codex\.lnk/.test(installSrc)) {
+      throw new Error('install.ps1 must install a Desktop Terminal Talk Codex shortcut when desktop shortcuts are enabled');
+    }
+    if (!/desktopCodexShortcut/.test(uninstallSrc)) {
+      throw new Error('uninstall.ps1 must remove the Desktop Terminal Talk Codex shortcut');
     }
   });
 });

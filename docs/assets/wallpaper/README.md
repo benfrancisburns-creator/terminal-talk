@@ -6,9 +6,9 @@ and a pixel-cloud speech bubble.
 
 ## Files
 
-- [`terminal-talk-wallpaper.png`](terminal-talk-wallpaper.png) — ready-to-use PNG (400 KB)
+- [`terminal-talk-wallpaper.png`](terminal-talk-wallpaper.png) — ready-to-use PNG (~460 KB)
 - [`terminal-talk-wallpaper-bg.jpg`](terminal-talk-wallpaper-bg.jpg) — mascot-free variant, base64-embedded inside `docs/assets/terminal-talk-hero.svg` (the animated composite used in `README.md`). Regenerate with `node scripts/render-hero-background.cjs` after editing `scripts/wallpaper-bg.html`, then `node scripts/build-hero-svg.cjs`.
-- [`../../../scripts/wallpaper.html`](../../../scripts/wallpaper.html) — source HTML if you want to regenerate at a different resolution
+- [`../../../scripts/wallpaper.html`](../../../scripts/wallpaper.html) — source HTML. Regenerate the standard PNG with `node scripts/render-wallpaper.cjs`.
 
 ## Set it as your desktop (Windows)
 
@@ -18,7 +18,10 @@ and a pixel-cloud speech bubble.
 ## Regenerate at a different size
 
 ```powershell
-# From the repo root:
+# From the repo root, for the standard 1280×800 PNG:
+node scripts/render-wallpaper.cjs
+
+# For a custom size:
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
   --headless=new --disable-gpu --hide-scrollbars `
   --window-size=1920,1080 `

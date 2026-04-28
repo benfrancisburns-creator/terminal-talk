@@ -1,0 +1,122 @@
+﻿[
+    {
+        "id":  "001",
+        "role":  "Mascot",
+        "start":  "00:00.7",
+        "end":  "00:04.3",
+        "audio":  "audio/001-mascot.mp3",
+        "text":  "Terminal Talk online. Bring every session into view."
+    },
+    {
+        "id":  "002",
+        "role":  "Mascot",
+        "start":  "00:05.2",
+        "end":  "00:07.0",
+        "audio":  "audio/002-mascot.mp3",
+        "text":  "Frontend, report."
+    },
+    {
+        "id":  "003",
+        "role":  "Frontend",
+        "start":  "00:07.2",
+        "end":  "00:10.3",
+        "audio":  "audio/003-frontend.mp3",
+        "text":  "Settings panel is clean. Voice controls are ready."
+    },
+    {
+        "id":  "004",
+        "role":  "Mascot",
+        "start":  "00:11.0",
+        "end":  "00:12.3",
+        "audio":  "audio/004-mascot.mp3",
+        "text":  "Backend?"
+    },
+    {
+        "id":  "005",
+        "role":  "Backend",
+        "start":  "00:12.7",
+        "end":  "00:15.4",
+        "audio":  "audio/005-backend.mp3",
+        "text":  "Hooks are live. Queue handling is stable."
+    },
+    {
+        "id":  "006",
+        "role":  "Mascot",
+        "start":  "00:16.1",
+        "end":  "00:18.0",
+        "audio":  "audio/006-mascot.wav",
+        "text":  "Tests and docs, status."
+    },
+    {
+        "id":  "007",
+        "role":  "Tests",
+        "start":  "00:18.2",
+        "end":  "00:20.2",
+        "audio":  "audio/007-tests.mp3",
+        "text":  "Checks green. No blockers."
+    },
+    {
+        "id":  "008",
+        "role":  "Docs",
+        "start":  "00:20.5",
+        "end":  "00:22.7",
+        "audio":  "audio/008-docs.mp3",
+        "text":  "Landing page assets updated."
+    },
+    {
+        "id":  "009",
+        "role":  "Mascot",
+        "start":  "00:23.5",
+        "end":  "00:25.8",
+        "audio":  "audio/009-mascot.mp3",
+        "text":  "Codex, give me the review queue."
+    },
+    {
+        "id":  "010",
+        "role":  "Codex",
+        "start":  "00:26.0",
+        "end":  "00:28.0",
+        "audio":  "audio/010-codex.wav",
+        "text":  "Review queue clear."
+    },
+    {
+        "id":  "011",
+        "role":  "Claude",
+        "start":  "00:28.6",
+        "end":  "00:30.9",
+        "audio":  "audio/011-claude.mp3",
+        "text":  "Implementation notes captured."
+    },
+    {
+        "id":  "012",
+        "role":  "Mascot",
+        "start":  "00:31.4",
+        "end":  "00:35.2",
+        "audio":  "audio/012-mascot.mp3",
+        "text":  "Decision point: merge after review, then deploy."
+    },
+    {
+        "id":  "013",
+        "role":  "Mascot",
+        "start":  "00:36.0",
+        "end":  "00:39.0",
+        "audio":  "audio/013-mascot.mp3",
+        "text":  "Hey Jarvis clip received. Priority audio goes first."
+    },
+    {
+        "id":  "014",
+        "role":  "Mascot",
+        "start":  "00:40.0",
+        "end":  "00:45.4",
+        "audio":  "audio/014-mascot.mp3",
+        "text":  "Every terminal has a voice now. Keep building. I will keep watch."
+    },
+    {
+        "id":  "015",
+        "role":  "Narrator",
+        "start":  "00:46.2",
+        "end":  "00:51.0",
+        "audio":  "audio/015-narrator.wav",
+        "text":  "Terminal Talk gives Claude Code and Codex a voice, so you can keep building while the work speaks back."
+    }
+]

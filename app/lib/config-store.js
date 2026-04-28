@@ -29,7 +29,8 @@ function createConfigStore({ configPath, defaults, validator, logger }) {
     let parsed;
     try {
       const raw = fs.readFileSync(configPath, 'utf8');
-      parsed = JSON.parse(raw);
+      const text = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+      parsed = JSON.parse(text);
     } catch { return defaults; }
     const v = validator(parsed);
     if (!v.ok) {
@@ -54,6 +55,7 @@ function createConfigStore({ configPath, defaults, validator, logger }) {
       hotkeys: { ...defaults.hotkeys, ...(parsed.hotkeys || {}) },
       playback: { ...defaults.playback, ...(parsed.playback || {}) },
       speech_includes: { ...defaults.speech_includes, ...(parsed.speech_includes || {}) },
+      panels: { ...defaults.panels, ...(parsed.panels || {}) },
       window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,
       openai_api_key: parsed.openai_api_key ?? null,
     };
