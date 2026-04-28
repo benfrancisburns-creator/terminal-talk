@@ -3,7 +3,7 @@
   "_comment": "Copy to ~/.terminal-talk/config.json and edit. All fields optional; defaults apply. The $schema reference above gives VS Code + any editor that honours json.schemas autocomplete + validation on save.",
 
   "voices": {
-    "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are fallback voices used only when edge-tts is unreachable. Full voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",
+    "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are premium/fallback voices used only when an OpenAI key is configured. Full Edge voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",
     "edge_clip": "en-GB-SoniaNeural",
     "edge_response": "en-GB-RyanNeural",
     "openai_clip": "shimmer",
@@ -20,21 +20,37 @@
   },
 
   "playback": {
-    "_comment": "speed 0.5-2.5x. auto_prune toggles whether played clips disappear after N seconds (3-600). Toggle off if you want clips to stack up for review.",
+    "_comment": "speed 0.5-2.5x. master_volume is 0.0-1.0. auto_prune toggles whether played clips disappear after N seconds (3-600). Toggle off if you want clips to stack up for review. tts_provider is edge or openai.",
     "speed": 1.25,
+    "master_volume": 1.0,
     "auto_prune": true,
-    "auto_prune_sec": 20
+    "auto_prune_sec": 20,
+    "auto_continue_after_click": true,
+    "palette_variant": "default",
+    "tts_provider": "edge"
   },
 
   "speech_includes": {
-    "_comment": "Global defaults for what gets spoken from Claude responses. Per-session overrides live in session-colours.json and win over these.",
+    "_comment": "Global defaults for what gets spoken from assistant responses. tool_calls is Claude Code-only. Per-session overrides live in session-colours.json and win over these.",
     "code_blocks": false,
     "inline_code": false,
     "urls": false,
     "headings": true,
     "bullet_markers": false,
-    "image_alt": false
+    "image_alt": false,
+    "tool_calls": true
   },
+
+  "heartbeat_enabled": true,
+
+  "panels": {
+    "_comment": "Toolbar panel state; managed by the app.",
+    "transcript_expanded": false,
+    "transcript_view": "spoken"
+  },
+
+  "selected_tab": "all",
+  "tabs_expanded": false,
 
   "window": {
     "_comment": "Populated automatically — last-saved position + dock orientation. Delete these keys to reset to centred-top on next launch.",

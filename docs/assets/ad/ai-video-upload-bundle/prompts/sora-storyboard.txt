@@ -1,0 +1,17 @@
+﻿# Sora Storyboard Prompt
+
+Upload:
+- assets/04-brand-reference-sheet.png
+- assets/05-command-center-reference.png
+- assets/06-terminal-talk-wallpaper.png
+
+Prompt:
+
+Create a cinematic animated software command-center video for Terminal Talk.
+The scene is a futuristic developer war room, but metaphorical and non-violent.
+The exact Terminal Talk mascot will be composited later, so leave a clean center area where the mascot commander can stand.
+Around the center, show abstract terminal sessions and project panels for frontend, backend, tests, docs, deployment, Claude Code, and Codex.
+Use Terminal Talk's visual language from the references: dark glass, orange pixel mascot energy, cyan terminal glow, green status lights, colourful session dots, and white pixel speech bubble style.
+Camera motion: slow push-in, parallax across terminal panels, occasional close-ups of animated code-flow lines, then pull back to a full battlefield overview.
+Audio intent: low cinematic technology pulse, soft terminal beeps, calm spoken command-center dialogue.
+Avoid readable fake UI text, fake logos, weapons, soldiers, explosions, or game-style combat imagery.

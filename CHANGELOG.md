@@ -4,7 +4,14 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
-_No changes yet._
+### Changed
+
+- Reframed the README, landing page, docs, and in-app About copy around
+  Terminal Talk as the shared voice layer for Claude Code and OpenAI Codex CLI,
+  with Claude-only hook features called out separately from shared assistant
+  queue/session features.
+- Installer now creates user-facing Start Menu/Desktop relaunch shortcuts plus a
+  dedicated **Terminal Talk Codex** shortcut; uninstall removes those shortcuts.
 
 ## [0.6.0] — 2026-04-26
 

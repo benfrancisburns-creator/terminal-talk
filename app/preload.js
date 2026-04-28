@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('api', {
   // sanity-check they're on the latest release without diffing
   // package.json. Reads app.getVersion() on the main side.
   getVersion: () => ipcRenderer.invoke('get-version'),
+  demoStartReady: () => ipcRenderer.invoke('demo-start-ready'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),

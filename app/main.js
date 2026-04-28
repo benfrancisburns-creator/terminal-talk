@@ -17,6 +17,13 @@ const QUEUE_DIR = path.join(INSTALL_DIR, 'queue');
 const CONFIG_PATH = path.join(INSTALL_DIR, 'config.json');
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
 const DIAG_LOG = path.join(QUEUE_DIR, '_toolbar.log');
+const CAPTURE_MODE = process.env.TT_CAPTURE_MODE === '1';
+const WINDOW_MODE = CAPTURE_MODE || process.env.TT_WINDOW_MODE === '1';
+
+function envInt(name, fallback) {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
 
 // EX1 — resolve absolute paths for Windows system binaries to defuse
 // the Sonar S4036 ("PATH may contain writeable dirs") hotspot. taskkill
@@ -429,7 +436,9 @@ function snapAfterDrag() {
 }
 
 function createWindow() {
-  const { width } = screen.getPrimaryDisplay().workAreaSize;
+  const display = screen.getPrimaryDisplay();
+  const { width } = display.workAreaSize;
+  const workArea = display.workArea;
   const winWidth = 680;
   const winHeight = 114;  // 36 controls + 4 gap + 44 dot row + 14 padding + 12 margin + halo breathing
   // Restore last-saved position + dock orientation if present and still
@@ -445,29 +454,40 @@ function createWindow() {
     CFG.window = { ...CFG.window, x: null, y: null, dock: null };
     saveConfig(CFG);
   }
-  const startW = winWidth;
-  const startH = winHeight;
+  const startW = WINDOW_MODE ? envInt('TT_CAPTURE_WIDTH', Math.min(900, workArea.width)) : winWidth;
+  const startH = WINDOW_MODE ? envInt('TT_CAPTURE_HEIGHT', Math.min(900, workArea.height)) : winHeight;
   let startX = typeof saved.x === 'number' ? saved.x : Math.floor((width - startW) / 2);
   let startY = typeof saved.y === 'number' ? saved.y : 12;
+  if (WINDOW_MODE) {
+    startX = Number.isFinite(Number(process.env.TT_CAPTURE_X))
+      ? Math.floor(Number(process.env.TT_CAPTURE_X))
+      : workArea.x + Math.max(0, workArea.width - startW - 32);
+    startY = Number.isFinite(Number(process.env.TT_CAPTURE_Y))
+      ? Math.floor(Number(process.env.TT_CAPTURE_Y))
+      : workArea.y + 32;
+  }
   // Clamp to a visible display — handles users who unplugged the monitor
   // the bar was last on (bar would otherwise spawn off-screen).
-  const clamped = clampToVisibleDisplay(startX, startY, startW, startH);
-  startX = clamped.x;
-  startY = clamped.y;
+  if (!WINDOW_MODE) {
+    const clamped = clampToVisibleDisplay(startX, startY, startW, startH);
+    startX = clamped.x;
+    startY = clamped.y;
+  }
   win = new BrowserWindow({
     width: startW,
     height: startH,
     x: startX,
     y: startY,
-    frame: false,
+    frame: WINDOW_MODE && !CAPTURE_MODE,
     transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
+    alwaysOnTop: CAPTURE_MODE || !WINDOW_MODE,
+    skipTaskbar: !WINDOW_MODE,
+    resizable: WINDOW_MODE,
     movable: true,
-    show: false,
+    show: WINDOW_MODE,
     focusable: true,
-    hasShadow: false,
+    hasShadow: WINDOW_MODE,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -477,14 +497,34 @@ function createWindow() {
       allowRunningInsecureContent: false
     }
   });
-  win.setAlwaysOnTop(true, 'floating');
-  win.loadFile(path.join(__dirname, 'index.html'));
+  if (CAPTURE_MODE) win.setAlwaysOnTop(true, 'screen-saver');
+  else if (!WINDOW_MODE) win.setAlwaysOnTop(true, 'floating');
+  win.loadFile(
+    path.join(__dirname, 'index.html'),
+    WINDOW_MODE ? {
+      query: {
+        windowMode: '1',
+        autoOpenSettingsMs: process.env.TT_DEMO_AUTO_OPEN_SETTINGS_MS || '',
+        demoSettings: process.env.TT_DEMO_SETTINGS_MODE === '1' ? '1' : '',
+        demoSettingsVariant: process.env.TT_DEMO_SETTINGS_VARIANT || '',
+        demoSettingsStartFlag: process.env.TT_DEMO_START_FLAG ? '1' : '',
+        demoSettingsFallbackMs: process.env.TT_DEMO_SETTINGS_START_FALLBACK_MS || '',
+        demoSettingsVisualDurationMs: process.env.TT_DEMO_SETTINGS_VISUAL_DURATION_MS || '',
+      },
+    } : {}
+  );
+  if (CAPTURE_MODE) {
+    win.webContents.once('did-finish-load', () => {
+      try { win.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+      try { win.moveTop(); } catch {}
+    });
+  }
   win.on('closed', () => { win = null; });
   // Start the main-side cursor-poll click-through driver. Reliable
   // alternative to the renderer's mousemove → setClickthrough loop
   // which can get stuck when forward:true fails to forward cursor-
   // entry events. Polls every 80ms using screen.getCursorScreenPoint().
-  startCursorPollDriver();
+  if (!WINDOW_MODE) startCursorPollDriver();
 
   // EX3 — Ctrl+R reloads the renderer (window-scoped, not global).
   // Browser convention + cheap recovery path if the toolbar gets into
@@ -659,7 +699,7 @@ function createWindow() {
 // toggle-to-hide and by the × close button (hide-window IPC). Cleared by the
 // Ctrl+Shift+A toggle-to-show, by hey-jarvis / speakClipboard (user action),
 // and by second-instance (a fresh launch attempt means the user wants it up).
-// While true, notifyQueue skips its auto-showInactive so Claude-Code-response
+// While true, notifyQueue skips its auto-showInactive so assistant-response
 // clip arrivals don't steal the user's explicit hide. Audio still plays.
 let userHiddenToolbar = false;
 
@@ -671,6 +711,7 @@ let userHiddenToolbar = false;
 // with system-level overlays (taskbar auto-hide etc).
 function forceOnTop() {
   if (!win || win.isDestroyed()) return;
+  if (WINDOW_MODE) return;
   try { win.setAlwaysOnTop(true, 'floating'); } catch {}
   try { win.moveTop(); } catch {}
 }
@@ -725,7 +766,7 @@ function notifyQueue() {
     const assignments = ensureAssignmentsForFiles(files);
     win.webContents.send('queue-updated', { files, allPaths, assignments });
     // Auto-resurface for passive arrivals, but respect a user-explicit hide —
-    // Ctrl+Shift+A / × close set userHiddenToolbar=true and new Claude Code
+    // Ctrl+Shift+A / × close set userHiddenToolbar=true and new assistant
     // response clips shouldn't override that intent. Audio still plays.
     if (files.length > 0 && !win.isVisible() && !userHiddenToolbar) {
       forceOnTop();
@@ -977,7 +1018,7 @@ async function getForegroundTree() {
   try { return JSON.parse(line); } catch { return null; }
 }
 
-// Detect which Claude Code session owns the currently-focused terminal, if any.
+// Detect which assistant session owns the currently-focused terminal, if any.
 // Returns the 8-char session short, or null if no match (e.g. Chrome/PDF).
 // Used to colour-code highlight-to-speak clips with a matching J label.
 const SESSIONS_DIR = path.join(INSTALL_DIR, 'sessions');
@@ -1025,7 +1066,7 @@ async function detectActiveSession() {
       return fgMatches[0].short;
     }
 
-    // Tier 2: only one live Claude Code session exists -- must be that one.
+    // Tier 2: only one live assistant session exists -- must be that one.
     if (liveSessions.length === 1) {
       diag(`detectActiveSession: single-session fallback -> ${liveSessions[0].short}`);
       return liveSessions[0].short;
@@ -1694,8 +1735,20 @@ createIpcHandlers({
   getWatchdog: () => _watchdog,
   getWatchdogIntervalMs: () => WATCHDOG_INTERVAL_MS,
   testMode: process.env.TT_TEST_MODE === '1',
+  captureMode: WINDOW_MODE,
   setUserHidden: (v) => { userHiddenToolbar = v; },
 }).register();
+
+ipcMain.handle('demo-start-ready', () => {
+  if (!CAPTURE_MODE || process.env.TT_DEMO_SETTINGS_MODE !== '1') return true;
+  const flag = process.env.TT_DEMO_START_FLAG;
+  if (!flag) return false;
+  try {
+    return fs.existsSync(path.resolve(flag));
+  } catch {
+    return false;
+  }
+});
 
 let voiceProc = null;
 function isListeningEnabled() {
@@ -2046,14 +2099,18 @@ app.whenReady().then(() => {
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
 
-  const menu = Menu.buildFromTemplate([{
-    label: 'Audio',
-    submenu: [
-      { label: 'Toggle', accelerator: CFG.hotkeys.toggle_window, click: toggleWindow },
-      { label: 'Quit', accelerator: 'Control+Q', click: () => app.quit() }
-    ]
-  }]);
-  Menu.setApplicationMenu(menu);
+  if (CAPTURE_MODE) {
+    Menu.setApplicationMenu(null);
+  } else {
+    const menu = Menu.buildFromTemplate([{
+      label: 'Audio',
+      submenu: [
+        { label: 'Toggle', accelerator: CFG.hotkeys.toggle_window, click: toggleWindow },
+        { label: 'Quit', accelerator: 'Control+Q', click: () => app.quit() }
+      ]
+    }]);
+    Menu.setApplicationMenu(menu);
+  }
 
   // Register + log whether each global shortcut was actually claimed.
   // globalShortcut.register() returns false silently when another app

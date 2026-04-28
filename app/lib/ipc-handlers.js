@@ -68,6 +68,7 @@ function createIpcHandlers(deps) {
     isPathInside,
     getWatchdog,
     getWatchdogIntervalMs,
+    captureMode = false,
     // UX latch (post-v0.4): clicking × on the toolbar hides-and-remembers
     // so passive arrivals don't undo the user's explicit hide.
     setUserHidden = () => {},
@@ -551,7 +552,7 @@ function createIpcHandlers(deps) {
     ipcMain.handle('set-clickthrough', (_e, on) => {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
-      if (testMode) return true;
+      if (testMode || captureMode) return true;
       // Reload grace: the renderer's mousemove handler fires within
       // ~2s of did-finish-load, sees cursor off-bar, pushes
       // setClickthrough(true). That overrides main's post-reload
@@ -578,6 +579,7 @@ function createIpcHandlers(deps) {
     ipcMain.handle('set-panel-open', (_e, open) => {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
+      if (captureMode) return true;
       const dim = open ? WIN_EXPANDED : WIN_COLLAPSED;
       // If the bar is docked to the bottom edge, keep its bottom edge
       // pinned while the panel opens/closes — otherwise opening the

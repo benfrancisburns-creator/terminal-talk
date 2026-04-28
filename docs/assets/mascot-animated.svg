@@ -4,16 +4,16 @@
      Same rectangular-pixel mascot the live toolbar renders (see
      app/index.html #scrubberMascot), cycling through the 8 solid
      palette colours + 4 split arrangements — exactly what users see
-     in the product when they have multiple Claude Code sessions
+     in the product when they have multiple assistant sessions
      open. Pixelated cloud speech bubble (matching the desktop
      wallpaper hero at docs/assets/wallpaper/) crossfades through 7
-     phrases Claude Code actually says. Pure CSS animation via
+     Terminal Talk phrases. Pure CSS animation via
      embedded <style>, no JS — works in GitHub's README renderer.
 
      Palette source: app/lib/tokens.json BASE_COLOURS.
      Edit the @keyframes stops below to change the cycle.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of Claude Code phrases">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through session colours with a speech bubble of assistant phrases">
   <style><![CDATA[
     /* Colour-cycle via two CSS custom properties on the root element.
        Eight 1.25s stops in a 10s loop, one per base palette colour
@@ -168,13 +168,13 @@
        display (280, 92) — group translate (190, 52) plus cloud-grid
        centre (15 × 6 = 90, 6.6 × 6 ≈ 40). Branding phrase HEY JARVIS
        uppercased to match the wallpaper; runtime narrations keep
-       mixed casing ("Reading foo.py", "Cooked for 49s") because
-       that's literally what Claude Code emits. Rendered AFTER the
+       mixed casing ("Reading foo.py", "Codex commentary") because
+       Terminal Talk speaks both assistant output and app-generated status. Rendered AFTER the
        filtered cloud group so the filter doesn't double-drop-shadow
        the text. -->
   <g font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
     <text class="phrase p1" x="280" y="92" font-size="16" letter-spacing="1">HEY JARVIS</text>
-    <text class="phrase p2" x="280" y="92" font-size="14">Cooked for 49s</text>
+    <text class="phrase p2" x="280" y="92" font-size="13">Codex commentary</text>
     <text class="phrase p3" x="280" y="92" font-size="14">Reading foo.py</text>
     <text class="phrase p4" x="280" y="92" font-size="14">Moonwalking</text>
     <text class="phrase p5" x="280" y="92" font-size="13">Running npm test</text>

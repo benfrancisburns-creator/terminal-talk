@@ -77,7 +77,7 @@ function buildSvg({ bgB64, mascot, cloud }) {
      the generator after changing scripts/wallpaper-bg.html or
      scripts/render-hero-background.cjs).
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with an animated pixel mascot cycling through session colours and a pixelated cloud speech bubble crossfading through Claude Code phrases">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with an animated pixel mascot cycling through session colours and a pixelated cloud speech bubble crossfading through assistant phrases">
   <style><![CDATA[
     svg {
       color: #ffa726;
@@ -184,7 +184,7 @@ function buildSvg({ bgB64, mascot, cloud }) {
        the cloud-white group only). -->
   <g font-family="'Cascadia Code','Cascadia Mono',Consolas,monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
     <text class="phrase p1" x="${textX}" y="${textY}" font-size="26" letter-spacing="1.5">HEY JARVIS</text>
-    <text class="phrase p2" x="${textX}" y="${textY}" font-size="22">Cooked for 49s</text>
+    <text class="phrase p2" x="${textX}" y="${textY}" font-size="20">Codex commentary</text>
     <text class="phrase p3" x="${textX}" y="${textY}" font-size="22">Reading foo.py</text>
     <text class="phrase p4" x="${textX}" y="${textY}" font-size="24">Moonwalking</text>
     <text class="phrase p5" x="${textX}" y="${textY}" font-size="20">Running npm test</text>

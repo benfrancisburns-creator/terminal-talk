@@ -49,7 +49,7 @@ take security reports seriously and you'll hear back.
 In scope:
 
 - **Renderer isolation / sandbox escape** — anything that lets a
-  crafted string spoken by Claude execute code in the main process.
+  crafted string spoken from an assistant response execute code in the main process.
 - **IPC surface bypass** — calling an `ipcMain.handle(...)` from a path
   the renderer shouldn't have access to.
 - **Path traversal** in `delete-file`, session-PID file reads,
@@ -64,7 +64,7 @@ In scope:
   beyond the documented endpoints.
 - **Install-time footguns** in `install.ps1` (privilege escalation,
   writes outside `~/.terminal-talk/` / `~/.claude/settings.json`,
-  tamperable startup shortcuts).
+  tamperable Startup, Start Menu, Desktop, or Codex launcher shortcuts).
 
 Out of scope:
 

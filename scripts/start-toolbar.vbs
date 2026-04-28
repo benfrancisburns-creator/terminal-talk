@@ -1,7 +1,7 @@
 ' Launch the Terminal Talk toolbar silently (no console window).
 ' Uses the renamed terminal-talk.exe so processes are identifiable in
-' Task Manager. Dropped into Startup folder by install.ps1 so it
-' auto-starts on login.
+' Task Manager. Used by the Start Menu, Desktop and optional Startup
+' shortcuts installed by install.ps1.
 Set sh = CreateObject("WScript.Shell")
 home = sh.ExpandEnvironmentStrings("%USERPROFILE%")
 toolbar = home & "\.terminal-talk\app"

@@ -23,6 +23,81 @@ function _To-UtcDateTime {
     }
 }
 
+$script:TerminalTalkPaletteHex = @(
+    'ff5e5e',
+    'ffa726',
+    'ffd93d',
+    '4ade80',
+    '60a5fa',
+    'ee2bbd',
+    'c97b50',
+    'e0e0e0'
+)
+
+function _Clean-TitlePart {
+    param([string]$Value)
+    if (-not $Value) { return '' }
+    return ($Value -replace '[\r\n\t]+', ' ' -replace '\s{2,}', ' ').Trim()
+}
+
+function Get-TerminalTalkPaletteHex {
+    [CmdletBinding()]
+    param([int]$Index = 0)
+
+    $i = $Index % 24
+    if ($i -lt 0) { $i += 24 }
+    return $script:TerminalTalkPaletteHex[$i % 8]
+}
+
+function _Get-EntryValue {
+    param(
+        [object]$Entry = $null,
+        [string]$Name = ''
+    )
+
+    if (-not $Entry -or -not $Name) { return $null }
+    if ($Entry -is [System.Collections.IDictionary]) {
+        if ($Entry.Contains($Name)) { return $Entry[$Name] }
+        return $null
+    }
+    if ($Entry.PSObject.Properties.Name -contains $Name) {
+        return $Entry.$Name
+    }
+    return $null
+}
+
+function Get-TerminalTalkIdentityText {
+    [CmdletBinding()]
+    param(
+        [object]$Entry = $null,
+        [string]$FallbackLabel = 'Codex'
+    )
+
+    $slotNumber = 0
+    $index = _Get-EntryValue -Entry $Entry -Name 'index'
+    if ($null -ne $index) {
+        try { $slotNumber = [int]$index + 1 } catch { $slotNumber = 0 }
+    }
+
+    $label = ''
+    $entryLabel = _Get-EntryValue -Entry $Entry -Name 'label'
+    if ($entryLabel) {
+        $label = _Clean-TitlePart ([string]$entryLabel)
+    }
+    if (-not $label) { $label = _Clean-TitlePart $FallbackLabel }
+    if (-not $label) { $label = 'Codex' }
+
+    if ($label -match '^TT\s+\d+\b') {
+        return $label
+    }
+
+    if ($slotNumber -gt 0) {
+        return "TT $slotNumber ($label)"
+    }
+
+    return $label
+}
+
 function New-ProvisionalCodexShort {
     [CmdletBinding()]
     param(
@@ -155,19 +230,7 @@ function Format-CodexWindowTitle {
         [switch]$Attaching
     )
 
-    $slot = 'TT --'
-    if ($Entry -and $Entry.PSObject.Properties.Name -contains 'index') {
-        try {
-            $slot = ('TT {0:00}' -f ([int]$Entry.index + 1))
-        } catch {}
-    }
-
-    $label = ''
-    if ($Entry -and $Entry.PSObject.Properties.Name -contains 'label' -and $Entry.label) {
-        $label = [string]$Entry.label
-    }
-    $label = ($label -replace '[\r\n\t]+', ' ').Trim()
-    if (-not $label) { $label = 'Codex' }
+    $identity = Get-TerminalTalkIdentityText -Entry $Entry -FallbackLabel 'Codex'
 
     $shortText = ''
     if ($Short -and $Short -match '^[a-f0-9]{8}$') {
@@ -177,16 +240,18 @@ function Format-CodexWindowTitle {
     $project = ''
     try { $project = Split-Path -Leaf $CurrentDir } catch {}
     if (-not $project) { $project = $CurrentDir }
-    $project = ($project -replace '[\r\n\t]+', ' ').Trim()
+    $project = _Clean-TitlePart $project
 
-    $parts = @($slot, $label)
+    $parts = @($identity)
     if ($Attaching) {
         if ($project) { $parts += $project }
         $parts += 'attaching'
     } elseif ($shortText) {
         $parts += $shortText
+        $parts += 'Codex'
     } elseif ($project) {
         $parts += $project
+        $parts += 'Codex'
     }
 
     $title = (($parts | Where-Object { $_ -and $_.ToString().Trim().Length -gt 0 }) -join ' | ')
@@ -198,6 +263,8 @@ function Format-CodexWindowTitle {
 
 Export-ModuleMember -Function `
     New-ProvisionalCodexShort, `
+    Get-TerminalTalkIdentityText, `
+    Get-TerminalTalkPaletteHex, `
     Parse-CodexSessionMetaLine, `
     Get-CodexRolloutSessionMeta, `
     Select-CodexRolloutCandidate, `

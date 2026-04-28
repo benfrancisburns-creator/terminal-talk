@@ -1,7 +1,7 @@
 ﻿# Terminal Talk statusline for Claude Code.
-# Reads session context JSON from stdin, emits an emoji circle derived from a
+# Reads session context JSON from stdin, emits an ANSI-coloured glyph derived from a
 # hash of the session ID. The Terminal Talk renderer uses the SAME hash to
-# colour the queue dot, so your terminal's statusline emoji matches the dot.
+# colour the queue dot, so your terminal's statusline glyph matches the dot.
 
 $ErrorActionPreference = 'SilentlyContinue'
 # Force UTF-8 stdout so the emoji survives Windows' default ANSI codepage.

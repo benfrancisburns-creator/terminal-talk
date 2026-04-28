@@ -50,6 +50,131 @@ html, body {
   opacity: 1;
 }
 
+body.window-mode .bar {
+  margin: 10px;
+  background: rgba(24, 26, 32, 0.82);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+body.window-mode .panel {
+  margin: 0 10px 10px;
+  background: rgba(24, 26, 32, 0.84);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  max-height: calc(100vh - 164px);
+}
+
+body.demo-settings-mode,
+body.demo-settings-mode * {
+  cursor: none !important;
+}
+
+.demo-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  transform: translate3d(42px, 42px, 0);
+  filter: drop-shadow(0 4px 9px rgba(0, 0, 0, 0.55));
+}
+
+.demo-cursor::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-top: 18px solid #fff;
+  border-right: 12px solid transparent;
+  transform: rotate(-12deg);
+}
+
+.demo-cursor::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0);
+  transform: translate(-50%, -50%) scale(0.2);
+}
+
+.demo-cursor.clicking::after {
+  animation: demo-click-ring 260ms ease-out;
+}
+
+.demo-select-active {
+  outline: 2px solid rgba(126, 231, 135, 0.9) !important;
+  outline-offset: 2px;
+}
+
+.demo-select-popover {
+  position: fixed;
+  z-index: 9999;
+  padding: 4px;
+  background: rgba(22, 24, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.52);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.25;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.demo-select-popover.demo-select-inline {
+  position: static;
+  width: calc(100% - 190px);
+  margin: -4px 0 4px 190px;
+}
+
+.demo-select-popover.demo-select-inline .demo-select-option {
+  min-height: 26px;
+  padding: 5px 9px;
+}
+
+.demo-select-option {
+  min-height: 28px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.demo-select-option.selected {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.demo-select-option.target {
+  background: rgba(126, 231, 135, 0.18);
+  color: #eaffef;
+}
+
+@keyframes demo-click-ring {
+  from {
+    border-color: rgba(126, 231, 135, 0.95);
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 1;
+  }
+  to {
+    border-color: rgba(126, 231, 135, 0);
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
 .bar-top {
   display: flex;
   align-items: center;
@@ -535,10 +660,10 @@ html, body {
 
 /* --- JARVIS BADGE ------------------------------------------------------
    Shown in place of the mascot when the currently-playing clip came from
-   highlight-to-speak ("hey jarvis" / Ctrl+Shift+S), not a Claude Code
-   response. Keeps the mascot reserved for Claude Code content so the
-   visual identity doesn't blur. Positioned by the same JS math as the
-   mascot so the thumb lines up exactly on the scrubber rail.
+   highlight-to-speak ("hey jarvis" / Ctrl+Shift+S), not an assistant
+   response. Keeps manual read-aloud clips visually distinct. Positioned by
+   the same JS math as the mascot so the thumb lines up exactly on the
+   scrubber rail.
    -------------------------------------------------------------------- */
 .scrubber-jarvis {
   position: absolute;

@@ -81,7 +81,7 @@
       </svg>
       <!-- Shown instead of the mascot when the currently-playing clip is a
            highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clip. The mascot
-           is reserved for Claude Code responses — see renderer.js
+           is reserved for assistant response clips — see renderer.js
            updateScrubberMode() + README "About the mascot" for the why. -->
       <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
     </div>
@@ -165,7 +165,7 @@
             </div>
           </div>
           <div class="row">
-            <label for="heartbeatToggle" title="When Claude Code is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Heartbeat narration</label>
+            <label for="heartbeatToggle" title="Claude Code only. When Claude is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Claude heartbeat narration</label>
             <div class="pill-toggle tri-ctrl">
               <input type="checkbox" id="heartbeatToggle" class="pill-toggle-input" checked>
               <button type="button" class="tri-btn on"  data-val="1">On</button>
@@ -173,7 +173,7 @@
             </div>
           </div>
           <div class="row">
-            <label for="incToolCalls" title="Speak short ephemeral clips during tool calls (e.g. 'Reading foo.py', 'Searching files') so you hear progress while Claude works. Off silences these but keeps Claude's full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Tool-call narration</label>
+            <label for="incToolCalls" title="Claude Code only. Speak short ephemeral clips during tool calls (e.g. 'Reading foo.py', 'Searching files') so you hear progress while Claude works. Off silences these but keeps Claude's full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Claude tool-call narration</label>
             <div class="pill-toggle tri-ctrl">
               <input type="checkbox" id="incToolCalls" class="pill-toggle-input" checked>
               <button type="button" class="tri-btn on"  data-val="1">On</button>
@@ -284,14 +284,14 @@
           </tbody>
         </table>
         <p class="panel-hint">
-          Tip: labels you set on a session show up next to Claude's statusline glyph and in Codex
-          launcher titles, so the toolbar row and the terminal stay in sync.
+          Tip: labels you set on a session show up next to Claude's statusline glyph and in the
+          Terminal Talk Codex tab title, so the toolbar row and the terminal stay in sync.
         </p>
         <p class="panel-hint">
           About the mascot: the walking character on the scrubber is a homage to
           Claude Code's thinking-spinner humour. The verbs that float above his head
           (Moonwalking, Finagling, Pontificating...) are the same list Claude Code
-          itself uses while thinking. He only appears while a Claude Code response is
+          itself uses while thinking. He appears while assistant response clips are
           playing; highlight-to-speak clips show a plain <b>J</b> badge instead.
           No affiliation with Anthropic — this is a fan project.
         </p>

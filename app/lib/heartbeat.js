@@ -85,6 +85,8 @@
   // silent stretches hear occasional contextual phrases rather than
   // five random words in a row.
   const PHRASE_MIX_RATIO = 0.4;
+  const HEARTBEAT_INITIAL_MS = 5000;
+  const HEARTBEAT_INTERVAL_MS = 8000;
 
   function pickHeartbeatVerb(rng) {
     const r = (typeof rng === 'function') ? rng : Math.random;
@@ -130,8 +132,8 @@
       heartbeatSilentSince,
       lastHeartbeatAt,
       workingSessionsCache,
-      initialMs = 5000,
-      intervalMs = 8000,
+      initialMs = HEARTBEAT_INITIAL_MS,
+      intervalMs = HEARTBEAT_INTERVAL_MS,
     } = state || {};
 
     if (!heartbeatEnabled) return { type: 'skip' };
@@ -156,6 +158,8 @@
     SPINNER_VERBS,
     THINKING_PHRASES,
     PHRASE_MIX_RATIO,
+    HEARTBEAT_INITIAL_MS,
+    HEARTBEAT_INTERVAL_MS,
     pickHeartbeatVerb,
     decideHeartbeatAction,
   };

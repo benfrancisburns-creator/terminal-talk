@@ -4586,15 +4586,20 @@ describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
     }
   });
 
-  it('renderer settingsBtn click calls settingsForm.onPanelOpen() when opening', () => {
-    // Match the settingsBtn click handler. Within the `if (open)`
-    // branch, settingsForm.onPanelOpen() must be called so the
-    // collapse decision re-applies.
-    const m = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
-    if (!m) throw new Error('settingsBtn click handler not found');
-    const body = m[0];
+  it('renderer settings open path calls settingsForm.onPanelOpen() when opening', () => {
+    // The click handler delegates to setSettingsOpen(open). The lifecycle
+    // call may live in that helper as long as it is still gated to the
+    // opening path so the collapse decision re-applies once per panel open.
+    const helper = rendererSrc.match(/async function setSettingsOpen\s*\(\s*open\s*\)\s*\{[\s\S]*?\n\}/);
+    if (!helper) throw new Error('setSettingsOpen(open) helper not found');
+    const body = helper[0];
     if (!/if\s*\(open\)[\s\S]*?settingsForm\.onPanelOpen\(\)/.test(body)) {
-      throw new Error('settingsBtn click handler must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+      throw new Error('setSettingsOpen(open) must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+    }
+    const click = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
+    if (!click) throw new Error('settingsBtn click handler not found');
+    if (!/setSettingsOpen\s*\(\s*open\s*\)/.test(click[0])) {
+      throw new Error('settingsBtn click handler must delegate to setSettingsOpen(open) — see #25');
     }
   });
 
@@ -14561,6 +14566,7 @@ describe('CODEX SESSION WATCHER', () => {
 describe('CODEX TERMINAL IDENTITY', () => {
   const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
   const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
+  const wtLaunchPath = path.join(__dirname, '..', 'app', 'codex-wt-launch.ps1');
   const importMod = `Import-Module '${modPath}' -Force -DisableNameChecking`;
 
   it('Parse-CodexSessionMetaLine extracts session id, short, cwd, and timestamp', () => {
@@ -14629,7 +14635,33 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Format-CodexWindowTitle -Short '019dcb88' -Entry ([pscustomobject]@{ index = 1; label = 'Voice output' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk'`
     );
-    assertEqual(out, 'TT 02 | Voice output | 019dcb88');
+    assertEqual(out, 'TT 2 (Voice output) | 019dcb88 | Codex');
+  });
+
+  it('Get-TerminalTalkIdentityText does not duplicate an existing TT label', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Get-TerminalTalkIdentityText -Entry ([pscustomobject]@{ index = 1; label = 'TT 2 (Voice output)' })`
+    );
+    assertEqual(out, 'TT 2 (Voice output)');
+  });
+
+  it('Get-TerminalTalkIdentityText reads registry hashtables as well as objects', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `Get-TerminalTalkIdentityText -Entry @{ index = 6; label = '' } -FallbackLabel Codex`
+    );
+    assertEqual(out, 'TT 7 (Codex)');
+  });
+
+  it('Get-TerminalTalkPaletteHex maps split slots back to their primary colour', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = Get-TerminalTalkPaletteHex -Index 4; `
+      + `$b = Get-TerminalTalkPaletteHex -Index 12; `
+      + `Write-Output "$a|$b"`
+    );
+    assertEqual(out, '60a5fa|60a5fa');
   });
 
   it('Format-CodexWindowTitle falls back to attaching + project name before bind', () => {
@@ -14638,14 +14670,16 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Format-CodexWindowTitle -Short 'deadbeef' -Entry ([pscustomobject]@{ index = 0; label = '' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -Attaching`
     );
-    assertEqual(out, 'TT 01 | Codex | terminal-talk | attaching');
+    assertEqual(out, 'TT 1 (Codex) | terminal-talk | attaching');
   });
 
-  it('codex-launch.ps1 parses without PowerShell syntax errors', () => {
+  it('Codex launcher scripts parse without PowerShell syntax errors', () => {
     const launchEsc = launchPath.replace(/'/g, "''");
+    const wtLaunchEsc = wtLaunchPath.replace(/'/g, "''");
     const out = runPowershellBody(
       `$tokens = $null; $errors = $null; `
       + `[System.Management.Automation.Language.Parser]::ParseFile('${launchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + `[System.Management.Automation.Language.Parser]::ParseFile('${wtLaunchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
       + `Write-Output $errors.Count`
     );
     assertEqual(out, '0');
@@ -14663,13 +14697,49 @@ describe('CODEX TERMINAL IDENTITY', () => {
       throw new Error('codex-launch.ps1 must create a provisional short for pre-bind identity');
     }
     if (!/Format-CodexWindowTitle/.test(src)) {
-      throw new Error('codex-launch.ps1 must format a Terminal Talk title badge');
+      throw new Error('codex-launch.ps1 must format a Terminal Talk title');
+    }
+    if (!/PreassignedShort/.test(src)) {
+      throw new Error('codex-launch.ps1 must accept preassigned identity from the Windows Terminal launcher');
     }
     if (!/Write-SessionPidFile/.test(src)) {
       throw new Error('codex-launch.ps1 must stamp a per-PID session file once the rollout binds');
     }
     if (!/Start-Process[\s\S]*-NoNewWindow[\s\S]*-PassThru/.test(src)) {
       throw new Error('codex-launch.ps1 must launch Codex in the current terminal via Start-Process -NoNewWindow -PassThru');
+    }
+  });
+
+  it('codex-wt-launch.ps1 reserves registry identity and passes tab colour to Windows Terminal', () => {
+    const src = fs.readFileSync(wtLaunchPath, 'utf8');
+    if (!/Update-SessionAssignment/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must reserve a registry slot before opening Windows Terminal');
+    }
+    if (!/Get-TerminalTalkPaletteHex/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must derive tab colour from the same Terminal Talk palette');
+    }
+    if (!/--tabColor/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must pass --tabColor to wt.exe');
+    }
+    if (!/--suppressApplicationTitle/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must keep PowerShell/Codex from overwriting the TT tab title');
+    }
+    if (!/PreassignedShort/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must hand the reserved short to codex-launch.ps1');
+    }
+  });
+
+  it('install and uninstall scripts manage Terminal Talk Codex shortcuts', () => {
+    const installSrc = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
+    const uninstallSrc = fs.readFileSync(path.join(__dirname, '..', 'uninstall.ps1'), 'utf8');
+    if (!/codex-wt-launch\.ps1/.test(installSrc)) {
+      throw new Error('install.ps1 must route Terminal Talk Codex shortcuts through codex-wt-launch.ps1');
+    }
+    if (!/DesktopDirectory/.test(installSrc) || !/Terminal Talk Codex\.lnk/.test(installSrc)) {
+      throw new Error('install.ps1 must install a Desktop Terminal Talk Codex shortcut when desktop shortcuts are enabled');
+    }
+    if (!/desktopCodexShortcut/.test(uninstallSrc)) {
+      throw new Error('uninstall.ps1 must remove the Desktop Terminal Talk Codex shortcut');
     }
   });
 });

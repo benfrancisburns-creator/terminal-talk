@@ -8,29 +8,29 @@ Single-window launch (one Tuesday-to-Thursday, ideally 4-7pm UK / 8-11am Pacific
 
 **Title** (use exactly — HN punishes embellishment):
 ```
-Show HN: Terminal Talk – Voice workflow for Claude Code, free, no signup
+Show HN: Terminal Talk – Voice workflow for Claude Code and Codex CLI
 ```
 
 **URL**: `https://github.com/benfrancisburns-creator/terminal-talk`
 
 **Text** (optional but recommended for Show HN):
 ```
-I built this because I was getting RSI from constantly reading Claude Code's
-output. Wanted something that just spoke responses aloud and let me say
+I built this because I was getting RSI from constantly reading terminal coding
+agent output. Wanted something that spoke Claude Code and Codex CLI replies
+aloud and let me say
 "hey jarvis" to read any highlighted text — without signing up for anything
 or sending audio to a cloud service.
 
 How it works:
-- Auto-speaks every Claude Code response via a Stop hook
+- Auto-speaks Claude Code via hooks and Codex CLI via local session logs
 - "Hey jarvis" or Ctrl+Shift+S reads highlighted text from any app
-- Each Claude Code terminal gets its own colour (dot on toolbar + emoji in
-  statusline) so you can tell which session just spoke. Optional per-session
-  voice override too — give different terminals different voices and you can
-  identify them by ear.
+- Each Claude Code or Codex session gets its own colour and optional voice.
+  Claude can show a matching statusline glyph; Terminal Talk Codex can show a
+  matching tab title and Windows Terminal tab colour when launched from the shortcut.
 
-Stack is small and visible: Electron toolbar (~500 lines JS/HTML/CSS), Python
-for wake-word (openWakeWord, runs offline on CPU) and edge-tts wrapper, a few
-PowerShell hooks. ~6,000 LOC, 76-test harness, MIT.
+Stack is visible: Electron toolbar, Python for wake-word (openWakeWord, runs
+offline on CPU) and edge-tts wrapper, PowerShell hooks for Claude, and a JS
+Codex rollout watcher. Large test harness, MIT.
 
 Free tier uses Microsoft Edge's neural voices — same endpoint Edge browser
 uses for "Read Aloud", no API key needed. Optional OpenAI TTS fallback if
@@ -46,24 +46,24 @@ Repo: https://github.com/benfrancisburns-creator/terminal-talk
 
 **Title**:
 ```
-[Show] I built Terminal Talk — Claude Code reads its responses aloud + "hey jarvis" reads highlighted text. Free, no signup.
+[Show] I built Terminal Talk — Claude Code and Codex CLI read replies aloud + "hey jarvis" reads highlighted text. Free, no signup.
 ```
 
 **Body**:
 ```
-Got tired of reading every single Claude Code reply, so I built this:
+Got tired of reading every single terminal-agent reply, so I built this:
 
-- Every Claude Code response auto-speaks via a Stop hook
+- Claude Code auto-speaks via hooks; Codex CLI auto-speaks via local session logs
 - Say "hey jarvis" with text highlighted (anywhere — browser, PDF, VS Code) and
   it reads it aloud
-- Each Claude Code terminal gets a unique colour dot on a tiny floating toolbar
-- You can give each terminal its own voice too, so two terminals sound different
+- Each Claude/Codex session gets a unique colour dot on a tiny floating toolbar
+- You can give each session its own voice too, so two sessions sound different
 
 Free by default — uses Microsoft Edge's neural voices (no API key required) and
 openWakeWord for the wake word (runs entirely offline on CPU). Optional OpenAI
 TTS fallback if you want it.
 
-Stack: Electron toolbar + Python wake listener + PowerShell hooks. MIT licensed.
+Stack: Electron toolbar + Python wake listener + PowerShell hooks + Codex watcher. MIT licensed.
 Windows-only today; Mac/Linux ports on the roadmap (no ETA).
 
 Repo: https://github.com/benfrancisburns-creator/terminal-talk
@@ -77,10 +77,10 @@ Happy to answer questions.
 
 **Title**:
 ```
-Terminal Talk — TTS playback for Claude Code (and any highlighted text), free, runs locally
+Terminal Talk — TTS playback for Claude Code, Codex CLI, and highlighted text
 ```
 
-**Body**: (same as r/ClaudeAI but lead with "for those using Claude Code in their terminal").
+**Body**: (same as r/ClaudeAI but lead with "for those using terminal coding agents").
 
 ### 4. Reddit r/programming
 
@@ -89,9 +89,9 @@ Skip unless r/ClaudeAI does well. r/programming is harsh on self-promotion.
 ### 5. Twitter / X post
 
 ```
-Built Terminal Talk: a free voice workflow for Claude Code.
+Built Terminal Talk: a free voice workflow for Claude Code and Codex CLI.
 
-→ Auto-speaks Claude's terminal responses
+→ Auto-speaks Claude and Codex replies
 → Say "hey jarvis" to read any highlighted text aloud
 → Each terminal gets its own colour + optional voice
 → Edge TTS + openWakeWord = no signup, runs locally
@@ -109,10 +109,11 @@ Tag in a reply: `@AnthropicAI`
 Keep it short, the community values it:
 
 ```
-Hey 👋 just shipped Terminal Talk — free open-source voice workflow for Claude Code.
+Hey 👋 just shipped Terminal Talk — free open-source voice workflow for Claude Code and Codex CLI.
 
-The Stop hook speaks responses aloud, "hey jarvis" reads any highlighted text,
-each terminal gets a unique colour identifier on a small floating toolbar.
+Claude hooks and Codex session logs speak responses aloud, "hey jarvis" reads
+any highlighted text, each session gets a unique colour identifier on a small
+floating toolbar.
 Pairs nicely with a speech-to-text tool for fully hands-free use.
 
 Free + offline wake-word + Edge TTS, no signup needed.
@@ -140,7 +141,7 @@ This is the single most-important thing. People won't read about a voice tool, t
 What to record (~30 seconds):
 1. **0–5s**: A Claude Code terminal visible. Send a short message ("Explain rate limiting in two sentences"). Claude responds and you hear it spoken aloud.
 2. **5–15s**: Switch to a browser tab, highlight a paragraph. Say _"hey jarvis"_. Hear it read aloud.
-3. **15–25s**: Open a second Claude Code terminal. Send another message. Show the toolbar — two different colour dots. Briefly point out they're different.
+3. **15–25s**: Open **Terminal Talk Codex**, send another prompt, and show the toolbar — two different colour dots for Claude and Codex. Briefly point out they're the same Terminal Talk queue.
 4. **25–30s**: End on the toolbar with both dots visible.
 
 How to record on Windows:

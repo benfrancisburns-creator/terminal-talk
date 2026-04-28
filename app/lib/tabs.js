@@ -1,4 +1,4 @@
-// Tabs component — one tab per active Claude Code session, plus [All N]
+// Tabs component — one tab per active assistant session, plus [All N]
 // on the left and a [▾ N idle] overflow for stale sessions on the right.
 // Clicking a tab filters the dot-strip to that session's clips. Clicking
 // [All] clears the filter.

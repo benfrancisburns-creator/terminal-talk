@@ -4,7 +4,7 @@
   Terminal Talk uninstaller. Reverses install.ps1.
 .DESCRIPTION
   - Stops running Electron toolbar + Python listener processes.
-  - Removes the Startup shortcut.
+  - Removes Startup, Start Menu and Desktop shortcuts.
   - Removes Stop, Notification and PreToolUse hooks from ~/.claude/settings.json (backup kept).
   - Optionally deletes %USERPROFILE%\.terminal-talk\ (preserves config.json if requested).
 #>
@@ -12,7 +12,14 @@
 $ErrorActionPreference = 'SilentlyContinue'
 $installDir = Join-Path $env:USERPROFILE '.terminal-talk'
 $startupFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+$programsFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $vbsStartup = Join-Path $startupFolder 'terminal-talk.vbs'
+$launcherVbs = Join-Path $installDir 'terminal-talk.vbs'
+$startMenuShortcut = Join-Path $programsFolder 'Terminal Talk.lnk'
+$codexShortcut = Join-Path $programsFolder 'Terminal Talk Codex.lnk'
+$desktopDir = [Environment]::GetFolderPath('DesktopDirectory')
+$desktopShortcut = Join-Path $desktopDir 'Terminal Talk.lnk'
+$desktopCodexShortcut = Join-Path $desktopDir 'Terminal Talk Codex.lnk'
 $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
 
 function Write-Step($msg) { Write-Host ""; Write-Host ">> $msg" -ForegroundColor Cyan }
@@ -46,13 +53,26 @@ Get-Process -Name python -ErrorAction SilentlyContinue | ForEach-Object {
 }
 Write-Ok "Processes stopped"
 
-# 2. Startup shortcut
-Write-Step "Removing Startup shortcut"
-if (Test-Path $vbsStartup) {
-    Remove-Item $vbsStartup -Force
-    Write-Ok "Removed $vbsStartup"
-} else {
-    Write-Warn2 "Startup shortcut not found (already gone)"
+# 2. Windows shortcuts
+Write-Step "Removing Windows shortcuts"
+$shortcutTargets = @(
+    $vbsStartup,
+    $startMenuShortcut,
+    $codexShortcut,
+    $desktopShortcut,
+    $desktopCodexShortcut,
+    $launcherVbs
+)
+$removedShortcutCount = 0
+foreach ($p in $shortcutTargets) {
+    if (Test-Path $p) {
+        Remove-Item $p -Force
+        $removedShortcutCount++
+        Write-Ok "Removed $p"
+    }
+}
+if ($removedShortcutCount -eq 0) {
+    Write-Warn2 "No Terminal Talk shortcuts found (already gone)"
 }
 
 # 3. Claude Code hooks
