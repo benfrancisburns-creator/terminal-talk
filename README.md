@@ -152,11 +152,13 @@ All hotkeys are **global** — they work from any app. Nothing is captured from 
 | `Ctrl+Shift+P` | Pause / resume playback |
 | `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
 | `Ctrl+R` | Reload toolbar (same as Settings › Reload button) — use if the UI ever looks stuck |
-| Say "hey jarvis" | Same as `Ctrl+Shift+S` on highlighted text |
+| Say "hey jarvis" | Reads highlighted text when followed by silence, or accepts short commands like play / pause / next / back / stop |
 
 ### Wake word
 
-Highlight text, say **"hey jarvis"**, hear it. The 30 MB model lives in `~/.terminal-talk/...` and runs entirely on CPU — no audio leaves your machine for wake-word detection.
+Highlight text, say **"hey jarvis"**, pause, and Terminal Talk reads the selection. The 30 MB model lives in `~/.terminal-talk/...` and runs entirely on CPU — no audio leaves your machine for wake-word detection.
+
+After the wake word, Terminal Talk briefly listens for a small local command vocabulary (`play`, `pause`, `resume`, `next`, `back`, `stop`, `cancel`). A recognised command controls the toolbar playback; silence falls through to the highlighted-text path. The manual `Ctrl+Shift+S` hotkey skips wake-word recognition and reads the current selection directly.
 
 Want a different wake word? Edit `WAKE_WORDS` in `~/.terminal-talk/app/wake-word-listener.py`. openWakeWord ships `hey_mycroft`, `hey_rhasspy`, `alexa`, `timer`, `weather`.
 
@@ -467,40 +469,36 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding new tests.
 Terminal Talk is the hub. Claude Code, Codex CLI, and highlight-to-speak are separate inputs that feed the same local queue and toolbar:
 
 ```
-┌──────────────────────────────┐      ┌──────────────────────────────┐
-│ Claude Code                  │      │ OpenAI Codex CLI             │
-│ UserPromptSubmit / PreToolUse│      │ ~/.codex/sessions/*.jsonl    │
-│ Stop hooks + transcript watch│      │ 1 s rollout watcher          │
-└──────────────┬───────────────┘      └──────────────┬───────────────┘
-               │                                     │
-               ▼                                     ▼
-┌──────────────────────────────┐      ┌──────────────────────────────┐
-│ synth_turn.py                │      │ codex-session-watcher.js     │
-│ streaming body, questions,   │      │ commentary/final messages,   │
-│ tool clips, footer closer    │      │ inline Edge/OpenAI synth     │
-└──────────────┬───────────────┘      └──────────────┬───────────────┘
-               │                                     │
-               └──────────────┬──────────────────────┘
-                              ▼
-                  ~/.terminal-talk/queue/
-                  .mp3 / .wav / metadata / logs
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ Terminal Talk Electron toolbar                                     │
-│ dot strip, tabs, transcript panel, session controls, audio-player  │
-│ mic auto-pause, master volume, tray, Desktop/Start Menu relaunch   │
-└────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────┐
-│ "Hey jarvis" / Ctrl+Shift+S  │
-│ openWakeWord + global hotkey │
-│ clipboard capture + session  │
-│ detection -> same queue      │
-└──────────────────────────────┘
+┌──────────────────────────────┐      ┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ Claude Code                  │      │ OpenAI Codex CLI             │      │ "Hey jarvis" / Ctrl+Shift+S  │
+│ UserPromptSubmit / PreToolUse│      │ ~/.codex/sessions/*.jsonl    │      │ openWakeWord + global hotkey │
+│ Stop hooks + transcript watch│      │ selected rollout watcher     │      │ selected text + active app   │
+└──────────────┬───────────────┘      └──────────────┬───────────────┘      └──────────────┬───────────────┘
+               │                                     │                                     │
+               ▼                                     ▼                                     ▼
+┌──────────────────────────────┐      ┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ synth_turn.py                │      │ codex-session-watcher.js     │      │ speakClipboard()             │
+│ streaming body, questions,   │      │ commentary/final messages,   │      │ Ctrl+C capture, stripForTTS, │
+│ tool clips, footer closer    │      │ inline Edge/OpenAI synth     │      │ priority J-clips             │
+└──────────────┬───────────────┘      └──────────────┬───────────────┘      └──────────────┬───────────────┘
+               │                                     │                                     │
+               └─────────────────────┬───────────────┴─────────────────────┬───────────────┘
+                                     ▼                                     │
+                         ~/.terminal-talk/queue/ ◄────────────────────────┘
+                         .mp3 / .wav / metadata / logs
+                                     │
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Terminal Talk Electron toolbar                                                                 │
+│ dot strip, priority J-clips, tabs, transcript panel, session controls, audio-player             │
+│ mic auto-pause, master volume, tray, Desktop/Start Menu relaunch                                │
+└──────────────────────────────▲─────────────────────────────────────────────────────────────────┘
+                               │
+             ~/.terminal-talk/voice-command.json
+             post-wake play / pause / next / back / stop commands
 ```
 
-The shared registry lives at `~/.terminal-talk/session-colours.json`. Claude hooks/statusline, the Codex watcher/launcher, and Electron user edits all read and write that registry under a file lock, so colours, labels, voices, mute/focus state, and speech-includes stay consistent across agent paths. Claude-only extensions currently include tool-call narration, permission prompts, heartbeat verbs, and the terminal footer closer because those rely on Claude Code hook and terminal-buffer surfaces that Codex does not expose yet.
+The shared registry lives at `~/.terminal-talk/session-colours.json`. Claude hooks/statusline, the Codex watcher/launcher, the Hey Jarvis foreground-window detector, and Electron user edits all read and write that registry under a file lock, so colours, labels, voices, mute/focus state, and speech-includes stay consistent across agent paths. Hey Jarvis clips are priority **J-clips**: they jump the queue, inherit the active tracked terminal colour when one can be detected, and fall back to neutral grey from browsers/PDFs/other apps. Claude-only extensions currently include tool-call narration, permission prompts, heartbeat verbs, and the terminal footer closer because those rely on Claude Code hook and terminal-buffer surfaces that Codex does not expose yet.
 
 ---
 
@@ -512,7 +510,7 @@ The shared registry lives at `~/.terminal-talk/session-colours.json`. Claude hoo
 | Nothing plays after "hey jarvis" | First check the mic listener is on — `Ctrl+Shift+J` toggles it, and a chime confirms (high = on, low = off). If the mic is on and still nothing plays, `tail ~/.terminal-talk/queue/_toolbar.log`. Common causes there: edge-tts network wobble with no OpenAI fallback key, or the clipboard was empty when you said the wake word (highlight text before triggering). |
 | Mic locked on, draining battery | `Ctrl+Shift+J` to stop the listener (high chime = on, low chime = off). |
 | Hook not firing in Claude Code | Verify `~/.claude/settings.json` `Stop` hook command points to `$env:USERPROFILE\.terminal-talk\hooks\speak-response.ps1`. |
-| Clipboard stays empty after "hey jarvis" | Some apps (very few) don't respond to programmatic Ctrl+C. Try a different app or `Ctrl+Shift+S` manually. |
+| Clipboard stays empty after "hey jarvis" | The wake word can be working while the foreground app refuses automated copy. Terminal Talk briefly sends a copy command internally to capture the highlighted text; if that app blocks it, no clip can be made. Reselect the text, make sure the source app still has focus, or test the same flow in Notepad / a browser. |
 | Dropdown text invisible (white-on-white) | Indicates Electron's `nativeTheme.themeSource` didn't apply on your build. Reinstall to update. |
 | Two terminals on the same colour | Run `node terminal-talk/scripts/run-tests.cjs` — if statusline tests fail, edge-tts service is unreachable. If they pass, restart both terminals. |
 | I killed Terminal Talk in Task Manager and need it back | Open **Terminal Talk** from the Desktop or Start Menu. Use **Terminal Talk Codex** only when you want to start a Codex terminal with the TT title and tab colour. |
