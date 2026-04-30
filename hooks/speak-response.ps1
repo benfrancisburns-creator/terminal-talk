@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'SilentlyContinue'
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $queueDir = Join-Path $ttHome 'queue'
 $edgeScript = Join-Path $ttHome 'app\edge_tts_speak.py'
 $configPath = Join-Path $ttHome 'config.json'
@@ -286,9 +286,17 @@ if (Test-Path $synthScript) {
             $spawnArgs += '--footer-phrase'
             $spawnArgs += $footerPhrase
         }
-        Start-Process -FilePath 'python' -ArgumentList $spawnArgs -WindowStyle Hidden -WorkingDirectory $ttHome
-        Log "Stop: spawned synth_turn.py (streaming)"
-        exit 0
+        $errPath = Join-Path $queueDir "synth-stop-$sessionShort.err"
+        $proc = Start-Process -FilePath 'python' -ArgumentList $spawnArgs -WindowStyle Hidden -WorkingDirectory $ttHome -RedirectStandardError $errPath -PassThru
+        Start-Sleep -Milliseconds 250
+        if ($proc.HasExited -and $proc.ExitCode -ne 0) {
+            $err = if (Test-Path $errPath) { (Get-Content $errPath -Raw).Trim() } else { '' }
+            $errSnip = $err.Substring(0, [Math]::Min(500, $err.Length))
+            Log "Stop: synth_turn.py exited rc=$($proc.ExitCode) stderr=$errSnip -- falling through to legacy"
+        } else {
+            Log "Stop: spawned synth_turn.py pid=$($proc.Id) (streaming)"
+            exit 0
+        }
     } catch {
         Log "Stop: streaming spawn failed, falling through to legacy: $($_.Exception.Message)"
     }
@@ -314,6 +322,41 @@ for ($i = $lines.Count - 1; $i -ge 0; $i--) {
 if (-not $text) { Log "EXIT: no text"; exit 0 }
 
 $clean = $text
+
+# Markdown tables: speak the shape and a compact first-row sample instead
+# of feeding raw pipe separators to TTS.
+function Convert-TableCellSummary($cell) {
+    $s = [string]$cell
+    $s = [regex]::Replace($s, '<[^>]+>', ' ')
+    $s = [regex]::Replace($s, '\[([^\]]+)\]\([^)]+\)', '$1')
+    $s = [regex]::Replace($s, '`+([^`\n]+?)`+', '$1')
+    $s = [regex]::Replace($s, '[*_~|]+', ' ')
+    $s = [regex]::Replace($s, '\s+', ' ').Trim()
+    return $s
+}
+$clean = [regex]::Replace(
+    $clean,
+    '(?m)^[ \t]*\|(.+)\|[ \t]*\r?\n^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*\r?\n((?:^[ \t]*\|.+\|[ \t]*\r?\n?)+)',
+    {
+        param($m)
+        $headers = @($m.Groups[1].Value -split '\|' | ForEach-Object { Convert-TableCellSummary $_ } | Where-Object { $_ })
+        $rowLines = @($m.Groups[2].Value -split "\r?\n" | Where-Object { $_ -match '^\s*\|' })
+        $rowCount = $rowLines.Count
+        if ($headers.Count -eq 0) { return "Table with $rowCount rows.`n" }
+        $plural = if ($rowCount -eq 1) { 'row' } else { 'rows' }
+        $sample = ''
+        if ($rowLines.Count -gt 0) {
+            $first = @((($rowLines[0] -replace '^\s*\||\|\s*$', '') -split '\|') | ForEach-Object { Convert-TableCellSummary $_ })
+            $pairs = New-Object System.Collections.ArrayList
+            $max = [Math]::Min([Math]::Min($headers.Count, $first.Count), 3)
+            for ($i = 0; $i -lt $max; $i++) {
+                if ($headers[$i] -and $first[$i]) { [void]$pairs.Add("$($headers[$i]): $($first[$i])") }
+            }
+            if ($pairs.Count -gt 0) { $sample = ' First row: ' + (($pairs.ToArray()) -join '; ') + '.' }
+        }
+        return "Table with $rowCount $plural. Columns: $($headers -join ', ').$sample`n"
+    }
+)
 
 # Code blocks: three-way decision per fenced block. See app/lib/text.js
 # for the full rationale. Short version: stripping 100% of fenced
@@ -349,6 +392,45 @@ function Test-LooksLikeCode($body) {
     return $false
 }
 
+function Convert-CodeLanguageName($lang) {
+    $key = ([string]$lang).Trim().ToLowerInvariant()
+    $names = @{
+        js='javascript'; jsx='javascript'; cjs='javascript'; mjs='javascript'
+        ts='typescript'; tsx='typescript'; py='python'
+        ps1='powershell'; psm1='powershell'; pwsh='powershell'
+        sh='shell'; bash='shell'; zsh='shell'; yml='yaml'
+    }
+    if ($names.ContainsKey($key)) { return $names[$key] }
+    return $key
+}
+
+function Convert-CodeBlockSummary($lang, $body) {
+    $bodyText = [string]$body
+    $lines = @($bodyText -split "\r?\n" | Where-Object { $_.Trim() }).Count
+    if ($lines -eq 0) { return ' ' }
+    $language = Convert-CodeLanguageName $lang
+    $languagePhrase = if ($language) { " of $language" } else { '' }
+    $shape = ''
+    if ($bodyText -match '(?m)^[ \t]*(?:export\s+)?class\s+[A-Za-z_$][\w$]*') {
+        $shape = ', defines a class'
+    } elseif (
+        $bodyText -match '(?m)^[ \t]*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(' -or
+        $bodyText -match '(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(' -or
+        $bodyText -match '(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>' -or
+        $bodyText -match '(?m)^[ \t]*function\s+[A-Z][A-Za-z]+-[A-Z][A-Za-z]+'
+    ) {
+        $shape = ', defines a function'
+    } elseif ($bodyText -match '\b(?:describe|it|test)\s*\(\s*[''"]') {
+        $shape = ', contains tests'
+    } elseif ($bodyText -match '(?m)^\s*(?:npm|yarn|pnpm|git|pip|python|python3|node|pwsh|powershell|docker|kubectl)\s+[-\w/]') {
+        $shape = ', shows shell commands'
+    } elseif ($bodyText -match '(?m)^\s*[\{\[]\s*$' -or $bodyText -match '(?m)^\s*"[\w.-]+":\s*') {
+        $shape = ', shows data'
+    }
+    $plural = if ($lines -eq 1) { 'line' } else { 'lines' }
+    return " Code block: $lines $plural$languagePhrase$shape. "
+}
+
 $codeBlocks = New-Object System.Collections.ArrayList
 $clean = [regex]::Replace($clean, '(?s)```(\w*)\r?\n?(.*?)```', {
     param($m)
@@ -359,7 +441,7 @@ $clean = [regex]::Replace($clean, '(?s)```(\w*)\r?\n?(.*?)```', {
         return "`0CB${i}`0"
     }
     if ($lang -or (Test-LooksLikeCode $body)) {
-        return ' '
+        return Convert-CodeBlockSummary $lang $body
     }
     # Un-tagged, no code signals — speak the body as prose.
     return $body
@@ -394,11 +476,15 @@ if (-not $inc.image_alt) {
     $clean = [regex]::Replace($clean, '!\[([^\]]*)\]\([^)]+\)', '$1')
 }
 $clean = [regex]::Replace($clean, '\[([^\]]+)\]\([^)]+\)', '$1')
-if (-not $inc.urls) { $clean = [regex]::Replace($clean, 'https?://\S+', ' ') }
+if (-not $inc.urls) { $clean = [regex]::Replace($clean, 'https?://\S+|www\.\S+', ' ', 'IgnoreCase') }
 if (-not $inc.headings) {
-    $clean = [regex]::Replace($clean, '(?m)^#+\s+.*$', ' ')
+    $clean = [regex]::Replace($clean, '(?m)^\s*#{1,6}\s*.*$', ' ')
 } else {
-    $clean = [regex]::Replace($clean, '(?m)^#+\s*', '')
+    $clean = [regex]::Replace($clean, '(?m)^\s*#{1,6}\s*(.+?)\s*$', {
+        param($m)
+        $h = $m.Groups[1].Value.Trim()
+        if ($h) { "Section: $h." } else { ' ' }
+    })
 }
 # Triple *** / ___ before double — see app/lib/text.js for full rationale.
 # Without this, ***bold-italic*** strips to *bold-italic* and TTS reads
@@ -409,7 +495,31 @@ $clean = $clean -replace '___([^_\n]+)___', '$1'
 $clean = $clean -replace '\*\*([^*\n]+)\*\*', '$1'
 $clean = $clean -replace '__([^_]+)__', '$1'
 $clean = $clean -replace '\*([^*\n]+)\*', '$1'
-if (-not $inc.bullet_markers) {
+function Convert-BulletLine($content, $prefix = '') {
+    $c = ([string]$content).TrimEnd()
+    if (-not $c) { return '' }
+    if ($c -notmatch '[.!?:;]$') { $c = $c + '.' }
+    if ($prefix) { return $prefix + $c }
+    return $c
+}
+function Convert-MarkedListsToNumbers($text) {
+    $n = 0
+    $out = New-Object System.Collections.ArrayList
+    foreach ($line in ([string]$text -split "`n", -1)) {
+        $m = [regex]::Match($line, '^[ \t]*([-*+]|\d+\.)[ \t]+(.+?)[ \t]*$')
+        if ($m.Success) {
+            $n++
+            [void]$out.Add(("$n. " + (Convert-BulletLine $m.Groups[2].Value)))
+            continue
+        }
+        $n = 0
+        [void]$out.Add($line)
+    }
+    return (($out.ToArray()) -join "`n")
+}
+if ($inc.bullet_markers) {
+    $clean = Convert-MarkedListsToNumbers $clean
+} else {
     $clean = [regex]::Replace($clean, '(?m)^\s*[\u25cf\u23bf\u25b6\u25b8\u25ba\u25cb\u00b7\u25e6\u25aa\u25a0\u25a1\u25ab]\s*', '')
     # Strip "- " / "* " / "+ " / "N. " markers AND add implicit period so
     # each bullet reads as its own sentence. Without this each multi-line
@@ -443,6 +553,24 @@ $clean = [regex]::Replace(
 # Tilde — edge-tts pronounces as "tilda" which is universally wrong.
 # Drop the character; see app/lib/text.js for full rationale.
 $clean = $clean -replace '~', ''
+# "live" at sentence end is ambiguous to TTS and can be pronounced like
+# "I live in a house". For status/deploy phrasing, rewrite the
+# current/running sense to unambiguous words.
+$clean = [regex]::Replace($clean, '\b[Dd]one and live\b', {
+    param($m)
+    if ($m.Value[0] -eq 'D') { 'Done and running' } else { 'done and running' }
+})
+$clean = [regex]::Replace($clean, '\b[Nn]ow live\b', {
+    param($m)
+    if ($m.Value[0] -eq 'N') { 'Now running' } else { 'now running' }
+})
+$clean = [regex]::Replace($clean, '\b([Ii]s|[Aa]re) live\b', '$1 running')
+$clean = [regex]::Replace(
+    $clean,
+    '\blive (install|app|toolbar|version|session|registry|config|configuration|runtime|files?|audio)\b',
+    { param($m) 'active ' + $m.Groups[1].Value },
+    'IgnoreCase'
+)
 # Restore preserved code blocks.
 if ($codeBlocks.Count -gt 0) {
     $clean = [regex]::Replace($clean, "`0CB(\d+)`0", { param($m) $codeBlocks[[int]$m.Groups[1].Value] })

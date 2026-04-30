@@ -11,7 +11,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 # Exits immediately (~150 ms) so Claude Code is NOT blocked waiting for
 # synthesis. The detached Python process does the heavy lifting.
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $queueDir = Join-Path $ttHome 'queue'
 $synthScript = Join-Path $ttHome 'app\synth_turn.py'
 $logFile = Join-Path $queueDir '_hook.log'
@@ -130,8 +130,16 @@ try {
         '--transcript', $transcript,
         '--mode', 'on-tool'
     )
-    Start-Process -FilePath 'python' -ArgumentList $synthArgs -WindowStyle Hidden -WorkingDirectory $ttHome
-    Log "spawned synth for $sessionShort"
+    $errPath = Join-Path $queueDir "synth-spawn-$sessionShort.err"
+    $proc = Start-Process -FilePath 'python' -ArgumentList $synthArgs -WindowStyle Hidden -WorkingDirectory $ttHome -RedirectStandardError $errPath -PassThru
+    Start-Sleep -Milliseconds 250
+    if ($proc.HasExited -and $proc.ExitCode -ne 0) {
+        $err = if (Test-Path $errPath) { (Get-Content $errPath -Raw).Trim() } else { '' }
+        $errSnip = $err.Substring(0, [Math]::Min(500, $err.Length))
+        Log "spawned synth exited rc=$($proc.ExitCode) stderr=$errSnip"
+    } else {
+        Log "spawned synth for $sessionShort pid=$($proc.Id)"
+    }
 } catch {
     Log "spawn failed: $($_.Exception.Message)"
 }

@@ -13,7 +13,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 # stays on disk — the watchdog in the main app prunes stale markers
 # older than 10 min on its periodic sweep.
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $sessionsDir = Join-Path $ttHome 'sessions'
 $logFile = Join-Path $ttHome 'queue\_hook.log'
 

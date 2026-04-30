@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $queueDir = Join-Path $ttHome 'queue'
 $edgeScript = Join-Path $ttHome 'app\edge_tts_speak.py'
 $configPath = Join-Path $ttHome 'config.json'
@@ -46,7 +46,7 @@ if (Test-Path $configPath) {
 
 # Shared TTS helper -- Resolve-OpenAiApiKey + Invoke-TtsWithFallback.
 # Same canonical chain used by speak-response.ps1 (audit CC-8).
-Import-Module (Join-Path $env:USERPROFILE '.terminal-talk\app\tts-helper.psm1') -Force -ErrorAction SilentlyContinue
+Import-Module (Join-Path $ttHome 'app\tts-helper.psm1') -Force -ErrorAction SilentlyContinue
 $openaiApiKey = Resolve-OpenAiApiKey -ConfigPath $configPath
 
 if (-not (Test-Path $queueDir)) {
