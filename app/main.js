@@ -60,6 +60,7 @@ const DEFAULTS = {
   },
   playback: {
     speed: 1.25,
+    collapse_delay_sec: 3,
     auto_prune: true,     // master toggle — off means clips stack until cleared
     auto_prune_sec: 20,   // delay after play before the clip disappears (3-600)
     // v0.3.6 — when ON (default), clicking a dot plays that clip then
@@ -92,13 +93,14 @@ const DEFAULTS = {
     headings: true,
     bullet_markers: false,
     image_alt: false,
-    // Python-side only: tool-call narration ("Reading foo.py" etc.) as
-    // ephemeral clips during on-tool hook. See DEFAULT_SPEECH_INCLUDES
-    // in app/synth_turn.py for the authoritative default.
+    // Tool-call narration ("Reading foo.py", "Searching files", etc.)
+    // as ephemeral clips during Claude hooks and Codex rollout events.
+    // See DEFAULT_SPEECH_INCLUDES in app/synth_turn.py for the
+    // authoritative Claude-side default.
     tool_calls: true
   },
   // HB1 — heartbeat emission. When Claude Code is actively working but
-  // the audio queue has been silent for >15 s, renderer asks main to
+  // the audio queue has been silent for >5 s, renderer asks main to
   // synthesise a single short spinner-verb clip ("Moonwalking") so the
   // listener gets audible confirmation the session is alive. Mirrors
   // the mascot's visible word-cloud. Ephemeral T- prefix; auto-deletes
@@ -273,6 +275,8 @@ process.on('uncaughtException', (err) => {
 let win = null;
 let watcher = null;
 let watchDebounce = null;
+let watchRestartTimer = null;
+let queueWatcherStopping = false;
 
 // EX6c — extracted to app/lib/queue-watcher.js. isAudioFile +
 // AUDIO_OR_PARTIAL_RE re-exported from main's module scope since
@@ -302,18 +306,13 @@ function saveWindowPosition() {
   } catch (e) { diag(`saveWindowPosition fail: ${e.message}`); }
 }
 
-// Window dimensions for each orientation. Horizontal stays the 680×144
+// Window dimensions for each orientation. Horizontal stays the 680×192
 // letterbox we've always shipped. Vertical is a 56 px wide column that's
 // as tall as the workArea minus margins — fits all controls stacked plus
 // room for dots running downward.
-// Height grew from 114 → 144 when the per-session tabs row landed.
-// Chrome above the dots-row is now: margin 6 + padding 6 + bar-top 36
-// + gap 4 + tabs-row 30 (22 chip + 8 padding) + gap 4 + dots-row 44
-// + padding 8 + margin 6 = 144. Without the bump, overflow: hidden on
-// .bar clipped the dots. The tabs-row auto-hides (:empty) when only
-// one session is active, so single-session users see ~30 px of
-// headroom — acceptable trade for a clean multi-session row.
-const DIM_HORIZONTAL = { width: 680, height: 144 };
+// Resting chrome includes controls, session tabs, dots, and the collapsed
+// transcript header, with headroom for pulse glows and scaling round-off.
+const DIM_HORIZONTAL = { width: 680, height: 192 };
 
 // Drag-intent tracking. Without this, snapping from a diagonal drag to a
 // corner picks whichever of (horizontal-edge | vertical-edge) happens to
@@ -337,29 +336,40 @@ const moveSettleTimerRef = { current: null };
 const {
   findDockedEdge: _findDockedEdgeFromLib,
   clampToVisibleDisplay: _clampToVisibleDisplayFromLib,
+  displayForWindowCenter: _displayForWindowCenterFromLib,
 } = require('./lib/window-dock');
 
 // Horizontal-only snap. Left/right-edge vertical docking was removed after
 // it created unrecoverable states on multi-monitor rearrangement (bar stuck
 // vertical mid-screen with no drag path back). Ctrl+Shift+A remains the
 // recovery hotkey if the window ever ends up somewhere weird.
+function displayForWindowBounds(x, y, w) {
+  return _displayForWindowCenterFromLib(
+    x, y, w, DIM_HORIZONTAL.height,
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+  );
+}
+
 function findDockedEdge() {
   if (!win || win.isDestroyed()) return null;
-  const workArea = screen.getPrimaryDisplay().workArea;
-  const [, y] = win.getPosition();
-  const [, h] = win.getSize();
+  const [x, y] = win.getPosition();
+  const [w, h] = win.getSize();
+  const display = displayForWindowBounds(x, y, w);
+  const workArea = display.workArea;
   return _findDockedEdgeFromLib(workArea, y, h, SNAP_THRESHOLD_PX);
 }
 
 function applyDock(edge) {
   if (!win || win.isDestroyed()) return;
   if (edge !== 'top' && edge !== 'bottom') return;  // horizontal-only
-  const work = screen.getPrimaryDisplay().workArea;
-  // Preserve the current height (collapsed 144 vs expanded ~618 when the
+  const [curX, curY] = win.getPosition();
+  const [curW, currentHeight] = win.getSize();
+  const work = displayForWindowBounds(curX, curY, curW).workArea;
+  // Preserve the current height (collapsed 192 vs expanded ~618 when the
   // settings panel is open) so bottom-snapping with the panel visible
   // doesn't force it shut. Bottom anchor uses the current height so the
   // bar sits flush at the bottom with the panel tucked above it.
-  const [, currentHeight] = win.getSize();
   const h = Math.max(currentHeight, DIM_HORIZONTAL.height);
   const bounds = {
     x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
@@ -775,30 +785,67 @@ function notifyQueue() {
   }
 }
 
+// Single coordinated restart slot. Without this, an `error` event on
+// the previous watcher and the resulting `close` event each scheduled
+// their own setTimeout(startWatcher, ...) — leading to duplicate
+// watchers stacking. Also prevents a pending restart from firing after
+// will-quit has stopped the watcher (Lane 3 lifecycle audit).
+function scheduleWatcherRestart() {
+  if (queueWatcherStopping || watchRestartTimer) return;
+  watchRestartTimer = setTimeout(() => {
+    watchRestartTimer = null;
+    startWatcher();
+  }, 1000);
+}
+
+function stopWatcher() {
+  queueWatcherStopping = true;
+  if (watchRestartTimer) { clearTimeout(watchRestartTimer); watchRestartTimer = null; }
+  if (watchDebounce) { clearTimeout(watchDebounce); watchDebounce = null; }
+  const current = watcher;
+  watcher = null;
+  if (current) {
+    try { current.removeAllListeners('error'); } catch {}
+    try { current.removeAllListeners('close'); } catch {}
+    try { current.close(); } catch {}
+  }
+}
+
 function startWatcher() {
+  if (queueWatcherStopping) return;
   try {
-    if (watcher) { try { watcher.close(); } catch {} watcher = null; }
-    watcher = fs.watch(QUEUE_DIR, () => {
+    if (watcher) {
+      const prev = watcher;
+      watcher = null;
+      try { prev.removeAllListeners('error'); } catch {}
+      try { prev.removeAllListeners('close'); } catch {}
+      try { prev.close(); } catch {}
+    }
+    const current = fs.watch(QUEUE_DIR, () => {
       if (watchDebounce) clearTimeout(watchDebounce);
       watchDebounce = setTimeout(notifyQueue, 150);
     });
+    watcher = current;
     // Self-healing: the initial try/catch only covers construction errors.
     // A successfully-started watcher can still silently die on transient
     // ENOSPC, permission change, drive eject, or (rarely) a native handle
     // leak. Without these two handlers, clip detection would stop forever
-    // with no log trace. Audit R27.
-    watcher.on('error', (err) => {
+    // with no log trace. Audit R27. Handler-scoped `current` reference
+    // ensures a stale handler can't null a newer watcher.
+    current.on('error', (err) => {
       diag(`watcher error: ${err && err.message}`);
-      try { watcher.close(); } catch {}
-      watcher = null;
-      setTimeout(startWatcher, 1000);
+      if (watcher === current) watcher = null;
+      try { current.close(); } catch {}
+      scheduleWatcherRestart();
     });
-    watcher.on('close', () => {
-      watcher = null;
-      setTimeout(startWatcher, 1000);
+    current.on('close', () => {
+      if (watcher === current) {
+        watcher = null;
+        scheduleWatcherRestart();
+      }
     });
   } catch {
-    setTimeout(startWatcher, 1000);
+    scheduleWatcherRestart();
   }
 }
 
@@ -827,6 +874,7 @@ function stripForTTS(text) {
 
 const { computeStaleSessions } = require('./lib/session-stale');
 const { allocatePaletteIndex } = require('./lib/palette-alloc');
+const { ensureAutoVoice, shouldAutoAssignVoice } = require('./lib/voice-alloc');
 const { withRegistryLock } = require('./lib/registry-lock');
 const { createRegistryGuard } = require('./lib/registry-guard');
 const { createOpenaiInvalidWatcher } = require('./lib/openai-invalid-watcher');
@@ -1294,9 +1342,15 @@ function sanitiseEntry(e) {
     focus: e.focus === true,
     last_seen: Number.isFinite(Number(e.last_seen)) ? Number(e.last_seen) : 0
   };
+  if (typeof e.auto_label === 'boolean') out.auto_label = e.auto_label;
+  for (const k of ['source_kind', 'source_label', 'source_cwd', 'source', 'source_originator']) if (typeof e[k] === 'string' && e[k].length <= 240) out[k] = e[k];
   if (typeof e.voice === 'string' && e.voice.length <= 80 && VOICE_KEY_RE.test(e.voice)) {
     out.voice = e.voice;
+    out.voice_auto = typeof e.voice_auto === 'boolean' ? e.voice_auto : false;
+  } else if (typeof e.voice_auto === 'boolean') {
+    out.voice_auto = e.voice_auto;
   }
+  if (typeof e.heartbeat_enabled === 'boolean') out.heartbeat_enabled = e.heartbeat_enabled;
   if (e.speech_includes && typeof e.speech_includes === 'object') {
     const inc = {};
     for (const k of Object.keys(e.speech_includes)) {
@@ -1439,6 +1493,8 @@ function isPidAlive(pid) {
 
 const SHORT_END_RE = /-([a-f0-9]{8})\.(wav|mp3)$/i;
 const SHORT_CLIP_RE = /-clip-([a-f0-9]{8})-\d+\.(wav|mp3)$/i;
+const SHORT_ID_RE = /^[a-f0-9]{8}$/;
+const PLUGIN_CLEANED_TOMBSTONE_MS = 30 * 60 * 1000;
 
 function shortFromFile(name) {
   let m = name.match(SHORT_END_RE);
@@ -1449,24 +1505,46 @@ function shortFromFile(name) {
 }
 
 // If a queue file references a session short that has no colour assignment yet
-// (because its statusline hasn't fired), assign the lowest free index here.
+// (because its statusline hasn't fired), assign the spread-first free index here.
 // Whichever writer (this or the statusline) wins, both agree on the outcome.
 // MUST stay in lock-step with the prune logic in app/statusline.ps1 + speak-response.ps1.
 // Session is considered LIVE if pinned OR has user-intent customisation OR
 // PID alive OR last_seen within grace.
 //
-// The user-intent branch (any of label / voice / muted / focus / non-empty
-// speech_includes) is a belt-and-braces guard on top of the auto-pin that
-// now happens in ipc-handlers.js. Historic registry entries written
-// before auto-pin landed (2026-04-23) may still have pinned=false with a
-// real label — treat those as live so overnight pid-rotation doesn't
-// strip them on the first prune pass after install.
+// User-intent fields (label / voice / muted / focus / heartbeat /
+// speech_includes) are a guard above the auto-pin in ipc-handlers.js.
+// Historic entries may still have pinned=false with a real label, so
+// keep them live through pid rotation.
 const SESSION_GRACE_SEC = 14400; // 4 hours
+function isRecentlyCleanedPluginShort(short, nowMs = Date.now()) {
+  if (!SHORT_ID_RE.test(String(short || ''))) return false;
+  const flagPath = path.join(SESSIONS_DIR, `${short}-plugin-cleaned.flag`);
+  let stat = null;
+  try { stat = fs.statSync(flagPath); } catch { return false; }
+
+  let stampMs = NaN;
+  try {
+    const raw = fs.readFileSync(flagPath, 'utf8').trim();
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      stampMs = parsed > 1000000000000 ? parsed : parsed * 1000;
+    }
+  } catch {}
+
+  const basisMs = Number.isFinite(stampMs) ? stampMs : stat.mtimeMs;
+  const ageMs = nowMs - basisMs;
+  if (ageMs <= PLUGIN_CLEANED_TOMBSTONE_MS) return true;
+  try { fs.unlinkSync(flagPath); } catch {}
+  return false;
+}
+
 function hasUserIntent(entry) {
-  if (entry.label && String(entry.label).trim().length > 0) return true;
-  if (entry.voice) return true;
+  if (entry.label && String(entry.label).trim().length > 0 && entry.auto_label !== true) return true;
+  if (entry.voice && entry.voice_auto !== true) return true;
+  if (entry.voice_auto === false) return true;
   if (entry.muted === true) return true;
   if (entry.focus === true) return true;
+  if (typeof entry.heartbeat_enabled === 'boolean') return true;
   if (entry.speech_includes && Object.keys(entry.speech_includes).length > 0) return true;
   return false;
 }
@@ -1481,19 +1559,39 @@ function isSessionLive(entry, now) {
 function ensureAssignmentsForFiles(files) {
   const all = loadAssignments();
   let changed = false;
-  const now = Math.floor(Date.now() / 1000);
+  const nowMs = Date.now();
+  const now = Math.floor(nowMs / 1000);
 
   // Prune ONLY truly dead sessions (PID gone AND grace expired AND not pinned).
   for (const k of Object.keys(all)) {
+    if (isRecentlyCleanedPluginShort(k, nowMs)) {
+      delete all[k];
+      changed = true;
+      diag(`ensureAssignments: pruned recently cleaned codex-plugin ${k}`);
+      continue;
+    }
     if (!isSessionLive(all[k], now)) {
       delete all[k];
       changed = true;
     }
   }
 
+  for (const [short, entry] of Object.entries(all)) {
+    if (!entry || !shouldAutoAssignVoice(entry)) continue;
+    const alloc = ensureAutoVoice(entry, all);
+    if (alloc) {
+      changed = true;
+      diag(`ensureAssignments: auto voice ${short} -> ${alloc.voice} (${alloc.reason})`);
+    }
+  }
+
   for (const f of files) {
     const short = shortFromFile(path.basename(f.path));
     if (!short || all[short]) continue;
+    if (isRecentlyCleanedPluginShort(short, nowMs)) {
+      diag(`ensureAssignments: skipped recently cleaned codex-plugin ${short}`);
+      continue;
+    }
     const alloc = allocatePaletteIndex(short, all, 24);
     if (alloc.evicted) {
       diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
@@ -1501,7 +1599,7 @@ function ensureAssignmentsForFiles(files) {
     } else if (alloc.reason === 'hash-collision') {
       diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
     }
-    all[short] = {
+    const entry = {
       index: alloc.index,
       session_id: short,
       claude_pid: 0,
@@ -1509,8 +1607,10 @@ function ensureAssignmentsForFiles(files) {
       pinned: false,
       last_seen: now
     };
+    const voiceAlloc = ensureAutoVoice(entry, all);
+    all[short] = entry;
     changed = true;
-    diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason})`);
+    diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
   }
 
   if (changed) writeAssignments(all, { caller: 'ensure-for-files' });
@@ -1656,51 +1756,30 @@ function startReloadGrace(ms = 5000) {
 // click-through state, so polling cursor in main is reliable.
 //
 // Authoritative driver: main calls setIgnoreMouseEvents on EVERY
-// poll based purely on cursor-vs-window-bounds. The renderer's
-// setClickthrough IPC is honoured immediately but main overrides
-// on the next tick if it disagrees. Without this we had a state
-// desync bug — the renderer's setClickthrough(true) (cursor over
+// poll based on cursor-vs-renderer-published interactive bounds. The
+// renderer's setClickthrough IPC is honoured immediately but main
+// overrides on the next tick if it disagrees. Without this we had a
+// state desync bug — the renderer's setClickthrough(true) (cursor over
 // transparent margin) flipped the OS state to true, but main's
-// state-change-only optimisation cached false, so cursor-poll
-// never re-applied false when cursor moved back onto the bar.
+// state-change-only optimisation cached false, so cursor-poll never
+// re-applied false when cursor moved back onto the bar.
 //
 // Calling setIgnoreMouseEvents 12×/s when state hasn't changed is
 // a no-op in Chromium and cheap. State changes still log so we
 // can observe the toggle pattern; same-state calls log nothing.
-let _cursorPollLastLogged = null;
-const CURSOR_POLL_MS = 80;
-function startCursorPollDriver() {
-  setInterval(() => {
-    if (!win || win.isDestroyed()) return;
-    if (process.env.TT_TEST_MODE === '1') return;
-    let c;
-    try { c = screen.getCursorScreenPoint(); } catch { return; }
-    let bounds;
-    try { bounds = win.getBounds(); } catch { return; }
-    const overWindow = c.x >= bounds.x
-                    && c.x < bounds.x + bounds.width
-                    && c.y >= bounds.y
-                    && c.y < bounds.y + bounds.height;
-    const wantClickthrough = !overWindow;
-    try {
-      // Always set, not just on change. Cheap; eliminates desync
-      // when the renderer's setClickthrough flips the OS state
-      // out from under us.
-      win.setIgnoreMouseEvents(wantClickthrough, { forward: true });
-    } catch (e) {
-      diag(`reload-trace: cursor-poll setIgnoreMouseEvents threw: ${e && e.message}`);
-      return;
-    }
-    // Log only on state CHANGE so the log isn't flooded with
-    // identical lines 12×/s.
-    if (wantClickthrough !== _cursorPollLastLogged) {
-      _cursorPollLastLogged = wantClickthrough;
-      diag(`reload-trace: cursor-poll over=${overWindow} ignoreMouseEvents=${wantClickthrough}`);
-    }
-  }, CURSOR_POLL_MS);
-}
+const { createCursorClickthroughDriver } = require('./lib/cursor-clickthrough');
+const _cursorClickthrough = createCursorClickthroughDriver({
+  getWin: () => win,
+  screen,
+  diag,
+  onStateChange: (state) => { try { if (win && !win.isDestroyed()) win.webContents.send('cursor-interactive-state', state); } catch {} },
+  testMode: process.env.TT_TEST_MODE === '1',
+});
+const startCursorPollDriver = _cursorClickthrough.start;
+const setInteractiveRegion = _cursorClickthrough.setInteractiveRegion;
 
 const { createIpcHandlers } = require('./lib/ipc-handlers');
+let _codexIdentitySync = null;
 createIpcHandlers({
   ipcMain,
   diag,
@@ -1730,6 +1809,7 @@ createIpcHandlers({
   apiKeyStore,
   redactForLog,
   setApplyingDock: (v) => { isApplyingDock = v; },
+  setInteractiveRegion,
   QUEUE_DIR,
   isPathInside,
   getWatchdog: () => _watchdog,
@@ -1737,6 +1817,9 @@ createIpcHandlers({
   testMode: process.env.TT_TEST_MODE === '1',
   captureMode: WINDOW_MODE,
   setUserHidden: (v) => { userHiddenToolbar = v; },
+  syncCodexIdentity: () => {
+    try { if (_codexIdentitySync) _codexIdentitySync.sync(); } catch {}
+  },
 }).register();
 
 ipcMain.handle('demo-start-ready', () => {
@@ -1847,10 +1930,23 @@ function startVoiceListener() {
   if (voiceProc) return;
   killOrphanVoiceListeners();
   try {
+    let stderrBuf = '';
     voiceProc = spawn('python', ['-u', path.join(__dirname, 'wake-word-listener.py')], {
       windowsHide: true,
       detached: false,
-      stdio: ['ignore', 'ignore', 'ignore']
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+    voiceProc.stderr.on('data', (d) => {
+      stderrBuf += d.toString();
+      if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+    });
+    voiceProc.on('error', (err) => {
+      diag(`voice listener spawn error: ${err && err.message}`);
+      voiceProc = null;
+      if (isListeningEnabled()) {
+        voiceRetryCount += 1;
+        setTimeout(startVoiceListener, computeVoiceBackoffMs(voiceRetryCount));
+      }
     });
     // Reset backoff once the child has been alive for STABLE_RESET_MS;
     // cancelled below if the process dies early.
@@ -1868,12 +1964,15 @@ function startVoiceListener() {
       if (code !== 0 && isListeningEnabled()) {
         voiceRetryCount += 1;
         const delay = computeVoiceBackoffMs(voiceRetryCount);
-        diag(`voice listener exited code=${code} -- retry #${voiceRetryCount} in ${delay}ms`);
+        const errSnip = stderrBuf.trim().slice(0, 300);
+        diag(`voice listener exited code=${code}${errSnip ? ` stderr=${errSnip}` : ''} -- retry #${voiceRetryCount} in ${delay}ms`);
         setTimeout(startVoiceListener, delay);
       }
     });
     diag('voice listener started');
-  } catch {}
+  } catch (e) {
+    diag(`voice listener start failed: ${e && e.message}`);
+  }
 }
 // Microphone-usage watcher. Spawns app/mic-watcher.ps1 as a long-running
 // child; it polls the Windows CapabilityAccessManager consent-store
@@ -2035,11 +2134,14 @@ const _transcriptWatcher = new TranscriptWatcher({
   ttHome: INSTALL_DIR,
   synthScript: path.join(INSTALL_DIR, 'app', 'synth_turn.py'),
   pythonExe: 'python',
+  killProc: (proc) => _hardKillProc(proc, 'transcript synth'),
   diag,
 });
 const { createCodexSessionWatcher } = require('./lib/codex-session-watcher');
+const { createCodexIdentitySync } = require('./lib/codex-identity-sync');
 const _codexSessionWatcher = createCodexSessionWatcher({
   queueDir: QUEUE_DIR,
+  sessionsDir: SESSIONS_DIR,
   getCFG: () => CFG,
   loadAssignments,
   saveAssignments,
@@ -2047,6 +2149,13 @@ const _codexSessionWatcher = createCodexSessionWatcher({
   callEdgeTTS,
   callOpenAITTS,
   notifyQueue,
+  onAssignmentTouched: () => { try { if (_codexIdentitySync) _codexIdentitySync.sync(); } catch {} },
+  diag,
+});
+_codexIdentitySync = createCodexIdentitySync({
+  appDir: __dirname,
+  powershellExe: POWERSHELL_EXE,
+  testMode: process.env.TT_TEST_MODE === '1',
   diag,
 });
 
@@ -2099,6 +2208,7 @@ app.whenReady().then(() => {
   startWatchdog();
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
+  _codexIdentitySync.start();
 
   if (CAPTURE_MODE) {
     Menu.setApplicationMenu(null);
@@ -2172,8 +2282,10 @@ function _hardKillProc(proc, label) {
 app.on('will-quit', () => {
   stopWatchdog();
   _codexSessionWatcher.stop();
+  _codexIdentitySync.stop();
+  _transcriptWatcher.stop({ killInFlight: true });
   globalShortcut.unregisterAll();
-  if (watcher) watcher.close();
+  stopWatcher();
   // #9 — promote will-quit kills from soft SIGTERM to hard taskkill /F /T.
   // The pre-#9 soft-kill on the tracked python children left them alive
   // when the listener was blocked on PortAudio init or openWakeWord
