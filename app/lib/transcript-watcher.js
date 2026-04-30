@@ -53,8 +53,14 @@ class TranscriptWatcher {
       // real node:child_process spawn; tests substitute a fake that
       // returns a recorded-args handle without actually launching Python.
       spawnFn = defaultSpawn,
+      // Hard-kill an in-flight synth child. Called from stop({killInFlight:true})
+      // during app quit so streaming synth doesn't outlive the app (Lane 3
+      // lifecycle audit). Default does a best-effort SIGKILL; main.js
+      // injects _hardKillProc so taskkill /F /T runs on Windows.
+      killProc = (proc) => { try { proc.kill('SIGKILL'); } catch {} },
     } = opts;
     this._sessionsDir = path.join(ttHome, 'sessions');
+    this._ttHome = ttHome;
     this._claudeProjectsDir = claudeProjectsDir;
     this._synthScript = synthScript;
     this._pythonExe = pythonExe;
@@ -62,6 +68,7 @@ class TranscriptWatcher {
     this._minSpawnGapMs = minSpawnGapMs;
     this._diag = diag;
     this._spawn = spawnFn;
+    this._killProc = killProc;
 
     // Per-session state:
     //   inFlight   — child process handle currently running for this short
@@ -85,14 +92,25 @@ class TranscriptWatcher {
     tick();
   }
 
-  stop() {
+  stop({ killInFlight = false } = {}) {
     this._armed = false;
     if (this._pollTimer) {
       clearTimeout(this._pollTimer);
       this._pollTimer = null;
     }
-    // Don't kill in-flight synth processes — let them finish cleanly.
-    this._diag('transcript-watcher: stopped');
+    // Default: let in-flight synth processes finish cleanly (called from
+    // graceful pause paths). With killInFlight=true (called from app
+    // will-quit), hard-kill them so streaming synth never outlives the
+    // app — Lane 3 lifecycle audit.
+    if (killInFlight) {
+      for (const st of this._state.values()) {
+        if (st.inFlight) {
+          try { this._killProc(st.inFlight); } catch {}
+          st.inFlight = null;
+        }
+      }
+    }
+    this._diag(`transcript-watcher: stopped${killInFlight ? ' (killed in-flight)' : ''}`);
   }
 
   async _poll() {
@@ -149,6 +167,7 @@ class TranscriptWatcher {
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],
         detached: false,
+        env: { ...process.env, TT_HOME: this._ttHome },
       });
     } catch (e) {
       this._diag(`transcript-watcher: spawn fail ${shortId}: ${e.message}`);

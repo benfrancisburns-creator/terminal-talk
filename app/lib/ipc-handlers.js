@@ -62,7 +62,9 @@ function createIpcHandlers(deps) {
     apiKeyStore,
     redactForLog,
     setApplyingDock,
+    setInteractiveRegion = () => false,
     testMode = !!process.env.TT_TEST_MODE,
+    syncCodexIdentity = () => {},
     // File + test-only deps (EX6f-4)
     QUEUE_DIR,
     isPathInside,
@@ -79,7 +81,7 @@ function createIpcHandlers(deps) {
     getReloadGraceUntil = () => 0,
   } = deps;
 
-  const WIN_COLLAPSED = { width: 680, height: 144 };
+  const WIN_COLLAPSED = { width: 680, height: 192 };
   const WIN_EXPANDED = { width: 680, height: 618 };
 
   function register() {
@@ -219,10 +221,13 @@ function createIpcHandlers(deps) {
       if (!all[shortId]) return false;
       const clean = sanitiseLabel(label);
       all[shortId].label = clean;
+      delete all[shortId].auto_label;
       // Only pin when the label has actual content — clearing a label
       // back to '' is a retraction of intent, not a new one.
       if (clean) all[shortId].pinned = true;
-      return saveAssignments(all, 'set-session-label');
+      const ok = saveAssignments(all, 'set-session-label');
+      if (ok) syncCodexIdentity();
+      return ok;
     });
 
     ipcMain.handle('set-session-index', (_e, shortId, newIndex) => {
@@ -238,7 +243,9 @@ function createIpcHandlers(deps) {
       // silent mismatch between the UI state and persisted registry.
       all[shortId].index = Math.max(0, Math.min(23, Math.floor(n)));
       all[shortId].pinned = true;
-      return saveAssignments(all, 'set-session-index');
+      const ok = saveAssignments(all, 'set-session-index');
+      if (ok) syncCodexIdentity();
+      return ok;
     });
 
     // Exclusive focus flag — only one session can be focus at a time.
@@ -323,7 +330,9 @@ function createIpcHandlers(deps) {
       return ok;
     });
 
-    // Per-session voice override. voiceId=null/empty clears (follow global).
+    // Per-session voice override. voiceId=null/empty clears to an
+    // explicit follow-global opt-out, so auto assignment won't fill it
+    // again on the next queue scan.
     ipcMain.handle('set-session-voice', (_e, shortId, voiceId) => {
       if (!allowMutation('set-session-voice')) return null;
       if (!validShort(shortId)) return false;
@@ -331,9 +340,11 @@ function createIpcHandlers(deps) {
       if (!all[shortId]) return false;
       if (!voiceId) {
         if (all[shortId].voice) delete all[shortId].voice;
+        all[shortId].voice_auto = false;
       } else {
         if (!validVoice(voiceId)) return false;
         all[shortId].voice = voiceId;
+        all[shortId].voice_auto = false;
         all[shortId].pinned = true;
       }
       return saveAssignments(all, 'set-session-voice');
@@ -359,6 +370,26 @@ function createIpcHandlers(deps) {
         delete all[shortId].speech_includes;
       }
       return saveAssignments(all, 'set-session-include');
+    });
+
+    // Per-session heartbeat override. value=true forces heartbeat on,
+    // false forces it off, null/undefined clears (follow global default).
+    ipcMain.handle('set-session-heartbeat', (_e, shortId, value) => {
+      if (!allowMutation('set-session-heartbeat')) return null;
+      if (!validShort(shortId)) return false;
+      if (value !== true && value !== false && value !== null && value !== undefined) return false;
+      const all = loadAssignments();
+      if (!all[shortId]) return false;
+      if (value === null || value === undefined) {
+        delete all[shortId].heartbeat_enabled;
+      } else {
+        all[shortId].heartbeat_enabled = value;
+        all[shortId].pinned = true;
+      }
+      const ok = saveAssignments(all, 'set-session-heartbeat');
+      const win = getWin();
+      if (ok && win && !win.isDestroyed() && typeof notifyQueue === 'function') notifyQueue();
+      return ok;
     });
 
     // EX6f-3 — panel + config-mutation handlers.
@@ -577,6 +608,11 @@ function createIpcHandlers(deps) {
       return true;
     });
 
+    ipcMain.handle('set-interactive-region', (_e, region) => {
+      if (testMode || captureMode) return true;
+      return !!setInteractiveRegion(region);
+    });
+
     ipcMain.handle('set-panel-open', (_e, open) => {
       const win = getWin();
       if (!win || win.isDestroyed()) return false;
@@ -666,13 +702,18 @@ function createIpcHandlers(deps) {
               dropped.push(`${m[1]}(age=${age}s)`);
               try { fs.unlinkSync(full); } catch {}
             }
-          } catch {}
+          } catch (e) {
+            diag(`get-working-sessions: bad flag ${name}: ${e && e.message}`);
+          }
         }
         if (dropped.length > 0) {
           diag(`get-working-sessions: filtered ${dropped.length} stale flag(s): [${dropped.join(',')}]`);
         }
         return out;
-      } catch { return []; }
+      } catch (e) {
+        diag(`get-working-sessions fail: ${e && e.message}`);
+        return [];
+      }
     });
 
     // HB1 — heartbeat verb. Renderer fires this when it detects
@@ -705,7 +746,17 @@ function createIpcHandlers(deps) {
       }
       if (typeof callEdgeTTS !== 'function') { diag('speak-heartbeat skip: callEdgeTTS missing'); return false; }
       const cfg = getCFG();
-      if (cfg && cfg.heartbeat_enabled === false) { diag('speak-heartbeat skip: heartbeat_enabled=false in config'); return false; }
+      let sessionOverride = null;
+      try {
+        const entry = (loadAssignments() || {})[sessionShort];
+        if (entry && typeof entry.heartbeat_enabled === 'boolean') sessionOverride = entry.heartbeat_enabled;
+      } catch {}
+      const heartbeatAllowed = sessionOverride === true ||
+        (sessionOverride !== false && !(cfg && cfg.heartbeat_enabled === false));
+      if (!heartbeatAllowed) {
+        diag(`speak-heartbeat skip: heartbeat disabled for ${sessionShort}`);
+        return false;
+      }
       heartbeatInFlight = true;
       try {
         // #15 — respect cfg.playback.tts_provider. Prior to this fix the

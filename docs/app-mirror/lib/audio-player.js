@@ -99,6 +99,7 @@
         // Callbacks
         onPlayStart = () => {},
         onClipEnded = () => {},
+        onPlaybackStop = () => {},
         onPlayNextPending = () => {},
         onRenderDots = () => {},
 
@@ -137,6 +138,7 @@
 
       this._onPlayStart = onPlayStart;
       this._onClipEnded = onClipEnded;
+      this._onPlaybackStop = onPlaybackStop;
       this._onPlayNextPending = onPlayNextPending;
       this._onRenderDots = onRenderDots;
       this._audioContextFactory = audioContextFactory || (() => {
@@ -185,6 +187,23 @@
       this._lastScrubberValue = 0;
       this._scrubDirTimer = null;
       this._stallRecoveryTimer = null;
+    }
+
+    // Surface play() rejections instead of swallowing them. play() can
+    // reject for autoplay-blocked, AbortError mid-load, NotAllowedError
+    // mid-teardown, etc. — silently dropping these masks real failures
+    // (see Lane 1 audit 2026-04-29). Routes through main's
+    // log-renderer-error sink with a console.error fallback for
+    // non-Electron contexts.
+    _handlePlayError(p, e) {
+      const detail = e && e.message ? e.message : String(e);
+      const message = `audio play failed for ${p}: ${detail}`;
+      if (typeof window !== 'undefined' && window.api && window.api.logRendererError) {
+        window.api.logRendererError({ type: 'audio', message, source: p })
+          .catch((logErr) => console.error('[audio-player] error-log failed', logErr));
+      } else {
+        console.error('[audio-player]', message);
+      }
     }
 
     // ---- Public API ---------------------------------------------------
@@ -267,7 +286,12 @@
       this._micCaptured = false;
       if (this._systemAutoPaused) return;  // OS pause still active — respect it
       if (this._audio && this._audio.src && this._audio.paused && !this._audio.ended) {
-        try { this._audio.play().catch(() => {}); } catch {}
+        try {
+          const r = this._audio.play();
+          if (r && typeof r.then === 'function') {
+            r.catch((e) => this._handlePlayError(this._currentPath, e));
+          }
+        } catch (e) { this._handlePlayError(this._currentPath, e); }
       } else {
         // Nothing was mid-clip when the mic grab happened — drain any
         // queue that accumulated during the window.
@@ -307,21 +331,42 @@
         && typeof this._clipPaths.isHeartbeatClip === 'function'
         && this._clipPaths.isHeartbeatClip(fn);
       this._audio.volume = (isHeartbeat ? 0.45 : 1.0) * this._masterVolume;
-      this._audio.play().catch(() => {});
+      // Mark played/heard synchronously: callers (and tests) rely on
+      // this state being visible the moment playPath() returns. If
+      // play() later rejects (autoplay-blocked, AbortError on rapid
+      // src-change, NotAllowedError mid-teardown), failStarted logs
+      // the cause and — only if we're still the active clip — advances
+      // the queue so a stuck reject can't deadlock playback.
       this._markPlayed(p);
       if (manual) this._markHeard(p);
       this._removePending(p);
       this._onRenderDots();
+      const failStarted = (e) => {
+        this._handlePlayError(p, e);
+        if (this._currentPath === p) {
+          this._currentPath = null;
+          this._currentIsManual = false;
+          this._currentIsUserClick = false;
+          try { this._onPlaybackStop(p, { reason: 'play-rejected' }); } catch {}
+          try { this._onPlayNextPending(); } catch {}
+        }
+      };
+      const playPromise = this._audio.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise.catch(failStarted);
+      }
       this._updateScrubberMode();
       return true;
     }
 
     abort() {
+      const was = this._currentPath;
       try { this._audio.pause(); } catch {}
       this._audio.src = '';
       this._currentPath = null;
       this._currentIsManual = false;
       this._currentIsUserClick = false;
+      if (was) this._onPlaybackStop(was, { reason: 'abort' });
     }
 
     abortIfAutoPlayed() {
@@ -331,6 +376,8 @@
       this._audio.src = '';
       this._currentPath = null;
       this._currentIsManual = false;
+      this._currentIsUserClick = false;
+      this._onPlaybackStop(was, { reason: 'abort' });
       return was;
     }
 
@@ -409,8 +456,12 @@
             if (next) this.playPath(next.path, true);
             return;
           }
-          if (this._audio.paused) this._audio.play().catch(() => {});
-          else this._audio.pause();
+          if (this._audio.paused) {
+            const r = this._audio.play();
+            if (r && typeof r.then === 'function') {
+              r.catch((e) => this._handlePlayError(this._currentPath, e));
+            }
+          } else this._audio.pause();
         });
       }
       if (this._back10Btn) {
@@ -512,10 +563,13 @@
     _wireAudioError() {
       this._on(this._audio, 'error', () => {
         this._setPlayPauseIcons(false);
+        const failed = this._currentPath;
         this._currentPath = null;
         this._currentIsManual = false;
+        this._currentIsUserClick = false;
         this._onRenderDots();
         this._updateScrubberMode();
+        if (failed) this._onPlaybackStop(failed, { reason: 'error' });
         this._onPlayNextPending();
       });
     }
@@ -556,6 +610,7 @@
           this._currentIsManual = false;
           if (p) this._markPlayed(p);  // don't loop on the same broken clip
           this._onRenderDots();
+          if (p) this._onPlaybackStop(p, { reason: 'stall' });
           this._onPlayNextPending();
         }
       }, STALL_RECOVERY_MS);
@@ -633,7 +688,12 @@
             if (!this._systemAutoPaused) return;
             if (!this._audio.src || !this._audio.paused) return;
             this._systemAutoPaused = false;
-            try { this._audio.play().catch(() => {}); } catch {}
+            try {
+              const r = this._audio.play();
+              if (r && typeof r.then === 'function') {
+                r.catch((e) => this._handlePlayError(this._currentPath, e));
+              }
+            } catch (e) { this._handlePlayError(this._currentPath, e); }
           });
         }
       } catch {}
