@@ -5,10 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { allocatePaletteIndex } = require('./palette-alloc');
-const {
-  colourMarkerForIndex,
-  colourNameForIndex,
-} = require('./palette-identity');
+const { colourMarkerForIndex } = require('./palette-identity');
 const { ensureAutoVoice } = require('./voice-alloc');
 
 const SHORT_RE = /^[a-f0-9]{8}$/;

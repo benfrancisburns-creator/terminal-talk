@@ -79,14 +79,6 @@ function colourMarkerForIndex(index) {
   return `${pair.primaryMarker}${pair.secondaryMarker}`;
 }
 
-function colourPrimaryNameForIndex(index) {
-  return pairForIndex(index).primaryName;
-}
-
-function colourPrimaryMarkerForIndex(index) {
-  return pairForIndex(index).primaryMarker;
-}
-
 module.exports = {
   colourMarkerForIndex,
   colourNameForIndex,
