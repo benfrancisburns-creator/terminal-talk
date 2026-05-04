@@ -16,6 +16,10 @@
 #   py -m pip install --upgrade edge-tts openwakeword onnxruntime sounddevice numpy
 #   py -m pip freeze | grep -iE '^(edge-tts|openwakeword|onnxruntime|sounddevice|numpy)=='
 #
+# POSIX install note: `install.sh` installs `requirements-core.txt` first and
+# treats `requirements-wakeword.txt` as optional. This full file is retained
+# for Windows install.ps1 and developer machines that want every feature.
+#
 edge-tts==7.2.8
 openwakeword==0.6.0
 onnxruntime==1.24.4

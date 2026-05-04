@@ -3,7 +3,7 @@
   "_comment": "Copy to ~/.terminal-talk/config.json and edit. All fields optional; defaults apply. The $schema reference above gives VS Code + any editor that honours json.schemas autocomplete + validation on save.",
 
   "voices": {
-    "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are premium/fallback voices used only when an OpenAI key is configured. Full Edge voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",
+    "_comment": "edge_* are free neural voices from Microsoft Edge. openai_* are premium voices used only when an OpenAI key is configured and OpenAI is selected as primary or fallback. Full Edge voice list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts",
     "edge_clip": "en-GB-SoniaNeural",
     "edge_response": "en-GB-RyanNeural",
     "openai_clip": "shimmer",
@@ -20,18 +20,20 @@
   },
 
   "playback": {
-    "_comment": "speed 0.5-2.5x. master_volume is 0.0-1.0. auto_prune toggles whether played clips disappear after N seconds (3-600). Toggle off if you want clips to stack up for review. tts_provider is edge or openai.",
+    "_comment": "speed 0.5-2.5x. master_volume is 0.0-1.0. collapse_delay_sec is how long the toolbar stays expanded while idle (1-120). auto_prune toggles whether played clips disappear after N seconds (3-600). tts_provider is edge or openai. tts_fallback_provider is edge, openai, or none; default edge keeps fallback free.",
     "speed": 1.25,
     "master_volume": 1.0,
+    "collapse_delay_sec": 3,
     "auto_prune": true,
     "auto_prune_sec": 20,
     "auto_continue_after_click": true,
     "palette_variant": "default",
-    "tts_provider": "edge"
+    "tts_provider": "edge",
+    "tts_fallback_provider": "edge"
   },
 
   "speech_includes": {
-    "_comment": "Global defaults for what gets spoken from assistant responses. tool_calls is Claude Code-only. Per-session overrides live in session-colours.json and win over these.",
+    "_comment": "Global defaults for what gets spoken from assistant responses. tool_calls covers Claude hook events and Codex rollout tool events when available. Per-session overrides live in session-colours.json and win over these.",
     "code_blocks": false,
     "inline_code": false,
     "urls": false,
@@ -46,7 +48,10 @@
   "panels": {
     "_comment": "Toolbar panel state; managed by the app.",
     "transcript_expanded": false,
-    "transcript_view": "spoken"
+    "transcript_view": "spoken",
+    "create_session_window_placements": {
+      "_comment": "Optional advanced recording aid. Keys can be labels like Claude TT A or kind:index values like codex:5. Values can be bounds strings like -1008,-1080,960,516, or objects with windowPosition/windowSize/windowBounds."
+    }
   },
 
   "selected_tab": "all",

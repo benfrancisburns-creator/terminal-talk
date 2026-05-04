@@ -1,0 +1,6 @@
+# Core Terminal Talk runtime dependencies.
+#
+# POSIX installers use this first so Linux/macOS can still install the toolbar,
+# hooks, queue playback, and Edge TTS even when optional microphone/wake-word
+# native wheels are unavailable for the local Python version.
+edge-tts==7.2.8

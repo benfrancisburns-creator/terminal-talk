@@ -1,0 +1,10 @@
+# Optional wake-word / microphone dependencies.
+#
+# These are required for "Hey Jarvis" microphone capture. On Linux, some
+# transitive native wheels (notably tflite-runtime via openwakeword) may not
+# exist for every current Python version, so install.sh treats this file as an
+# optional capability instead of failing the whole app install.
+openwakeword==0.6.0
+onnxruntime==1.24.4
+sounddevice==0.5.5
+numpy==2.4.4

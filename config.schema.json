@@ -32,11 +32,13 @@
       "properties": {
         "speed":          { "type": "number", "minimum": 0.25, "maximum": 4.0, "default": 1.25 },
         "master_volume":  { "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 1.0, "description": "Master output volume 0.0–1.0 (settings panel slider). Heartbeat clips stay at 0.45× this value, body/tool clips at 1.0×, so the mix ratio is preserved at any master level." },
+        "collapse_delay_sec": { "type": "integer", "minimum": 1, "maximum": 120, "default": 3, "description": "How long the toolbar stays expanded after the last interaction before it auto-collapses to the slim click-through strip. Playback keeps the collapsed strip coloured by the speaking session instead of pinning the full toolbar open." },
         "auto_prune":     { "type": "boolean", "default": true },
         "auto_prune_sec": { "type": "integer", "minimum": 1, "maximum": 600, "default": 20 },
         "auto_continue_after_click": { "type": "boolean", "default": true, "description": "When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. When off, a click plays only the clicked clip." },
         "palette_variant": { "type": "string", "enum": ["default", "cb"], "default": "default", "description": "Colour palette variant. 'default' = the standard 8-colour palette; 'cb' = colour-blind-friendly (Paul Tol's 'muted' scheme, distinguishable under deutan/protan/tritan). EX5 / H3 Option 2." },
-        "tts_provider": { "type": "string", "enum": ["edge", "openai"], "default": "edge", "description": "Which TTS provider to try first. 'edge' = Microsoft edge-tts (free, no key, default). 'openai' = OpenAI TTS (paid, needs openai_api_key configured; ~$0.015 per 1,000 characters). Either way the other provider is used as a fallback if the primary errors." }
+        "tts_provider": { "type": "string", "enum": ["edge", "openai"], "default": "edge", "description": "Which TTS provider to try first. 'edge' = Microsoft edge-tts (free, no key, default). 'openai' = OpenAI TTS (paid, needs openai_api_key configured)." },
+        "tts_fallback_provider": { "type": "string", "enum": ["edge", "openai", "none"], "default": "edge", "description": "Which provider to try if the primary provider fails. Default 'edge' keeps fallback free and prevents hidden OpenAI credit spend when Edge is primary. Set to 'openai' only if you intentionally want paid fallback; monitor credits or enable OpenAI billing auto top-up/auto recharge. Set to 'none' to disable fallback." }
       }
     },
     "speech_includes": {
@@ -49,20 +51,63 @@
         "headings":       { "type": "boolean" },
         "bullet_markers": { "type": "boolean" },
         "image_alt":      { "type": "boolean" },
-        "tool_calls":     { "type": "boolean", "description": "Claude Code only. Narrate each tool call ('Reading foo.py', 'Running npm') as an ephemeral T-prefixed clip during long tool chains. Default true." }
+        "tool_calls":     { "type": "boolean", "description": "Narrate tool progress as ephemeral T-prefixed clips. Claude uses hook-derived tool calls; Codex uses rollout-derived tool events when available. Default true." }
       }
     },
     "heartbeat_enabled": {
       "type": "boolean",
       "default": true,
-      "description": "HB1 — Claude Code only. When Claude Code is actively working but the queue has been silent for 15 s, synthesise a single spinner-verb ('Moonwalking', 'Pontificating') as an ephemeral H-prefixed clip so you get audible confirmation the session is alive. Mirrors the mascot's visible word-cloud."
+      "description": "HB1 — global default. When Claude Code or Codex is actively working but the queue has been silent for 5 s, synthesise a spinner-verb ('Moonwalking', 'Pontificating') or thinking phrase as an ephemeral H-prefixed clip so you get audible confirmation the session is alive. Per-session heartbeat_enabled overrides can force on/off for one session."
     },
     "panels": {
       "type": "object",
       "description": "UI panel persistence. Each sub-panel records its collapsed/expanded state and view mode so the toolbar restores exactly how the user left it.",
       "properties": {
         "transcript_expanded": { "type": "boolean", "default": false, "description": "Whether the transcript panel under the dot strip is open." },
-        "transcript_view":     { "type": "string", "enum": ["spoken", "original"], "default": "spoken", "description": "Which text view the transcript panel shows: 'spoken' (post-strip-for-tts, what the audio actually says) or 'original' (pre-strip markdown source)." }
+        "transcript_view":     { "type": "string", "enum": ["spoken", "original"], "default": "spoken", "description": "Which text view the transcript panel shows: 'spoken' (post-strip-for-tts, what the audio actually says) or 'original' (pre-strip markdown source)." },
+        "create_session_default_kind": { "type": "string", "enum": ["codex", "claude"], "default": "codex", "description": "Which assistant is preselected in the Settings > Sessions create-session form." },
+        "create_session_defaults": {
+          "type": "object",
+          "description": "Saved defaults for launching new Codex / Claude Code sessions from the toolbar.",
+          "properties": {
+            "codex": {
+              "type": "object",
+              "properties": {
+                "projectDir": { "type": "string", "maxLength": 4096 },
+                "label": { "type": "string", "maxLength": 60 },
+                "index": { "type": "number", "minimum": 0, "maximum": 23 },
+                "launchMode": { "type": "string", "enum": ["default", "dangerous"] }
+              }
+            },
+            "claude": {
+              "type": "object",
+              "properties": {
+                "projectDir": { "type": "string", "maxLength": 4096 },
+                "label": { "type": "string", "maxLength": 60 },
+                "index": { "type": "number", "minimum": 0, "maximum": 23 },
+                "launchMode": { "type": "string", "enum": ["default", "dangerous"] }
+              }
+            }
+          }
+        },
+        "create_session_window_placements": {
+          "type": "object",
+          "description": "Optional advanced placement map for Settings > Sessions > Create session. Keys may be a label such as \"Claude TT A\", a slug such as \"claude-tt-a\", \"kind:label\", \"kind:index\", or \"kind\". Values may be a bounds string \"x,y,width,height\" or an object with windowPosition, windowSize, and windowBounds.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "pattern": "^-?\\d+,-?\\d+,\\d+,\\d+$" },
+              {
+                "type": "object",
+                "properties": {
+                  "windowPosition": { "type": "string", "pattern": "^-?\\d+,-?\\d+$" },
+                  "windowSize": { "type": "string", "pattern": "^\\d+,\\d+$" },
+                  "windowBounds": { "type": "string", "pattern": "^-?\\d+,-?\\d+,\\d+,\\d+$" }
+                },
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
       }
     },
     "window": {
