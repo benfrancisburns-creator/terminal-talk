@@ -26,12 +26,17 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   getStaleSessions: () => ipcRenderer.invoke('get-stale-sessions'),
   updateConfig: (partial) => ipcRenderer.invoke('update-config', partial),
+  chooseSessionProjectDir: (startPath) => ipcRenderer.invoke('choose-session-project-dir', startPath),
+  launchAssistantSession: (payload) => ipcRenderer.invoke('launch-assistant-session', payload),
   setSessionLabel: (shortId, label) => ipcRenderer.invoke('set-session-label', shortId, label),
   setSessionIndex: (shortId, index) => ipcRenderer.invoke('set-session-index', shortId, index),
   setSessionInclude: (shortId, key, value) => ipcRenderer.invoke('set-session-include', shortId, key, value),
+  setSessionHeartbeat: (shortId, value) => ipcRenderer.invoke('set-session-heartbeat', shortId, value),
   setSessionVoice: (shortId, voiceId) => ipcRenderer.invoke('set-session-voice', shortId, voiceId),
   setSessionMuted: (shortId, muted) => ipcRenderer.invoke('set-session-muted', shortId, muted),
   setSessionFocus: (shortId, focus) => ipcRenderer.invoke('set-session-focus', shortId, focus),
+  syncCodexDesktopTitle: (shortId) => ipcRenderer.invoke('sync-codex-desktop-title', shortId),
+  syncClaudeDesktopTitle: (shortId) => ipcRenderer.invoke('sync-claude-desktop-title', shortId),
   removeSession: (shortId) => ipcRenderer.invoke('remove-session', shortId),
   // Settings panel "OpenAI (premium)" section.
   // - getOpenAiKeyStatus: drives the "● Key set / ○ Not set" dot + the
@@ -42,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
   getOpenAiKeyStatus: () => ipcRenderer.invoke('get-openai-key-status'),
   testOpenAiVoice:    () => ipcRenderer.invoke('test-openai-voice'),
   setClickthrough: (on) => ipcRenderer.invoke('set-clickthrough', on),
+  setInteractiveRegion: (region) => ipcRenderer.invoke('set-interactive-region', region),
   setPanelOpen: (open) => ipcRenderer.invoke('set-panel-open', open),
   // S1.1 — renderer-side error/rejection forwarding lives in main so the
   // existing _toolbar.log is the single sink for diagnostics. Main rate-
@@ -71,6 +77,7 @@ contextBridge.exposeInMainWorld('api', {
   onListeningState:      (cb) => subscribe('listening-state',        cb, (on) => on),
   onForceExpand:         (cb) => subscribe('force-expand',           cb),
   onSetOrientation:      (cb) => subscribe('set-orientation',        cb, (p) => p),
+  onCursorInteractiveState: (cb) => subscribe('cursor-interactive-state', cb, (p) => p),
   onTogglePausePlayback: (cb) => subscribe('toggle-pause-playback',  cb),
   onPausePlaybackOnly:   (cb) => subscribe('pause-playback-only',    cb),
   // Mic-watcher transitions from app/mic-watcher.ps1. Fire when any
@@ -81,7 +88,7 @@ contextBridge.exposeInMainWorld('api', {
   onMicReleased:          (cb) => subscribe('mic-released',           cb),
   // Fires when main detects the auto-unset flag dropped by synth_turn
   // after openai_tts.py returned HTTP 401 during a real synth. main
-  // has already cleared the key + demoted tts_provider to 'edge' by
+  // has already cleared the key + demoted OpenAI TTS routes to 'edge' by
   // then; settings-form uses this to reveal the OpenAI section + show
   // the key-input row so the user can re-enter their key.
   onOpenaiKeyInvalid:     (cb) => subscribe('openai-key-invalid',     cb),
