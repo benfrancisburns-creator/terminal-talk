@@ -4,7 +4,9 @@
  * Palette allocator — picks a palette index for a new session.
  *
  * Strategy (in order):
- *   1. Lowest free index in 0..paletteSize-1.
+ *   1. First free index in a spread-first order. The palette itself is
+ *      still user-facing in its natural 0..23 order, but automatic
+ *      assignment avoids early near-neighbours such as orange/yellow.
  *   2. If none free: LRU eviction — drop the non-pinned entry with
  *      the oldest `last_seen` and hand the new session that slot.
  *      The caller is responsible for deleting the evicted entry from
@@ -25,6 +27,26 @@
  *   reason: 'free'|'lru'|'hash-collision'
  * }}
  */
+const PALETTE_AUTO_ORDER = Object.freeze([
+  0, 4, 3, 5, 2, 6, 7, 16, 11, 9, 10, 14,
+  20, 8, 12, 13, 17, 18, 19, 21, 22, 23, 1, 15,
+]);
+
+function paletteAutoOrder(size) {
+  const out = [];
+  const seen = new Set();
+  for (const idx of PALETTE_AUTO_ORDER) {
+    if (idx >= 0 && idx < size && !seen.has(idx)) {
+      out.push(idx);
+      seen.add(idx);
+    }
+  }
+  for (let i = 0; i < size; i++) {
+    if (!seen.has(i)) out.push(i);
+  }
+  return out;
+}
+
 function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   // Defensive clamp — paletteSize is 24 in every production call site,
   // but a bad caller (test harness, future refactor, corrupted config)
@@ -41,22 +63,24 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
     }
   }
 
-  // 1. Lowest free index wins.
-  for (let i = 0; i < size; i++) {
+  // 1. First free index in the spread-first order wins.
+  for (const i of paletteAutoOrder(size)) {
     if (!busy.has(i)) return { index: i, evicted: null, reason: 'free' };
   }
 
   // 2. All slots busy -> LRU eviction among entries with NO user intent.
   //    An entry is protected from eviction if pinned OR has a label /
-  //    voice / muted / focus / speech_includes override — any of those
+  //    manual voice / muted / focus / heartbeat / speech_includes override — any of those
   //    signals "I configured this, don't throw it away for a fresh
   //    session." Eviction order within the candidate pool is
   //    last_seen ascending, then shortId ascending (stable tiebreak).
   const hasUserIntent = (e) => (
-    (e.label && String(e.label).trim().length > 0) ||
-    !!e.voice ||
+    (e.label && String(e.label).trim().length > 0 && e.auto_label !== true) ||
+    (!!e.voice && e.voice_auto !== true) ||
+    e.voice_auto === false ||
     e.muted === true ||
     e.focus === true ||
+    typeof e.heartbeat_enabled === 'boolean' ||
     (e.speech_includes && Object.keys(e.speech_includes).length > 0)
   );
   const candidates = entries
@@ -88,4 +112,4 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   };
 }
 
-module.exports = { allocatePaletteIndex };
+module.exports = { allocatePaletteIndex, PALETTE_AUTO_ORDER, paletteAutoOrder };

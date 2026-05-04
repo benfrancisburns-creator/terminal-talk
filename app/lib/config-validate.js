@@ -26,16 +26,17 @@ const RULES = [
   { path: 'playback',        type: 'object' },
   { path: 'playback.speed',  type: 'number', min: 0.25, max: 4.0 },
   { path: 'playback.master_volume', type: 'number', min: 0.0, max: 1.0 },
+  { path: 'playback.collapse_delay_sec', type: 'number', min: 1, max: 120 },
   { path: 'playback.auto_prune', type: 'boolean' },
   { path: 'playback.auto_prune_sec', type: 'number', min: 1, max: 600 },
   { path: 'playback.auto_continue_after_click', type: 'boolean' },
   { path: 'playback.palette_variant', type: 'string', maxLen: 16 },
   // TTS provider preference. 'edge' (default) tries Microsoft edge-tts
-  // first and only falls back to OpenAI on failure. 'openai' flips the
-  // order — tries OpenAI first (needs openai_api_key set), falls back
-  // to edge-tts if OpenAI errors. Consumers (synth_turn.py +
-  // tts-helper.psm1) default to 'edge' for any unrecognised value.
+  // first. 'openai' tries OpenAI first (needs openai_api_key set).
+  // Fallback is a separate opt-in route; defaulting it to 'edge' stops
+  // hidden OpenAI spend when Edge has a transient wobble.
   { path: 'playback.tts_provider', type: 'string', maxLen: 16 },
+  { path: 'playback.tts_fallback_provider', type: 'string', maxLen: 16 },
   { path: 'speech_includes', type: 'object' },
   // F2 (#11): every sub-key in DEFAULTS.speech_includes (main.js) now
   // has a corresponding validator rule. Prior to this the parent object
@@ -60,6 +61,19 @@ const RULES = [
   { path: 'panels',                      type: 'object' },
   { path: 'panels.transcript_expanded',  type: 'boolean' },
   { path: 'panels.transcript_view',      type: 'string', maxLen: 16 },
+  { path: 'panels.create_session_default_kind', type: 'string', maxLen: 16 },
+  { path: 'panels.create_session_defaults', type: 'object' },
+  { path: 'panels.create_session_defaults.codex', type: 'object' },
+  { path: 'panels.create_session_defaults.codex.projectDir', type: 'string', maxLen: 4096 },
+  { path: 'panels.create_session_defaults.codex.label', type: 'string', maxLen: 60 },
+  { path: 'panels.create_session_defaults.codex.index', type: 'number', min: 0, max: 23 },
+  { path: 'panels.create_session_defaults.codex.launchMode', type: 'string', maxLen: 32 },
+  { path: 'panels.create_session_defaults.claude', type: 'object' },
+  { path: 'panels.create_session_defaults.claude.projectDir', type: 'string', maxLen: 4096 },
+  { path: 'panels.create_session_defaults.claude.label', type: 'string', maxLen: 60 },
+  { path: 'panels.create_session_defaults.claude.index', type: 'number', min: 0, max: 23 },
+  { path: 'panels.create_session_defaults.claude.launchMode', type: 'string', maxLen: 32 },
+  { path: 'panels.create_session_window_placements', type: 'object' },
   { path: 'openai_api_key',  type: ['string', 'null'], maxLen: 200 },
   { path: 'selected_tab',    type: 'string',  maxLen: 64 },
   { path: 'tabs_expanded',   type: 'boolean' },
