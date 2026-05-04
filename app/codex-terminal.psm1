@@ -129,10 +129,10 @@ function Get-TerminalTalkTitleMarker {
     if ($i -lt 8) { return $primary }
     if ($i -lt 16) {
         $partner = _PaletteTitleEmoji $script:TerminalTalkHsplitPartner[$i - 8]
-        return "$primary$partner"
+        return "$primary$([char]0x2580)$partner"
     }
     $vpartner = _PaletteTitleEmoji $script:TerminalTalkVsplitPartner[$i - 16]
-    return "$primary$vpartner"
+    return "$primary$([char]0x258C)$vpartner"
 }
 
 function Get-TerminalTalkPaletteAnsiGlyph {

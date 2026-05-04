@@ -16403,7 +16403,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
     const green = String.fromCodePoint(0x1F7E2);
     const orange = String.fromCodePoint(0x1F7E0);
     const purple = String.fromCodePoint(0x1F7E3);
-    assertEqual(out, `${red}|${red}${green}|${orange}${purple}`);
+    assertEqual(out, `${red}|${red}▀${green}|${orange}▌${purple}`);
   });
 
   it('Get-TerminalTalkPaletteAnsiGlyph emits exact coloured solid/split terminal markers', () => {
