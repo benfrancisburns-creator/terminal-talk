@@ -52,11 +52,15 @@ from threading import Lock
 
 try:
     from sentence_group import group_sentences_for_tts
-    from tool_narration import narrate_tool_use
+    from tool_narration import (extract_visible_context_scope,
+                                leading_tool_verb, narrate_tool_use,
+                                vary_tool_phrase)
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from sentence_group import group_sentences_for_tts
-    from tool_narration import narrate_tool_use
+    from tool_narration import (extract_visible_context_scope,
+                                leading_tool_verb, narrate_tool_use,
+                                vary_tool_phrase)
 
 
 # ---------------------------------------------------------------------------
@@ -69,16 +73,29 @@ except ImportError:
 # a concurrent main.js `saveAssignments` can overwrite a test's
 # seeded registry between the seed-write and synth_turn reading it,
 # leaking a synthesised clip under a stale test-fixture short.
-_TT_HOME_ENV = os.environ.get('TT_HOME')
-TT_HOME = Path(_TT_HOME_ENV) if _TT_HOME_ENV else (Path.home() / '.terminal-talk')
+def _default_tt_home() -> Path:
+    if sys.platform.startswith('linux'):
+        return Path(os.environ.get('XDG_STATE_HOME') or (Path.home() / '.local' / 'state')) / 'terminal-talk'
+    return Path.home() / '.terminal-talk'
+
+
+_TT_HOME_ENV = os.environ.get('TT_HOME') or os.environ.get('TT_INSTALL_DIR')
+TT_HOME = Path(_TT_HOME_ENV) if _TT_HOME_ENV else _default_tt_home()
 QUEUE_DIR = TT_HOME / 'queue'
 SESSIONS_DIR = TT_HOME / 'sessions'
-CONFIG_PATH = TT_HOME / 'config.json'
+if os.environ.get('TT_CONFIG_PATH'):
+    CONFIG_PATH = Path(os.environ['TT_CONFIG_PATH'])
+elif sys.platform.startswith('linux') and not _TT_HOME_ENV:
+    CONFIG_PATH = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config')) / 'terminal-talk' / 'config.json'
+else:
+    CONFIG_PATH = TT_HOME / 'config.json'
 # D2 safeStorage sidecar. Main.js (Electron) decrypts the OpenAI API
 # key via safeStorage on load and writes plaintext here for same-user
 # non-Electron consumers (PS hooks + this script) to read. ACL'd to
 # the current user on install; absent if the user never set a key.
-SECRETS_PATH = TT_HOME / 'config.secrets.json'
+SECRETS_PATH = Path(
+    os.environ.get('TT_SECRETS_PATH') or (CONFIG_PATH.parent / 'config.secrets.json')
+)
 REGISTRY_PATH = TT_HOME / 'session-colours.json'
 LOG_PATH = QUEUE_DIR / '_hook.log'
 EDGE_TTS_SCRIPT = Path(__file__).resolve().parent / 'edge_tts_speak.py'
@@ -144,6 +161,18 @@ LOCK_ACQUIRE_TIMEOUT_SEC = 30
 # Sessionshort validation: 8 hex chars. Refusing anything else stops path
 # traversal via crafted transcript paths.
 SESSION_SHORT_RE = re.compile(r'^[a-f0-9]{8}$')
+
+# Edge-voice shape: <lang>-<region>-<Name>[Multilingual|Expressive]Neural.
+# Used to reject cross-provider voice strings (OpenAI: 'nova', 'onyx', etc.)
+# that the UI can save as a per-session override. Without this guard, the
+# Edge fallback path passes 'nova' to edge_tts.Communicate() which fails
+# with rc=1 size=0; combined with an exhausted OpenAI quota the session
+# loses ALL audio while other sessions keep working. Audit by Codex
+# adversarial review 2026-04-29.
+EDGE_VOICE_RE = re.compile(
+    r'^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+'
+    r'(?:Multilingual|Expressive)?Neural$'
+)
 
 SESSIONSHORT_LEN = 8
 
@@ -531,6 +560,103 @@ def _looks_like_code(content: str) -> bool:
     # one code-like token ("see git log for the history"). Don't flip
     # the whole block on one signal.
     return False
+
+
+def _code_language_name(lang: str) -> str:
+    key = (lang or '').strip().lower()
+    names = {
+        'js': 'javascript',
+        'jsx': 'javascript',
+        'cjs': 'javascript',
+        'mjs': 'javascript',
+        'ts': 'typescript',
+        'tsx': 'typescript',
+        'py': 'python',
+        'ps1': 'powershell',
+        'psm1': 'powershell',
+        'pwsh': 'powershell',
+        'sh': 'shell',
+        'bash': 'shell',
+        'zsh': 'shell',
+        'yml': 'yaml',
+    }
+    return names.get(key, key)
+
+
+def _code_identifier_to_words(name: str) -> str:
+    s = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name or '')
+    s = re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])', ' ', s)
+    s = re.sub(r'[_-]+', ' ', s)
+    return re.sub(r'\s+', ' ', s).strip().lower()
+
+
+def _clean_code_block_label(label: str) -> str:
+    s = re.sub(r'[`*_#~|]+', ' ', label or '')
+    s = re.sub(r'[^A-Za-z0-9]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip().lower()
+    words = s.split()
+    return ' '.join(words[:10])
+
+
+def _code_block_focus(content: str) -> str:
+    class_match = re.search(
+        r'^[ \t]*(?:export\s+)?(?:class|interface)\s+([A-Za-z_$][\w$]*)',
+        content,
+        re.MULTILINE,
+    )
+    if class_match:
+        return f'defines the {_code_identifier_to_words(class_match.group(1))} class'
+
+    func_patterns = [
+        r'^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(',
+        r'^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(',
+        r'^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>',
+        r'^[ \t]*function\s+([A-Z][A-Za-z]+-[A-Z][A-Za-z]+)',
+    ]
+    for pattern in func_patterns:
+        m = re.search(pattern, content, re.MULTILINE)
+        if m:
+            return f'defines the {_code_identifier_to_words(m.group(1))} function'
+
+    test_match = re.search(r'\b(?:describe|it|test)\s*\(\s*[\'"]([^\'"]{1,100})[\'"]', content)
+    if test_match:
+        label = _clean_code_block_label(test_match.group(1))
+        if label:
+            return f'contains the {label} tests'
+
+    scope = extract_visible_context_scope(content)
+    return f'around {scope}' if scope else ''
+
+
+def _code_block_summary(lang: str, content: str) -> str:
+    lines = len([ln for ln in (content or '').splitlines() if ln.strip()])
+    if lines == 0:
+        return ' '
+    language = _code_language_name(lang)
+    language_phrase = f' of {language}' if language else ''
+    shape = ''
+    focus = _code_block_focus(content)
+    if focus:
+        shape = f', {focus}'
+    elif re.search(r'^[ \t]*(?:export\s+)?class\s+[A-Za-z_$][\w$]*', content, re.MULTILINE):
+        shape = ', defines a class'
+    elif (
+        re.search(r'^[ \t]*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(', content, re.MULTILINE)
+        or re.search(r'^[ \t]*(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(', content, re.MULTILINE)
+        or re.search(r'^[ \t]*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>', content, re.MULTILINE)
+        or re.search(r'^[ \t]*function\s+[A-Z][A-Za-z]+-[A-Z][A-Za-z]+', content, re.MULTILINE)
+    ):
+        shape = ', defines a function'
+    elif re.search(r'\b(?:describe|it|test)\s*\(\s*[\'"]', content):
+        shape = ', contains tests'
+    elif re.search(r'^\s*(?:npm|yarn|pnpm|git|pip|python|python3|node|pwsh|powershell|docker|kubectl)\s+[-\w/]', content, re.MULTILINE):
+        shape = ', shows shell commands'
+    elif re.search(r'^\s*[\{\[]\s*$', content, re.MULTILINE) or re.search(r'^\s*"[\w.-]+":\s*', content, re.MULTILINE):
+        shape = ', shows data'
+    plural = 'line' if lines == 1 else 'lines'
+    return f' Code block: {lines} {plural}{language_phrase}{shape}. '
+
+
 # Inline code: GFM-style balanced backtick runs. `(backticks+)(content)\1`
 # requires the closing run to have the same number of backticks as the
 # opening. This correctly parses both single `foo` and double `` `foo` ``
@@ -614,15 +740,44 @@ _MARKDOWN_TABLE_RE = re.compile(
 )
 
 
+def _table_cell_summary(cell: str) -> str:
+    """Clean one markdown-table cell for a short spoken summary."""
+    s = str(cell or '')
+    s = re.sub(r'<[^>]+>', ' ', s)
+    s = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', s)
+    s = re.sub(r'`+([^`\n]+?)`+', r'\1', s)
+    s = re.sub(r'[*_~|]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
 def _table_summary(m: re.Match[str]) -> str:
-    """Replace a markdown table block with one speakable summary line."""
-    header_cells = [c.strip() for c in m.group('header').split('|') if c.strip()]
-    row_count = sum(1 for ln in m.group('rows').splitlines() if ln.strip().startswith('|'))
+    """Replace a markdown table block with one speakable summary line.
+
+    Audio cannot preserve columns visually, so speak the table shape and
+    a compact first-row sample. That gives the listener context without
+    reading every separator or cell.
+    """
+    header_cells = [_table_cell_summary(c) for c in m.group('header').split('|')]
+    header_cells = [c for c in header_cells if c]
+    rows = []
+    for ln in m.group('rows').splitlines():
+        if not ln.strip().startswith('|'):
+            continue
+        cells = [_table_cell_summary(c) for c in ln.strip().strip('|').split('|')]
+        rows.append(cells)
+    row_count = len(rows)
     if not header_cells:
         return f'Table with {row_count} rows.'
     cols = ', '.join(header_cells)
     plural = 'row' if row_count == 1 else 'rows'
-    return f'Table with {row_count} {plural}. Columns: {cols}.\n'
+    first_row = rows[0] if rows else []
+    pairs = []
+    for i in range(min(len(header_cells), len(first_row), 3)):
+        if header_cells[i] and first_row[i]:
+            pairs.append(f'{header_cells[i]}: {first_row[i]}')
+    sample = f' First row: {"; ".join(pairs)}.' if pairs else ''
+    return f'Table with {row_count} {plural}. Columns: {cols}.{sample}\n'
 
 
 _KBD_MODIFIER_RE = re.compile(
@@ -672,9 +827,9 @@ def sanitize(text: str, flags: dict) -> str:
         if keep_code:
             return content
         if lang:
-            return ''  # Explicit tag = definitely code; strip body.
+            return _code_block_summary(lang, content)  # Explicit tag = definitely code; summarise body.
         if _looks_like_code(content):
-            return ''  # No tag but content has code signals; strip.
+            return _code_block_summary(lang, content)  # No tag but content has code signals; summarise.
         return content  # No tag + prose-like body; speak the content.
 
     t = _CODE_FENCE_RE.sub(_code_fence_repl, t)
@@ -728,12 +883,14 @@ def sanitize(text: str, flags: dict) -> str:
     if not flags.get('urls', False):
         t = _URL_RE.sub('', t)
 
-    # Headings — drop whole line
+    # Headings — drop whole line or call out the section explicitly.
     if not flags.get('headings', True):
         t = _HEADING_LINE_RE.sub('', t)
     else:
-        # Keep heading text but drop the # marks
-        t = re.sub(r'^\s*#{1,6}\s*', '', t, flags=re.MULTILINE)
+        def _heading_repl(m: re.Match) -> str:
+            h = m.group(1).strip()
+            return f'Section: {h}.' if h else ' '
+        t = re.sub(r'^\s*#{1,6}\s*(.+?)\s*$', _heading_repl, t, flags=re.MULTILINE)
 
     # Bullet markers. Stripping just the "- " prefix leaves each bullet's
     # content on its own line but without sentence-ending punctuation —
@@ -742,14 +899,47 @@ def sanitize(text: str, flags: dict) -> str:
     # whole bullet line and emit "content." (adding an implicit period if
     # the author didn't end the bullet with terminator punctuation) so
     # sentence_split splits each bullet as its own sentence.
-    if not flags.get('bullet_markers', False):  # fallback matches DEFAULT_SPEECH_INCLUDES
+    def _punctuate_bullet(content: str, prefix: str = '') -> str:
+        c = content.rstrip()
+        if not c:
+            return ''
+        if c[-1] not in '.!?:;':
+            c = c + '.'
+        return f'{prefix}{c}' if prefix else c
+
+    if flags.get('bullet_markers', False):
+        def _number_marked_lists(text: str) -> str:
+            unordered_n = 0
+            ordered_active = False
+            ordered_next = 1
+            out: list[str] = []
+            for line in text.split('\n'):
+                m = re.match(r'^[ \t]*([-*+]|\d+[.)])[ \t]+(.+?)[ \t]*$', line)
+                if not m:
+                    unordered_n = 0
+                    if not re.match(r'^[ \t]', line):
+                        ordered_active = False
+                        ordered_next = 1
+                    out.append(line)
+                    continue
+
+                marker = m.group(1)
+                if marker in ('-', '*', '+'):
+                    unordered_n += 1
+                    out.append(f'{unordered_n}. {_punctuate_bullet(m.group(2))}')
+                    continue
+
+                unordered_n = 0
+                raw_number = int(re.match(r'\d+', marker).group(0))
+                spoken_number = raw_number if raw_number > 1 else (ordered_next if ordered_active else 1)
+                ordered_active = True
+                ordered_next = spoken_number + 1
+                out.append(f'{spoken_number}. {_punctuate_bullet(m.group(2))}')
+            return '\n'.join(out)
+        t = _number_marked_lists(t)
+    else:  # fallback matches DEFAULT_SPEECH_INCLUDES
         def _bullet_line_repl(m: re.Match) -> str:
-            content = m.group(1).rstrip()
-            if not content:
-                return ''
-            if content[-1] not in '.!?:;':
-                content = content + '.'
-            return content
+            return _punctuate_bullet(m.group(1))
         t = re.sub(
             r'^[ \t]*(?:[-*+]|\d+\.)[ \t]+(.+?)[ \t]*$',
             _bullet_line_repl,
@@ -772,6 +962,27 @@ def sanitize(text: str, flags: dict) -> str:
     # "approximately" semantic is rarely essential and context usually
     # makes it clear. User-reported.
     t = t.replace('~', '')
+
+    # "live" at sentence end is ambiguous to TTS and can be pronounced
+    # like "I live in a house". For Terminal Talk status/deploy phrasing,
+    # rewrite only the current/running sense to unambiguous words.
+    t = re.sub(
+        r'\b[Dd]one and live\b',
+        lambda m: 'Done and running' if m.group(0)[0] == 'D' else 'done and running',
+        t,
+    )
+    t = re.sub(
+        r'\b[Nn]ow live\b',
+        lambda m: 'Now running' if m.group(0)[0] == 'N' else 'now running',
+        t,
+    )
+    t = re.sub(r'\b([Ii]s|[Aa]re) live\b', r'\1 running', t)
+    t = re.sub(
+        r'\blive (install|app|toolbar|version|session|registry|config|configuration|runtime|files?|audio)\b',
+        lambda m: f'active {m.group(1)}',
+        t,
+        flags=re.IGNORECASE,
+    )
 
     # Collapse excessive blank lines
     t = re.sub(r'\n{3,}', '\n\n', t)
@@ -862,7 +1073,14 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
             entry = reg.get('assignments', {}).get(session_short)
             if entry:
                 if entry.get('voice'):
-                    voice = str(entry['voice'])
+                    candidate = str(entry['voice'])
+                    if EDGE_VOICE_RE.match(candidate):
+                        voice = candidate
+                    else:
+                        _log(
+                            f'ignoring non-Edge per-session voice for Edge fallback: '
+                            f'session={session_short} voice={candidate!r}'
+                        )
                 if entry.get('muted') is True:
                     muted = True
                 per_inc = entry.get('speech_includes', {})
@@ -905,7 +1123,11 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
                 if attempt > 1:
                     _log(f'edge-tts recovered on attempt {attempt}/{attempts}')
                 return True
-            last_err = f'rc={proc.returncode} size={out_path.stat().st_size if out_path.exists() else 0}'
+            size = out_path.stat().st_size if out_path.exists() else 0
+            stderr = proc.stderr.decode('utf-8', errors='replace').strip()
+            last_err = f'rc={proc.returncode} size={size}'
+            if stderr:
+                last_err += f' stderr={stderr[:500]!r}'
         except subprocess.TimeoutExpired:
             last_err = f'timeout len={len(sentence)}'
         except Exception as e:
@@ -924,12 +1146,17 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
     return False
 
 
-def resolve_tts_routing(config: dict) -> tuple[str, str]:
-    """Return (provider, openai_voice) for this turn.
+def resolve_tts_routing(config: dict) -> tuple[str, str, str]:
+    """Return (provider, fallback_provider, openai_voice) for this turn.
 
     provider is 'edge' or 'openai'. Anything else (malformed config,
     missing key) gets normalised to 'edge' — Ben's default + safest
-    fallback when the toggle has an unexpected value.
+    route when the toggle has an unexpected value.
+
+    fallback_provider is explicit: 'edge', 'openai', or 'none'. Missing
+    and malformed values normalise to 'edge', which means Edge-primary
+    turns do NOT silently fall back to paid OpenAI. Users opt into that
+    by setting playback.tts_fallback_provider to 'openai'.
 
     openai_voice reads voices.openai_response. Keeps the voice Ben
     picked from the dropdown when the OpenAI path fires — previously
@@ -939,13 +1166,16 @@ def resolve_tts_routing(config: dict) -> tuple[str, str]:
     provider = str(playback.get('tts_provider') or 'edge').lower()
     if provider not in ('edge', 'openai'):
         provider = 'edge'
+    fallback_provider = str(playback.get('tts_fallback_provider') or 'edge').lower()
+    if fallback_provider not in ('edge', 'openai', 'none'):
+        fallback_provider = 'edge'
     voices = config.get('voices') or {}
     openai_voice = voices.get('openai_response') or 'alloy'
-    return provider, openai_voice
+    return provider, fallback_provider, openai_voice
 
 
 def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path) -> bool:
-    """OpenAI TTS synth (primary OR fallback depending on tts_provider).
+    """OpenAI TTS synth (primary OR explicit fallback route).
     Mirrors current Stop hook. Optional.
 
     API key is passed to the subprocess via the OPENAI_API_KEY env var,
@@ -973,7 +1203,7 @@ def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path
         # Exit code 2 = HTTP 401 (invalid key). openai_tts.py distinguishes
         # this from generic failure so we can drop an auto-unset marker
         # that main.js picks up on its next sweep — clears the safeStorage
-        # key + flips playback.tts_provider back to 'edge' so we don't
+        # key + flips OpenAI provider routes back to 'edge' so we don't
         # keep hammering the API with a rejected key.
         if proc.returncode == 2:
             try:
@@ -989,17 +1219,17 @@ def _run_openai_fallback(sentence: str, api_key: str, voice: str, out_path: Path
         err = (proc.stderr.decode('utf-8', 'replace') if proc.stderr else '').strip()
         if api_key and api_key in err:
             err = err.replace(api_key, '<redacted>')
-        _log(f'openai fallback rc={proc.returncode} stderr={err[:200]}')
+        _log(f'openai route rc={proc.returncode} stderr={err[:200]}')
     except subprocess.TimeoutExpired:
         # Explicitly DO NOT log the exception object itself — Python's
         # default repr includes the full cmd (argv) which used to
         # contain the key. Voice + timeout is plenty to diagnose.
-        _log(f'openai fallback timeout ({SYNTH_OPENAI_TIMEOUT_SEC}s) voice={voice}')
+        _log(f'openai route timeout ({SYNTH_OPENAI_TIMEOUT_SEC}s) voice={voice}')
     except Exception as e:
         msg = str(e)
         if api_key and api_key in msg:
             msg = msg.replace(api_key, '<redacted>')
-        _log(f'openai fallback fail: {type(e).__name__}: {msg[:200]}')
+        _log(f'openai route fail: {type(e).__name__}: {msg[:200]}')
     return False
 
 
@@ -1009,14 +1239,14 @@ def synthesize_parallel(
     session_short: str,
     openai_key: str | None,
     prefix: str = '',  # e.g., 'Q-' for questions
-    # TTS routing: when `provider == 'openai'` AND `openai_key` is set,
-    # OpenAI TTS is tried FIRST with `openai_voice`, with edge-tts as
-    # the fallback. Otherwise (default) edge-tts is primary with
-    # OpenAI as the fallback — exactly the pre-2026-04-23 behaviour.
+    # TTS routing: try `provider` first, then only the explicit
+    # `fallback_provider`. Default fallback is 'edge', so Edge-primary
+    # turns do not silently spend OpenAI credits when edge-tts fails.
     # `voice` stays the edge voice so existing callers don't change
     # meaning; `openai_voice` was previously hardcoded to 'alloy' which
     # ignored the user's Settings dropdown pick. Now honours it.
     provider: str = 'edge',
+    fallback_provider: str = 'edge',
     openai_voice: str = 'alloy',
     # Optional pre-strip-for-tts text for the transcript-panel feature.
     # When provided, written to <base>.original.txt alongside the
@@ -1119,21 +1349,30 @@ def synthesize_parallel(
             except Exception as e:
                 _log(f'release move fail seq={seq}: {e}')
 
+    provider = str(provider or 'edge').lower()
+    if provider not in ('edge', 'openai'):
+        provider = 'edge'
+    fallback_provider = str(fallback_provider or 'edge').lower()
+    if fallback_provider not in ('edge', 'openai', 'none'):
+        fallback_provider = 'edge'
+    provider_order = [provider]
+    if fallback_provider != 'none':
+        resolved_fallback = 'edge' if fallback_provider == provider == 'openai' else fallback_provider
+        if resolved_fallback != provider:
+            provider_order.append(resolved_fallback)
+
     def _synth_task(seq: int, sentence: str) -> None:
         tmp = tmp_dir / f'{turn_ts}-{session_short}-{seq:04d}.mp3'
-        if provider == 'openai' and openai_key:
-            # OpenAI-primary: try OpenAI first, fall back to edge-tts on
-            # API error / rate limit / network wobble. Ben's Settings
-            # toggle "Prefer OpenAI" routes here.
-            ok = _run_openai_fallback(sentence, openai_key, openai_voice, tmp)
-            if not ok:
-                ok = _run_edge_tts(sentence, voice, tmp)
-        else:
-            # Edge-primary (default): try edge-tts first, fall back to
-            # OpenAI on failure (and only if a key is configured).
-            ok = _run_edge_tts(sentence, voice, tmp)
-            if not ok and openai_key:
+        ok = False
+        for route in provider_order:
+            if route == 'openai':
+                if not openai_key:
+                    continue
                 ok = _run_openai_fallback(sentence, openai_key, openai_voice, tmp)
+            else:
+                ok = _run_edge_tts(sentence, voice, tmp)
+            if ok:
+                break
         with release_lock:
             results[seq] = tmp if ok else None
             _release_ready()
@@ -1213,7 +1452,7 @@ def _do_stream(
 
     config = load_config()
     voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
-    provider, openai_voice = resolve_tts_routing(config)
+    provider, fallback_provider, openai_voice = resolve_tts_routing(config)
     if muted:
         # Don't synth, but DO advance offsets + mark done so unmute
         # picks up from current moment, not replay history.
@@ -1243,6 +1482,7 @@ def _do_stream(
     )
     synthesize_parallel(all_clips, voice, session_short, openai_key,
                         provider=provider, openai_voice=openai_voice,
+                        fallback_provider=fallback_provider,
                         original_full='\n\n'.join(body_text_chunks))
 
     state['partial_text_offsets'] = updated_offsets
@@ -1319,6 +1559,96 @@ PAST_TENSE_VERBS = (
     'Transmuted', 'Unfurled', 'Unravelled', 'Vibed', 'Wandered', 'Whirred',
     'Wibbled', 'Wizarded', 'Worked', 'Wrangled',
 )
+
+
+_TIMESTAMP_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z?$')
+
+
+def _parse_timestamp(value) -> float:
+    """Parse a Claude Code JSONL ISO-8601 UTC timestamp to epoch seconds.
+
+    Accepts strings like '2026-05-04T13:38:06.064Z' (the format Claude
+    Code writes). Returns 0.0 on any parse failure so callers can fall
+    back gracefully.
+    """
+    if not isinstance(value, str):
+        return 0.0
+    m = _TIMESTAMP_RE.match(value.strip())
+    if not m:
+        return 0.0
+    try:
+        from datetime import datetime, timezone
+        y, mo, d, h, mi, s = (int(m.group(i)) for i in range(1, 7))
+        frac = m.group(7)
+        micro = int((frac + '000000')[:6]) if frac else 0
+        dt = datetime(y, mo, d, h, mi, s, micro, tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return 0.0
+
+
+def _elapsed_from_transcript(entries: list, user_idx: int) -> int:
+    """Compute elapsed seconds from JSONL: last_user_prompt → last_assistant.
+
+    user_idx is the index of the most recent USER PROMPT (already filtered
+    against tool_result entries by find_last_user_idx). The last assistant
+    timestamp is the latest 'assistant' entry after that index. Returns 0
+    if either timestamp is unreadable, so callers fall back to their own
+    elapsed measurement.
+    """
+    if user_idx is None or user_idx < 0 or user_idx >= len(entries):
+        return 0
+    user_ts = _parse_timestamp((entries[user_idx] or {}).get('timestamp'))
+    if user_ts <= 0:
+        return 0
+    last_assistant_ts = 0.0
+    for i in range(len(entries) - 1, user_idx, -1):
+        e = entries[i] or {}
+        if e.get('type') != 'assistant':
+            continue
+        ts = _parse_timestamp(e.get('timestamp'))
+        if ts > last_assistant_ts:
+            last_assistant_ts = ts
+            break
+    if last_assistant_ts <= 0:
+        return 0
+    delta = last_assistant_ts - user_ts
+    if delta < 1:
+        return 0
+    return int(round(delta))
+
+
+def humanise_footer_phrase(footer: str) -> str:
+    """Expand a scraped Claude Code footer into natural spoken English.
+
+    Claude Code prints e.g. 'Crunched for 6m 39s' to the terminal. Edge-TTS
+    pronounces 'm' as "em" and 's' as "ess" — gibberish. This expands the
+    abbreviation in place while keeping the actual verb Claude Code chose,
+    so the audio clip says exactly what's on screen but spoken naturally.
+
+    Returns the original string unchanged if the format isn't recognised.
+
+        'Crunched for 6m 39s' → 'Crunched for 6 minutes and 39 seconds'
+        'Cooked for 49s'      → 'Cooked for 49 seconds'
+        'Brewed for 1m'       → 'Brewed for 1 minute'
+        'Brewed for 1m 1s'    → 'Brewed for 1 minute and 1 second'
+    """
+    if not footer:
+        return ''
+    m = re.match(r'^([A-Za-zÀ-ſ]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s\s*$', footer.strip())
+    if not m:
+        return footer.strip()
+    verb = m.group(1)
+    mins = int(m.group(2)) if m.group(2) else 0
+    secs = int(m.group(3))
+    if mins == 0:
+        return f'{verb} for {secs} second{"" if secs == 1 else "s"}'
+    if secs == 0:
+        return f'{verb} for {mins} minute{"" if mins == 1 else "s"}'
+    return (
+        f'{verb} for {mins} minute{"" if mins == 1 else "s"} '
+        f'and {secs} second{"" if secs == 1 else "s"}'
+    )
 
 
 def format_elapsed_phrase(seconds: int, rng=None) -> str:
@@ -1460,7 +1790,7 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
 
         config = load_config()
         voice, flags, openai_key, muted = resolve_voice_and_flags(session_short, config)
-        provider, openai_voice = resolve_tts_routing(config)
+        provider, fallback_provider, openai_voice = resolve_tts_routing(config)
 
         # Muted sessions: cut the wire. Still advance sync state for both
         # text and tool entries so that when the user unmutes we don't
@@ -1500,12 +1830,18 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             # repetition (e.g. consecutive Edit + Read on the same file
             # drop the "in <file>" suffix on the second call).
             prev_call: tuple[str, dict] | None = None
+            recent_tool_verbs: list[str] = []
             for tool_idx, tname, tinput, tresult in new_tool_entries:
                 phrase = narrate_tool_use(tname, tinput,
                                           prev_call=prev_call,
                                           tool_result=tresult)
                 if phrase:
+                    seed = f'{tname}|{json.dumps(tinput or {}, sort_keys=True, default=str)}'
+                    phrase = vary_tool_phrase(phrase, seed, avoid_verbs=recent_tool_verbs[-3:])
                     tool_narrations.append(phrase)
+                    verb = leading_tool_verb(phrase)
+                    if verb:
+                        recent_tool_verbs = (recent_tool_verbs + [verb])[-6:]
                     # Only update prev_call when narration was emitted.
                     # Suppressed tool_uses (whitespace-only edits, meta
                     # tools) shouldn't reset the same-file context.
@@ -1561,13 +1897,19 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         # so the listener gets "Reading X" before the response prose.
         if question_sentences:
             synthesize_parallel(question_sentences, voice, session_short, openai_key,
-                                prefix='Q-', provider=provider, openai_voice=openai_voice)
+                                prefix='Q-', provider=provider,
+                                fallback_provider=fallback_provider,
+                                openai_voice=openai_voice)
         if tool_narrations:
             synthesize_parallel(tool_narrations, voice, session_short, openai_key,
-                                prefix='T-', provider=provider, openai_voice=openai_voice)
+                                prefix='T-', provider=provider,
+                                fallback_provider=fallback_provider,
+                                openai_voice=openai_voice)
         if body_clips:
             synthesize_parallel(body_clips, voice, session_short, openai_key,
-                                provider=provider, openai_voice=openai_voice,
+                                provider=provider,
+                                fallback_provider=fallback_provider,
+                                openai_voice=openai_voice,
                                 original_full=body_combined_raw or None)
 
         # Update sync state. Both dimensions tracked independently:

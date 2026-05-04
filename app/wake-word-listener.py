@@ -5,14 +5,13 @@ speakClipboard() in the Electron toolbar. Uses ctypes (no subprocess) for
 instant keystroke delivery.
 
 Phase 1 voice commands (2026-04-24): after a wake-word fire we also
-capture ~500 ms of audio. If it's below an RMS silence threshold we
-send Ctrl+Shift+S straight away (the existing read-highlighted flow).
-If the user IS speaking, we keep capturing to ~2 s, write a WAV, and
-spawn voice-command-recognize.ps1 (System.Speech.Recognition with a
-fixed SRGS grammar). A match writes ~/.terminal-talk/voice-command.json
+capture post-wake audio, trim the leading wake-word tail, and spawn
+voice-command-recognize.ps1 (System.Speech.Recognition with a fixed
+grammar). A high-confidence match writes ~/.terminal-talk/voice-command.json
 which main.js picks up and routes to audio-player actions (play, pause,
-next, back, stop, resume, cancel). No match → short MessageBeep chime
-so the user knows it was heard but not understood.
+next, back, stop, resume, cancel). Anything ambiguous falls through to
+Ctrl+Shift+S so "Hey Jarvis" by itself keeps reading highlighted text
+without a Windows chime.
 
 S2.3: firing is gated by an adaptive noise floor (exponential moving
 average of recent scores) rather than the raw THRESHOLD alone. In a noisy
@@ -35,7 +34,6 @@ import tempfile
 import threading
 import time
 import wave
-import winsound
 from pathlib import Path
 
 import numpy as np
@@ -124,28 +122,14 @@ POST_WAKE_CAPTURE_SAMPLES = 48000          # hard cap: ~3 s
 POST_WAKE_MIN_CAPTURE_SAMPLES = 12800      # ~800 ms minimum
 POST_WAKE_TRAILING_SILENCE_CHUNKS = 5      # 5 chunks * 80ms = 400ms trailing silence
 POST_WAKE_VOICE_RMS_THRESHOLD = 150        # per-chunk RMS to count as speech
+POST_WAKE_COMMAND_LEAD_SKIP_SAMPLES = 5120 # ~320 ms: remove wake-word tail before SAPI
 
-# RMS threshold for "post-wake was silent" — used ONLY to decide
-# whether to fall through to the existing Ctrl+Shift+S clipboard-read
-# flow vs. chime as "heard you but missed the word". Tuned against
-# live logs 2026-04-24: Ben's mic shows speech at RMS 170-320,
-# ambient around 40-80. 100 is a conservative floor that treats the
-# 170+ range as "definitely speech".
-#
-# Getting this wrong has a specific cost: too high and real
-# commands fall through to Ctrl+Shift+S, which synthesises a ghost
-# clip from whatever was highlighted — Ben saw that on 2026-04-24
-# as "a little circle appears and disappears in the queue".
-SILENCE_RMS_THRESHOLD = 100
-
-# SAPI confidence floor. 0.5 was too strict — Ben's live log showed
-# a correct "pause" match at 0.21 that we rejected, falling through
-# to Ctrl+Shift+S and firing the ghost-clip path described above.
-# 0.3 accepts genuine matches while still rejecting random 0.1-ish
-# phonetic collisions (a cough happens to hit a grammar word). If a
-# false-fire sneaks through, user can say "hey jarvis cancel" within
-# 2 s (cancel is a no-op at main.js).
-MIN_CONFIDENCE = 0.3
+# SAPI confidence floor. Live testing on 2026-04-29 showed the wake-word
+# tail alone can be misheard as "pause" at confidence 0.76. Treating that
+# as a command made "Hey Jarvis" alone chime/dispatch pause instead of
+# reading the highlighted text, so keep command dispatch deliberately
+# conservative. Ambiguous matches fall through to Ctrl+Shift+S.
+MIN_CONFIDENCE = 0.8
 
 VOICE_COMMAND_PATH = Path.home() / '.terminal-talk' / 'voice-command.json'
 RECOGNIZER_SCRIPT = Path(__file__).resolve().parent / 'voice-command-recognize.ps1'
@@ -266,23 +250,6 @@ def _write_voice_command(action: str) -> None:
         log.error(f'write voice-command fail: {type(e).__name__}: {e}')
 
 
-def _play_success_chime() -> None:
-    """Short rising two-note chime — distinct from the
-    unrecognised MB_ICONEXCLAMATION so the user can hear which path
-    fired without waiting for the command to take effect. Windows
-    winsound is synchronous but fast (~60 ms) and runs on the
-    dispatcher thread, not the audio-callback thread."""
-    try:
-        # winsound.Beep is blocking but short. Two quick ascending
-        # tones = "got it". Failure path uses Windows' built-in
-        # MB_ICONEXCLAMATION which is a single descending note —
-        # audibly distinct.
-        winsound.Beep(880, 60)
-        winsound.Beep(1175, 80)
-    except Exception as e:
-        log.warning(f'success chime fail: {type(e).__name__}: {e}')
-
-
 def _keep_debug_wav(buf: np.ndarray, reason: str) -> None:
     """Keep the captured WAV under ~/.terminal-talk/queue/_voice-debug/
     when a command didn't fire cleanly. Gives a post-mortem asset we
@@ -307,13 +274,12 @@ def _handle_post_wake(buf: np.ndarray) -> None:
     """Runs in the command-dispatch thread. Decision tree:
 
       1. SAPI matched a grammar phrase with conf >= MIN_CONFIDENCE →
-         write voice-command.json + play success chime.
-      2. SAPI returned something below MIN_CONFIDENCE → unrecognised
-         chime. Keep WAV for debug.
-      3. SAPI returned nothing AND buffer is truly silent (all RMS
-         windows low) → fall through to Ctrl+Shift+S.
-      4. SAPI returned nothing AND buffer has speech → unrecognised
-         chime + keep WAV for debug.
+         write voice-command.json.
+      2. SAPI returned something below MIN_CONFIDENCE → keep WAV for
+         debug and fall through to Ctrl+Shift+S.
+      3. SAPI returned nothing → fall through to Ctrl+Shift+S.
+         "Hey Jarvis" by itself is the primary read-highlighted-text
+         workflow; natural wake-word tail / room noise must not chime.
 
     Earlier revisions had two distinct failure modes (both shipped
     before live testing):
@@ -321,21 +287,26 @@ def _handle_post_wake(buf: np.ndarray) -> None:
       - silence probe ran BEFORE SAPI and misfired on natural pauses,
       - SILENCE_RMS=400 was too high for Ben's mic — real speech at
         170-320 RMS got routed to Ctrl+Shift+S ghost-clip path,
-      - MIN_CONFIDENCE=0.5 rejected a correct "pause" at 0.21.
-    All four fixed in the 2026-04-24 log-driven retune.
+      - speech-level wake-word tail got treated as an unknown command
+        and chimed instead of reading the highlighted text.
+      - wake-word tail got misheard as "pause" at 0.76 confidence and
+        dispatched a command/chime when Ben only said "Hey Jarvis".
     """
+    command_buf = buf[POST_WAKE_COMMAND_LEAD_SKIP_SAMPLES:]
+    if command_buf.size == 0:
+        command_buf = buf
     with tempfile.NamedTemporaryFile(
         suffix='.wav', prefix='tt-voice-', delete=False,
     ) as tf:
         wav_path = Path(tf.name)
     try:
-        _write_wav(wav_path, buf)
+        _write_wav(wav_path, command_buf)
         result = _run_recognizer(wav_path)
         action = result.get('action')
         confidence = float(result.get('confidence', 0.0))
-        full_rms = _rms(buf)
+        full_rms = _rms(command_buf)
 
-        duration_ms = int(1000 * buf.shape[0] / SAMPLE_RATE) if buf.shape[0] else 0
+        duration_ms = int(1000 * command_buf.shape[0] / SAMPLE_RATE) if command_buf.shape[0] else 0
         # 1) Clean match.
         if action and confidence >= MIN_CONFIDENCE:
             log.info(
@@ -344,43 +315,31 @@ def _handle_post_wake(buf: np.ndarray) -> None:
                 f'dur={duration_ms}ms'
             )
             _write_voice_command(action)
-            _play_success_chime()
             return
 
-        # 2) SAPI matched but below confidence floor.
+        # 2) SAPI matched but below confidence floor. Low-confidence
+        # command-shaped audio is more likely to be wake-word tail than a
+        # deliberate command, so prefer the primary highlighted-text read.
         if action:
             log.info(
                 f'post-wake low-confidence (action={action}, '
                 f'confidence={confidence:.2f}, rms={full_rms:.0f}, '
-                f'dur={duration_ms}ms); chiming unrecognised'
+                f'dur={duration_ms}ms); falling through to Ctrl+Shift+S'
             )
-            _keep_debug_wav(buf, f'lowconf-{action}-{int(confidence * 100):02d}')
-            try:
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            except Exception as e:
-                log.warning(f'chime fail: {type(e).__name__}: {e}')
+            _keep_debug_wav(command_buf, f'lowconf-{action}-{int(confidence * 100):02d}')
+            send_hotkey()
             return
 
-        # 3) SAPI returned nothing. Distinguish silence from unrecognised
-        # speech via RMS.
-        if full_rms < SILENCE_RMS_THRESHOLD:
-            log.info(
-                f'post-wake silent (rms={full_rms:.0f}, '
-                f'confidence={confidence:.2f}, dur={duration_ms}ms); '
-                f'falling through to Ctrl+Shift+S'
-            )
-            send_hotkey()
-        else:
-            # 4) Speech-level audio, no grammar match. Chime.
-            log.info(
-                f'post-wake unrecognised speech (rms={full_rms:.0f}, '
-                f'confidence={confidence:.2f}, dur={duration_ms}ms)'
-            )
-            _keep_debug_wav(buf, 'nomatch-speech')
-            try:
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            except Exception as e:
-                log.warning(f'chime fail: {type(e).__name__}: {e}')
+        # 3) SAPI returned nothing. Default to the primary behaviour:
+        # read the highlighted text. This keeps "Hey Jarvis" alone
+        # reliable even when the post-wake buffer contains wake-word tail,
+        # breath, keyboard noise, or room sound above the RMS floor.
+        log.info(
+            f'post-wake no command (rms={full_rms:.0f}, '
+            f'confidence={confidence:.2f}, dur={duration_ms}ms); '
+            f'falling through to Ctrl+Shift+S'
+        )
+        send_hotkey()
     finally:
         with contextlib.suppress(Exception):
             wav_path.unlink()
@@ -578,7 +537,7 @@ def main():
                         # Ctrl+Shift+S hotkey yet — _handle_post_wake will
                         # send it on a silent probe (user wants highlighted
                         # text read), OR dispatch a command on a grammar
-                        # match, OR chime on unrecognised speech.
+                        # match, OR fall through on ambiguous speech.
                         # Double-fire guard: if already capturing, ignore
                         # the second wake (cooldown usually covers this
                         # but belt-and-braces). Always reset EPD state

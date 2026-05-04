@@ -30,6 +30,8 @@ import os
 import re
 from urllib.parse import urlparse
 
+_ANSI_RE = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+
 # ---------------------------------------------------------------------------
 # File-path naturalisation
 # ---------------------------------------------------------------------------
@@ -278,6 +280,30 @@ _TEST_NAME_PATTERNS = [
     re.compile(r"^[ \t]*def\s+(test_[A-Za-z0-9_]+)", re.MULTILINE),  # pytest
 ]
 
+# Feature / section labels near code. These are not executable scopes,
+# but they are often the best user-facing context when an edit sits in a
+# module-level settings block, markdown section, PowerShell region, or
+# test suite. Used only when walking real transcript patch metadata.
+_CONTEXT_SCOPE_PATTERNS = [
+    (re.compile(r'^[ \t]{0,3}#{1,6}\s+(.{1,100}?)\s*$'), 'section'),
+    (re.compile(r'^[ \t]*#region\s+(.{1,100}?)\s*$', re.IGNORECASE), 'section'),
+    (re.compile(
+        r'^[ \t]*(?://|#|--)\s*'
+        r'(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)'
+        r'\s*[:\-]\s*(.{1,100}?)\s*$',
+        re.IGNORECASE,
+    ), 'section'),
+    (re.compile(r'^[ \t]*(?://|#|--)\s*[-=]{2,}\s*(.{3,100}?)\s*[-=]{2,}\s*$', re.IGNORECASE), 'section'),
+    (re.compile(
+        r'^[ \t]*/\*+\s*'
+        r'(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)'
+        r'\s*[:\-]\s*(.{1,100}?)\s*\*+/\s*$',
+        re.IGNORECASE,
+    ), 'section'),
+    (re.compile(r'^[ \t]*/\*+\s*[-=]{2,}\s*(.{3,100}?)\s*[-=]{2,}\s*\*+/\s*$', re.IGNORECASE), 'section'),
+    (re.compile(r'^[ \t]*(?:test\.)?(?:describe|context)\s*\(\s*[\'"]([^\'"]{1,100})[\'"]'), 'tests'),
+]
+
 
 def _naturalise_identifier(name: str) -> str:
     """Turn a code identifier into spoken-friendly English. Programmers
@@ -302,6 +328,143 @@ def _naturalise_identifier(name: str) -> str:
     if not stripped:
         return ''
     return _to_words(stripped)
+
+
+def _clean_context_label(label: str) -> str:
+    """Turn a nearby heading/comment label into short spoken prose."""
+    if not label:
+        return ''
+    s = str(label)
+    s = re.sub(r'<!--|-->|/\*+|\*/', ' ', s)
+    s = re.sub(r'[`*_#~|]+', ' ', s)
+    s = re.sub(r'[-=]{2,}', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip(' .:-[](){}')
+    if not s:
+        return ''
+    s = re.sub(
+        r'^(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*',
+        '',
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r'[^A-Za-z0-9]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip().lower()
+    if len(s) < 3:
+        return ''
+    words = s.split()
+    if len(words) > 10:
+        s = ' '.join(words[:10])
+    return s
+
+
+def _extract_code_scope_from_line(line: str) -> str | None:
+    """Find a function/class declaration on one source line."""
+    if not isinstance(line, str) or not line:
+        return None
+    for pat in _FUNCTION_DECL_PATTERNS:
+        m = pat.match(line)
+        if m:
+            return _naturalise_identifier(m.group(1)) or m.group(1)
+    # Fallback for transcript sentinels / partial snippets where the
+    # function header is visible but syntactically incomplete.
+    m = re.match(r'^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)', line)
+    if m:
+        return _naturalise_identifier(m.group(1)) or m.group(1)
+    for pat in _CLASS_DECL_PATTERNS:
+        m = pat.match(line)
+        if m:
+            return _naturalise_identifier(m.group(1)) or m.group(1)
+    return None
+
+
+def _extract_context_scope_from_line(line: str) -> str | None:
+    """Find a nearby section/test label on one source line."""
+    if not isinstance(line, str) or not line:
+        return None
+    source = re.sub(r'^[+\-]', '', line)
+    for pat, kind in _CONTEXT_SCOPE_PATTERNS:
+        m = pat.match(source)
+        if not m:
+            continue
+        label = _clean_context_label(m.group(1))
+        if not label:
+            continue
+        if kind == 'tests':
+            return f'the {label} tests'
+        return f'the {label} section'
+    return None
+
+
+def _extract_comment_prose_scope_from_line(line: str) -> str | None:
+    """Fallback for the English that already exists around code.
+
+    Many files have useful comments but no formal "section:" heading:
+    "Click-through state is decided by cursor position", "Rescue
+    off-display windows", etc. This intentionally stays conservative so
+    a random inline note does not become fake architectural context.
+    """
+    if not isinstance(line, str) or not line:
+        return None
+    source = re.sub(r'^[+\- ]', '', line).strip()
+    source = re.sub(r'^(?:\/\/|#|--)\s?', '', source).strip()
+    source = re.sub(r'^/\*+\s?', '', source).strip()
+    source = re.sub(r'^\*\s?', '', source).strip()
+    source = re.sub(r'\*+/$', '', source).strip()
+    source = re.sub(r'^(?:[-*+]|\d+\.)\s+', '', source).strip()
+    if not source:
+        return None
+    if re.match(r'^(?:param|returns?|throws?|todo|fixme|copyright|license|eslint|ts-ignore)\b', source, re.I):
+        return None
+    if re.search(r'[{};=<>]|=>|\b(?:const|let|var|return|if|else|for|while)\b', source):
+        return None
+    # Keep the first clause/sentence. Long comments read badly in a
+    # short tool narration, and the user can see the full text on screen.
+    source = re.split(r'[.!?]\s+|\s+(?:—|--|-)\s+', source, maxsplit=1)[0]
+    label = _clean_context_label(source)
+    if not label:
+        return None
+    words = label.split()
+    if len(words) < 4 or len(words) > 12:
+        return None
+    return f'the {label} area'
+
+
+def _strip_read_output_prefix(line: str) -> str:
+    """Remove gutters/noise from Read/Get-Content output before parsing."""
+    s = _ANSI_RE.sub('', str(line or '')).rstrip('\r')
+    # Claude Read gutters and common terminal line-number formats.
+    s = re.sub(r'^\s*\d+\s*(?:→|\||:|\t)\s?', '', s)
+    # Codex function_call_output wrapper lines when a result blob is used.
+    s = re.sub(r'^\s*(?:Output|Exit code|Wall time):.*$', '', s, flags=re.I)
+    return s
+
+
+def extract_visible_context_scope(text: str, max_lines: int = 260) -> str | None:
+    """Extract a speakable scope from visible transcript/tool output.
+
+    Priority is deliberately code-first: a function/class/test name is
+    more actionable than a broad prose comment. Explicit headings come
+    next, then plain-English comment fallback. The function returns a
+    short phrase suitable after "around ...".
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    code_scope = None
+    context_scope = None
+    prose_scope = None
+    for raw in text.splitlines()[:max_lines]:
+        line = _strip_read_output_prefix(raw)
+        if not line.strip():
+            continue
+        if code_scope is None:
+            code_scope = _extract_code_scope_from_line(line)
+        if context_scope is None:
+            context_scope = _extract_context_scope_from_line(line)
+        if prose_scope is None:
+            prose_scope = _extract_comment_prose_scope_from_line(line)
+        if code_scope and context_scope:
+            break
+    return code_scope or context_scope or prose_scope
 
 
 def _extract_function_names(text: str) -> set[str]:
@@ -460,6 +623,19 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
                                                       r'Looking at the end of \1'),
     (re.compile(r'^which\s+(\S+)'),                   r'Finding \1'),
     (re.compile(r'^echo\b'),                          'Printing a value'),
+    (re.compile(r'^(?:get-content|gc)\b.*\s-(?:LiteralPath|Path)\s+([^\s|;]+)', re.IGNORECASE),
+                                                      r'Reading \1'),
+    (re.compile(r'^(?:get-content|gc)\b(?:\s+-\S+(?:\s+\S+)?)*\s+([^\s|;]+)', re.IGNORECASE),
+                                                      r'Reading \1'),
+    (re.compile(r'^(?:get-childitem|dir)\b.*\s-(?:LiteralPath|Path)\s+([^\s|;]+)', re.IGNORECASE),
+                                                      r'Listing \1'),
+    (re.compile(r'^(?:get-childitem|dir)\b(?:\s+-\S+(?:\s+\S+)?)*\s+([^\s|;]+)', re.IGNORECASE),
+                                                      r'Listing \1'),
+    (re.compile(r'^(?:get-childitem|dir)\b', re.IGNORECASE),
+                                                      'Listing files'),
+    (re.compile(r'^(?:rg|ripgrep)\b', re.IGNORECASE), 'Searching the code'),
+    (re.compile(r'^(?:grep|select-string|findstr)\b', re.IGNORECASE),
+                                                      'Searching output'),
 
     # Languages / runtimes — inline-source forms FIRST so they win over
     # the generic `python <file>.py` / `node <file>.js` patterns. Without
@@ -468,8 +644,13 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # phrases like "Running c=m.get('content','')".
     (re.compile(r'^python\d?\s+-c\b'),                'Running an inline Python snippet'),
     (re.compile(r'^node\s+-e\b'),                     'Running an inline Node snippet'),
-    (re.compile(r'^pwsh\s+-c\b'),                     'Running an inline PowerShell snippet'),
-    (re.compile(r'^powershell(?:\.exe)?\s+-Command\b'), 'Running an inline PowerShell command'),
+    (re.compile(r'^(?:pwsh|pwsh\.exe)\s+-c\b', re.IGNORECASE),
+                                                      'Running an inline PowerShell snippet'),
+    (re.compile(r'^(?:powershell|powershell\.exe)\s+(?:-NoProfile\s+)*(?:-ExecutionPolicy\s+\S+\s+)*-Command\b', re.IGNORECASE),
+                                                      'Running an inline PowerShell command'),
+    (re.compile(r'^(?:pwsh|pwsh\.exe|powershell|powershell\.exe)\s+(?:-NoProfile\b|(?:-ExecutionPolicy\s+\S+)|(?:-File\b))*', re.IGNORECASE),
+                                                      'Running a PowerShell script'),
+    (re.compile(r'^-NoProfile\b', re.IGNORECASE),     'Running a PowerShell script'),
     (re.compile(r'^bash\s+-c\b'),                     'Running an inline shell snippet'),
     (re.compile(r'^sh\s+-c\b'),                       'Running an inline shell snippet'),
     (re.compile(r'^python\d?\s+(\S+\.py)'),           r'Running the \1 script'),
@@ -487,16 +668,35 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 
 # Pipe-tail narration. Maps the head of the post-`|` portion of a
-# pipeline to a meaningful "and …" suffix so the listener hears WHAT the
-# pipeline is doing, not just that there IS one. Without this, every
-# pipeline narrates as "(in a pipeline)" — generic noise. With it, common
-# shapes ("| wc -l", "| head -20", "| grep foo", "| python -c") get
-# spoken as "and counting lines", "and taking the first 20",
-# "and filtering for foo", "and processing with Python".
+# pipeline to a meaningful "and ..." suffix so the listener hears WHAT the
+# pipeline is doing, not just that there IS one. Unknown tails are now
+# ignored rather than spoken as "in a pipeline"; a generic tag is worse
+# than silence because it repeats without adding engineering context.
 #
 # Patterns are checked in order; first match wins. Anchored to start of
 # the tail so a tail of `wc -l` matches but `xargs wc -l` doesn't.
 _PIPE_TAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'^select-object\b(?=.*(?:^|\s)-Skip\s+(\d+))(?=.*(?:^|\s)-First\s+(\d+))', re.IGNORECASE),
+                                                       r'and taking \2 after line \1'),
+    (re.compile(r'^select-object\b(?=.*(?:^|\s)-First\s+(\d+))', re.IGNORECASE),
+                                                       r'and taking the first \1'),
+    (re.compile(r'^select-object\b(?=.*(?:^|\s)-Last\s+(\d+))', re.IGNORECASE),
+                                                       r'and taking the last \1'),
+    (re.compile(r'^measure-object\b(?=.*(?:^|\s)-Line\b)', re.IGNORECASE),
+                                                       'and counting lines'),
+    (re.compile(r'^measure-object\b', re.IGNORECASE), 'and counting results'),
+    (re.compile(r'^select-string\b(?=.*(?:^|\s)-Pattern\s+([^\s|;]+))', re.IGNORECASE),
+                                                       r'and filtering for \1'),
+    (re.compile(r'^select-string\s+([^\s|;]+)', re.IGNORECASE),
+                                                       r'and filtering for \1'),
+    (re.compile(r'^(?:where-object|\?)\b', re.IGNORECASE),
+                                                       'and filtering results'),
+    (re.compile(r'^(?:sort-object|sort)\b', re.IGNORECASE),
+                                                       'and sorting results'),
+    (re.compile(r'^foreach-object\b', re.IGNORECASE),
+                                                       'and processing each result'),
+    (re.compile(r'^(?:format-table|format-list|out-string)\b', re.IGNORECASE),
+                                                       ''),
     (re.compile(r'^wc\s+-l\b'),                    'and counting lines'),
     (re.compile(r'^wc\s+-c\b'),                    'and counting bytes'),
     (re.compile(r'^wc\s+-w\b'),                    'and counting words'),
@@ -535,7 +735,7 @@ _PIPE_TAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 def _narrate_pipe_tail(tail: str) -> str | None:
     """Return a spoken descriptor for the FIRST stage of a pipe-tail
     (e.g. `wc -l`, `head -20`, `grep foo`). Returns None if no pattern
-    matches — caller falls back to the generic "(in a pipeline)" suffix.
+    matches.
 
     Multi-stage pipes only describe the first tail stage; cluttering the
     narration with every stage of a 4-stage pipe would over-narrate.
@@ -548,10 +748,38 @@ def _narrate_pipe_tail(tail: str) -> str | None:
         m = pat.match(first_stage)
         if m:
             try:
-                return m.expand(template)
+                expanded = m.expand(template)
             except re.error:
-                return template
+                expanded = template
+            return expanded or None
     return None
+
+
+def _normalise_shell_head(cmd: str) -> str:
+    """Collapse a leading executable path to its basename for matching.
+
+    Claude often records Windows launchers as full paths such as
+    `C:\\Windows\\...\\powershell.exe -NoProfile ...`. The old matcher saw
+    the path or the first flag as the command and produced phrases like
+    "Running -NoProfile". Matching against `powershell.exe ...` keeps the
+    narration about the actual tool.
+    """
+    if not cmd:
+        return ''
+    s = cmd.strip()
+    for quote in ('"', "'"):
+        if s.startswith(quote):
+            end = s.find(quote, 1)
+            if end > 1:
+                exe = s[1:end]
+                rest = s[end + 1:]
+                if '\\' in exe or '/' in exe:
+                    return os.path.basename(exe.replace('\\', '/')) + rest
+            return s
+    first, sep, rest = s.partition(' ')
+    if '\\' in first or '/' in first:
+        return os.path.basename(first.replace('\\', '/')) + (sep + rest if sep else '')
+    return s
 
 
 def dedup_phrases(phrases: list[str]) -> list[str]:
@@ -575,6 +803,152 @@ def dedup_phrases(phrases: list[str]) -> list[str]:
         seen.add(p)
         out.append(p)
     return out
+
+
+def _stable_variant_index(seed: str, count: int) -> int:
+    """Return a deterministic index for a phrase-variation pool.
+
+    This intentionally does not use randomness. The same tool context
+    always gets the same wording, which keeps logs and tests predictable
+    while avoiding every search/read/list narration using one verb.
+    """
+    if count <= 1:
+        return 0
+    h = 2166136261
+    for ch in seed:
+        h ^= ord(ch)
+        h = (h * 16777619) & 0xffffffff
+    return h % count
+
+
+def _choose_variant(seed: str, variants: list[str]) -> str:
+    return variants[_stable_variant_index(seed, len(variants))]
+
+
+def leading_tool_verb(phrase: str | None) -> str:
+    m = re.match(r'\s*([A-Za-z]+)', str(phrase or ''))
+    return m.group(1).lower() if m else ''
+
+
+def _choose_variant_avoiding(seed: str, variants: list[str],
+                             avoid_verbs: list[str] | tuple[str, ...] | None = None) -> str:
+    if not variants:
+        return ''
+    avoid = {str(v).lower() for v in (avoid_verbs or []) if str(v).strip()}
+    start = _stable_variant_index(seed, len(variants))
+    for offset in range(len(variants)):
+        candidate = variants[(start + offset) % len(variants)]
+        if leading_tool_verb(candidate) not in avoid:
+            return candidate
+    return variants[start]
+
+
+def vary_tool_phrase(phrase: str | None, seed: str = '',
+                     avoid_verbs: list[str] | tuple[str, ...] | None = None) -> str | None:
+    """Apply small deterministic verb variation to a finished narration.
+
+    The pools are deliberately conservative. They only swap verbs that
+    keep the same engineering meaning; edits, deletes, permission text,
+    and line-count summaries are left alone unless the prefix match is
+    unambiguous.
+    """
+    if not phrase:
+        return phrase
+    text = str(phrase)
+    key = f'{seed}|{text}' if seed else text
+
+    def tail(prefix: str) -> str:
+        return text[len(prefix):]
+
+    def choose(variants: list[str]) -> str:
+        return _choose_variant_avoiding(key, variants, avoid_verbs)
+
+    if text.startswith('Searching for '):
+        rest = tail('Searching for ')
+        return choose([
+            f'Searching for {rest}',
+            f'Scanning for {rest}',
+            f'Looking for {rest}',
+            f'Finding {rest}',
+        ])
+    if text.startswith('Searching the code'):
+        rest = tail('Searching the code')
+        return choose([
+            f'Searching the code{rest}',
+            f'Scanning the code{rest}',
+            f'Reviewing the code{rest}',
+        ])
+    if text.startswith('Searching the web'):
+        return text
+    if text.startswith('Searching '):
+        rest = tail('Searching ')
+        return choose([
+            f'Searching {rest}',
+            f'Scanning {rest}',
+            f'Looking through {rest}',
+            f'Checking {rest}',
+        ])
+    if text.startswith('Looking for '):
+        rest = tail('Looking for ')
+        return choose([
+            f'Looking for {rest}',
+            f'Finding {rest}',
+            f'Scanning for {rest}',
+        ])
+    if text.startswith('Looking at part of '):
+        rest = tail('Looking at part of ')
+        return choose([
+            f'Looking at part of {rest}',
+            f'Reviewing part of {rest}',
+            f'Opening part of {rest}',
+            f'Inspecting part of {rest}',
+        ])
+    if text.startswith('Looking at '):
+        rest = tail('Looking at ')
+        return choose([
+            f'Looking at {rest}',
+            f'Opening {rest}',
+            f'Reviewing {rest}',
+            f'Inspecting {rest}',
+            f'Viewing {rest}',
+        ])
+    if text.startswith('Reading '):
+        rest = tail('Reading ')
+        return choose([
+            f'Reading {rest}',
+            f'Opening {rest}',
+            f'Reviewing {rest}',
+            f'Inspecting {rest}',
+            f'Viewing {rest}',
+        ])
+    if text.startswith('Checking '):
+        rest = tail('Checking ')
+        return choose([
+            f'Checking {rest}',
+            f'Reviewing {rest}',
+            f'Verifying {rest}',
+        ])
+    if text.startswith('Listing '):
+        rest = tail('Listing ')
+        return choose([
+            f'Listing {rest}',
+            f'Showing {rest}',
+            f'Gathering {rest}',
+            f'Collecting {rest}',
+        ])
+    if text.startswith('Running a project script'):
+        return choose([
+            text,
+            text.replace('Running', 'Starting', 1),
+            text.replace('Running', 'Launching', 1),
+        ])
+    if text.startswith('Running a PowerShell script'):
+        return choose([
+            text,
+            text.replace('Running', 'Starting', 1),
+            text.replace('Running', 'Launching', 1),
+        ])
+    return text
 
 
 def _strip_env_assignments(cmd: str) -> str:
@@ -658,6 +1032,7 @@ def _narrate_single_command(head: str) -> str | None:
     """Lookup the BASH_PATTERNS table for a single command (no chain
     awareness). Returns the matched phrase or a generic 'Running <verb>'
     fallback."""
+    head = _normalise_shell_head(head)
     for pat, template in _BASH_PATTERNS:
         m = pat.match(head)
         if m:
@@ -705,9 +1080,9 @@ def narrate_bash(command: str) -> str | None:
       1. Strip leading `echo "header"` framing if followed by real work.
       2. Heredoc detection — `python3 << EOF` narrates as the actual
          intent, not the literal `python3` head.
-      3. AND-chain detection — multi-step pipelines narrate every step.
+      3. AND-chain detection — multi-step commands narrate every step.
       4. Fall through to single-command lookup against _BASH_PATTERNS,
-         with a `(in a pipeline)` tag for `|` / `;` chains.
+         with a named tail for recognised `|` / `;` chains.
 
     Returns None for empty commands."""
     if not command:
@@ -739,8 +1114,8 @@ def narrate_bash(command: str) -> str | None:
     # 4. Pipe (`|`) or semicolon (`;`) — describe the head, then try to
     #    name the FIRST tail stage too so the listener hears WHAT the
     #    pipeline is doing ("and counting lines", "and filtering for X")
-    #    rather than the generic "(in a pipeline)". Falls back to the
-    #    generic tag when the tail isn't a recognised pattern.
+    #    rather than a generic "in a pipeline" tag. Unknown tails are
+    #    suppressed; the head phrase is still useful on its own.
     is_pipeline = bool(re.search(r'\s\|\s|\s;\s', cmd))
     if is_pipeline:
         parts = re.split(r'\s\|\s|\s;\s', cmd, maxsplit=1)
@@ -757,7 +1132,7 @@ def narrate_bash(command: str) -> str | None:
         tail_phrase = _narrate_pipe_tail(tail)
         if tail_phrase:
             return f'{phrase} {tail_phrase}'
-        return f'{phrase} (in a pipeline)'
+        return phrase
     return phrase
 
 
@@ -778,8 +1153,39 @@ def _maybe_in_file(prev_file: str | None, curr_file: str | None, suffix: str) ->
     return f' in {suffix}'
 
 
+def _tool_result_text(value) -> str:
+    """Best-effort plain text extraction from a Claude toolUseResult."""
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = [_tool_result_text(item) for item in value]
+        return '\n'.join(part for part in parts if part)
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key in ('content', 'text', 'output', 'stdout', 'aggregated_output', 'stderr'):
+            if key in value:
+                text = _tool_result_text(value.get(key))
+                if text:
+                    parts.append(text)
+        if not parts and value.get('type') in ('text', 'tool_result'):
+            text = _tool_result_text(value.get('content'))
+            if text:
+                parts.append(text)
+        return '\n'.join(parts)
+    return ''
+
+
+def _read_context_suffix(tool_result: dict | None) -> str:
+    text = _tool_result_text(tool_result)
+    scope = extract_visible_context_scope(text)
+    return f' around {scope}' if scope else ''
+
+
 def _narrate_read(inp: dict, prev_file: str | None,
-                  prev_tool: str | None = None) -> str | None:
+                  prev_tool: str | None = None,
+                  tool_result: dict | None = None) -> str | None:
     path = str(inp.get('file_path', ''))
     if not path:
         return 'Looking at a file'
@@ -798,13 +1204,14 @@ def _narrate_read(inp: dict, prev_file: str | None,
     # listener knows it's spot-checking, not full review.
     has_partial = ('offset' in inp and inp.get('offset') is not None) or \
                   ('limit' in inp and inp.get('limit') is not None)
+    context = _read_context_suffix(tool_result) if has_partial else ''
 
     if low.endswith('.log'):
-        return f'Checking part of {natural}' if has_partial else f'Checking {natural}'
+        return f'Checking part of {natural}{context}' if has_partial else f'Checking {natural}'
     if low in _SPECIAL_FILES:
-        return f'Reading part of {natural}' if has_partial else f'Reading {natural}'
+        return f'Reading part of {natural}{context}' if has_partial else f'Reading {natural}'
     if has_partial:
-        return f'Looking at part of {natural}'
+        return f'Looking at part of {natural}{context}'
     return f'Looking at {natural}'
 
 
@@ -1013,9 +1420,10 @@ def _narrate_write(inp: dict, prev_file: str | None) -> str | None:
 
 
 def _extract_enclosing_scope(structured_patch, original_file: str | None = None) -> str | None:
-    """Find the function or class the change is inside. Returns a
-    naturalised name like "render continuation banner" or None when no
-    enclosing scope is detectable.
+    """Find the nearest useful context for an edit. Returns a naturalised
+    code scope like "render continuation banner", or a source-section
+    label like "the speech includes section" when no function/class is
+    the closest readable context.
 
     Two-tier search (Phase 3 v2 — was Phase 3 v1 walking only the patch
     context window):
@@ -1030,10 +1438,13 @@ def _extract_enclosing_scope(structured_patch, original_file: str | None = None)
          old patch-context walk (works for edits near the top of a
          function body, fails on deep edits).
 
-    Empirical hit rate before this change: 0% on real edits (3-line ctx
-    almost never reaches the `def`/`function` line). With originalFile:
-    ~43% of deep hunks (newStart >= 30) get a real scope, the rest
-    correctly return None (module-level / between-function edits).
+    Empirical hit rate before the originalFile walk: 0% on real edits
+    (3-line ctx almost never reached the `def`/`function` line). With
+    originalFile, function/class hits became reliable for deep edits.
+    Section/test-heading extraction adds a second useful layer for
+    module-level feature blocks where there is no executable scope.
+    Plain-English comment extraction is the final fallback for files
+    that explain a feature in prose but do not have formal headings.
     """
     if not isinstance(structured_patch, list) or not structured_patch:
         return None
@@ -1052,18 +1463,25 @@ def _extract_enclosing_scope(structured_patch, original_file: str | None = None)
                 line = file_lines[i]
                 if not isinstance(line, str) or not line:
                     continue
-                for pat in _FUNCTION_DECL_PATTERNS:
-                    m = pat.match(line)
-                    if m:
-                        return _naturalise_identifier(m.group(1)) or m.group(1)
-                for pat in _CLASS_DECL_PATTERNS:
-                    m = pat.match(line)
-                    if m:
-                        return _naturalise_identifier(m.group(1)) or m.group(1)
+                code_scope = _extract_code_scope_from_line(line)
+                if code_scope:
+                    return code_scope
+                # Headings get stale faster than functions/classes.
+                # Limit them to a nearby window so a top-of-file title
+                # doesn't claim unrelated edits hundreds of lines later.
+                if start_idx - i <= 160:
+                    context_scope = _extract_context_scope_from_line(line)
+                    if context_scope:
+                        return context_scope
+                if start_idx - i <= 80:
+                    prose_scope = _extract_comment_prose_scope_from_line(line)
+                    if prose_scope:
+                        return prose_scope
 
     # Tier 2 (legacy): walk the patch context window. Catches edits at
     # the top of a function body where the diff context reaches the
-    # declaration.
+    # declaration, and now also catches nearby feature headings when the
+    # context window carries them.
     raw_lines = h.get('lines') or []
     if not isinstance(raw_lines, list):
         return None
@@ -1081,14 +1499,15 @@ def _extract_enclosing_scope(structured_patch, original_file: str | None = None)
         if line[0] not in (' ', '\t'):
             continue
         stripped = line[1:] if line[0] == ' ' else line
-        for pat in _FUNCTION_DECL_PATTERNS:
-            m = pat.match(stripped)
-            if m:
-                return _naturalise_identifier(m.group(1)) or m.group(1)
-        for pat in _CLASS_DECL_PATTERNS:
-            m = pat.match(stripped)
-            if m:
-                return _naturalise_identifier(m.group(1)) or m.group(1)
+        code_scope = _extract_code_scope_from_line(stripped)
+        if code_scope:
+            return code_scope
+        context_scope = _extract_context_scope_from_line(stripped)
+        if context_scope:
+            return context_scope
+        prose_scope = _extract_comment_prose_scope_from_line(stripped)
+        if prose_scope:
+            return prose_scope
     return None
 
 
@@ -1384,8 +1803,8 @@ def narrate_tool_use(
     `tool_result` is the structured `toolUseResult` dict from the matching
     user-side tool_result entry, or None when the result hasn't landed
     (in-flight on-tool fire) or didn't include the structured field.
-    Currently consumed by Glob + Grep narrators to surface match counts
-    ("found 26 files" / "none found"); other narrators ignore it for now.
+    Consumed by Read for visible code/context, Edit for structured patch
+    locality, and Glob/Grep for match counts.
     """
     if not tool_name:
         return None
@@ -1404,7 +1823,7 @@ def narrate_tool_use(
 
     # Tool dispatch.
     if name == 'read':
-        return _narrate_read(inp, prev_file, prev_tool)
+        return _narrate_read(inp, prev_file, prev_tool, tool_result)
     if name == 'edit':
         return _narrate_edit(inp, prev_file, prev_tool, tool_result)
     if name == 'write':
