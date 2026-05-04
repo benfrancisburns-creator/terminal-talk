@@ -32,34 +32,6 @@ function Log($m) {
     try { "$(Get-Date -Format 'HH:mm:ss.fff') [codex-launch] $m" | Out-File $logPath -Append -Encoding utf8 } catch {}
 }
 
-function Test-CodexConfigOverride([string[]]$ArgList, [string]$Key) {
-    if (-not $Key) { return $false }
-    $pattern = '^\s*' + [regex]::Escape($Key) + '\s*='
-    for ($i = 0; $i -lt $ArgList.Count; $i++) {
-        $arg = [string]$ArgList[$i]
-        if ($arg -eq '-c' -or $arg -eq '--config') {
-            if ($i + 1 -lt $ArgList.Count -and ([string]$ArgList[$i + 1]) -match $pattern) { return $true }
-            continue
-        }
-        if ($arg -like '-c=*' -or $arg -like '--config=*') {
-            $value = $arg.Substring($arg.IndexOf('=') + 1)
-            if ($value -match $pattern) { return $true }
-        }
-    }
-    return $false
-}
-
-function Add-TerminalTalkCodexTuiDefaults([string[]]$ArgList) {
-    $out = @()
-    if (-not (Test-CodexConfigOverride -ArgList $ArgList -Key 'tui.status_line')) {
-        $out += @('-c', "tui.status_line=['session-id','thread-title']")
-    }
-    if (-not (Test-CodexConfigOverride -ArgList $ArgList -Key 'tui.terminal_title')) {
-        $out += @('-c', 'tui.terminal_title=[]')
-    }
-    return $out + $ArgList
-}
-
 Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
 Import-Module (Join-Path $PSScriptRoot 'codex-terminal.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
 
@@ -286,15 +258,14 @@ try { $originalTitle = $Host.UI.RawUI.WindowTitle } catch {}
 
 $launchFile = $codexCommand.Source
 $launchArgs = @()
-$effectiveCodexArgs = Add-TerminalTalkCodexTuiDefaults -ArgList $CodexArgs
 if ($launchFile -like '*.ps1') {
-    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launchFile) + $effectiveCodexArgs
+    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launchFile) + $CodexArgs
     $launchFile = 'powershell.exe'
 } else {
-    $launchArgs = $effectiveCodexArgs
+    $launchArgs = $CodexArgs
 }
 
-Log "launch cwd=$currentDir args=$($CodexArgs -join ' ') effective_args=$($effectiveCodexArgs -join ' ')"
+Log "launch cwd=$currentDir args=$($CodexArgs -join ' ')"
 $proc = $null
 try {
     $proc = Start-Process -FilePath $launchFile -ArgumentList $launchArgs -WorkingDirectory $currentDir -NoNewWindow -PassThru
