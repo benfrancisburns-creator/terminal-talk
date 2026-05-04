@@ -15969,8 +15969,11 @@ describe('SETTINGS PANEL LAYOUT', () => {
     if (/Global shortcuts|aboutHotkey|class="shortcuts"|<kbd/.test(aboutSection)) {
       throw new Error('About must not duplicate the global shortcuts table now that Shortcuts has its own tab');
     }
-    if (!/class="about-wallpaper-card"/.test(aboutSection) || !/about-terminal-talk-wallpaper\.png/.test(aboutSection)) {
-      throw new Error('About should use the real Terminal Talk wallpaper mascot asset');
+    if (!/class="about-wallpaper-card"/.test(aboutSection) || !/about-terminal-talk-hero\.svg/.test(aboutSection)) {
+      throw new Error('About should use the real Terminal Talk hero asset');
+    }
+    if (/class="ascii-banner"/.test(aboutSection)) {
+      throw new Error('About should use the wallpaper hero only, not duplicate ASCII art beside it');
     }
     const required = [
       'Intended use',

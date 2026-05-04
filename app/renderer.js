@@ -2427,7 +2427,7 @@ if (isSettingsDemoMode) {
     await waitUntil(74200);
     await clickDemoElement('[data-settings-tab="about"]');
     await waitUntil(75800);
-    await pointDemoCursorAt('.ascii-banner', 900);
+    await pointDemoCursorAt('.about-wallpaper-card', 900);
   }
 
   const timeline = settingsDemoVariant === 'openai'

@@ -1688,42 +1688,25 @@ select option:checked, .panel .row select option:checked {
 /* About section */
 .panel-section.about { padding-top: 4px; }
 .about-lockup {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 8px;
-  align-items: start;
   margin-bottom: 10px;
 }
-.ascii-banner {
-  font-family: 'Cascadia Mono', 'Consolas', monospace;
-  font-size: 7px;
-  line-height: 1.05;
+.about-wallpaper-card {
   margin: 0;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.55);
-  overflow-x: auto;
-  white-space: pre;
-}
-.ascii-mascot {
-  font-family: 'Cascadia Mono', 'Consolas', monospace;
-  font-size: 7.25px;
-  line-height: 1.05;
-  margin: 0;
-  padding: 8px 9px;
-  background: rgba(255, 167, 38, 0.045);
+  height: 190px;
+  min-width: 0;
+  overflow: hidden;
+  background: #0a0f19;
   border: 1px solid rgba(255, 167, 38, 0.18);
   border-radius: 6px;
-  color: #ffa726;
-  text-shadow: 2px 2px 0 rgba(168, 94, 0, 0.75);
-  overflow-x: auto;
-  white-space: pre;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
 }
-.mascot-face {
-  color: #171717;
-  text-shadow: none;
+.about-wallpaper-card img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 48%;
+  image-rendering: auto;
 }
 .about-intro {
   display: grid;
@@ -1789,12 +1772,6 @@ select option:checked, .panel .row select option:checked {
 @media (max-width: 760px) {
   .about-intro,
   .about-guide {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 560px) {
-  .about-lockup {
     grid-template-columns: 1fr;
   }
 }
