@@ -35,13 +35,28 @@ $ErrorActionPreference = 'SilentlyContinue'
 # against subkey names (which are file paths with `\` replaced by `#`).
 $selfPathFragments = @(
     'terminal-talk#app',   # our installed tree
-    'python#python.exe'    # generic python.exe used by the wake-word listener
+    'python#python.exe',   # generic python.exe used by the wake-word listener
+    'pythoncore-*#python.exe' # Windows Store Python path used by the wake-word listener
 )
+$listenerPathFile = Join-Path $env:USERPROFILE '.terminal-talk\listener-python-path.txt'
+
+function Get-ListenerPathFragment {
+    try {
+        if (-not (Test-Path -LiteralPath $listenerPathFile)) { return '' }
+        $path = (Get-Content -LiteralPath $listenerPathFile -Raw -Encoding utf8).Trim()
+        if (-not $path) { return '' }
+        return ($path -replace '[\\/]', '#')
+    } catch {
+        return ''
+    }
+}
 
 $root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone'
 
 function Test-SelfPath {
     param([string]$KeyName)
+    $listenerFragment = Get-ListenerPathFragment
+    if ($listenerFragment -and $KeyName -like "*$listenerFragment*") { return $true }
     foreach ($f in $selfPathFragments) {
         if ($KeyName -like "*$f*") { return $true }
     }

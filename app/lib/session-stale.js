@@ -36,6 +36,7 @@ function computeStaleSessions(assignments, liveShorts, livePids, nowSec, graceSe
   for (const [short, entry] of Object.entries(assignments)) {
     if (!entry || typeof entry !== 'object') continue;
     if (entry.pinned) continue;
+    if (entry.source_kind === 'codex-desktop' || entry.source_kind === 'claude-desktop') continue;
     if (shorts.has(short)) continue;
     if (entry.claude_pid && pids.has(entry.claude_pid)) continue;
     if (entry.last_seen && (nowSec - entry.last_seen) < graceSec) continue;

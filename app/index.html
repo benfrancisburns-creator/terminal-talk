@@ -27,6 +27,7 @@
 </head>
 <body>
   <div class="bar" id="bar">
+    <span id="collapsedSignal" class="collapsed-signal" aria-hidden="true"></span>
     <div class="bar-top">
     <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
@@ -119,7 +120,15 @@
   </div>
   <div class="panel" id="panel">
     <div class="panel-inner">
-      <section class="panel-section">
+      <div class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab active" id="settingsTabPlayback" role="tab" aria-selected="true" aria-controls="playbackSection" data-settings-tab="playback">Playback</button>
+        <button type="button" class="settings-tab" id="settingsTabSessions" role="tab" aria-selected="false" aria-controls="sessionsSection" data-settings-tab="sessions" tabindex="-1">Sessions</button>
+        <button type="button" class="settings-tab" id="settingsTabCreateSession" role="tab" aria-selected="false" aria-controls="createSessionSection" data-settings-tab="create-session" tabindex="-1">Create</button>
+        <button type="button" class="settings-tab" id="settingsTabOpenAI" role="tab" aria-selected="false" aria-controls="openaiSection" data-settings-tab="openai" tabindex="-1">OpenAI</button>
+        <button type="button" class="settings-tab" id="settingsTabShortcuts" role="tab" aria-selected="false" aria-controls="shortcutsSection" data-settings-tab="shortcuts" tabindex="-1">Shortcuts</button>
+        <button type="button" class="settings-tab" id="settingsTabAbout" role="tab" aria-selected="false" aria-controls="aboutSection" data-settings-tab="about" tabindex="-1">About</button>
+      </div>
+      <section class="panel-section settings-page active" id="playbackSection" data-settings-page="playback" role="tabpanel" aria-labelledby="settingsTabPlayback">
         <header>Playback</header>
         <div class="row">
           <label for="speedSlider">Speed</label>
@@ -130,6 +139,13 @@
           <label for="volumeSlider">Volume</label>
           <input type="range" id="volumeSlider" min="0" max="100" step="1" value="100">
           <span id="volumeValue" class="readout">100%</span>
+        </div>
+        <div class="row">
+          <label for="collapseDelaySec" title="How long the toolbar stays expanded after interaction before shrinking to the slim click-through strip. Playback keeps the collapsed strip coloured by session instead of pinning the full toolbar open.">Auto-collapse delay</label>
+          <div class="prune-value">
+            <input type="number" id="collapseDelaySec" min="1" max="120" step="1" value="3">
+            <span class="prune-suffix">s idle</span>
+          </div>
         </div>
         <div class="row">
           <label for="autoPruneToggle" title="Controls the longer delay on body / response clips only. Tool narrations (T-prefix) and heartbeat (H-prefix) clips are always ambient — they auto-delete ~200 ms after they finish playing regardless of this setting, so they never clutter the dot strip.">Auto-prune body clips <span class="hint-sub">(tool narrations &amp; heartbeat always vanish)</span></label>
@@ -165,7 +181,7 @@
             </div>
           </div>
           <div class="row">
-            <label for="heartbeatToggle" title="Claude Code only. When Claude is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment Claude's response starts playing.">Claude heartbeat narration</label>
+            <label for="heartbeatToggle" title="When Claude or Codex is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment real response audio begins.">Heartbeat narration</label>
             <div class="pill-toggle tri-ctrl">
               <input type="checkbox" id="heartbeatToggle" class="pill-toggle-input" checked>
               <button type="button" class="tri-btn on"  data-val="1">On</button>
@@ -173,7 +189,7 @@
             </div>
           </div>
           <div class="row">
-            <label for="incToolCalls" title="Claude Code only. Speak short ephemeral clips during tool calls (e.g. 'Reading foo.py', 'Searching files') so you hear progress while Claude works. Off silences these but keeps Claude's full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Claude tool-call narration</label>
+            <label for="incToolCalls" title="Speak short ephemeral clips during Claude hooks and Codex rollout tool events (e.g. 'Reading foo.py', 'Searching files') so you hear progress while the assistant works. Off silences these but keeps full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Tool-call narration</label>
             <div class="pill-toggle tri-ctrl">
               <input type="checkbox" id="incToolCalls" class="pill-toggle-input" checked>
               <button type="button" class="tri-btn on"  data-val="1">On</button>
@@ -187,14 +203,8 @@
         </div>
       </section>
 
-      <section class="panel-section" id="openaiSection">
-        <header>
-          <button type="button" id="openaiSectionToggle" class="section-toggle" aria-expanded="true" aria-controls="openaiBody">
-            <svg class="chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            <span>OpenAI <span class="panel-header-sub">(premium)</span></span>
-          </button>
-        </header>
-        <div class="section-body" id="openaiBody">
+      <section class="panel-section settings-page" id="openaiSection" data-settings-page="openai" role="tabpanel" aria-labelledby="settingsTabOpenAI">
+        <header>OpenAI <span class="panel-header-sub">(premium)</span></header>
         <p class="panel-hint">
           Optional. Paste an OpenAI API key to enable OpenAI TTS as either a fallback
           (when edge-tts has a network wobble) or your primary voice. Pricing is
@@ -226,9 +236,17 @@
           </span>
         </div>
         <div class="row">
-          <label for="openaiPreferToggle" title="On — OpenAI is your primary voice: every response, tool narration and heartbeat plays in OpenAI's voice. Edge-tts only runs if OpenAI errors (key invalid, rate-limited, network glitch). Off — edge-tts is primary (free, default), OpenAI is the fallback. Needs a saved key to switch on.">Use OpenAI as primary <span class="hint-sub">(the other provider becomes the fallback)</span></label>
+          <label for="openaiPreferToggle" title="On — OpenAI is your primary voice: every response, tool narration and heartbeat plays in OpenAI's voice. Off — edge-tts is primary (free, default). Needs a saved key to switch on.">Use OpenAI as primary <span class="hint-sub">(paid, opt-in)</span></label>
           <div class="pill-toggle tri-ctrl" id="openaiPreferPillBox">
             <input type="checkbox" id="openaiPreferToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="openaiFallbackToggle" title="When on, OpenAI is allowed to run only if the primary TTS provider fails. This can spend OpenAI credits; monitor your balance or enable billing auto top-up/auto recharge. When off, fallback stays on the free Edge route.">Use OpenAI as fallback <span class="hint-sub">(paid, opt-in)</span></label>
+          <div class="pill-toggle tri-ctrl" id="openaiFallbackPillBox">
+            <input type="checkbox" id="openaiFallbackToggle" class="pill-toggle-input">
             <button type="button" class="tri-btn on"  data-val="1">On</button>
             <button type="button" class="tri-btn off" data-val="0">Off</button>
           </div>
@@ -238,17 +256,79 @@
           <button type="button" id="openaiTestBtn" class="text-btn" title="Synthesise a short test phrase through whichever provider is currently preferred and drop it in the queue. Confirms your key works and lets you hear the voice without waiting for a real reply.">Test</button>
           <span id="openaiTestResult" class="openai-test-result" aria-live="polite"></span>
         </div>
-        </div><!-- /#openaiBody -->
       </section>
 
-      <section class="panel-section">
-        <header>Sessions</header>
-        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Assistant sessions"></div>
+      <section class="panel-section settings-page" id="sessionsSection" data-settings-page="sessions" role="tabpanel" aria-labelledby="settingsTabSessions">
+        <header>Active sessions</header>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Active assistant sessions"></div>
       </section>
 
-      <section class="panel-section about">
+      <section class="panel-section settings-page" id="createSessionSection" data-settings-page="create-session" role="tabpanel" aria-labelledby="settingsTabCreateSession">
+        <header>Create session</header>
+        <div class="session-create" id="sessionCreate">
+          <div class="session-create-head">
+            <span>New assistant session</span>
+            <span id="createSessionStatus" class="session-create-status" aria-live="polite"></span>
+          </div>
+          <div class="session-create-grid">
+            <label for="createSessionKind">Assistant</label>
+            <select id="createSessionKind">
+              <option value="codex">Codex</option>
+              <option value="claude">Claude Code</option>
+              <option value="claude-desktop">Claude Desktop Code</option>
+            </select>
+            <label for="createSessionLaunchMode">Permissions</label>
+            <select id="createSessionLaunchMode"></select>
+            <label for="createSessionProject">Project folder</label>
+            <div class="session-create-project">
+              <input type="text" id="createSessionProject" spellcheck="false" autocomplete="off" placeholder="C:\path\to\project">
+              <button type="button" id="createSessionBrowse" class="text-btn">Browse</button>
+            </div>
+            <label for="createSessionLabel">Label</label>
+            <input type="text" id="createSessionLabel" spellcheck="false" autocomplete="off" placeholder="e.g. Codex x TT">
+            <label for="createSessionIndex">Colour</label>
+            <select id="createSessionIndex"></select>
+          </div>
+          <div class="session-create-actions">
+            <button type="button" id="createSessionSaveDefault" class="text-btn">Save default</button>
+            <button type="button" id="createSessionBtn" class="text-btn">Create</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page" id="shortcutsSection" data-settings-page="shortcuts" role="tabpanel" aria-labelledby="settingsTabShortcuts">
+        <header>Shortcuts</header>
+        <div class="row hotkey-row">
+          <label for="hotkeyToggleWindow">Show / hide toolbar</label>
+          <input type="text" id="hotkeyToggleWindow" class="hotkey-input" readonly value="Ctrl+Shift+A" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeySpeakClipboard">Read selected text</label>
+          <input type="text" id="hotkeySpeakClipboard" class="hotkey-input" readonly value="Ctrl+Shift+S" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyToggleListening">Mic listener</label>
+          <input type="text" id="hotkeyToggleListening" class="hotkey-input" readonly value="Ctrl+Shift+J" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyPauseResume">Pause / resume</label>
+          <input type="text" id="hotkeyPauseResume" class="hotkey-input" readonly value="Ctrl+Shift+P" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyPauseOnly">Pause only</label>
+          <input type="text" id="hotkeyPauseOnly" class="hotkey-input" readonly value="Ctrl+Shift+O" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <span id="hotkeyStatus" class="hotkey-status" aria-live="polite"></span>
+          <button type="button" id="hotkeyResetDefaults" class="text-btn">Reset defaults</button>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page about" id="aboutSection" data-settings-page="about" role="tabpanel" aria-labelledby="settingsTabAbout">
         <header>About Terminal Talk</header>
-<pre class="ascii-banner">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+        <div class="about-lockup">
+<pre class="ascii-banner" aria-label="Terminal Talk ASCII logo">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
 ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
    ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
    ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
@@ -260,40 +340,114 @@
            ██║   ██╔══██║██║     ██╔═██╗
            ██║   ██║  ██║███████╗██║  ██╗
            ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝</pre>
-        <p class="panel-hint">
-          Hands-free voice workflow for terminal coding agents. Say "hey jarvis" with text highlighted
-          anywhere and it's read aloud. Claude and Codex replies are auto-spoken. Each session gets its
-          own colour, shown as a dot on the toolbar and, where supported, inside the terminal itself.
-        </p>
+          <figure class="about-wallpaper-card" aria-label="Terminal Talk wallpaper mascot">
+            <img src="assets/about-terminal-talk-wallpaper.png" alt="Terminal Talk wallpaper showing the pixel mascot and speech bubble">
+          </figure>
+        </div>
+        <div class="about-intro">
+          <p>
+            Terminal Talk is for running more than one coding assistant without losing track of who spoke,
+            what is waiting in the queue, and which session needs your attention next.
+          </p>
+          <p>
+            It turns Claude, Codex, desktop-agent, and highlight-to-speak output into colour-coded audio
+            clips. You keep working in the terminal while the toolbar handles playback, identity, focus,
+            transcripts, and voice routing.
+          </p>
+        </div>
         <p class="panel-hint version-line">
           Installed version: <span id="versionLabel" class="version-value">…</span>
         </p>
-        <p class="panel-hint shortcuts-title">Global shortcuts</p>
-        <table class="shortcuts">
-          <caption class="sr-only">Global keyboard shortcuts</caption>
-          <thead>
-            <tr><th scope="col" class="sr-only">Shortcut</th><th scope="col" class="sr-only">Action</th></tr>
-          </thead>
-          <tbody>
-          <tr><td><kbd>Ctrl+Shift+A</kbd></td><td>Show / hide the toolbar</td></tr>
-          <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Read the currently highlighted text</td></tr>
-          <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Toggle wake-word listening (chime confirms on/off)</td></tr>
-          <tr><td><kbd>Ctrl+Shift+P</kbd></td><td>Pause / resume playback</td></tr>
-          <tr><td><kbd>Ctrl+Shift+O</kbd></td><td>Pause only (without resuming on next clip)</td></tr>
-          <tr><td>Say "hey jarvis"</td><td>Same as Ctrl+Shift+S on highlighted text</td></tr>
-          </tbody>
-        </table>
-        <p class="panel-hint">
-          Tip: labels you set on a session show up next to Claude's statusline glyph and in the
-          Terminal Talk Codex tab title, so the toolbar row and the terminal stay in sync.
-        </p>
-        <p class="panel-hint">
-          About the mascot: the walking character on the scrubber is a homage to
-          Claude Code's thinking-spinner humour. The verbs that float above his head
-          (Moonwalking, Finagling, Pontificating...) are the same list Claude Code
-          itself uses while thinking. He appears while assistant response clips are
-          playing; highlight-to-speak clips show a plain <b>J</b> badge instead.
-          No affiliation with Anthropic — this is a fan project.
+        <div class="about-guide" aria-label="Terminal Talk guide">
+          <section class="about-card about-card-wide">
+            <h3>Intended use</h3>
+            <p>
+              Keep Terminal Talk open while Claude Code, Codex CLI, Codex Desktop, or Claude Desktop Code
+              work in parallel. Let routine progress clips play quietly, focus the session you care about,
+              and use the transcript when you need to inspect the exact spoken text.
+            </p>
+            <ul>
+              <li>Use it as a command centre when several assistants are editing, testing, or researching at once.</li>
+              <li>Use it as an accessibility layer when reading long assistant output would slow you down.</li>
+              <li>Use it as a demo layer when you want sessions to narrate what they are doing on screen.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Daily workflow</h3>
+            <ul>
+              <li>Start your assistant sessions normally or from the Create tab.</li>
+              <li>Give each session a clear label, colour, and voice.</li>
+              <li>Pin or focus the session you want to hear before the others.</li>
+              <li>Let finished response clips auto-prune so the toolbar stays clean.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Playback model</h3>
+            <ul>
+              <li>Assistant replies become body clips in the queue.</li>
+              <li>Tool narration and heartbeat clips are short ambient status updates.</li>
+              <li>Highlight-to-speak clips are treated as priority user clips.</li>
+              <li>The collapsed strip flashes the colour of the clip that is actually playing.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Session identity</h3>
+            <ul>
+              <li>Each active assistant gets one slot in the 24-colour palette.</li>
+              <li>Labels are user-owned, so rename sessions around the work they are doing.</li>
+              <li>Focus affects playback priority; mute prevents new audio from that session.</li>
+              <li>Sync pushes identity into supported terminal and desktop surfaces.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Claude and Codex</h3>
+            <ul>
+              <li>Claude Code uses hooks, transcript files, and footer scraping for turn-end summaries.</li>
+              <li>Codex CLI/Desktop is watched through persisted rollout/session state.</li>
+              <li>Desktop apps can need refresh help because their sidebars cache conversation titles.</li>
+              <li>Nested agents should be treated carefully so one workflow does not impersonate another.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Voice setup</h3>
+            <ul>
+              <li>Uses Edge voices by default for free local playback.</li>
+              <li>Can use OpenAI TTS as a paid primary voice or fallback when a key is saved.</li>
+              <li>Different voices per session make it easier to recognise speakers by ear.</li>
+              <li>Stores OpenAI credentials outside git and keeps the key hidden after saving.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Toolbar controls</h3>
+            <ul>
+              <li>Use playback controls for the current clip and transcript controls for inspection.</li>
+              <li>Use Settings > Playback for speed, volume, collapse, prune, and narration behaviour.</li>
+              <li>Use Settings > Sessions for identity, colour, focus, mute, voice, and sync.</li>
+              <li>Use Settings > Shortcuts for global key bindings.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Privacy boundary</h3>
+            <ul>
+              <li>Wake-word detection runs locally.</li>
+              <li>Terminal Talk reads local assistant logs and local highlighted text.</li>
+              <li>Free TTS uses Edge's voice service; OpenAI TTS only runs when you opt in.</li>
+              <li>Session labels, colours, and playback state live under your user profile.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Good habits</h3>
+            <ul>
+              <li>Use short labels that describe the work, not the tool.</li>
+              <li>Mute exploratory sessions when they are noisy but not important.</li>
+              <li>Keep focus on the session you want to hear next during busy multi-agent work.</li>
+              <li>Close stale sessions so colour slots stay meaningful.</li>
+            </ul>
+          </section>
+        </div>
+        <p class="panel-hint about-footer-note">
+          The ASCII mascot above mirrors the live scrubber mascot and wallpaper character: rectangular
+          pixel body, side ears, two square eyes, stepped smile, four chunky legs, and a hard offset shadow.
         </p>
       </section>
     </div>

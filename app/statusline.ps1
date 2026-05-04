@@ -7,6 +7,8 @@ $ErrorActionPreference = 'SilentlyContinue'
 # Force UTF-8 stdout so the emoji survives Windows' default ANSI codepage.
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
+
 $stdin = [Console]::In.ReadToEnd()
 if (-not $stdin) { Write-Host ""; exit 0 }
 try { $payload = $stdin | ConvertFrom-Json } catch { Write-Host ""; exit 0 }
@@ -26,14 +28,14 @@ $short = $sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))
 # the whole cycle. PID-file and last_seen heartbeats miss one update every
 # ~100 ms of rapid fire -- irrelevant because the next non-cached
 # invocation catches up inside the same debounce window.
-$sessionsDirEarly = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
+$sessionsDirEarly = Join-Path $ttHome 'sessions'
 if (-not (Test-Path $sessionsDirEarly)) {
     New-Item -ItemType Directory -Path $sessionsDirEarly -Force | Out-Null
 }
 $registryPathEarly = if ($env:TT_REGISTRY_PATH) {
     $env:TT_REGISTRY_PATH
 } else {
-    Join-Path $env:USERPROFILE '.terminal-talk\session-colours.json'
+    Join-Path $ttHome 'session-colours.json'
 }
 $cachePath = Join-Path $sessionsDirEarly "$short.statusline-cache"
 $regMtimeTicks = 0
@@ -67,7 +69,7 @@ Import-Module (Join-Path $PSScriptRoot 'session-registry.psm1') -Force -ErrorAct
 
 # Track this session's Claude Code PID so hey-jarvis can map the foreground
 # terminal back to a session. The statusline's parent = Claude Code CLI process.
-$sessionsDir = Join-Path $env:USERPROFILE '.terminal-talk\sessions'
+$sessionsDir = Join-Path $ttHome 'sessions'
 if (-not (Test-Path $sessionsDir)) { New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null }
 try {
     # Walk up to the OUTERMOST claude.exe / node.exe ancestor — Claude Code
@@ -136,7 +138,7 @@ function Get-StatuslineGlyph($idx) {
 # On first-call for a session we pick the lowest index NOT currently in use by
 # another LIVE session. Entries are freed only when their claude_pid is dead
 # (terminal closed), so a long-idle session keeps its colour.
-$registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join-Path $env:USERPROFILE '.terminal-talk\session-colours.json' }
+$registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join-Path $ttHome 'session-colours.json' }
 $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
 
 # Parent PID of this statusline script = Claude Code CLI process.
@@ -157,6 +159,45 @@ function Test-ProcessAlive($p) {
     try { return [bool](Get-Process -Id $p -ErrorAction SilentlyContinue) } catch { return $false }
 }
 
+function Sanitise-LaunchLabel([string]$Value) {
+    if (-not $Value) { return '' }
+    $clean = ($Value -replace '[\r\n\t]', ' ').Trim()
+    if ($clean.Length -gt 60) { return $clean.Substring(0, 60) }
+    return $clean
+}
+
+function Clamp-LaunchIndex([string]$Value) {
+    $n = -1
+    if (-not [int]::TryParse($Value, [ref]$n)) { return -1 }
+    if ($n -lt 0) { return -1 }
+    if ($n -gt 23) { return 23 }
+    return $n
+}
+
+function Apply-ToolbarLaunchIntent([hashtable]$Assignments, [string]$Short) {
+    if (-not $Assignments -or -not $Assignments.ContainsKey($Short)) { return }
+    $label = Sanitise-LaunchLabel $env:TT_LAUNCH_LABEL
+    $index = Clamp-LaunchIndex $env:TT_LAUNCH_INDEX
+    if (-not $label -and $index -lt 0) { return }
+
+    $entry = $Assignments[$Short]
+    $marker = ''
+    if ($env:TT_LAUNCH_TOKEN) { $marker = "toolbar-launch:$($env:TT_LAUNCH_TOKEN)" }
+    if ($marker -and $entry.ContainsKey('source_originator') -and $entry.source_originator -eq $marker) { return }
+
+    if ($label) {
+        $entry.label = $label
+        if ($entry.ContainsKey('auto_label')) { [void]$entry.Remove('auto_label') }
+    }
+    if ($index -ge 0) {
+        $entry.index = [int]$index
+    }
+    $entry.pinned = $true
+    $entry.source_kind = 'toolbar-launch'
+    $entry.source_label = 'Claude Code'
+    if ($marker) { $entry.source_originator = $marker }
+}
+
 # Read, touch/assign, write back -- all via the shared module so statusline
 # and the two Stop/PreToolUse hooks are guaranteed to use identical logic.
 # The Read-Update-Save triplet must be lock-guarded as a whole -- the
@@ -165,7 +206,7 @@ function Test-ProcessAlive($p) {
 # semantics mirror app/lib/registry-lock.js (3 s stale, 500 ms acquire
 # timeout, 15 ms poll backoff).
 $locked = Enter-RegistryLock -RegistryPath $registryPath
-$registryLogPath = Join-Path $env:USERPROFILE '.terminal-talk\queue\_hook.log'
+$registryLogPath = Join-Path $ttHome 'queue\_hook.log'
 try {
     if ($locked) {
         # Lock held — safe to do the full Read-Update-Save triplet.
@@ -177,6 +218,7 @@ try {
         $idx = Update-SessionAssignment -Assignments $assignments -Short $short `
                                          -SessionId $sessionId -ClaudePid $claudePid -Now $now `
                                          -LogPath $registryLogPath -Caller 'statusline'
+        Apply-ToolbarLaunchIntent -Assignments $assignments -Short $short
         # #6 G1 + G3 — attribute every save + log to _hook.log so wipe-class
         # bugs (#8) have a writer-by-writer trail.
         Save-Registry -RegistryPath $registryPath -Assignments $assignments `

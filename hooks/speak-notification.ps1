@@ -36,11 +36,15 @@ $spoken = "Claude needs permission. $message"
 # Config
 $edgeVoice = 'en-GB-RyanNeural'
 $openaiVoice = 'onyx'
+$ttsProvider = 'edge'
+$ttsFallbackProvider = 'edge'
 if (Test-Path $configPath) {
     try {
         $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
         if ($cfg.voices.edge_response) { $edgeVoice = $cfg.voices.edge_response }
         if ($cfg.voices.openai_response) { $openaiVoice = $cfg.voices.openai_response }
+        if ($cfg.playback.tts_provider) { $ttsProvider = [string]$cfg.playback.tts_provider }
+        if ($cfg.playback.tts_fallback_provider) { $ttsFallbackProvider = [string]$cfg.playback.tts_fallback_provider }
     } catch {}
 }
 
@@ -56,8 +60,9 @@ if (-not (Test-Path $queueDir)) {
 $timestamp = Get-Date -Format 'yyyyMMddTHHmmssfff'
 $basePath  = Join-Path $queueDir ($timestamp + '-notif-' + $sessionShort)
 
-# Canonical edge-tts + OpenAI fallback chain, 30 s timeout (notifications
-# are short so the 60 s default is overkill).
+# Canonical TTS chain, 30 s timeout (notifications are short so the
+# 60 s default is overkill). OpenAI fallback is explicit opt-in via
+# playback.tts_fallback_provider.
 $delivered = Invoke-TtsWithFallback `
     -EdgeScriptPath      $edgeScript `
     -EdgeVoice           $edgeVoice `
@@ -66,7 +71,9 @@ $delivered = Invoke-TtsWithFallback `
     -BasePath            $basePath `
     -OpenAiApiKey        $openaiApiKey `
     -OpenAiInstructions  'Speak with a calm, alerting tone. Clear and direct, like a brief notification.' `
-    -OpenAiTimeoutSec    30
+    -OpenAiTimeoutSec    30 `
+    -Provider            $ttsProvider `
+    -FallbackProvider    $ttsFallbackProvider
 
 if ($delivered) { Log "DONE: $delivered" } else { Log "EXIT: all TTS providers failed" }
 exit 0

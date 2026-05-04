@@ -10,7 +10,8 @@
 //   1. Consumes the flag FIRST (#21 K-1 race fix — narrows the window
 //      where a concurrent user-save could be wiped by post-save clear).
 //   2. Clears the encrypted key + plaintext sidecar via apiKeyStore.
-//   3. Demotes `playback.tts_provider` to `edge` so next turn doesn't
+//   3. Demotes `playback.tts_provider` and
+//      `playback.tts_fallback_provider` to `edge` so next turn doesn't
 //      re-trigger.
 //   4. Notifies the renderer so the Settings panel can auto-expand and
 //      reveal the input row.
@@ -44,7 +45,7 @@ function createOpenaiInvalidWatcher({
     timer = setInterval(() => {
       try {
         if (!fs.existsSync(flagPath)) return;
-        diag('openai-invalid.flag detected — clearing key + demoting provider to edge');
+        diag('openai-invalid.flag detected — clearing key + demoting OpenAI routes to edge');
         // K-1 (#21): consume flag FIRST.
         try { fs.unlinkSync(flagPath); } catch {}
         // Step 2: wipe the key.
@@ -55,6 +56,7 @@ function createOpenaiInvalidWatcher({
         const cfg = getCFG();
         cfg.playback = cfg.playback || {};
         cfg.playback.tts_provider = 'edge';
+        cfg.playback.tts_fallback_provider = 'edge';
         try { saveConfig(cfg); } catch (e) { diag(`saveConfig after auto-unset fail: ${e.message}`); }
         // Step 4: notify renderer.
         try {

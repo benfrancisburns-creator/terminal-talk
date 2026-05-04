@@ -17,6 +17,7 @@
 // substitute a fake spawn that returns a mock process.
 
 function createMicWatcher({
+  enabled = true,
   scriptPath,
   powershellExe,
   spawn,
@@ -24,6 +25,17 @@ function createMicWatcher({
   diag = () => {},
   restartBackoffMs = 2000,
 } = {}) {
+  if (!enabled) {
+    let logged = false;
+    return {
+      start() {
+        if (logged) return;
+        logged = true;
+        diag('mic-watcher disabled on this platform');
+      },
+      stop() {},
+    };
+  }
   if (!scriptPath) throw new Error('createMicWatcher: scriptPath required');
   if (!powershellExe) throw new Error('createMicWatcher: powershellExe required');
   if (typeof spawn !== 'function') throw new Error('createMicWatcher: spawn required');

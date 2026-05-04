@@ -45,13 +45,52 @@ function findDockedEdge(workArea, winY, winHeight, threshold = DEFAULT_SNAP_THRE
 }
 
 /**
- * Rescue off-display windows. If the bar's centre is on ANY
- * connected display's workArea, leave the position alone; otherwise
- * re-centre on the primary display near the top.
+ * Pick the display that owns the bar centre. If the centre is between
+ * displays, return the nearest workArea. This keeps snap / rescue
+ * decisions tied to the monitor the user is actually dragging on instead
+ * of silently falling back to the primary display.
  *
  * Deliberately tests the BAR'S centre (top barH px), not the whole
  * window, so an expanded settings panel overflowing the bottom
  * doesn't trip the rescue mid-drag.
+ *
+ * @param {number} x
+ * @param {number} y
+ * @param {number} winWidth
+ * @param {number} barHeight
+ * @param {Array<{workArea: {x, y, width, height}}>} displays
+ * @param {{workArea: {x, y, width, height}}} primary
+ */
+function displayForWindowCenter(x, y, winWidth, barHeight, displays, primary) {
+  const list = Array.isArray(displays) && displays.length > 0 ? displays : [primary];
+  const cx = x + winWidth / 2;
+  const cy = y + barHeight / 2;
+  let nearest = primary || list[0];
+  let nearestDist = Infinity;
+
+  for (const d of list) {
+    if (!d || !d.workArea) continue;
+    const wa = d.workArea;
+    const inside = cx >= wa.x && cx <= wa.x + wa.width &&
+                   cy >= wa.y && cy <= wa.y + wa.height;
+    if (inside) return d;
+    const nx = Math.min(Math.max(cx, wa.x), wa.x + wa.width);
+    const ny = Math.min(Math.max(cy, wa.y), wa.y + wa.height);
+    const dx = cx - nx;
+    const dy = cy - ny;
+    const dist = dx * dx + dy * dy;
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = d;
+    }
+  }
+  return nearest || primary || list[0];
+}
+
+/**
+ * Rescue off-display windows. If the bar's centre is on ANY
+ * connected display's workArea, leave the position alone; otherwise
+ * re-centre on the nearest display near the top.
  *
  * @param {number} x
  * @param {number} y
@@ -69,11 +108,12 @@ function clampToVisibleDisplay(x, y, winWidth, barHeight, displays, primary) {
            cy >= wa.y && cy <= wa.y + wa.height;
   });
   if (onAnyDisplay) return { x, y };
-  const pa = primary.workArea;
+  const target = displayForWindowCenter(x, y, winWidth, barHeight, displays, primary);
+  const pa = target.workArea;
   return {
     x: pa.x + Math.floor((pa.width - winWidth) / 2),
     y: pa.y + 12,
   };
 }
 
-module.exports = { findDockedEdge, clampToVisibleDisplay };
+module.exports = { findDockedEdge, clampToVisibleDisplay, displayForWindowCenter };

@@ -153,6 +153,8 @@ if ($sessionShort -and $sessionShort.Length -eq 8) {
 $edgeResponseVoice = 'en-GB-RyanNeural'
 $openaiResponseVoice = 'onyx'
 $openaiApiKey = $null
+$ttsProvider = 'edge'
+$ttsFallbackProvider = 'edge'
 
 $inc = @{
     code_blocks = $false
@@ -172,6 +174,8 @@ if (Test-Path $configPath) {
         # used warning. Response-path voices kept.
         if ($cfg.voices.edge_response) { $edgeResponseVoice = $cfg.voices.edge_response }
         if ($cfg.voices.openai_response) { $openaiResponseVoice = $cfg.voices.openai_response }
+        if ($cfg.playback.tts_provider) { $ttsProvider = [string]$cfg.playback.tts_provider }
+        if ($cfg.playback.tts_fallback_provider) { $ttsFallbackProvider = [string]$cfg.playback.tts_fallback_provider }
         # D2: OpenAI key used to live under $cfg.openai_api_key here. It's
         # now read via Resolve-OpenAiApiKey below, which walks
         # env -> config.secrets.json (safeStorage sidecar)
@@ -204,7 +208,7 @@ if ((Test-Path $registryPath2) -and $sessionShort) {
 }
 Log "voices: edge_response=$edgeResponseVoice; includes: code=$($inc.code_blocks) urls=$($inc.urls) bullets=$($inc.bullet_markers)"
 
-# Canonical edge-tts + OpenAI fallback chain -- see app/tts-helper.psm1.
+# Canonical primary + explicit fallback TTS chain -- see app/tts-helper.psm1.
 # Previously the Invoke-TTS function + the openai-key resolution block
 # were both duplicated across speak-response.ps1 and speak-notification.ps1
 # with subtly different retry counts + timeouts (audit CC-8). Both hooks
@@ -224,7 +228,9 @@ function Invoke-TTS($text, $edgeVoice, $openAiVoice, $openAiInstructions, $baseP
         -BasePath            $basePath `
         -OpenAiApiKey        $openaiApiKey `
         -OpenAiInstructions  $openAiInstructions `
-        -OpenAiTimeoutSec    60
+        -OpenAiTimeoutSec    60 `
+        -Provider            $ttsProvider `
+        -FallbackProvider    $ttsFallbackProvider
     if ($result) { Log "TTS OK: $result" }
     else         { Log "TTS FAIL: no provider produced audio" }
     return $result
@@ -368,6 +374,112 @@ function Convert-CodeLanguageName($lang) {
     return $key
 }
 
+function Convert-CodeIdentifierToWords($name) {
+    $s = [string]$name
+    $s = [regex]::Replace($s, '([a-z])([A-Z])', '$1 $2')
+    $s = [regex]::Replace($s, '([A-Z])([A-Z][a-z])', '$1 $2')
+    $s = [regex]::Replace($s, '[-_]+', ' ')
+    $s = [regex]::Replace($s, '\s+', ' ').Trim().ToLowerInvariant()
+    return $s
+}
+
+function Convert-CodeBlockLabel($label) {
+    $s = [string]$label
+    $s = [regex]::Replace($s, '[`*_#~|]+', ' ')
+    $s = [regex]::Replace($s, '[^A-Za-z0-9]+', ' ')
+    $s = [regex]::Replace($s, '\s+', ' ').Trim().ToLowerInvariant()
+    if (-not $s) { return '' }
+    $words = @($s -split '\s+' | Where-Object { $_ })
+    if ($words.Count -gt 10) { $words = $words[0..9] }
+    return ($words -join ' ')
+}
+
+function Convert-CommentContext($line) {
+    $source = [string]$line
+    $source = [regex]::Replace($source, '^[+\- ]', '').Trim()
+    $source = [regex]::Replace($source, '^(?://|#|--)\s?', '').Trim()
+    $source = [regex]::Replace($source, '^/\*+\s?', '').Trim()
+    $source = [regex]::Replace($source, '^\*\s?', '').Trim()
+    $source = [regex]::Replace($source, '\*+/$', '').Trim()
+    $source = [regex]::Replace($source, '^(?:[-*+]|\d+\.)\s+', '').Trim()
+    if (-not $source) { return '' }
+    if ($source -match '^(?:param|returns?|throws?|todo|fixme|copyright|license|eslint|ts-ignore)\b') { return '' }
+    if ($source -match '[{};=<>]|=>|\b(?:const|let|var|return|if|else|for|while)\b') { return '' }
+    $source = @($source -split '[.!?]\s+|\s+(?:—|--|-)\s+', 2)[0]
+    $label = Convert-CodeBlockLabel $source
+    if (-not $label) { return '' }
+    $words = @($label -split '\s+' | Where-Object { $_ })
+    if ($words.Count -lt 4 -or $words.Count -gt 12) { return '' }
+    return "the $label area"
+}
+
+function Convert-VisibleContextScope($body) {
+    $codeScope = ''
+    $contextScope = ''
+    $proseScope = ''
+    $lines = @(([string]$body) -split "\r?\n" | Select-Object -First 260)
+    foreach ($raw in $lines) {
+        $line = [regex]::Replace([string]$raw, '^\s*\d+\s*(?:→|\||:|\t)\s?', '')
+        if (-not $line.Trim()) { continue }
+        if (-not $codeScope) {
+            if (
+                $line -match '(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$-]*)' -or
+                $line -match '(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>' -or
+                $line -match '(?m)^[ \t]*def\s+([A-Za-z_]\w*)' -or
+                $line -match '(?m)^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)' -or
+                $line -match '(?m)^[ \t]*function\s+([A-Z][A-Za-z]+-[A-Z][A-Za-z]+)' -or
+                $line -match '(?m)^[ \t]*(?:export\s+)?class\s+([A-Z][A-Za-z0-9_]*)' -or
+                $line -match '(?m)^[ \t]*(?:export\s+)?interface\s+([A-Z][A-Za-z0-9_]*)'
+            ) {
+                $codeScope = Convert-CodeIdentifierToWords $Matches[1]
+            }
+        }
+        if (-not $contextScope) {
+            if (
+                $line -match '^[ \t]{0,3}#{1,6}\s+(.{1,100}?)\s*$' -or
+                $line -match '^[ \t]*#region\s+(.{1,100}?)\s*$' -or
+                $line -match '^[ \t]*(?://|#|--)\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*(.{1,100}?)\s*$' -or
+                $line -match '^[ \t]*(?:test\.)?(?:describe|context)\s*\(\s*[''"]([^''"]{1,100})[''"]'
+            ) {
+                $label = Convert-CodeBlockLabel $Matches[1]
+                if ($label) {
+                    if ($line -match '\b(?:describe|context)\s*\(') { $contextScope = "the $label tests" }
+                    else { $contextScope = "the $label section" }
+                }
+            }
+        }
+        if (-not $proseScope) { $proseScope = Convert-CommentContext $line }
+        if ($codeScope -and $contextScope) { break }
+    }
+    if ($codeScope) { return $codeScope }
+    if ($contextScope) { return $contextScope }
+    return $proseScope
+}
+
+function Convert-CodeBlockFocus($body) {
+    $bodyText = [string]$body
+    if ($bodyText -match '(?m)^[ \t]*(?:export\s+)?(?:class|interface)\s+([A-Za-z_$][\w$]*)') {
+        $name = Convert-CodeIdentifierToWords $Matches[1]
+        return "defines the $name class"
+    }
+    if (
+        $bodyText -match '(?m)^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(' -or
+        $bodyText -match '(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(' -or
+        $bodyText -match '(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>' -or
+        $bodyText -match '(?m)^[ \t]*function\s+([A-Z][A-Za-z]+-[A-Z][A-Za-z]+)'
+    ) {
+        $name = Convert-CodeIdentifierToWords $Matches[1]
+        return "defines the $name function"
+    }
+    if ($bodyText -match '\b(?:describe|it|test)\s*\(\s*[''"]([^''"]{1,100})[''"]') {
+        $label = Convert-CodeBlockLabel $Matches[1]
+        if ($label) { return "contains the $label tests" }
+    }
+    $scope = Convert-VisibleContextScope $bodyText
+    if ($scope) { return "around $scope" }
+    return ''
+}
+
 function Convert-CodeBlockSummary($lang, $body) {
     $bodyText = [string]$body
     $lines = @($bodyText -split "\r?\n" | Where-Object { $_.Trim() }).Count
@@ -375,7 +487,10 @@ function Convert-CodeBlockSummary($lang, $body) {
     $language = Convert-CodeLanguageName $lang
     $languagePhrase = if ($language) { " of $language" } else { '' }
     $shape = ''
-    if ($bodyText -match '(?m)^[ \t]*(?:export\s+)?class\s+[A-Za-z_$][\w$]*') {
+    $focus = Convert-CodeBlockFocus $bodyText
+    if ($focus) {
+        $shape = ", $focus"
+    } elseif ($bodyText -match '(?m)^[ \t]*(?:export\s+)?class\s+[A-Za-z_$][\w$]*') {
         $shape = ', defines a class'
     } elseif (
         $bodyText -match '(?m)^[ \t]*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(' -or
@@ -467,17 +582,41 @@ function Convert-BulletLine($content, $prefix = '') {
     return $c
 }
 function Convert-MarkedListsToNumbers($text) {
-    $n = 0
+    $unorderedN = 0
+    $orderedActive = $false
+    $orderedNext = 1
     $out = New-Object System.Collections.ArrayList
     foreach ($line in ([string]$text -split "`n", -1)) {
-        $m = [regex]::Match($line, '^[ \t]*([-*+]|\d+\.)[ \t]+(.+?)[ \t]*$')
-        if ($m.Success) {
-            $n++
-            [void]$out.Add(("$n. " + (Convert-BulletLine $m.Groups[2].Value)))
+        $m = [regex]::Match($line, '^[ \t]*([-*+]|\d+[.)])[ \t]+(.+?)[ \t]*$')
+        if (-not $m.Success) {
+            $unorderedN = 0
+            if ($line -notmatch '^[ \t]') {
+                $orderedActive = $false
+                $orderedNext = 1
+            }
+            [void]$out.Add($line)
             continue
         }
-        $n = 0
-        [void]$out.Add($line)
+
+        $marker = $m.Groups[1].Value
+        if ($marker -match '^[-*+]$') {
+            $unorderedN++
+            [void]$out.Add(("$unorderedN. " + (Convert-BulletLine $m.Groups[2].Value)))
+            continue
+        }
+
+        $unorderedN = 0
+        $rawNumber = [int]([regex]::Match($marker, '\d+').Value)
+        if ($rawNumber -gt 1) {
+            $spokenNumber = $rawNumber
+        } elseif ($orderedActive) {
+            $spokenNumber = $orderedNext
+        } else {
+            $spokenNumber = 1
+        }
+        $orderedActive = $true
+        $orderedNext = $spokenNumber + 1
+        [void]$out.Add(("$spokenNumber. " + (Convert-BulletLine $m.Groups[2].Value)))
     }
     return (($out.ToArray()) -join "`n")
 }
