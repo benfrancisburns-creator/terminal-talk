@@ -10,7 +10,7 @@
 //      Batch 1 G1+G3 observability log lines.
 //
 //   2. `USER_INTENT_WRITERS` — set of IPC handler names allowed to clear
-//      label / pinned / voice / muted / focus / speech_includes. Any
+//      label / pinned / manual voice / muted / focus / heartbeat / speech_includes. Any
 //      writer NOT in this set goes through the guard.
 //
 //   3. `guardUserIntent(all, caller)` — defensive restoration. For any
@@ -28,11 +28,13 @@ const realFs = require('node:fs');
 
 function _hasUserIntent(entry) {
   if (!entry || typeof entry !== 'object') return false;
-  if (typeof entry.label === 'string' && entry.label.length > 0) return true;
+  if (typeof entry.label === 'string' && entry.label.length > 0 && entry.auto_label !== true) return true;
   if (entry.pinned === true) return true;
-  if (typeof entry.voice === 'string' && entry.voice.length > 0) return true;
+  if (typeof entry.voice === 'string' && entry.voice.length > 0 && entry.voice_auto !== true) return true;
+  if (entry.voice_auto === false) return true;
   if (entry.muted === true) return true;
   if (entry.focus === true) return true;
+  if (typeof entry.heartbeat_enabled === 'boolean') return true;
   if (entry.speech_includes && typeof entry.speech_includes === 'object' &&
       Object.keys(entry.speech_includes).length > 0) return true;
   return false;
@@ -56,8 +58,41 @@ const USER_INTENT_WRITERS = new Set([
   'set-session-muted',
   'set-session-focus',
   'set-session-include',
+  'set-session-heartbeat',
   'remove-session',
+  'codex-plugin-cleanup',
 ]);
+
+const METADATA_FIELDS = [
+  'source_kind',
+  'source_label',
+  'source_app',
+  'source_cwd',
+  'source',
+  'source_originator',
+  'source_pid',
+  'source_child_pid',
+  'source_key',
+  'adapter',
+  'claude_code_entrypoint',
+  'codex_desktop_title_status',
+  'codex_desktop_title',
+  'codex_desktop_title_error',
+  'claude_desktop_title_status',
+  'claude_desktop_title',
+  'claude_desktop_title_error',
+  'claude_desktop_title_synced_at',
+  'claude_desktop_session_file',
+  'claude_desktop_renderer_title',
+];
+
+const CAPABILITY_FIELDS = [
+  'auto_register',
+  'tool_events',
+  'response_events',
+  'mcp_speak',
+  'manual_speak_selection',
+];
 
 function createRegistryGuard({ registryPath, fs = realFs } = {}) {
   if (!registryPath) {
@@ -128,7 +163,7 @@ function createRegistryGuard({ registryPath, fs = realFs } = {}) {
       if (!oldEntry) continue;
       const newEntry = all[short];
       if (!newEntry || typeof newEntry !== 'object') continue;
-      if (typeof oldEntry.label === 'string' && oldEntry.label.length > 0 &&
+      if (typeof oldEntry.label === 'string' && oldEntry.label.length > 0 && oldEntry.auto_label !== true &&
           (typeof newEntry.label !== 'string' || newEntry.label.length === 0)) {
         newEntry.label = oldEntry.label;
         restored.push(`${short}:label`);
@@ -137,7 +172,11 @@ function createRegistryGuard({ registryPath, fs = realFs } = {}) {
         newEntry.pinned = true;
         restored.push(`${short}:pinned`);
       }
-      if (typeof oldEntry.voice === 'string' && oldEntry.voice && !newEntry.voice) {
+      if (oldEntry.voice_auto === false && newEntry.voice_auto !== false) {
+        newEntry.voice_auto = false;
+        restored.push(`${short}:voice_auto`);
+      }
+      if (typeof oldEntry.voice === 'string' && oldEntry.voice && oldEntry.voice_auto !== true && !newEntry.voice) {
         newEntry.voice = oldEntry.voice;
         restored.push(`${short}:voice`);
       }
@@ -149,11 +188,45 @@ function createRegistryGuard({ registryPath, fs = realFs } = {}) {
         newEntry.focus = true;
         restored.push(`${short}:focus`);
       }
+      if (typeof oldEntry.heartbeat_enabled === 'boolean' &&
+          typeof newEntry.heartbeat_enabled !== 'boolean') {
+        newEntry.heartbeat_enabled = oldEntry.heartbeat_enabled;
+        restored.push(`${short}:heartbeat_enabled`);
+      }
       if (oldEntry.speech_includes && typeof oldEntry.speech_includes === 'object' &&
           Object.keys(oldEntry.speech_includes).length > 0 &&
           (!newEntry.speech_includes || Object.keys(newEntry.speech_includes).length === 0)) {
         newEntry.speech_includes = oldEntry.speech_includes;
         restored.push(`${short}:speech_includes`);
+      }
+      if (oldEntry.capabilities && typeof oldEntry.capabilities === 'object') {
+        if (!newEntry.capabilities || typeof newEntry.capabilities !== 'object') {
+          newEntry.capabilities = {};
+        }
+        for (const field of CAPABILITY_FIELDS) {
+          if (typeof oldEntry.capabilities[field] === 'boolean' &&
+              typeof newEntry.capabilities[field] !== 'boolean') {
+            newEntry.capabilities[field] = oldEntry.capabilities[field];
+            restored.push(`${short}:capabilities.${field}`);
+          }
+        }
+      }
+      for (const field of METADATA_FIELDS) {
+        if (typeof oldEntry[field] === 'string' && oldEntry[field] &&
+            (typeof newEntry[field] !== 'string' || !newEntry[field])) {
+          newEntry[field] = oldEntry[field];
+          restored.push(`${short}:${field}`);
+        }
+      }
+      if (Number.isFinite(Number(oldEntry.codex_desktop_title_synced_at)) &&
+          !Number.isFinite(Number(newEntry.codex_desktop_title_synced_at))) {
+        newEntry.codex_desktop_title_synced_at = Math.floor(Number(oldEntry.codex_desktop_title_synced_at));
+        restored.push(`${short}:codex_desktop_title_synced_at`);
+      }
+      if (Number.isFinite(Number(oldEntry.claude_desktop_title_synced_at)) &&
+          !Number.isFinite(Number(newEntry.claude_desktop_title_synced_at))) {
+        newEntry.claude_desktop_title_synced_at = Math.floor(Number(oldEntry.claude_desktop_title_synced_at));
+        restored.push(`${short}:claude_desktop_title_synced_at`);
       }
     }
     return restored;

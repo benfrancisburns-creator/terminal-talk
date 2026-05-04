@@ -1,6 +1,10 @@
 'use strict';
 
+const { spawn } = require('node:child_process');
 const { createDedupe } = require('./renderer-error-dedupe');
+const { syncClaudeDesktopSessionTitles } = require('./claude-desktop-title-sync');
+const { applyClaudeDesktopTitleSyncStatus } = require('./codex-identity-sync');
+const { providerOrder } = require('./tts-routing');
 
 // EX6f — extracted from app/main.js as part of the v0.4 big-file
 // refactor. Consolidates the ipcMain.handle() registrations from
@@ -27,10 +31,10 @@ function createIpcHandlers(deps) {
     // clip without duplicating the callEdgeTTS promise plumbing.
     callEdgeTTS,
     // #15 — OpenAI TTS spawner for heartbeat clips when
-    // cfg.playback.tts_provider === 'openai'. Injected (rather than
+    // cfg.playback.tts_provider === 'openai', or when the explicit
+    // fallback provider is openai. Injected (rather than
     // required directly) so the test harness can stub the call without
-    // hitting api.openai.com. Falls back to callEdgeTTS on throw or
-    // when no API key is set.
+    // hitting api.openai.com.
     callOpenAITTS,
     // About panel: `app.getVersion()`-equivalent getter. Injected so
     // the factory doesn't need to import electron directly.
@@ -56,11 +60,15 @@ function createIpcHandlers(deps) {
     validVoice,
     sanitiseLabel,
     ALLOWED_INCLUDE_KEYS,
+    chooseSessionProjectDir,
+    launchAssistantSession,
     // Panel / config-mutation deps (EX6f-3)
     setCFG,
     saveConfig,
     apiKeyStore,
     redactForLog,
+    appDir = null,
+    pythonExe = process.platform === 'win32' ? 'python' : 'python3',
     setApplyingDock,
     setInteractiveRegion = () => false,
     testMode = !!process.env.TT_TEST_MODE,
@@ -81,8 +89,181 @@ function createIpcHandlers(deps) {
     getReloadGraceUntil = () => 0,
   } = deps;
 
+  const runtimeAppDir = appDir || path.join(path.dirname(QUEUE_DIR || ''), 'app');
+
   const WIN_COLLAPSED = { width: 680, height: 192 };
   const WIN_EXPANDED = { width: 680, height: 618 };
+  const QUEUE_SHORT_TRAILING_ARTIFACT_RE = /-([a-f0-9]{8})(?:(?:\.original)?\.txt(?:\.partial)?|\.(?:wav|mp3)(?:\.partial)?)$/i;
+  const QUEUE_SHORT_CLIP_ARTIFACT_RE = /-clip-([a-f0-9]{8})-\d+(?:(?:\.original)?\.txt(?:\.partial)?|\.(?:wav|mp3)(?:\.partial)?)$/i;
+
+  function shortFromQueueArtifact(name) {
+    const base = String(name || '');
+    try {
+      if (typeof shortFromFile === 'function') {
+        const parsed = shortFromFile(base);
+        if (parsed) return parsed;
+      }
+    } catch {}
+    let m = base.match(QUEUE_SHORT_CLIP_ARTIFACT_RE);
+    if (m) return m[1].toLowerCase();
+    m = base.match(QUEUE_SHORT_TRAILING_ARTIFACT_RE);
+    if (m) return m[1].toLowerCase();
+    return null;
+  }
+
+  function purgeQueueArtifactsForShort(shortId) {
+    if (!QUEUE_DIR || !fs.existsSync(QUEUE_DIR)) return 0;
+    let purged = 0;
+    for (const name of fs.readdirSync(QUEUE_DIR)) {
+      if (shortFromQueueArtifact(name) !== shortId) continue;
+      try {
+        fs.unlinkSync(path.join(QUEUE_DIR, name));
+        purged += 1;
+      } catch (e) {
+        diag(`remove-session: unlink ${name} failed: ${e.message}`);
+      }
+    }
+    return purged;
+  }
+
+  function findCodexDesktopTitleSyncScript() {
+    const candidates = [
+      path.join(runtimeAppDir, 'sync-codex-desktop-active-title.ps1'),
+      path.resolve(runtimeAppDir, '..', 'scripts', 'sync-codex-desktop-active-title.ps1'),
+      path.resolve(process.cwd(), 'scripts', 'sync-codex-desktop-active-title.ps1'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return candidate;
+      } catch {}
+    }
+    return null;
+  }
+
+  function findClaudeDesktopUiaRenameScript() {
+    const candidates = [
+      path.join(runtimeAppDir, 'sync-claude-desktop-uia-rename.ps1'),
+      path.resolve(process.cwd(), 'app', 'sync-claude-desktop-uia-rename.ps1'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return candidate;
+      } catch {}
+    }
+    return null;
+  }
+
+  function runPowerShellScript(script, args, timeoutMs, missingMessage) {
+    return new Promise((resolve) => {
+      if (process.platform !== 'win32') {
+        resolve({ ok: false, error: 'Desktop live sync is currently Windows-only.' });
+        return;
+      }
+      if (!script) {
+        resolve({ ok: false, error: missingMessage || 'Desktop sync script is missing.' });
+        return;
+      }
+      const ps = process.env.SystemRoot
+        ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+        : 'powershell.exe';
+      const child = spawn(ps, [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        script,
+        ...(Array.isArray(args) ? args : []),
+      ], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { child.kill(); } catch {}
+        resolve({ ok: false, error: 'Desktop sync timed out.' });
+      }, Math.max(1000, Number(timeoutMs) || 20000));
+      child.stdout.on('data', (d) => { stdout += String(d); });
+      child.stderr.on('data', (d) => { stderr += String(d); });
+      child.on('error', (e) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ ok: false, error: e && e.message ? e.message : 'Desktop sync failed.' });
+      });
+      child.on('exit', (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve({ ok: true, output: stdout.trim() });
+          return;
+        }
+        const msg = (stderr || stdout || `PowerShell exited with code ${code}`).trim();
+        const firstLine = msg.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || msg;
+        resolve({ ok: false, error: firstLine.slice(0, 240) });
+      });
+    });
+  }
+
+  function runCodexDesktopTitleSync(shortId) {
+    return runPowerShellScript(
+      findCodexDesktopTitleSyncScript(),
+      [
+        '-SessionId',
+        shortId,
+      ],
+      20000,
+      'Codex Desktop title sync script is missing.',
+    );
+  }
+
+  function runClaudeDesktopUiaRename(currentTitle, newTitle) {
+    return runPowerShellScript(
+      findClaudeDesktopUiaRenameScript(),
+      [
+        '-CurrentTitle',
+        String(currentTitle || ''),
+        '-NewTitle',
+        String(newTitle || ''),
+      ],
+      8000,
+      'Claude Desktop UIA rename script is missing.',
+    );
+  }
+
+  function setClaudeDesktopLiveStatus(all, shortId, status, title, error = '') {
+    const entry = all && all[shortId];
+    if (!entry || typeof entry !== 'object') return false;
+    let changed = false;
+    const cleanStatus = String(status || '');
+    const cleanTitle = String(title || '').slice(0, 180);
+    const cleanError = String(error || '').slice(0, 180);
+    if (cleanStatus && entry.claude_desktop_title_status !== cleanStatus) {
+      entry.claude_desktop_title_status = cleanStatus;
+      changed = true;
+    }
+    if (cleanTitle && entry.claude_desktop_title !== cleanTitle) {
+      entry.claude_desktop_title = cleanTitle;
+      changed = true;
+    }
+    if (cleanError) {
+      if (entry.claude_desktop_title_error !== cleanError) {
+        entry.claude_desktop_title_error = cleanError;
+        changed = true;
+      }
+    } else if (entry.claude_desktop_title_error) {
+      delete entry.claude_desktop_title_error;
+      changed = true;
+    }
+    if (changed) {
+      entry.claude_desktop_title_synced_at = Math.floor(Date.now() / 1000);
+    }
+    return changed;
+  }
 
   function register() {
     // S1.2 — renderer-side error sink with dedupe so repeated throws
@@ -199,6 +380,33 @@ function createIpcHandlers(deps) {
     // close over the initial value.
     ipcMain.handle('get-config', () => getCFG());
 
+    ipcMain.handle('choose-session-project-dir', async (_e, startPath) => {
+      try {
+        if (typeof chooseSessionProjectDir !== 'function') {
+          return { ok: false, error: 'Folder picker is unavailable.' };
+        }
+        return await chooseSessionProjectDir(startPath);
+      } catch (e) {
+        diag(`choose-session-project-dir fail: ${e && e.message}`);
+        return { ok: false, error: e && e.message ? e.message : 'Folder picker failed.' };
+      }
+    });
+
+    ipcMain.handle('launch-assistant-session', async (_e, payload) => {
+      if (!allowMutation('launch-assistant-session')) return null;
+      try {
+        if (typeof launchAssistantSession !== 'function') {
+          return { ok: false, error: 'Session launcher is unavailable.' };
+        }
+        const result = await launchAssistantSession(payload);
+        diag(`launch-assistant-session OK: kind=${result && result.kind} project=${result && result.projectDir}`);
+        return result;
+      } catch (e) {
+        diag(`launch-assistant-session fail: ${e && e.message}`);
+        return { ok: false, error: e && e.message ? e.message : 'Session launch failed.' };
+      }
+    });
+
     // EX6f-2 — session-edit mutation handlers. All follow the same
     // shape: rate-limit gate -> validate shortId -> load registry ->
     // mutate entry -> persist. set-session-focus / remove-session /
@@ -248,6 +456,96 @@ function createIpcHandlers(deps) {
       return ok;
     });
 
+    ipcMain.handle('sync-codex-desktop-title', async (_e, shortId) => {
+      if (!allowMutation('sync-codex-desktop-title')) return { ok: false, error: 'Mutation rate-limited.' };
+      if (!validShort(shortId)) return { ok: false, error: 'Invalid session id.' };
+      const all = loadAssignments();
+      const entry = all[shortId];
+      if (!entry) return { ok: false, error: 'Session is not in the Terminal Talk registry.' };
+      const sourceKind = String(entry.source_kind || '').toLowerCase();
+      const isCodexDesktop = sourceKind === 'codex-desktop'
+        || String(entry.source_label || '') === 'Codex Desktop'
+        || !!entry.codex_desktop_title;
+      if (!isCodexDesktop) return { ok: false, error: 'Session is not a Codex Desktop session.' };
+
+      syncCodexIdentity();
+      const result = await runCodexDesktopTitleSync(shortId);
+      if (!result.ok) diag(`sync-codex-desktop-title fail ${shortId}: ${result.error}`);
+      else diag(`sync-codex-desktop-title ok ${shortId}: ${result.output || ''}`);
+      notifyQueue();
+      return result;
+    });
+
+    ipcMain.handle('sync-claude-desktop-title', async (_e, shortId) => {
+      if (!allowMutation('sync-claude-desktop-title')) return { ok: false, error: 'Mutation rate-limited.' };
+      if (!validShort(shortId)) return { ok: false, error: 'Invalid session id.' };
+      const all = loadAssignments();
+      const entry = all[shortId];
+      if (!entry) return { ok: false, error: 'Session is not in the Terminal Talk registry.' };
+      const sourceKind = String(entry.source_kind || '').toLowerCase();
+      const isClaudeDesktop = sourceKind === 'claude-desktop'
+        || String(entry.source_label || '') === 'Claude Desktop'
+        || !!entry.claude_desktop_title;
+      if (!isClaudeDesktop) return { ok: false, error: 'Session is not a Claude Desktop Code session.' };
+
+      let result;
+      try {
+        result = syncClaudeDesktopSessionTitles({ assignments: all, autoRegister: true, diag });
+      } catch (e) {
+        const error = e && e.message ? e.message : 'Claude Desktop title sync failed.';
+        diag(`sync-claude-desktop-title fail ${shortId}: ${error}`);
+        return { ok: false, error };
+      }
+
+      const statusChanged = applyClaudeDesktopTitleSyncStatus(all, result.results);
+      if (result.assignmentsChanged || statusChanged) {
+        const ok = saveAssignments(all, 'sync-claude-desktop-title');
+        if (ok) notifyQueue();
+      }
+
+      const match = (result.results || []).find((row) => String(row.shortId || '').toLowerCase() === String(shortId).toLowerCase());
+      if (!match) {
+        const error = 'Claude Desktop session file is not visible yet. Send one message, then sync again.';
+        diag(`sync-claude-desktop-title miss ${shortId}: ${error}`);
+        return { ok: false, error };
+      }
+      if (match.status === 'sync_failed') {
+        const error = match.error || 'Claude Desktop title sync failed.';
+        diag(`sync-claude-desktop-title fail ${shortId}: ${error}`);
+        return { ok: false, error };
+      }
+      const worktree = match.worktreeNameUpdated ? ' and worktree label' : '';
+      // The renderer's in-memory sidebar title is the file's title BEFORE
+      // we just rewrote it. UIA-find the row by that name, drive Claude
+      // Desktop's own rename UI, set the new title.
+      const previousTitle = String(match.previousTitle || match.desired || '');
+      const live = await runClaudeDesktopUiaRename(previousTitle, match.desired);
+      if (live.ok) {
+        const output = `Claude Desktop title${worktree} updated live: ${match.desired}`;
+        // Record the new renderer-known title so the next sync uses it
+        // as `previousTitle`. Without this we'd always look for the
+        // original Claude auto-title in the sidebar.
+        let touched = setClaudeDesktopLiveStatus(all, shortId, 'live_synced', match.desired);
+        if (all[shortId] && all[shortId].claude_desktop_renderer_title !== match.desired) {
+          all[shortId].claude_desktop_renderer_title = match.desired;
+          touched = true;
+        }
+        if (touched) {
+          const ok = saveAssignments(all, 'sync-claude-desktop-title');
+          if (ok) notifyQueue();
+        }
+        diag(`sync-claude-desktop-title ok ${shortId}: ${output}`);
+        return { ok: true, output };
+      }
+      const error = `Claude Desktop title${worktree} saved to disk, but the live sidebar rename failed: ${live.error || 'unknown error'}`;
+      if (setClaudeDesktopLiveStatus(all, shortId, 'live_unavailable', match.desired, error)) {
+        const ok = saveAssignments(all, 'sync-claude-desktop-title');
+        if (ok) notifyQueue();
+      }
+      diag(`sync-claude-desktop-title live fail ${shortId}: ${live.error || 'unknown error'}`);
+      return { ok: false, error };
+    });
+
     // Exclusive focus flag — only one session can be focus at a time.
     // Setting focus on a session clears it on all others. Focus-mode
     // playback: when this session has unplayed clips, they jump ahead
@@ -278,9 +576,9 @@ function createIpcHandlers(deps) {
     // next tick calls ensureAssignmentsForFiles, which re-creates a
     // ghost entry (pid=0, empty label) at the lowest free palette
     // slot -- the user sees "I deleted it and it came back in a
-    // different colour." Matching files is done via shortFromFile so
-    // only genuine clip filenames are touched; arbitrary files in the
-    // queue dir (logs etc.) are left alone.
+    // different colour." Matching covers both audio and transcript
+    // sidecars so newer T/H/Q and -clip- filenames cannot survive the
+    // delete and make the row appear to ignore the X.
     //
     // If the terminal is still live, its next hook fire will re-register
     // the short via Update-SessionAssignment -- PID migration (see
@@ -295,19 +593,8 @@ function createIpcHandlers(deps) {
       const ok = saveAssignments(all, 'remove-session');
       if (ok) {
         try {
-          if (typeof shortFromFile === 'function' && QUEUE_DIR && fs.existsSync(QUEUE_DIR)) {
-            let purged = 0;
-            for (const name of fs.readdirSync(QUEUE_DIR)) {
-              if (shortFromFile(name) !== shortId) continue;
-              try {
-                fs.unlinkSync(path.join(QUEUE_DIR, name));
-                purged += 1;
-              } catch (e) {
-                diag(`remove-session: unlink ${name} failed: ${e.message}`);
-              }
-            }
-            if (purged > 0) diag(`remove-session: purged ${purged} queue files for ${shortId}`);
-          }
+          const purged = purgeQueueArtifactsForShort(shortId);
+          if (purged > 0) diag(`remove-session: purged ${purged} queue files for ${shortId}`);
         } catch (e) {
           diag(`remove-session: queue purge failed: ${e.message}`);
         }
@@ -473,18 +760,18 @@ function createIpcHandlers(deps) {
         const ok = await new Promise((resolve) => {
           let proc;
           if (provider === 'openai') {
-            const script = path.join(path.dirname(QUEUE_DIR), 'app', 'openai_tts.py');
+            const script = path.join(runtimeAppDir, 'openai_tts.py');
             if (!fs.existsSync(script)) { resolve({ ok: false, err: 'openai_tts.py missing from install' }); return; }
             // Pass the key via env var, not argv, so a crash / timeout
             // stringifier can't leak it into a log or error message.
             // Matches synth_turn._run_openai_fallback's contract.
             const envWithKey = { ...process.env, OPENAI_API_KEY: key };
-            proc = spawn('python', [script, openaiVoice, outPath],
+            proc = spawn(pythonExe, [script, openaiVoice, outPath],
               { stdio: ['pipe', 'ignore', 'pipe'], env: envWithKey });
           } else {
-            const script = path.join(path.dirname(QUEUE_DIR), 'app', 'edge_tts_speak.py');
+            const script = path.join(runtimeAppDir, 'edge_tts_speak.py');
             if (!fs.existsSync(script)) { resolve({ ok: false, err: 'edge_tts_speak.py missing from install' }); return; }
-            proc = spawn('python', [script, edgeVoice, outPath],
+            proc = spawn(pythonExe, [script, edgeVoice, outPath],
               { stdio: ['pipe', 'ignore', 'pipe'] });
           }
           let stderr = '';
@@ -776,7 +1063,7 @@ function createIpcHandlers(deps) {
         // voice change post-update if they'd tuned edge_response — see
         // commit message for rationale.
         const voices = (cfg && cfg.voices) || {};
-        const provider = String(((cfg && cfg.playback) || {}).tts_provider || 'edge').toLowerCase();
+        const providers = providerOrder((cfg && cfg.playback) || {});
         const edgeVoice   = voices.edge_clip   || voices.edge_response   || 'en-GB-RyanNeural';
         const openaiVoice = voices.openai_clip || voices.openai_response || 'shimmer';
         const apiKey = (apiKeyStore && typeof apiKeyStore.get === 'function') ? apiKeyStore.get() : null;
@@ -792,10 +1079,9 @@ function createIpcHandlers(deps) {
         const filename = `${ts}-H-0001-${sessionShort}.mp3`;
         const outPath = path.join(QUEUE_DIR, filename);
 
-        // Try the configured provider first, fall back to the other on
-        // throw. OpenAI attempt skipped entirely when no API key —
-        // otherwise callOpenAITTS would 401 and we'd waste a round-trip
-        // before falling back to edge.
+        // Try the configured provider first, then only the explicit
+        // fallback provider. OpenAI is skipped entirely when no API key
+        // exists, so Edge-primary cannot accidentally spend paid credits.
         const tryEdge = async () => {
           await callEdgeTTS(verb, edgeVoice, outPath);
           return { ok: true, used: 'edge', voice: edgeVoice };
@@ -806,20 +1092,15 @@ function createIpcHandlers(deps) {
           await callOpenAITTS(apiKey, verb, openaiVoice, outPath);
           return { ok: true, used: 'openai', voice: openaiVoice };
         };
-        const first = provider === 'openai' ? tryOpenAI : tryEdge;
-        const second = provider === 'openai' ? tryEdge : tryOpenAI;
         let result;
-        try {
-          result = await first();
-        } catch (e) {
-          diag(`heartbeat: ${provider === 'openai' ? 'openai' : 'edge'} synth threw, trying fallback: ${e && e.message ? e.message : e}`);
-          result = { ok: false };
-        }
-        if (!result || !result.ok) {
-          // First provider either refused (no key, no fn) or threw.
-          // Fall through to the other. If THAT also throws the outer
-          // catch handles it.
-          result = await second();
+        for (const provider of providers) {
+          try {
+            result = provider === 'openai' ? await tryOpenAI() : await tryEdge();
+          } catch (e) {
+            diag(`heartbeat: ${provider} synth threw: ${e && e.message ? e.message : e}`);
+            result = { ok: false };
+          }
+          if (result && result.ok) break;
         }
         if (!result || !result.ok) {
           diag(`heartbeat: no provider produced a clip for "${verb}" — check API key + edge-tts install`);

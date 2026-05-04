@@ -14780,28 +14780,1073 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/--tabColor/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must pass --tabColor to wt.exe');
     }
+    if (!/ProjectDir/.test(src) || !/DryRun/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must support project-directory launches and dry-run verification');
+    }
+    if (!/& \$wt\.Source @wtArgs/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must invoke wt.exe with an argument array, not a pre-joined command string');
+    }
+    if (/Start-Process -FilePath \$wt\.Source/.test(src)) {
+      throw new Error('codex-wt-launch.ps1 must not pass the wt commandline through Start-Process string quoting');
+    }
     if (/--suppressApplicationTitle/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must allow codex-launch.ps1 to update the tab title after bind');
     }
     if (!/Format-CodexWindowTitle[\s\S]*-Attaching/.test(src)) {
-      throw new Error('codex-wt-launch.ps1 must format the initial title with the reserved short id');
+      throw new Error('codex-wt-launch.ps1 must format the initial title before Codex binds to a native session id');
     }
     if (!/PreassignedShort/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must hand the reserved short to codex-launch.ps1');
     }
   });
 
-  it('install and uninstall scripts manage Terminal Talk Codex shortcuts', () => {
+  it('codex-identify-live.ps1 maps normal live Codex terminals back to Terminal Talk identity', () => {
+    const src = fs.readFileSync(identifyPath, 'utf8');
+    if (!/Import-Module .*session-registry\.psm1/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must import session-registry.psm1');
+    }
+    if (!/Import-Module .*codex-terminal\.psm1/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must import codex-terminal.psm1');
+    }
+    if (!/Get-CimInstance Win32_Process[\s\S]*Name='codex\.exe'/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must enumerate live codex.exe processes');
+    }
+    if (!/app-server/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must ignore Codex app-server helper processes');
+    }
+    if (!/DateTimeOffset\]::Parse/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must parse ISO Z rollout timestamps as UTC, not local time');
+    }
+    if (!/Get-CodexRolloutSessionMeta/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must resolve the real rollout session id');
+    }
+    if (!/terminal_source/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must ignore non-terminal Codex agent rollouts');
+    }
+    if (!/Write-SessionPidFile/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must stamp per-PID session files');
+    }
+    if (!/Format-CodexWindowTitle/.test(src) || !/SetConsoleTitle/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must set the live terminal title');
+    }
+    if (!/Write-ConsoleTitleSequenceForPid/.test(src) || !/title_seq_set/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must reapply the Windows Terminal OSC title sequence on identity refresh');
+    }
+    if (!/Get-TerminalTalkPaletteHex/.test(src) || !/Get-TerminalTalkPaletteAnsiGlyph/.test(src) || !/ForceBanner/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must keep the diagnostic colour banner available behind -ForceBanner');
+    }
+    if (!/old default banner wrote visible lines/.test(src) || !/\$needsBanner = \[bool\]\$ForceBanner/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must not print identity banners during normal live sync');
+    }
+  });
+
+  it('main.js runs and stops the live Codex identity sync outside TT_TEST_MODE', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const syncSrc = fs.readFileSync(identitySyncPath, 'utf8');
+    if (!/createCodexIdentitySync/.test(src) || !/createCodexIdentitySync/.test(syncSrc)) {
+      throw new Error('main.js must create the Codex identity sync helper');
+    }
+    if (!/codex-identify-live\.ps1/.test(syncSrc)) {
+      throw new Error('Codex identity sync helper must reference codex-identify-live.ps1');
+    }
+    if (!/TT_TEST_MODE/.test(src) || !/_codexIdentitySync\.start\(\)/.test(src)) {
+      throw new Error('Codex identity sync must be gated in tests and started at runtime');
+    }
+    const willQuit = src.match(/app\.on\(['"]will-quit['"][\s\S]*?\n\}\);?/);
+    if (!willQuit || !willQuit[0].includes('_codexIdentitySync.stop()')) {
+      throw new Error('will-quit must stop the Codex identity sync timer');
+    }
+  });
+
+  it('install removes legacy Terminal Talk Codex shortcuts without recreating them', () => {
     const installSrc = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
     const uninstallSrc = fs.readFileSync(path.join(__dirname, '..', 'uninstall.ps1'), 'utf8');
-    if (!/codex-wt-launch\.ps1/.test(installSrc)) {
-      throw new Error('install.ps1 must route Terminal Talk Codex shortcuts through codex-wt-launch.ps1');
+    if (/New-Shortcut\s+-Path\s+\$codexShortcut/.test(installSrc)
+        || /New-Shortcut\s+-Path\s+\$desktopCodexShortcut/.test(installSrc)
+        || /codexWtLauncher/.test(installSrc)
+        || /Start Menu -> Terminal Talk Codex/.test(installSrc)
+        || /Desktop -> Terminal Talk Codex/.test(installSrc)) {
+      throw new Error('install.ps1 must not create Terminal Talk Codex shortcuts by default');
     }
-    if (!/DesktopDirectory/.test(installSrc) || !/Terminal Talk Codex\.lnk/.test(installSrc)) {
-      throw new Error('install.ps1 must install a Desktop Terminal Talk Codex shortcut when desktop shortcuts are enabled');
+    if (!/legacyCodexShortcut/.test(installSrc) || !/legacyDesktopCodexShortcut/.test(installSrc)) {
+      throw new Error('install.ps1 must remove old Terminal Talk Codex shortcut files on reinstall');
     }
     if (!/desktopCodexShortcut/.test(uninstallSrc)) {
-      throw new Error('uninstall.ps1 must remove the Desktop Terminal Talk Codex shortcut');
+      throw new Error('uninstall.ps1 must keep cleaning old Desktop Terminal Talk Codex shortcuts');
+    }
+  });
+
+  it('install keeps native Codex hooks opt-in because they are global user config', () => {
+    const installSrc = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
+    const uninstallSrc = fs.readFileSync(path.join(__dirname, '..', 'uninstall.ps1'), 'utf8');
+    if (!/CodexHooksYes/.test(installSrc) || !/codexHooksJson/.test(installSrc)) {
+      throw new Error('install.ps1 must keep an explicit Codex hook registration switch');
+    }
+    if (!/\[bool\]\$CodexHooksYes\s*=\s*\$false/.test(installSrc)) {
+      throw new Error('Codex hooks must default off because ~/.codex hooks affect unrelated Codex sessions');
+    }
+    if (!/affects every Codex session using ~\/\.codex/.test(installSrc)) {
+      throw new Error('Codex hook prompt must warn that hook config is global');
+    }
+    if (!/Codex rollout watching[\s\S]*Codex Desktop title sync remain available/.test(installSrc)) {
+      throw new Error('install.ps1 must explain the non-hook Codex integration remains available');
+    }
+    for (const needle of ['codex-session-start.ps1', 'codex-mark-working.ps1', 'codex-on-tool.ps1', 'codex-post-tool.ps1', 'codex-stop.ps1']) {
+      if (!installSrc.includes(needle)) throw new Error(`install.ps1 must register ${needle}`);
+      if (!uninstallSrc.includes('terminal-talk.*hooks.*codex-')) {
+        throw new Error('uninstall.ps1 must remove Terminal Talk Codex hook groups');
+      }
+    }
+    if (!/if\s*\(\$codexResp\s+-match\s+'(?:\^\[Yy\]|\^\[Yy\])'/.test(installSrc)) {
+      throw new Error('install.ps1 must only enable Codex hooks after an explicit yes');
+    }
+    if (!/terminal_title[\s\S]*\[\]/.test(installSrc)) {
+      throw new Error('install.ps1 must set [tui].terminal_title = [] so Codex does not overwrite TT titles');
+    }
+    if (!/SessionStart/.test(installSrc) || !/UserPromptSubmit/.test(installSrc) || !/PreToolUse/.test(installSrc) || !/PostToolUse/.test(installSrc) || !/Stop/.test(installSrc)) {
+      throw new Error('install.ps1 must register the full Codex lifecycle hook set');
+    }
+  });
+
+  it('schedules finished Claude-hosted Codex plugin sessions for cleanup', () => {
+    const watcherSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
+    );
+    const guardSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'registry-guard.js'), 'utf8');
+    if (!/DEFAULT_PLUGIN_CLEANUP_DELAY_MS/.test(watcherSrc) || !/pluginCleanupDelayMs/.test(watcherSrc)) {
+      throw new Error('Codex watcher must use a bounded delayed cleanup for finished plugin sessions');
+    }
+    if (!/_schedulePluginCleanup/.test(watcherSrc) || !/_removePluginSession/.test(watcherSrc)) {
+      throw new Error('Codex watcher must schedule and execute plugin cleanup from rollout completion');
+    }
+    if (!/state\.terminalSource\s*!==\s*false/.test(watcherSrc) || !/_isHookIdentifiedPluginSession/.test(watcherSrc)) {
+      throw new Error('Codex watcher cleanup must be limited to hook-identified non-terminal plugin sessions');
+    }
+    if (!/saveAssignments\(assignments,\s*'codex-plugin-cleanup'\)/.test(watcherSrc)) {
+      throw new Error('Codex watcher cleanup must persist registry removal with a dedicated caller');
+    }
+    if (!/codex-plugin-cleanup/.test(guardSrc)) {
+      throw new Error('registry guard must allow deliberate plugin cleanup removal');
+    }
+  });
+
+  it('auto-registers Codex Desktop rollout sessions on the first user prompt', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-codex-desktop-watch-'));
+    const codexDir = path.join(tmpDir, 'codex-sessions', '2026', '05', '03');
+    const queueDir = path.join(tmpDir, 'queue');
+    const sessionsDir = path.join(tmpDir, 'sessions');
+    const sessionId = '019def5c-1cf6-7811-b768-4b274d300480';
+    const rollout = path.join(codexDir, `rollout-2026-05-03T20-41-24-${sessionId}.jsonl`);
+    let assignments = {};
+    const touched = [];
+    try {
+      fs.mkdirSync(codexDir, { recursive: true });
+      fs.mkdirSync(queueDir, { recursive: true });
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      const watcher = createCodexSessionWatcher({
+        codexSessionsDir: path.join(tmpDir, 'codex-sessions'),
+        queueDir,
+        sessionsDir,
+        loadAssignments: () => JSON.parse(JSON.stringify(assignments)),
+        saveAssignments: (next) => {
+          assignments = JSON.parse(JSON.stringify(next));
+          return true;
+        },
+        callEdgeTTS: async () => {},
+        onAssignmentTouched: (shortId) => touched.push(shortId),
+        pollIntervalMs: 100000,
+        diag: () => {},
+      });
+      const longInstructions = 'x'.repeat(50000);
+      fs.writeFileSync(rollout, [
+        JSON.stringify({
+          timestamp: '2026-05-03T19:41:28.191Z',
+          type: 'session_meta',
+          payload: {
+            id: sessionId,
+            cwd: String.raw`C:\Users\Ben\Documents\Codex\2026-05-03\hey-2`,
+            originator: 'Codex Desktop',
+            source: 'vscode',
+            base_instructions: { text: longInstructions },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-03T19:41:28.194Z',
+          type: 'event_msg',
+          payload: { type: 'user_message', message: 'hey' },
+        }),
+        '',
+      ].join('\n'), 'utf8');
+      watcher.start();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      watcher.stop();
+
+      assertTruthy(assignments['019def5c'], 'Desktop user prompt should allocate a registry row before final response');
+      assertEqual(assignments['019def5c'].source_kind, 'codex-desktop');
+      assertEqual(assignments['019def5c'].source_label, 'Codex Desktop');
+      assertEqual(assignments['019def5c'].source_app, 'Codex');
+      assertEqual(assignments['019def5c'].adapter, 'desktop-rollout');
+      assertEqual(assignments['019def5c'].pinned, true);
+      assertEqual(assignments['019def5c'].capabilities.auto_register, true);
+      assertTruthy(touched.includes('019def5c'), 'Desktop prompt should kick identity/title sync immediately');
+      assertTruthy(fs.existsSync(path.join(sessionsDir, '019def5c-working.flag')), 'Desktop prompt should mark working');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+});
+
+describe('CODEX DESKTOP TITLE SYNC', () => {
+  const {
+    buildThreadName,
+    cleanExistingThreadName,
+    colourMarkerForIndex,
+    colourNameForIndex,
+    isCodexDesktopEntry,
+  } = require('../app/lib/codex-desktop-title-sync.js');
+  const {
+    applyDesktopTitleSyncStatus,
+  } = require('../app/lib/codex-identity-sync.js');
+
+  it('formats Terminal Talk identity for Codex Desktop chat titles', () => {
+    assertEqual(colourNameForIndex(4), 'Blue');
+    assertEqual(colourMarkerForIndex(4), '🔵');
+    assertEqual(colourNameForIndex(11), 'Green / Red');
+    assertEqual(colourMarkerForIndex(11), '🟢🔴');
+    assertEqual(
+      buildThreadName('019dedda', {
+        index: 4,
+        label: 'Test Codex Desktop integration',
+      }, 'Old name'),
+      '🔵 TT Blue · Test Codex Desktop integration',
+    );
+    assertEqual(
+      buildThreadName('019dea8d', {
+        index: 11,
+        label: 'Split colour session',
+      }, 'Old name'),
+      '🟢🔴 TT Green / Red · Split colour session',
+    );
+  });
+
+  it('does not append repeated short ids when rebuilding an existing Terminal Talk title', () => {
+    assertEqual(
+      cleanExistingThreadName('TT Blue | Test Codex Desktop integration | 019dedda | 019dedda', '019dedda'),
+      'Test Codex Desktop integration',
+    );
+    assertEqual(
+      cleanExistingThreadName('🔵 TT Blue · 019dedda · Test Codex Desktop integration', '019dedda'),
+      'Test Codex Desktop integration',
+    );
+    assertEqual(
+      cleanExistingThreadName('🟢🔴 TT Green / Red · Split colour session', '019dea8d'),
+      'Split colour session',
+    );
+    assertEqual(
+      cleanExistingThreadName('âšª TT White Â· Respond to greeting', '019def98'),
+      'Respond to greeting',
+    );
+    assertEqual(
+      cleanExistingThreadName('⚪ TT White · Â· Respond to greeting', '019def98'),
+      'Respond to greeting',
+    );
+    assertEqual(
+      buildThreadName('019dedda', { index: 4 }, 'TT Blue | Test Codex Desktop integration | 019dedda | 019dedda'),
+      '🔵 TT Blue · Test Codex Desktop integration',
+    );
+  });
+
+
+  it('recognises Codex Desktop registry entries without treating every vscode source as desktop', () => {
+    assertEqual(isCodexDesktopEntry('019dedda', {
+      source_kind: 'codex-desktop',
+      source: 'vscode',
+    }), true);
+    assertEqual(isCodexDesktopEntry('019dedda', {
+      source: 'vscode',
+      source_originator: 'Codex Desktop',
+    }), true);
+    assertEqual(isCodexDesktopEntry('019dedda', {
+      source: 'vscode',
+      source_originator: 'VS Code',
+      source_cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+    }), false);
+  });
+
+  it('records Codex Desktop title writes as persisted pending Desktop refresh', () => {
+    const assignments = {
+      '019dedda': {
+        index: 4,
+        session_id: '019dedda-54b7-73b3-b630-4ff53089ea2c',
+        source_kind: 'codex-desktop',
+      },
+    };
+    const changed = applyDesktopTitleSyncStatus(assignments, [{
+      shortId: '019dedda',
+      threadId: '019dedda-54b7-73b3-b630-4ff53089ea2c',
+      desired: '🔵 TT Blue · CodexAPPxTT',
+      status: 'persisted_pending_refresh',
+      sourceMeta: {
+        source: 'vscode',
+        originator: 'Codex Desktop',
+        cwd: String.raw`C:\Users\Ben\Documents\Codex\2026-05-03\test`,
+      },
+    }], 1777814000);
+    assertEqual(changed, true);
+    assertEqual(assignments['019dedda'].source_kind, 'codex-desktop');
+    assertEqual(assignments['019dedda'].source_label, 'Codex Desktop');
+    assertEqual(assignments['019dedda'].source_app, 'Codex');
+    assertEqual(assignments['019dedda'].adapter, 'desktop-rollout');
+    assertEqual(assignments['019dedda'].pinned, true);
+    assertEqual(assignments['019dedda'].source_cwd, String.raw`C:\Users\Ben\Documents\Codex\2026-05-03\test`);
+    assertEqual(assignments['019dedda'].capabilities.auto_register, true);
+    assertEqual(assignments['019dedda'].codex_desktop_title_status, 'persisted_pending_refresh');
+    assertEqual(assignments['019dedda'].codex_desktop_title, '🔵 TT Blue · CodexAPPxTT');
+    assertEqual(assignments['019dedda'].codex_desktop_title_synced_at, 1777814000);
+    assertEqual(applyDesktopTitleSyncStatus(assignments, [{
+      shortId: '019dedda',
+      threadId: '019dedda-54b7-73b3-b630-4ff53089ea2c',
+      desired: '🔵 TT Blue · CodexAPPxTT',
+      status: 'persisted_pending_refresh',
+    }], 1777814999), false);
+  });
+});
+
+describe('CLAUDE DESKTOP TITLE SYNC', () => {
+  const {
+    addClaudeDesktopLaunchIntent,
+    appendClaudeTranscriptTitle,
+    buildClaudeDesktopSessionTitle,
+    claudeColourForIndex,
+    cleanExistingClaudeTitle,
+    readClaudeDesktopLaunchIntents,
+    registerClaudeDesktopCodeSessions,
+    syncClaudeDesktopSessionTitles,
+  } = require('../app/lib/claude-desktop-title-sync.js');
+  const {
+    applyClaudeDesktopTitleSyncStatus,
+  } = require('../app/lib/codex-identity-sync.js');
+
+  it('formats Terminal Talk identity for Claude Code sessions inside Claude Desktop', () => {
+    assertEqual(
+      buildClaudeDesktopSessionTitle('777333d8', {
+        index: 6,
+        label: 'Claude Desktop',
+        auto_label: true,
+        source_cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk\.claude\worktrees\stupefied-mirzakhani-2fe2b2`,
+      }, 'Test Terminal Talk MCP integration'),
+      '🟤 Test Terminal Talk MCP integration',
+    );
+    assertEqual(
+      buildClaudeDesktopSessionTitle('777333d8', {
+        index: 4,
+        label: 'Claude Work',
+        auto_label: false,
+      }, 'General coding session'),
+      '🔵 Claude Work',
+    );
+    assertEqual(
+      buildClaudeDesktopSessionTitle('777333d8', {
+        index: 11,
+        label: 'Claude Split',
+        auto_label: false,
+      }, 'General coding session'),
+      '🟢🔴 Claude Split',
+    );
+    // cleanExistingClaudeTitle has to strip both the legacy "TT <colour>"
+    // form (titles already saved with the old format) and the new
+    // marker-only form, so re-syncing doesn't double-stack the marker.
+    assertEqual(
+      cleanExistingClaudeTitle('🔵 TT Blue · 777333d8 · General coding session', '777333d8'),
+      'General coding session',
+    );
+    assertEqual(
+      cleanExistingClaudeTitle('🟢🔴 TT Green / Red · Claude Split', '777333d8'),
+      'Claude Split',
+    );
+    assertEqual(
+      cleanExistingClaudeTitle('🔴 TT Red · distracted kapitsa 87bfea', 'b768e4c6'),
+      'distracted kapitsa',
+    );
+    assertEqual(
+      cleanExistingClaudeTitle('🟡 CCxTT', 'a5bc7da9'),
+      'CCxTT',
+    );
+    assertEqual(
+      cleanExistingClaudeTitle('🟢🔴 Claude Split', '777333d8'),
+      'Claude Split',
+    );
+    assertEqual(claudeColourForIndex(2), 'yellow');
+    assertEqual(claudeColourForIndex(5), 'purple');
+    assertEqual(claudeColourForIndex(11), 'green');
+    assertEqual(claudeColourForIndex(16), 'red');
+  });
+
+  it('updates Claude Desktop local Claude Code session title files by cliSessionId', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-claude-title-'));
+    const sessionFile = path.join(
+      tmpDir,
+      'claude-code-sessions',
+      'org',
+      'user',
+      'local_eefe4b33-3de4-423c-b328-cb2e6b6fd5df.json',
+    );
+    try {
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(sessionFile, JSON.stringify({
+        sessionId: 'local_eefe4b33-3de4-423c-b328-cb2e6b6fd5df',
+        cliSessionId: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+        title: 'Test Terminal Talk MCP integration',
+        titleSource: 'auto',
+      }), 'utf8');
+      const result = syncClaudeDesktopSessionTitles({
+        roots: [tmpDir],
+        assignments: {
+          '777333d8': {
+            index: 6,
+            label: 'Claude Desktop',
+            auto_label: true,
+            source_kind: 'claude-desktop',
+            adapter: 'hooks',
+            claude_code_entrypoint: 'claude-desktop',
+            session_id: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+          },
+        },
+      });
+      assertEqual(result.results.length, 1);
+      assertEqual(result.results[0].desired, '🟤 Test Terminal Talk MCP integration');
+      assertEqual(result.results[0].titleUpdated, true);
+      const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+      assertEqual(saved.title, '🟤 Test Terminal Talk MCP integration');
+      assertEqual(saved.titleSource, 'manual');
+      assertEqual(saved.color, 'orange');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('auto-registers new Claude Code Desktop session files before hooks speak', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-claude-register-'));
+    const sessionFile = path.join(
+      tmpDir,
+      'claude-code-sessions',
+      'org',
+      'user',
+      'local_42b995c4-c21d-47ca-a84c-92fda2b7e5b4.json',
+    );
+    try {
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(sessionFile, JSON.stringify({
+        sessionId: 'local_42b995c4-c21d-47ca-a84c-92fda2b7e5b4',
+        cliSessionId: '360267c7-fd91-45be-98ba-bd8cd7c9d773',
+        cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk\.claude\worktrees\goofy-sutherland-ccd3c9`,
+        createdAt: 1777823264421,
+        lastActivityAt: 1777823462536,
+        title: 'Test demo for TT',
+        titleSource: 'auto',
+      }), 'utf8');
+      const assignments = {};
+      const result = syncClaudeDesktopSessionTitles({
+        roots: [tmpDir],
+        assignments,
+        autoRegister: true,
+        nowMs: 1777823463000,
+      });
+      assertEqual(result.registered.length, 1);
+      assertEqual(result.registered[0].shortId, '360267c7');
+      assertEqual(assignments['360267c7'].source_kind, 'claude-desktop');
+      assertEqual(assignments['360267c7'].adapter, 'desktop-session-file');
+      assertEqual(assignments['360267c7'].session_id, '360267c7-fd91-45be-98ba-bd8cd7c9d773');
+      assertEqual(assignments['360267c7'].label, 'Claude Desktop');
+      assertEqual(assignments['360267c7'].auto_label, true);
+      assertTruthy(assignments['360267c7'].pinned === true, 'desktop sessions are retained');
+      assertTruthy(typeof assignments['360267c7'].voice === 'string' && assignments['360267c7'].voice.length > 0, 'auto voice assigned');
+      assertEqual(result.results[0].desired, '🔴 Test demo for TT');
+      assertEqual(result.results[0].titleUpdated, true);
+      const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+      assertEqual(saved.title, '🔴 Test demo for TT');
+      assertEqual(saved.titleSource, 'manual');
+      assertEqual(saved.color, 'red');
+      assertEqual(saved.worktreeName, '🔴 Test demo for TT');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('syncs Claude Desktop Code worktree display names alongside session titles', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-claude-worktree-title-'));
+    const sessionFile = path.join(
+      tmpDir,
+      'claude-code-sessions',
+      'org',
+      'user',
+      'local_dfbbb8fb-16e5-4f8a-96a0-4057f75740d0.json',
+    );
+    const worktreePath = String.raw`C:\Users\Ben\Desktop\terminal-talk\.claude\worktrees\distracted-kapitsa-87bfea`;
+    const worktreesFile = path.join(tmpDir, 'git-worktrees.json');
+    try {
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(sessionFile, JSON.stringify({
+        sessionId: 'local_dfbbb8fb-16e5-4f8a-96a0-4057f75740d0',
+        cliSessionId: 'b768e4c6-12a2-4655-a7e5-96ed49a0904c',
+        cwd: worktreePath,
+        worktreePath,
+        worktreeName: 'distracted-kapitsa-87bfea',
+        title: 'distracted-kapitsa-87bfea',
+        titleSource: 'auto',
+      }), 'utf8');
+      fs.writeFileSync(worktreesFile, JSON.stringify({
+        schemaVersion: 2,
+        worktrees: {
+          'distracted-kapitsa-87bfea': {
+            name: 'distracted-kapitsa-87bfea',
+            path: worktreePath,
+            leasedBy: 'local_dfbbb8fb-16e5-4f8a-96a0-4057f75740d0',
+          },
+        },
+      }), 'utf8');
+
+      const result = syncClaudeDesktopSessionTitles({
+        roots: [tmpDir],
+        assignments: {
+          b768e4c6: {
+            index: 0,
+            label: 'Claude Desktop',
+            auto_label: true,
+            source_kind: 'claude-desktop',
+            adapter: 'hooks',
+            claude_code_entrypoint: 'claude-desktop',
+            session_id: 'b768e4c6-12a2-4655-a7e5-96ed49a0904c',
+            source_cwd: worktreePath,
+          },
+        },
+      });
+
+      assertEqual(result.results.length, 1);
+      assertEqual(result.results[0].desired, '🔴 distracted-kapitsa');
+      assertEqual(result.results[0].worktreeNameUpdated, true);
+      const savedSession = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+      assertEqual(savedSession.worktreeName, '🔴 distracted-kapitsa');
+      const savedWorktrees = JSON.parse(fs.readFileSync(worktreesFile, 'utf8'));
+      assertEqual(
+        savedWorktrees.worktrees['🔴 distracted-kapitsa'].name,
+        '🔴 distracted-kapitsa',
+      );
+      assertEqual(savedWorktrees.worktrees['distracted-kapitsa-87bfea'], undefined);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('applies Terminal Talk launch intents to Claude Desktop Code sessions', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-claude-launch-intent-'));
+    const intentsPath = path.join(tmpDir, 'claude-desktop-launch-intents.json');
+    const projectDir = String.raw`C:\Users\Ben\Desktop\terminal-talk`;
+    const sessionFile = path.join(
+      tmpDir,
+      'claude-code-sessions',
+      'org',
+      'user',
+      'local_99b995c4-c21d-47ca-a84c-92fda2b7e5b4.json',
+    );
+    try {
+      const intentResult = addClaudeDesktopLaunchIntent({
+        token: 'launchintent001',
+        label: 'Claude Demo',
+        index: 5,
+        projectDir,
+        createdAt: 1777825000000,
+      }, { filePath: intentsPath, nowMs: 1777825000000 });
+      assertEqual(intentResult.ok, true);
+
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(sessionFile, JSON.stringify({
+        sessionId: 'local_99b995c4-c21d-47ca-a84c-92fda2b7e5b4',
+        cliSessionId: '99a392bc-f9b5-4f14-a2df-8542d5931b9b',
+        originCwd: projectDir,
+        cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk\.claude\worktrees\demo`,
+        createdAt: 1777825010000,
+        lastActivityAt: 1777825012000,
+        title: 'Terminal Talk session identity',
+        titleSource: 'auto',
+      }), 'utf8');
+
+      const assignments = {};
+      const result = syncClaudeDesktopSessionTitles({
+        roots: [tmpDir],
+        assignments,
+        autoRegister: true,
+        nowMs: 1777825013000,
+        launchIntentsPath: intentsPath,
+      });
+      assertEqual(result.registered.length, 1);
+      assertEqual(result.registered[0].shortId, '99a392bc');
+      assertEqual(assignments['99a392bc'].label, 'Claude Demo');
+      assertEqual(assignments['99a392bc'].index, 5);
+      assertEqual(assignments['99a392bc'].source_originator, 'toolbar-launch:launchintent001');
+      assertEqual(result.results[0].desired, '🟣 Claude Demo');
+      assertEqual(readClaudeDesktopLaunchIntents(intentsPath, fs, 1777825014000).length, 0);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('does not manually re-register an existing hook-owned Claude Desktop Code row', () => {
+    const assignments = {
+      '360267c7': {
+        index: 7,
+        label: 'Claude Desktop',
+        auto_label: true,
+        session_id: '360267c7-fd91-45be-98ba-bd8cd7c9d773',
+        source_kind: 'claude-desktop',
+        adapter: 'hooks',
+        claude_code_entrypoint: 'claude-desktop',
+        capabilities: {
+          auto_register: true,
+          tool_events: true,
+          response_events: true,
+          mcp_speak: false,
+          manual_speak_selection: true,
+        },
+      },
+    };
+    const files = new Map([[
+      '360267c7-fd91-45be-98ba-bd8cd7c9d773',
+      {
+        filePath: String.raw`C:\Claude\local.json`,
+        data: {
+          cliSessionId: '360267c7-fd91-45be-98ba-bd8cd7c9d773',
+          cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+          title: 'Test demo for TT',
+          lastActivityAt: 1777823462536,
+        },
+      },
+    ]]);
+    const result = registerClaudeDesktopCodeSessions({
+      assignments,
+      files,
+      nowMs: 1777823463000,
+    });
+    assertEqual(result.registered.length, 0);
+    assertEqual(Object.keys(assignments).length, 1);
+    assertEqual(assignments['360267c7'].adapter, 'hooks');
+    assertEqual(assignments['360267c7'].capabilities.tool_events, true);
+  });
+
+  it('records Claude Desktop title sync status in the registry', () => {
+    const assignments = {
+      '777333d8': {
+        index: 6,
+        session_id: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+        source_kind: 'claude-desktop',
+      },
+    };
+    const changed = applyClaudeDesktopTitleSyncStatus(assignments, [{
+      shortId: '777333d8',
+      sessionId: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+      desired: '🟤 TT Brown · Test Terminal Talk MCP integration',
+      status: 'persisted_pending_refresh',
+      filePath: String.raw`C:\Users\Ben\AppData\Local\Packages\Claude\local.json`,
+    }], 1777822000);
+    assertEqual(changed, true);
+    assertEqual(assignments['777333d8'].claude_desktop_title_status, 'persisted_pending_refresh');
+    assertEqual(assignments['777333d8'].claude_desktop_title, '🟤 TT Brown · Test Terminal Talk MCP integration');
+    assertEqual(assignments['777333d8'].claude_desktop_title_synced_at, 1777822000);
+    assertEqual(
+      assignments['777333d8'].claude_desktop_session_file,
+      String.raw`C:\Users\Ben\AppData\Local\Packages\Claude\local.json`,
+    );
+  });
+
+  it('repairs Claude Desktop mixed live-unavailable status from background file watcher writes', () => {
+    const assignments = {
+      '777333d8': {
+        index: 6,
+        session_id: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+        source_kind: 'claude-desktop',
+        claude_desktop_title_status: 'persisted_pending_refresh',
+        claude_desktop_title: '🟤 TT Brown · Test Terminal Talk MCP integration',
+        claude_desktop_title_error: 'Claude Desktop title saved locally, but the open sidebar did not update live.',
+        claude_desktop_title_synced_at: 1777822000,
+      },
+    };
+    const changed = applyClaudeDesktopTitleSyncStatus(assignments, [{
+      shortId: '777333d8',
+      sessionId: '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+      desired: '🟤 TT Brown · Test Terminal Talk MCP integration',
+      status: 'persisted_pending_refresh',
+      filePath: String.raw`C:\Users\Ben\AppData\Local\Packages\Claude\local.json`,
+    }], 1777823000);
+    assertEqual(changed, true);
+    assertEqual(assignments['777333d8'].claude_desktop_title_status, 'live_unavailable');
+    assertEqual(assignments['777333d8'].claude_desktop_title_error, 'Claude Desktop title saved locally, but the open sidebar did not update live.');
+    assertEqual(assignments['777333d8'].claude_desktop_session_file, String.raw`C:\Users\Ben\AppData\Local\Packages\Claude\local.json`);
+  });
+
+  it('mirrors Claude Desktop title stamps into Claude Code transcripts', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-claude-transcript-title-'));
+    const transcriptDir = path.join(tmpDir, 'C--Users-Ben-Desktop-terminal-talk');
+    const transcript = path.join(transcriptDir, '777333d8-ebbc-4a51-a246-60dd7fdc8473.jsonl');
+    try {
+      fs.mkdirSync(transcriptDir, { recursive: true });
+      fs.writeFileSync(transcript, '{"type":"user","message":{"content":"hello"}}\n', 'utf8');
+      const first = appendClaudeTranscriptTitle(
+        '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+        '🟤 TT Brown · Test Terminal Talk MCP integration',
+        { roots: [tmpDir] },
+      );
+      const second = appendClaudeTranscriptTitle(
+        '777333d8-ebbc-4a51-a246-60dd7fdc8473',
+        '🟤 TT Brown · Test Terminal Talk MCP integration',
+        { roots: [tmpDir] },
+      );
+      const lines = fs.readFileSync(transcript, 'utf8').trim().split(/\r?\n/);
+      assertEqual(first.changed, true);
+      assertEqual(second.changed, false);
+      assertEqual(JSON.parse(lines[1]).type, 'custom-title');
+      assertEqual(JSON.parse(lines[1]).customTitle, '🟤 TT Brown · Test Terminal Talk MCP integration');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+});
+
+describe('TERMINAL TALK MCP TOOLS', () => {
+  const {
+    listSessions,
+    markWorking,
+    registerSession,
+    sessionKeyFromArgs,
+  } = require('../app/lib/terminal-talk-mcp-tools.js');
+
+  it('registers and reuses a Claude Desktop MCP session with source metadata', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-mcp-tools-'));
+    const registryPath = path.join(tmpDir, 'session-colours.json');
+    try {
+      const first = registerSession({
+        label: 'Claude Desktop',
+        colour: 'blue',
+        project_path: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+      }, { ttHome: tmpDir, now: () => 1777819000000 });
+      assertTruthy(/^[a-f0-9]{8}$/.test(first.short_id), 'short id allocated');
+      assertEqual(first.session.label, 'Claude Desktop');
+      assertEqual(first.session.colour_index, 4);
+      assertEqual(first.session.source_kind, 'claude-desktop');
+      assertEqual(first.session.adapter, 'mcp');
+
+      const saved = JSON.parse(fs.readFileSync(registryPath, 'utf8')).assignments[first.short_id];
+      assertEqual(saved.label, 'Claude Desktop');
+      assertEqual(saved.index, 4);
+      assertEqual(saved.pinned, true);
+      assertEqual(saved.source_kind, 'claude-desktop');
+      assertEqual(saved.source_label, 'Claude Desktop');
+      assertEqual(saved.source_app, 'Claude');
+      assertEqual(saved.source_key, sessionKeyFromArgs({ label: 'Claude Desktop' }));
+      assertEqual(saved.adapter, 'mcp');
+      assertDeepEqual(saved.capabilities, {
+        auto_register: true,
+        tool_events: false,
+        response_events: false,
+        mcp_speak: true,
+        manual_speak_selection: false,
+      });
+
+      const second = registerSession({ label: 'Claude Desktop' }, { ttHome: tmpDir, now: () => 1777819010000 });
+      assertEqual(second.reused, true);
+      assertEqual(second.short_id, first.short_id);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('marks MCP sessions working/idle and lists public session state', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-mcp-state-'));
+    try {
+      const registered = registerSession({ label: 'Claude Desktop', colour: 'magenta' }, {
+        ttHome: tmpDir,
+        now: () => 1777819100000,
+      });
+      const flagPath = path.join(tmpDir, 'sessions', `${registered.short_id}-working.flag`);
+      const working = markWorking({ short_id: registered.short_id, working: true }, {
+        ttHome: tmpDir,
+        now: () => 1777819110000,
+      });
+      assertEqual(working.working, true);
+      assertTruthy(fs.existsSync(flagPath), 'working flag created');
+
+      const idle = markWorking({ short_id: registered.short_id, state: 'idle' }, {
+        ttHome: tmpDir,
+        now: () => 1777819120000,
+      });
+      assertEqual(idle.working, false);
+      assertFalsy(fs.existsSync(flagPath), 'working flag removed');
+
+      const listed = listSessions({}, { ttHome: tmpDir });
+      assertEqual(listed.sessions.length, 1);
+      assertEqual(listed.sessions[0].short_id, registered.short_id);
+      assertEqual(listed.sessions[0].colour_index, 5);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('stdio MCP server advertises the Terminal Talk tools', () => {
+    const result = spawnSync(process.execPath, [
+      path.join(__dirname, '..', 'app', 'terminal-talk-mcp-server.js'),
+      '--self-test',
+    ], { encoding: 'utf8', timeout: 5000 });
+    if (result.status !== 0) {
+      throw new Error(`mcp self-test exit ${result.status}: ${result.stderr || result.stdout}`);
+    }
+    const parsed = JSON.parse(result.stdout);
+    for (const expected of [
+      'terminal_talk_register_session',
+      'terminal_talk_speak',
+      'terminal_talk_mark_working',
+      'terminal_talk_set_session',
+      'terminal_talk_list_sessions',
+    ]) {
+      assertTruthy(parsed.tools.includes(expected), `missing MCP tool ${expected}`);
+    }
+  });
+
+});
+
+describe('CLAUDE DESKTOP SESSION REGISTRY', () => {
+  const psRegistrySrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const guardSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'registry-guard.js'), 'utf8');
+
+  it('PowerShell registry module recognises Claude Desktop hosted Claude Code sessions', () => {
+    if (!/function\s+Set-ClaudeDesktopMetadata/.test(psRegistrySrc)) {
+      throw new Error('Set-ClaudeDesktopMetadata missing');
+    }
+    for (const expected of [
+      "source_kind'] = 'claude-desktop'",
+      "source_label'] = 'Claude Desktop'",
+      "source_app'] = 'Claude'",
+      'source_child_pid',
+      'claude_code_entrypoint',
+      'entrypoint',
+      "adapter'] = 'hooks'",
+      "pinned'] = $true",
+    ]) {
+      assertTruthy(psRegistrySrc.includes(expected), `missing Claude Desktop registry stamp: ${expected}`);
+    }
+  });
+
+  it('registry sanitation and guards preserve Desktop source metadata and capabilities', () => {
+    for (const expected of [
+      'source_child_pid',
+      'source_key',
+      'adapter',
+      'claude_code_entrypoint',
+      'claude_desktop_title',
+      'claude_desktop_title_status',
+      'claude_desktop_session_file',
+      'claude_desktop_renderer_title',
+      'capabilities',
+      'mcp_speak',
+      'manual_speak_selection',
+    ]) {
+      assertTruthy(mainSrc.includes(expected), `main.js sanitiseEntry missing ${expected}`);
+      assertTruthy(guardSrc.includes(expected), `registry guard missing ${expected}`);
+      assertTruthy(psRegistrySrc.includes(expected), `PS registry missing ${expected}`);
+    }
+  });
+
+});
+
+describe('PLATFORM CONTRACT', () => {
+  const { createPlatform } = require(path.join(__dirname, '..', 'app', 'lib', 'platform.js'));
+
+  it('Windows keeps PowerShell, taskkill, Python, and Windows-only capabilities', () => {
+    const p = createPlatform({
+      platform: 'win32',
+      homedir: 'C:\\Users\\Ben',
+      env: { SystemRoot: 'C:\\Windows' },
+      path: path.win32,
+    });
+    assertEqual(p.installDir, 'C:\\Users\\Ben\\.terminal-talk');
+    assertEqual(p.pythonExe, 'python');
+    assertTruthy(p.powershellExe.endsWith('System32\\WindowsPowerShell\\v1.0\\powershell.exe'));
+    assertTruthy(p.taskkillExe.endsWith('System32\\taskkill.exe'));
+    assertEqual(p.hookShell, 'powershell');
+    assertTruthy(p.supportsWindowsMicWatcher);
+    assertTruthy(p.supportsCodexIdentitySync);
+    assertTruthy(p.supportsWindowsTerminalTabColor);
+  });
+
+  it('macOS/Linux default to python3 and disable Windows-only helpers', () => {
+    const mac = createPlatform({
+      platform: 'darwin',
+      homedir: '/Users/ben',
+      env: {},
+      path: path.posix,
+    });
+    assertEqual(mac.installDir, '/Users/ben/.terminal-talk');
+    assertEqual(mac.configPath, '/Users/ben/.terminal-talk/config.json');
+    assertEqual(mac.pythonExe, 'python3');
+    assertEqual(mac.powershellExe, 'pwsh');
+    assertEqual(mac.taskkillExe, '');
+    assertEqual(mac.hookShell, 'posix');
+    assertFalsy(mac.supportsWindowsMicWatcher);
+    assertFalsy(mac.supportsCodexIdentitySync);
+    assertFalsy(mac.supportsWindowsTerminalTabColor);
+
+    const linux = createPlatform({
+      platform: 'linux',
+      homedir: '/home/ben',
+      env: {},
+      path: path.posix,
+    });
+    assertEqual(linux.installDir, '/home/ben/.local/state/terminal-talk');
+    assertEqual(linux.dataDir, '/home/ben/.local/share/terminal-talk');
+    assertEqual(linux.appDir, '/home/ben/.local/share/terminal-talk/app');
+    assertEqual(linux.configDir, '/home/ben/.config/terminal-talk');
+    assertEqual(linux.configPath, '/home/ben/.config/terminal-talk/config.json');
+    for (const p of [linux]) {
+      assertEqual(p.pythonExe, 'python3');
+      assertEqual(p.powershellExe, 'pwsh');
+      assertEqual(p.taskkillExe, '');
+      assertEqual(p.hookShell, 'posix');
+      assertFalsy(p.supportsWindowsMicWatcher);
+      assertFalsy(p.supportsCodexIdentitySync);
+      assertFalsy(p.supportsWindowsTerminalTabColor);
+    }
+  });
+
+  it('environment overrides keep test and packaged installs controllable', () => {
+    const p = createPlatform({
+      platform: 'linux',
+      homedir: '/home/ben',
+      env: {
+        TT_INSTALL_DIR: '/tmp/tt',
+        TT_CONFIG_PATH: '/tmp/cfg/config.json',
+        TT_APP_DIR: '/tmp/app',
+        TT_PYTHON_EXE: '/opt/py/bin/python',
+        TT_POWERSHELL_EXE: '/opt/microsoft/powershell/7/pwsh',
+      },
+      path: path.posix,
+    });
+    assertEqual(p.installDir, '/tmp/tt');
+    assertEqual(p.configPath, '/tmp/cfg/config.json');
+    assertEqual(p.appDir, '/tmp/app');
+    assertEqual(p.pythonExe, '/opt/py/bin/python');
+    assertEqual(p.powershellExe, '/opt/microsoft/powershell/7/pwsh');
+  });
+
+  it('main enables Electron Wayland global-shortcut portal before registering shortcuts', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const flagAt = src.indexOf('GlobalShortcutsPortal');
+    const registerAt = src.indexOf('globalShortcut.register');
+    if (flagAt < 0) throw new Error('main.js must enable Electron GlobalShortcutsPortal for Linux Wayland');
+    if (!/process\.platform\s*===\s*['"]linux['"][\s\S]{0,180}GlobalShortcutsPortal/.test(src)) {
+      throw new Error('GlobalShortcutsPortal must be gated to Linux');
+    }
+    if (registerAt < 0 || flagAt > registerAt) {
+      throw new Error('GlobalShortcutsPortal must be appended before globalShortcut.register calls');
+    }
+  });
+});
+
+describe('POSIX INSTALL + HOOK SURFACE', () => {
+  it('POSIX installer and launcher are present', () => {
+    for (const rel of [
+      'install.sh',
+      'uninstall.sh',
+      'scripts/start-toolbar.sh',
+      'scripts/smoke-posix-hooks.sh',
+      'scripts/smoke-posix-install.sh',
+      'scripts/smoke-posix-uninstall.sh',
+      'scripts/smoke-posix-full-install.sh',
+    ]) {
+      const full = path.join(__dirname, '..', rel);
+      if (!fs.existsSync(full)) throw new Error(`${rel} missing`);
+      const src = fs.readFileSync(full, 'utf8');
+      if (!/^#!\/usr\/bin\/env sh/.test(src)) throw new Error(`${rel} must be a POSIX sh script`);
+    }
+  });
+
+  it('POSIX Claude and Codex wrappers delegate to the shared Python helper', () => {
+    const wrappers = [
+      'mark-working.sh', 'speak-on-tool.sh', 'speak-response.sh', 'speak-notification.sh',
+      'codex-session-start.sh', 'codex-mark-working.sh', 'codex-on-tool.sh',
+      'codex-post-tool.sh', 'codex-stop.sh',
+    ];
+    const runner = fs.readFileSync(path.join(__dirname, '..', 'hooks', '_posix-hook-runner.sh'), 'utf8');
+    if (!/posix_hooks\.py/.test(runner) || !/TT_APP_DIR/.test(runner) || !/TT_PYTHON_EXE/.test(runner)
+        || !/terminal-talk\.env/.test(runner) || !/XDG_STATE_HOME/.test(runner)) {
+      throw new Error('_posix-hook-runner.sh must locate posix_hooks.py and honour TT_* overrides');
+    }
+    for (const name of wrappers) {
+      const src = fs.readFileSync(path.join(__dirname, '..', 'hooks', name), 'utf8');
+      if (!/_posix-hook-runner\.sh/.test(src)) {
+        throw new Error(`${name} must delegate to _posix-hook-runner.sh`);
+      }
+    }
+  });
+
+  it('POSIX helper owns registry, working flags, synth spawning, and plugin cleanup', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'posix_hooks.py'), 'utf8');
+    for (const needle of [
+      'class RegistryLock',
+      'def touch_assignment',
+      'def mark_working',
+      'def clear_working',
+      'def spawn_synth',
+      'def handle_claude_stop',
+      'def handle_codex',
+      'def remove_plugin_session',
+      'def schedule_plugin_cleanup',
+    ]) {
+      if (!src.includes(needle)) throw new Error(`posix_hooks.py missing ${needle}`);
+    }
+  });
+
+  it('install.sh registers POSIX Claude and Codex hook commands', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'install.sh'), 'utf8');
+    for (const needle of [
+      'speak-response.sh',
+      'speak-notification.sh',
+      'speak-on-tool.sh',
+      'mark-working.sh',
+      'codex-session-start.sh',
+      'codex-mark-working.sh',
+      'codex-on-tool.sh',
+      'codex-post-tool.sh',
+      'codex-stop.sh',
+      'codex_hooks',
+      'terminal_title',
+      'XDG_STATE_HOME',
+      'XDG_DATA_HOME',
+      'XDG_CONFIG_HOME',
+      'terminal-talk.env',
+      'write_linux_desktop_entry',
+      'applications/terminal-talk.desktop',
+      'requirements-core.txt',
+      'requirements-wakeword.txt',
+      'wake-word-unavailable.flag',
+    ]) {
+      if (!src.includes(needle)) throw new Error(`install.sh missing ${needle}`);
+    }
+  });
+
+  it('uninstall.sh removes POSIX hooks, desktop entries, and app files but preserves config by default', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'uninstall.sh'), 'utf8');
+    for (const needle of [
+      'remove_json_hooks',
+      'remove_codex_toml_keys',
+      '.claude/settings.json',
+      '.codex/hooks.json',
+      'terminal-talk.desktop',
+      'com.terminal-talk.toolbar.plist',
+      'terminal-talk.env',
+      '--remove-config',
+      'preserved config',
+    ]) {
+      if (!src.includes(needle)) throw new Error(`uninstall.sh missing ${needle}`);
     }
   });
 });

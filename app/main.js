@@ -1,42 +1,59 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeImage, clipboard, nativeTheme, safeStorage } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeImage, clipboard, nativeTheme, safeStorage, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const platform = require('./lib/platform');
+const TOKENS = require('./lib/tokens.json');
+const {
+  colourMarkerForIndex,
+  colourNameForIndex,
+} = require('./lib/palette-identity');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// Electron's Wayland global-shortcut path is portal-backed. The feature
+// must be enabled before `app.whenReady()` for Linux desktop sessions.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
+}
 // Force dark theme so native controls (select dropdowns, scrollbars) render dark.
 try { nativeTheme.themeSource = 'dark'; } catch {}
 
-// INSTALL_DIR points at the live install by default. In e2e tests we set
-// TT_INSTALL_DIR (or reuse a tmp dir) so tests don't touch real state.
-const INSTALL_DIR = process.env.TT_INSTALL_DIR || path.join(os.homedir(), '.terminal-talk');
+// INSTALL_DIR is Terminal Talk's mutable runtime home. On Windows it remains
+// ~/.terminal-talk; on Linux it follows the XDG state dir unless TT_HOME or
+// TT_INSTALL_DIR pins a legacy/sandbox root.
+const INSTALL_DIR = platform.installDir;
 const QUEUE_DIR = path.join(INSTALL_DIR, 'queue');
-const CONFIG_PATH = path.join(INSTALL_DIR, 'config.json');
+const CONFIG_PATH = platform.configPath;
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
+const WAKE_WORD_UNAVAILABLE_FILE = path.join(INSTALL_DIR, 'wake-word-unavailable.flag');
 const DIAG_LOG = path.join(QUEUE_DIR, '_toolbar.log');
 const CAPTURE_MODE = process.env.TT_CAPTURE_MODE === '1';
 const WINDOW_MODE = CAPTURE_MODE || process.env.TT_WINDOW_MODE === '1';
+const CAPTURE_NATIVE_WINDOW = CAPTURE_MODE && process.env.TT_CAPTURE_NATIVE_WINDOW === '1';
+const WINDOW_NATIVE_CHROME = process.env.TT_WINDOW_NATIVE_CHROME === '1';
+
+process.env.TT_HOME = process.env.TT_HOME || INSTALL_DIR;
+process.env.TT_CONFIG_PATH = process.env.TT_CONFIG_PATH || CONFIG_PATH;
+process.env.TT_APP_DIR = process.env.TT_APP_DIR || __dirname;
+
+for (const dir of [INSTALL_DIR, QUEUE_DIR, platform.configDir]) {
+  try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch {}
+}
 
 function envInt(name, fallback) {
   const n = Number(process.env[name]);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-// EX1 — resolve absolute paths for Windows system binaries to defuse
-// the Sonar S4036 ("PATH may contain writeable dirs") hotspot. taskkill
-// lives in System32; powershell 5.x in a versioned subfolder. Using
-// SystemRoot env instead of hardcoding C:\Windows covers corporate
-// installs that relocate the Windows directory. On non-Windows
-// platforms these constants are unused — stopVoiceListener's POSIX
-// branch calls process.kill() directly.
-const SYSTEM32 = process.env.SystemRoot
-  ? path.join(process.env.SystemRoot, 'System32')
-  : 'C:\\Windows\\System32';
-const TASKKILL_EXE = path.join(SYSTEM32, 'taskkill.exe');
-const POWERSHELL_EXE = path.join(SYSTEM32, 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+// Platform contract. Windows keeps absolute System32 binaries for the
+// hard-kill and PowerShell helper paths; macOS/Linux use python3 and
+// disable Windows-only helpers through explicit capability flags.
+const TASKKILL_EXE = platform.taskkillExe;
+const POWERSHELL_EXE = platform.powershellExe;
+const PYTHON_EXE = platform.pythonExe;
 
 const DEFAULTS = {
   voices: {
@@ -77,14 +94,17 @@ const DEFAULTS = {
     // via Settings > Playback > Colour-blind friendly palette.
     palette_variant: 'default',
     // TTS provider preference.
-    //   'edge'   — try Microsoft edge-tts first (free, no key); fall back
-    //              to OpenAI only if edge errors AND a key is configured.
+    //   'edge'   — try Microsoft edge-tts first (free, no key).
     //   'openai' — try OpenAI TTS first (paid, ~$0.015 / 1000 chars);
-    //              fall back to edge-tts if OpenAI errors. Needs a saved
-    //              key; Settings greys the toggle out without one.
+    //              needs a saved key; Settings greys the toggle out
+    //              without one.
+    // Fallback provider is explicit. Defaulting it to 'edge' means Edge
+    // primary does NOT silently spend OpenAI credits when Edge has a
+    // wobble; OpenAI is only used as fallback when the user opts in.
     // Any other value is treated as 'edge' by the consumers
     // (synth_turn.py + tts-helper.psm1) for forward-compat.
-    tts_provider: 'edge'
+    tts_provider: 'edge',
+    tts_fallback_provider: 'edge'
   },
   speech_includes: {
     code_blocks: false,
@@ -158,7 +178,7 @@ const saveConfig = _configStore.save;
 // protection) and a plaintext .secret sidecar (PS-hook access path).
 const { createApiKeyStore } = require('./lib/api-key-store');
 const apiKeyStore = createApiKeyStore({
-  dir: INSTALL_DIR,
+  dir: platform.configDir,
   safeStorage,
   logger: diag,
 });
@@ -189,11 +209,9 @@ let CFG = loadConfig();
 const MAX_FILES = 50;
 const STALE_MS = 60 * 60 * 1000;
 
-if (!fs.existsSync(QUEUE_DIR)) fs.mkdirSync(QUEUE_DIR, { recursive: true });
-
 // #6 G0 — log-path discoverability stub. The queue/_*.log convention
 // is non-obvious: anyone (Ben, a triager, a future maintainer)
-// hand-checking the obvious `~/.terminal-talk/logs/` path finds
+// hand-checking the obvious `logs/` path in the runtime home finds
 // nothing and assumes there are no logs. This stub sits at the
 // expected location and redirects them. Keep idempotent + cheap so
 // it can run on every boot without side effects.
@@ -202,7 +220,7 @@ const LOGS_REDIRECT_README = path.join(LOGS_REDIRECT_DIR, 'README.md');
 const LOGS_REDIRECT_BODY = [
   '# Where the logs actually live',
   '',
-  'Terminal Talk writes logs to `~/.terminal-talk/queue/_*.log`, NOT this',
+  `Terminal Talk writes logs to \`${path.join(INSTALL_DIR, 'queue')}${path.sep}_*.log\`, NOT this`,
   'directory. The `queue/` location was chosen because the toolbar already',
   'watches that directory for clip arrivals + prunes stale files; piggy-',
   'backing the logs onto that path keeps the install footprint flat.',
@@ -222,10 +240,10 @@ const LOGS_REDIRECT_BODY = [
   '',
   '## Why this stub exists (#6 G0)',
   '',
-  'The `~/.terminal-talk/logs/` path was the documented convention in early',
+  'The runtime-home `logs/` path was the documented convention in early',
   'README drafts; logs ended up under `queue/` but the obvious path stuck in',
   "developer + user mental models. Without this stub, anyone hand-checking",
-  '`~/.terminal-talk/logs/` finds nothing and assumes there are no logs.',
+  '`logs/` finds nothing and assumes there are no logs.',
   '',
 ].join('\n');
 try {
@@ -362,6 +380,7 @@ function findDockedEdge() {
 
 function applyDock(edge) {
   if (!win || win.isDestroyed()) return;
+  if (WINDOW_MODE) return;
   if (edge !== 'top' && edge !== 'bottom') return;  // horizontal-only
   const [curX, curY] = win.getPosition();
   const [curW, currentHeight] = win.getSize();
@@ -415,6 +434,10 @@ function clampToVisibleDisplay(x, y, w, _h) {
 
 function snapAfterDrag() {
   if (!win || win.isDestroyed()) return;
+  if (WINDOW_MODE) {
+    dragStart = null;
+    return;
+  }
   const start = dragStart;
   dragStart = null;
   const [curX, curY] = win.getPosition();
@@ -483,21 +506,22 @@ function createWindow() {
     startX = clamped.x;
     startY = clamped.y;
   }
+  const useNativeWindowChrome = WINDOW_MODE && (CAPTURE_NATIVE_WINDOW || WINDOW_NATIVE_CHROME);
   win = new BrowserWindow({
     width: startW,
     height: startH,
     x: startX,
     y: startY,
-    frame: WINDOW_MODE && !CAPTURE_MODE,
-    transparent: true,
-    alwaysOnTop: CAPTURE_MODE || !WINDOW_MODE,
+    frame: useNativeWindowChrome,
+    transparent: !CAPTURE_NATIVE_WINDOW,
+    alwaysOnTop: (CAPTURE_MODE && !CAPTURE_NATIVE_WINDOW) || !WINDOW_MODE,
     skipTaskbar: !WINDOW_MODE,
     resizable: WINDOW_MODE,
     movable: true,
     show: WINDOW_MODE,
     focusable: true,
-    hasShadow: WINDOW_MODE,
-    backgroundColor: '#00000000',
+    hasShadow: useNativeWindowChrome,
+    backgroundColor: CAPTURE_NATIVE_WINDOW ? '#101218' : '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -507,24 +531,28 @@ function createWindow() {
       allowRunningInsecureContent: false
     }
   });
-  if (CAPTURE_MODE) win.setAlwaysOnTop(true, 'screen-saver');
+  if (CAPTURE_MODE && !CAPTURE_NATIVE_WINDOW) win.setAlwaysOnTop(true, 'screen-saver');
   else if (!WINDOW_MODE) win.setAlwaysOnTop(true, 'floating');
   win.loadFile(
     path.join(__dirname, 'index.html'),
     WINDOW_MODE ? {
       query: {
         windowMode: '1',
+        captureMode: CAPTURE_MODE ? '1' : '',
         autoOpenSettingsMs: process.env.TT_DEMO_AUTO_OPEN_SETTINGS_MS || '',
         demoSettings: process.env.TT_DEMO_SETTINGS_MODE === '1' ? '1' : '',
         demoSettingsVariant: process.env.TT_DEMO_SETTINGS_VARIANT || '',
+        settingsScrollTarget: process.env.TT_DEMO_SETTINGS_SCROLL_TARGET || '',
         demoSettingsStartFlag: process.env.TT_DEMO_START_FLAG ? '1' : '',
         demoSettingsFallbackMs: process.env.TT_DEMO_SETTINGS_START_FALLBACK_MS || '',
         demoSettingsVisualDurationMs: process.env.TT_DEMO_SETTINGS_VISUAL_DURATION_MS || '',
       },
     } : {}
   );
-  if (CAPTURE_MODE) {
+  if (WINDOW_MODE) {
     win.webContents.once('did-finish-load', () => {
+      try { win.setBounds({ x: startX, y: startY, width: startW, height: startH }); } catch {}
+      if (!CAPTURE_MODE || CAPTURE_NATIVE_WINDOW) return;
       try { win.setAlwaysOnTop(true, 'screen-saver'); } catch {}
       try { win.moveTop(); } catch {}
     });
@@ -883,6 +911,7 @@ const { createMicWatcher } = require('./lib/mic-watcher');
 const { createTray } = require('./lib/tray');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
+const { providerOrder } = require('./lib/tts-routing');
 
 // System-tray factory call. Placed AFTER the lib import + AFTER
 // toggleWindow is hoisted (function declaration earlier in this file)
@@ -921,7 +950,7 @@ const EDGE_TTS_HARD_TIMEOUT_MS = 45_000;
 
 function callEdgeTTS(input, voice, outPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('python', [EDGE_SCRIPT, voice, outPath], {
+    const proc = spawn(PYTHON_EXE, [EDGE_SCRIPT, voice, outPath], {
       windowsHide: true,
       stdio: ['pipe', 'ignore', 'pipe']
     });
@@ -1001,7 +1030,7 @@ let helperConsecutiveFailures = 0;
 const HELPER_RESPAWN_THRESHOLD = 3;
 function getKeyHelper() {
   if (keyHelper && !keyHelper.killed && keyHelper.exitCode === null) return keyHelper;
-  keyHelper = spawn('python', ['-u', path.join(__dirname, 'key_helper.py')], {
+  keyHelper = spawn(PYTHON_EXE, ['-u', path.join(__dirname, 'key_helper.py')], {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore']
   });
@@ -1244,12 +1273,11 @@ async function speakClipboard() {
     // it starts emitting 429s, so cap at 4. Output paths are returned
     // positionally (source order) so priority-play still fires in the
     // order the user highlighted the text.
-    // #16 — respect cfg.playback.tts_provider. Prior to this fix the
-    // pipeline always tried edge-tts first regardless of the toggle,
-    // contradicting the UI tooltip at app/index.html:203 promising
-    // OpenAI is the primary voice when "Prefer OpenAI" is on.
+    // #16/#paid-fallback — respect primary and explicit fallback
+    // provider. Edge-primary no longer spends OpenAI credits unless
+    // playback.tts_fallback_provider is explicitly set to "openai".
     const CLIP_CONCURRENCY = 4;
-    const provider = String(((CFG.playback || {}).tts_provider) || 'edge').toLowerCase();
+    const providers = providerOrder(CFG.playback || {});
     const positional = await mapLimit(chunks, CLIP_CONCURRENCY, async (chunk, i) => {
       const idx = String(i + 1).padStart(2, '0');
       const edgeOut = path.join(QUEUE_DIR, `${ts}-clip-${sessionTag}-${idx}.mp3`);
@@ -1280,12 +1308,11 @@ async function speakClipboard() {
         }
       };
 
-      if (provider === 'openai') {
-        const r = await tryOpenAI();
-        return r || (await tryEdge());
+      for (const provider of providers) {
+        const out = provider === 'openai' ? await tryOpenAI() : await tryEdge();
+        if (out) return out;
       }
-      const r = await tryEdge();
-      return r || (await tryOpenAI());
+      return null;
     });
     const paths = positional.filter(p => p && !(p instanceof Error));
     if (paths.length && win && !win.isDestroyed()) {
@@ -1343,7 +1370,67 @@ function sanitiseEntry(e) {
     last_seen: Number.isFinite(Number(e.last_seen)) ? Number(e.last_seen) : 0
   };
   if (typeof e.auto_label === 'boolean') out.auto_label = e.auto_label;
-  for (const k of ['source_kind', 'source_label', 'source_cwd', 'source', 'source_originator']) if (typeof e[k] === 'string' && e[k].length <= 240) out[k] = e[k];
+  for (const k of [
+    'source_kind',
+    'source_label',
+    'source_app',
+    'source_cwd',
+    'source',
+    'source_originator',
+    'source_pid',
+    'source_child_pid',
+    'source_key',
+    'adapter',
+    'claude_code_entrypoint',
+  ]) {
+    if (typeof e[k] === 'string' && e[k].length <= 4096) out[k] = e[k];
+  }
+  if (e.capabilities && typeof e.capabilities === 'object') {
+    out.capabilities = {
+      auto_register: e.capabilities.auto_register === true,
+      tool_events: e.capabilities.tool_events === true,
+      response_events: e.capabilities.response_events === true,
+      mcp_speak: e.capabilities.mcp_speak === true,
+      manual_speak_selection: e.capabilities.manual_speak_selection === true,
+    };
+  }
+  if (typeof e.codex_desktop_title_status === 'string' &&
+      ['persisted_pending_refresh', 'sync_failed'].includes(e.codex_desktop_title_status)) {
+    out.codex_desktop_title_status = e.codex_desktop_title_status;
+  }
+  if (typeof e.codex_desktop_title === 'string' && e.codex_desktop_title.length <= 180) {
+    out.codex_desktop_title = e.codex_desktop_title;
+  }
+  if (Number.isFinite(Number(e.codex_desktop_title_synced_at))) {
+    out.codex_desktop_title_synced_at = Math.floor(Number(e.codex_desktop_title_synced_at));
+  }
+  if (typeof e.codex_desktop_title_error === 'string' && e.codex_desktop_title_error.length <= 180) {
+    out.codex_desktop_title_error = e.codex_desktop_title_error;
+  }
+  if (typeof e.claude_desktop_title_status === 'string' &&
+      ['persisted_pending_refresh', 'sync_failed', 'live_synced', 'live_unavailable'].includes(e.claude_desktop_title_status)) {
+    out.claude_desktop_title_status = e.claude_desktop_title_status;
+  }
+  if (typeof e.claude_desktop_title === 'string' && e.claude_desktop_title.length <= 180) {
+    out.claude_desktop_title = e.claude_desktop_title;
+  }
+  if (Number.isFinite(Number(e.claude_desktop_title_synced_at))) {
+    out.claude_desktop_title_synced_at = Math.floor(Number(e.claude_desktop_title_synced_at));
+  }
+  if (typeof e.claude_desktop_title_error === 'string' && e.claude_desktop_title_error.length <= 180) {
+    out.claude_desktop_title_error = e.claude_desktop_title_error;
+  }
+  if (typeof e.claude_desktop_session_file === 'string' && e.claude_desktop_session_file.length <= 4096) {
+    out.claude_desktop_session_file = e.claude_desktop_session_file;
+  }
+  // The renderer-known title for Claude Desktop sidebar rows. Tracked
+  // separately from claude_desktop_title (which mirrors disk) because the
+  // Claude Desktop renderer doesn't watch the JSON file — its in-memory
+  // value can lag behind disk. The UIA rename helper needs this to find
+  // the row by Name.
+  if (typeof e.claude_desktop_renderer_title === 'string' && e.claude_desktop_renderer_title.length <= 180) {
+    out.claude_desktop_renderer_title = e.claude_desktop_renderer_title;
+  }
   if (typeof e.voice === 'string' && e.voice.length <= 80 && VOICE_KEY_RE.test(e.voice)) {
     out.voice = e.voice;
     out.voice_auto = typeof e.voice_auto === 'boolean' ? e.voice_auto : false;
@@ -1718,6 +1805,12 @@ const {
   sanitiseLabel,
   ALLOWED_INCLUDE_KEYS,
 } = require('./lib/ipc-validate');
+const {
+  resolveCreateSessionWindowPlacement,
+} = require('./lib/create-session-placement');
+const {
+  addClaudeDesktopLaunchIntent,
+} = require('./lib/claude-desktop-title-sync');
 
 // Verifies a path resolves to a location strictly inside `base`. Defends against
 // `..`-segment path traversal (`startsWith` alone is bypassable).
@@ -1744,6 +1837,197 @@ let _reloadGraceUntil = 0;
 function startReloadGrace(ms = 5000) {
   _reloadGraceUntil = Date.now() + ms;
   diag(`reload-trace: reload grace started (${ms}ms)`);
+}
+
+function paletteHexForSessionIndex(index) {
+  const palette = (TOKENS && TOKENS.palette && TOKENS.palette.BASE_COLOURS) || [];
+  const hsplit = (TOKENS && TOKENS.palette && TOKENS.palette.HSPLIT_PARTNER) || [];
+  const vsplit = (TOKENS && TOKENS.palette && TOKENS.palette.VSPLIT_PARTNER) || [];
+  const n = Math.max(0, Math.min(23, Math.floor(Number(index) || 0)));
+  const primary = n < 8 ? n : n < 16 ? n - 8 : n - 16;
+  const secondary = n < 8 ? primary : n < 16 ? hsplit[primary] : vsplit[primary];
+  const hex = palette[primary] || palette[secondary] || '#ff5e5e';
+  return String(hex).replace(/^#/, '');
+}
+
+async function chooseSessionProjectDir(startPath) {
+  const options = { properties: ['openDirectory'] };
+  if (typeof startPath === 'string' && startPath.trim()) {
+    try {
+      const candidate = path.resolve(startPath.trim());
+      if (fs.existsSync(candidate)) options.defaultPath = candidate;
+    } catch {}
+  }
+  const owner = win && !win.isDestroyed() ? win : null;
+  const result = owner
+    ? await dialog.showOpenDialog(owner, options)
+    : await dialog.showOpenDialog(options);
+  if (!result || result.canceled || !result.filePaths || !result.filePaths[0]) {
+    return { ok: true, canceled: true };
+  }
+  return { ok: true, path: result.filePaths[0] };
+}
+
+async function launchAssistantSession(payload) {
+  if (process.platform !== 'win32') {
+    throw new Error('Toolbar session launch currently requires Windows Terminal.');
+  }
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const rawKind = String(p.kind || '').toLowerCase();
+  const kind = rawKind === 'claude-desktop' || rawKind === 'claude-desktop-code' ? 'claude-desktop'
+    : rawKind === 'claude' || rawKind === 'claude-code' ? 'claude'
+    : rawKind === 'codex' ? 'codex'
+    : '';
+  if (!kind) throw new Error('Choose Codex, Claude Code, or Claude Desktop Code.');
+
+  const projectDir = path.resolve(String(p.projectDir || '').trim());
+  if (!projectDir || !fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
+    throw new Error('Choose an existing project folder.');
+  }
+
+  const label = sanitiseLabel(p.label || '');
+  const launchMode = String(p.launchMode || 'default').toLowerCase();
+  const validLaunchModes = new Set([
+    'default',
+    'dangerous',
+  ]);
+  if (!validLaunchModes.has(launchMode)) throw new Error('Choose a valid permission preset.');
+  const indexRaw = Number(p.index);
+  const index = Number.isFinite(indexRaw) ? Math.max(0, Math.min(23, Math.floor(indexRaw))) : 0;
+  if (kind === 'claude-desktop') {
+    return await launchClaudeDesktopCodeSession({ projectDir, label, index });
+  }
+
+  const launchKind = kind === 'codex' ? 'Codex' : 'Claude';
+  const titleBase = kind === 'codex' ? 'Codex TT' : 'Claude TT';
+  const title = label ? `${titleBase} - ${label}` : titleBase;
+  const launcherScript = path.join(__dirname, 'assistant-session-launch.ps1');
+  if (!fs.existsSync(launcherScript)) throw new Error('Session launcher script is missing.');
+  const wtBridgeScript = path.join(__dirname, 'assistant-wt-launch.ps1');
+  if (!fs.existsSync(wtBridgeScript)) throw new Error('Windows Terminal bridge script is missing.');
+
+  const launchToken = crypto.randomBytes(8).toString('hex');
+  // Windows Terminal's parser is fragile when Electron launches a nested
+  // command directly. Use the same PowerShell argument-array bridge as the
+  // demo launcher that proved reliable on Ben's machine.
+  const wtTitle = `${launchKind}TT${launchToken.slice(0, 8)}`;
+  const tabColor = `#${paletteHexForSessionIndex(index)}`;
+  const windowPlacement = resolveCreateSessionWindowPlacement({
+    payload: p,
+    panels: CFG && CFG.panels,
+    kind,
+    label,
+    index,
+  });
+
+  diag(`launch-assistant-session bridge start: kind=${kind} project=${projectDir} title=${wtTitle} tabColor=${tabColor} bounds=${windowPlacement.windowBounds || ''}`);
+  const child = spawn(POWERSHELL_EXE, [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', wtBridgeScript,
+  ], {
+    cwd: projectDir,
+    detached: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: {
+      ...process.env,
+      TT_CREATE_SESSION_KIND: launchKind,
+      TT_CREATE_SESSION_PROJECT_DIR: projectDir,
+      TT_CREATE_SESSION_INITIAL_LABEL: label,
+      TT_CREATE_SESSION_INITIAL_INDEX: String(index),
+      TT_CREATE_SESSION_LAUNCH_TOKEN: launchToken,
+      TT_CREATE_SESSION_LAUNCH_MODE: launchMode,
+      TT_CREATE_SESSION_WINDOW_TITLE: title,
+      TT_CREATE_SESSION_LAUNCHER: launcherScript,
+      TT_CREATE_SESSION_WT_TITLE: wtTitle,
+      TT_CREATE_SESSION_TAB_COLOR: tabColor,
+      ...(windowPlacement.windowPosition ? { TT_CREATE_SESSION_WINDOW_POS: windowPlacement.windowPosition } : {}),
+      ...(windowPlacement.windowSize ? { TT_CREATE_SESSION_WINDOW_SIZE: windowPlacement.windowSize } : {}),
+      ...(windowPlacement.windowBounds ? { TT_CREATE_SESSION_WINDOW_BOUNDS: windowPlacement.windowBounds } : {}),
+    },
+  });
+
+  const bridgeResult = await new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timer = null;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    timer = setTimeout(() => {
+      finish({ timedOut: true, stdout, stderr });
+    }, 3500);
+    child.stdout.on('data', (buf) => { stdout += String(buf); });
+    child.stderr.on('data', (buf) => { stderr += String(buf); });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('exit', (code, signal) => {
+      finish({ code, signal, stdout, stderr });
+    });
+  });
+
+  const stdout = String(bridgeResult.stdout || '').trim();
+  const stderr = String(bridgeResult.stderr || '').trim();
+  if (stdout) diag(`launch-assistant-session bridge stdout: ${stdout.slice(0, 1000)}`);
+  if (stderr) diag(`launch-assistant-session bridge stderr: ${stderr.slice(0, 1000)}`);
+  if (!bridgeResult.timedOut && bridgeResult.code !== 0) {
+    const detail = stderr || stdout || `bridge exited with code ${bridgeResult.code}`;
+    throw new Error(`Windows Terminal launch failed: ${detail}`);
+  }
+  if (bridgeResult.timedOut) {
+    diag('launch-assistant-session bridge still running after 3500ms; assuming Windows Terminal is starting');
+  } else {
+    diag(`launch-assistant-session bridge exit code=${bridgeResult.code} signal=${bridgeResult.signal || ''}`);
+  }
+  return { ok: true, kind, title, projectDir, index, pid: child.pid, windowPlacement };
+}
+
+async function launchClaudeDesktopCodeSession({ projectDir, label, index }) {
+  const launchToken = crypto.randomBytes(8).toString('hex');
+  const colour = colourNameForIndex(index);
+  const marker = colourMarkerForIndex(index);
+  const titleLabel = label || path.basename(projectDir) || 'Claude Desktop';
+  const identity = `${marker} TT ${colour} · ${titleLabel}`;
+  const prompt = [
+    `Terminal Talk session identity: ${identity}`,
+    '',
+    'Use this label as the visible session identity for this Claude Code workspace.',
+  ].join('\n');
+  const intentResult = addClaudeDesktopLaunchIntent({
+    token: launchToken,
+    label: titleLabel,
+    index,
+    projectDir,
+    createdAt: Date.now(),
+  });
+  if (!intentResult.ok) {
+    diag(`claude-desktop-code launch intent save failed: ${intentResult.filePath || ''}`);
+  }
+
+  const url = new URL('claude://code/new');
+  url.searchParams.set('q', prompt);
+  url.searchParams.append('folder', projectDir);
+  diag(`claude-desktop-code deep link start: project=${projectDir} identity=${identity}`);
+  await shell.openExternal(url.toString());
+  return {
+    ok: true,
+    kind: 'claude-desktop',
+    title: identity,
+    projectDir,
+    index,
+    launchToken,
+    url: url.toString(),
+    pendingIntent: intentResult.ok === true,
+  };
 }
 
 // Cursor-poll click-through driver. Replaces the renderer-driven
@@ -1806,8 +2090,12 @@ createIpcHandlers({
   validVoice,
   sanitiseLabel,
   ALLOWED_INCLUDE_KEYS,
+  chooseSessionProjectDir,
+  launchAssistantSession,
   apiKeyStore,
   redactForLog,
+  appDir: __dirname,
+  pythonExe: PYTHON_EXE,
   setApplyingDock: (v) => { isApplyingDock = v; },
   setInteractiveRegion,
   QUEUE_DIR,
@@ -1840,6 +2128,11 @@ function isListeningEnabled() {
 }
 function setListeningState(on) {
   try { fs.writeFileSync(LISTENING_STATE_FILE, on ? 'on' : 'off'); } catch {}
+}
+function isWakeWordAvailable() {
+  if (process.env.TT_WAKE_WORD_DISABLED === '1') return false;
+  try { return !fs.existsSync(WAKE_WORD_UNAVAILABLE_FILE); }
+  catch { return true; }
 }
 // #9 — script-name fragments matched by the orphan sweep below. Each
 // fragment is matched as a substring against the python child's
@@ -1928,10 +2221,15 @@ function computeVoiceBackoffMs(count) {
 
 function startVoiceListener() {
   if (voiceProc) return;
+  if (!isWakeWordAvailable()) {
+    diag('voice listener disabled: optional wake-word dependencies unavailable');
+    setListeningState(false);
+    return;
+  }
   killOrphanVoiceListeners();
   try {
     let stderrBuf = '';
-    voiceProc = spawn('python', ['-u', path.join(__dirname, 'wake-word-listener.py')], {
+    voiceProc = spawn(PYTHON_EXE, ['-u', path.join(__dirname, 'wake-word-listener.py')], {
       windowsHide: true,
       detached: false,
       stdio: ['ignore', 'ignore', 'pipe']
@@ -1985,8 +2283,8 @@ function startVoiceListener() {
 const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
 
 // OpenAI 401 auto-unset watcher — extracted to app/lib/openai-invalid-watcher.js
-// (#29). cfg passed by reference so the in-place tts_provider flip works
-// without a getCFG/setCFG round-trip — same way the K-1 race fix expects.
+// (#29). cfg passed by reference so the in-place OpenAI route demotion
+// works without a getCFG/setCFG round-trip — same way the K-1 race fix expects.
 const _openaiInvalidWatcher = createOpenaiInvalidWatcher({
   flagPath: path.join(SESSIONS_DIR, 'openai-invalid.flag'),
   apiKeyStore,
@@ -2018,6 +2316,7 @@ const stopVoiceCommandWatcher = _voiceCommandWatcher.stop;
 
 // Mic-usage watcher — extracted to app/lib/mic-watcher.js (#29).
 const _micWatcher = createMicWatcher({
+  enabled: platform.supportsWindowsMicWatcher,
   scriptPath: MIC_WATCHER_SCRIPT,
   powershellExe: POWERSHELL_EXE,
   spawn,
@@ -2029,6 +2328,12 @@ const stopMicWatcher = _micWatcher.stop;
 
 function toggleListening() {
   const now = isListeningEnabled();
+  if (!now && !isWakeWordAvailable()) {
+    setListeningState(false);
+    diag('listening toggle ignored: wake-word dependencies unavailable');
+    if (win && !win.isDestroyed()) win.webContents.send('listening-state', false);
+    return;
+  }
   setListeningState(!now);
   if (now) { stopVoiceListener(); diag('listening TOGGLED OFF'); }
   else { startVoiceListener(); diag('listening TOGGLED ON'); }
@@ -2217,7 +2522,8 @@ app.whenReady().then(() => {
     })();
     const heartbeat = (CFG && CFG.heartbeat_enabled !== false) ? 'on' : 'off';
     const provider = String(((CFG && CFG.playback) || {}).tts_provider || 'edge');
-    diag(`boot version=${app.getVersion()} pid=${process.pid} cfg_path=${CONFIG_PATH} cfg_keys=[${cfgKeys}] heartbeat=${heartbeat} tts_provider=${provider}`);
+    const fallbackProvider = String(((CFG && CFG.playback) || {}).tts_fallback_provider || 'edge');
+    diag(`boot version=${app.getVersion()} pid=${process.pid} cfg_path=${CONFIG_PATH} cfg_keys=[${cfgKeys}] heartbeat=${heartbeat} tts_provider=${provider} tts_fallback_provider=${fallbackProvider}`);
   } catch (e) { diag(`boot-event log failed: ${e.message}`); }
 
   logIntegrity();
