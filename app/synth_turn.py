@@ -52,15 +52,11 @@ from threading import Lock
 
 try:
     from sentence_group import group_sentences_for_tts
-    from tool_narration import (extract_visible_context_scope,
-                                leading_tool_verb, narrate_tool_use,
-                                vary_tool_phrase)
+    from tool_narration import extract_visible_context_scope, leading_tool_verb, narrate_tool_use, vary_tool_phrase
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from sentence_group import group_sentences_for_tts
-    from tool_narration import (extract_visible_context_scope,
-                                leading_tool_verb, narrate_tool_use,
-                                vary_tool_phrase)
+    from tool_narration import extract_visible_context_scope, leading_tool_verb, narrate_tool_use, vary_tool_phrase
 
 
 # ---------------------------------------------------------------------------

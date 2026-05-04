@@ -338,7 +338,11 @@
       // the cause and — only if we're still the active clip — advances
       // the queue so a stuck reject can't deadlock playback.
       this._markPlayed(p);
-      if (manual) this._markHeard(p);
+      // Any clip that starts playback has been heard by the user,
+      // whether it started automatically or from an explicit click.
+      // Manual/user-click state is still tracked separately for
+      // auto-continue semantics.
+      this._markHeard(p);
       this._removePending(p);
       this._onRenderDots();
       const failStarted = (e) => {
