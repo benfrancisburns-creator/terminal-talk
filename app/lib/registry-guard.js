@@ -54,6 +54,7 @@ function _readDiskRegistry(registryPath, fs) {
 
 const USER_INTENT_WRITERS = new Set([
   'set-session-label',
+  'set-session-index',
   'set-session-voice',
   'set-session-muted',
   'set-session-focus',
@@ -171,6 +172,20 @@ function createRegistryGuard({ registryPath, fs = realFs } = {}) {
       if (oldEntry.pinned === true && newEntry.pinned !== true) {
         newEntry.pinned = true;
         restored.push(`${short}:pinned`);
+      }
+      // Index restoration. Touch-path writers (codex-session-watcher,
+      // speak-on-tool, speak-response, statusline) load the registry,
+      // touch bookkeeping, and write back. If the user changed the
+      // palette index between their load and write, the stale payload
+      // would clobber the user's choice. Restore from disk when the
+      // entry has user-intent and indices differ. set-session-index is
+      // in USER_INTENT_WRITERS so it short-circuits before reaching
+      // here, leaving its own writes intact.
+      if (_hasUserIntent(oldEntry) &&
+          Number.isFinite(Number(oldEntry.index)) &&
+          Number(oldEntry.index) !== Number(newEntry.index)) {
+        newEntry.index = Number(oldEntry.index);
+        restored.push(`${short}:index`);
       }
       if (oldEntry.voice_auto === false && newEntry.voice_auto !== false) {
         newEntry.voice_auto = false;

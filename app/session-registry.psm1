@@ -753,6 +753,26 @@ function Save-Registry {
                             $new.pinned = $true
                             $restored += "${short}:pinned"
                         }
+                        # Index restoration. Touch-path writers (statusline,
+                        # speak-on-tool, speak-response, codex-session-watcher)
+                        # load + touch + write. If the user changed the palette
+                        # index between load and write, the stale payload would
+                        # clobber the user's choice. Restore when the entry has
+                        # user-intent and the indices differ. set-session-index
+                        # short-circuits via the JS guard before this PS path
+                        # is reached, so its writes stay intact.
+                        $oldHasIntent = $false
+                        $oldLabelAuto = ($old.PSObject.Properties.Name -contains 'auto_label' -and $old.auto_label -eq $true)
+                        if ($old.pinned -eq $true) { $oldHasIntent = $true }
+                        elseif ($old.label -and ([string]$old.label).Length -gt 0 -and -not $oldLabelAuto) { $oldHasIntent = $true }
+                        elseif (Test-ManualVoiceIntent $old) { $oldHasIntent = $true }
+                        elseif ($old.muted -eq $true) { $oldHasIntent = $true }
+                        elseif ($old.focus -eq $true) { $oldHasIntent = $true }
+                        if ($oldHasIntent -and $old.PSObject.Properties.Name -contains 'index' -and
+                            ($null -ne $old.index) -and ([int]$old.index -ne [int]$new.index)) {
+                            $new.index = [int]$old.index
+                            $restored += "${short}:index"
+                        }
                         if ($old.PSObject.Properties.Name -contains 'voice_auto' -and ($old.voice_auto -is [bool]) -and $old.voice_auto -eq $false -and
                             (-not ($new.ContainsKey('voice_auto') -and ($new.voice_auto -eq $false)))) {
                             $new['voice_auto'] = $false

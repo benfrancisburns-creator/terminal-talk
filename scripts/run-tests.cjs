@@ -2228,6 +2228,52 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     }
   });
 
+  it('JS — guard restores index when a touch-path race would clobber the user-set palette', () => {
+    // Regression: codex-session-watcher / speak-on-tool / speak-response
+    // load the registry, touch bookkeeping, then write back. If the user
+    // set a new palette index between their load and write, the stale
+    // payload's old index would clobber the user choice. The guard must
+    // restore index from disk when the entry has user-intent and the
+    // indices differ.
+    const tmp = path.join(os.tmpdir(), `tt-guard-index-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    try {
+      // Disk: user just set index=7 and pinned=true via set-session-index.
+      fs.writeFileSync(tmp, JSON.stringify({
+        assignments: {
+          aaaaaaaa: { index: 7, session_id: 'x', claude_pid: 1234, label: '', pinned: true, muted: false, focus: false, last_seen: 1 },
+        },
+      }), 'utf8');
+      const { createRegistryGuard } = require(path.join(__dirname, '..', 'app', 'lib', 'registry-guard.js'));
+      const { guardUserIntent } = createRegistryGuard({ registryPath: tmp });
+      // Stale payload: codex-session-watcher loaded BEFORE the user wrote
+      // (so its in-memory copy still has index=3) and is now bumping
+      // last_seen.
+      const stalePayload = {
+        aaaaaaaa: { index: 3, session_id: 'x', claude_pid: 1234, label: '', pinned: true, muted: false, focus: false, last_seen: 999 },
+      };
+      const restored = guardUserIntent(stalePayload, 'codex-session-watcher');
+      if (Number(stalePayload.aaaaaaaa.index) !== 7) {
+        throw new Error(`expected index restored to 7 (user choice), got ${stalePayload.aaaaaaaa.index}`);
+      }
+      if (!restored.includes('aaaaaaaa:index')) {
+        throw new Error(`expected aaaaaaaa:index in restored token list, got ${JSON.stringify(restored)}`);
+      }
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
+  });
+
+  it('JS — set-session-index is a USER_INTENT_WRITER so its own writes never trigger restoration', () => {
+    // The handler reads, sets the new index + pinned, and writes. It
+    // must short-circuit the guard or the guard would see disk's old
+    // index !== payload's new index and "restore" the old one — undoing
+    // the user's choice.
+    const m = libRegistryGuardSrc.match(/USER_INTENT_WRITERS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    if (!m || !m[1].includes(`'set-session-index'`)) {
+      throw new Error(`set-session-index must be in USER_INTENT_WRITERS so the guard skips it — see palette-revert bug`);
+    }
+  });
+
   it('JS — guard emits WARN-style diag when restoration happens', () => {
     if (!/save-registry GUARD from=\$\{caller\} restored=/.test(mainJsSrc)) {
       throw new Error('saveAssignments must emit save-registry GUARD ... restored=[...] line — see #8 guard');
