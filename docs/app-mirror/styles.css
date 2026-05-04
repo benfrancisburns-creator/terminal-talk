@@ -1692,7 +1692,7 @@ select option:checked, .panel .row select option:checked {
 }
 .about-wallpaper-card {
   margin: 0;
-  height: 160px;
+  height: 190px;
   min-width: 0;
   overflow: hidden;
   background: #0a0f19;
@@ -1704,8 +1704,8 @@ select option:checked, .panel .row select option:checked {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: contain;
-  object-position: center;
+  object-fit: cover;
+  object-position: center 48%;
   image-rendering: auto;
 }
 .about-intro {
