@@ -49,12 +49,23 @@ try {
 
 if (-not $signature) { exit 0 }
 
-# Match just the verb-and-duration. Lookahead `(?=\s*$)` requires the
-# duration to be the last non-whitespace content on the line, but the
-# match itself is just `<Verb> for Xm Ys` — no leading bullet, no
-# trailing terminal-width padding. Claude Code's footer line is
-# `✻ Brewed for 10m 28s` followed by spaces; we only want the middle.
-$footerRegex = [regex]'(?m)([A-Z]\p{L}+) for (?:\d+m\s?)?\d+s(?=\s*$)'
+# Match just the verb-and-duration. Claude Code's footer line is
+# `✻ <Verb> for X[m Y]s [· N shell(s) still running]` and is the
+# ONLY line that starts with the U+273B six-pointed bullet — that
+# character isn't in conversation prose, so anchoring to it avoids
+# false-positives against response text that happens to contain
+# `<Verb> for Xs` at end-of-line (we hit one in the wild on
+# 2026-05-04). Lookahead allows EITHER end-of-line (no shells
+# suffix) OR a middle-dot ` · ` (shells suffix follows).
+# Build the regex from char codepoints rather than literal characters
+# in the source file. Windows PowerShell 5.1 reads .ps1 files as
+# Windows-1252 by default, which mangles the U+273B six-pointed bullet
+# (`✻`) and U+00B7 middle dot (`·`) Claude Code prints in its footer.
+# Constructing the pattern with [char]0xXXXX at runtime sidesteps the
+# encoding issue entirely.
+$bullet = [char]0x273B
+$middledot = [char]0x00B7
+$footerRegex = [regex]("(?m)^\s*" + $bullet + "\s+(?<phrase>[A-Z]\p{L}+ for (?:\d+m\s?)?\d+s)(?=\s+" + $middledot + "|\s*`$)")
 
 try {
     $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -80,7 +91,7 @@ foreach ($w in $windows) {
         $matches = $footerRegex.Matches($text)
         if ($matches.Count -eq 0) { continue }
         # Last match in the buffer = most recent footer = THIS turn.
-        $last = $matches[$matches.Count - 1].Value
+        $last = $matches[$matches.Count - 1].Groups['phrase'].Value
         Write-Output $last
         exit 0
     }
