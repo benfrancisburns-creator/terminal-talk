@@ -9,17 +9,16 @@ shell layer stays boring and JSON/registry logic lives in Python.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 SHORT_RE = re.compile(r'^[a-f0-9]{8}$')
 PALETTE_AUTO_ORDER = [
@@ -62,10 +61,8 @@ def log(caller: str, message: str) -> None:
         _ensure_dirs()
         if LOG_PATH.exists() and LOG_PATH.stat().st_size > 1024 * 1024:
             backup = LOG_PATH.with_name(LOG_PATH.name + '.1')
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 backup.unlink()
-            except FileNotFoundError:
-                pass
             LOG_PATH.replace(backup)
         stamp = time.strftime('%H:%M:%S')
         with LOG_PATH.open('a', encoding='utf-8') as f:
@@ -128,10 +125,8 @@ def save_registry(assignments: dict[str, Any], caller: str) -> bool:
         return True
     except Exception as exc:
         log(caller, f'save-registry failed: {exc}')
-        try:
+        with contextlib.suppress(Exception):
             tmp.unlink()
-        except Exception:
-            pass
         return False
 
 
@@ -164,10 +159,8 @@ class RegistryLock:
     def __exit__(self, *_exc: object) -> None:
         if not self.held:
             return
-        try:
+        with contextlib.suppress(FileNotFoundError):
             self.lock_path.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def palette_auto_order(size: int = 24) -> list[int]:
@@ -337,10 +330,8 @@ def spawn_synth(session_id: str, transcript: Path, mode: str, caller: str, elaps
         log(caller, f'synth spawn failed: {exc}')
         return 0
     finally:
-        try:
+        with contextlib.suppress(Exception):
             err.close()
-        except Exception:
-            pass
 
 
 def handle_claude_mark(caller: str = 'mark-working') -> int:
@@ -448,9 +439,7 @@ def is_terminal_rollout(meta: dict[str, Any]) -> bool:
     originator = str(meta.get('originator') or '').lower()
     if source == 'cli' or originator == 'codex-tui':
         return True
-    if not source and not originator:
-        return True
-    return False
+    return bool(not source and not originator)
 
 
 def resolve_rollout_meta(payload: dict[str, Any], session_id: str) -> dict[str, Any] | None:
@@ -538,17 +527,13 @@ def remove_plugin_session(short: str, caller: str, purge_queue: bool = False) ->
             return False
     (SESSIONS_DIR / f'{short}-plugin-cleaned.flag').write_text(str(epoch()), encoding='utf-8')
     for suffix in ('working.flag', 'plugin-start-announced.flag', 'plugin-start.json'):
-        try:
+        with contextlib.suppress(FileNotFoundError):
             (SESSIONS_DIR / f'{short}-{suffix}').unlink()
-        except FileNotFoundError:
-            pass
     if purge_queue and QUEUE_DIR.exists():
         for path in QUEUE_DIR.iterdir():
             if path.is_file() and f'-{short}' in path.name:
-                try:
+                with contextlib.suppress(Exception):
                     path.unlink()
-                except Exception:
-                    pass
     log(caller, f'removed plugin session {short}')
     return True
 

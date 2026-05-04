@@ -269,7 +269,7 @@ function createCodexSessionWatcher(opts = {}) {
   function _isRecentlyCleanedPluginShort(shortId) {
     const flagPath = _pluginCleanedFlagPath(shortId);
     if (!flagPath) return false;
-    let stat = null;
+    let stat;
     try { stat = fsDep.statSync(flagPath); } catch { return false; }
     let stampMs = NaN;
     try {
@@ -405,7 +405,7 @@ function createCodexSessionWatcher(opts = {}) {
     const entry = assignments[shortId];
     if (!entry || entry.source_kind !== 'codex-plugin') return false;
     delete assignments[shortId];
-    let saved = false;
+    let saved;
     try { saved = saveAssignments(assignments, 'codex-plugin-cleanup') !== false; } catch (e) {
       diag(`codex-session-watcher: plugin cleanup save fail ${shortId}: ${e.message}`);
       return false;
@@ -587,7 +587,7 @@ function createCodexSessionWatcher(opts = {}) {
       const stem = `${turnTs}-${phaseTag}${batch}-${seq}-${state.shortId}`;
       const edgeOut = path.join(queueDir, `${stem}.mp3`);
       const openaiOut = path.join(queueDir, `${stem}.wav`);
-      let produced = null;
+      let produced;
       try {
         produced = await _synthesizeChunk(chunks[i], routing, edgeOut, openaiOut);
       } catch (e) {

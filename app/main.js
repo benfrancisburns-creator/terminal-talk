@@ -331,6 +331,7 @@ function saveWindowPosition() {
 // Resting chrome includes controls, session tabs, dots, and the collapsed
 // transcript header, with headroom for pulse glows and scaling round-off.
 const DIM_HORIZONTAL = { width: 680, height: 192 };
+const TOOLBAR_ALWAYS_ON_TOP_LEVEL = process.platform === 'win32' ? 'screen-saver' : 'floating';
 
 // Drag-intent tracking. Without this, snapping from a diagonal drag to a
 // corner picks whichever of (horizontal-edge | vertical-edge) happens to
@@ -532,7 +533,7 @@ function createWindow() {
     }
   });
   if (CAPTURE_MODE && !CAPTURE_NATIVE_WINDOW) win.setAlwaysOnTop(true, 'screen-saver');
-  else if (!WINDOW_MODE) win.setAlwaysOnTop(true, 'floating');
+  else if (!WINDOW_MODE) win.setAlwaysOnTop(true, TOOLBAR_ALWAYS_ON_TOP_LEVEL);
   win.loadFile(
     path.join(__dirname, 'index.html'),
     WINDOW_MODE ? {
@@ -598,6 +599,7 @@ function createWindow() {
     // sees the cursor return to the bar — bar stays in click-through
     // forever, clicks pass through, bar appears "frozen".
     startReloadGrace(5000);
+    try { forceCursorInteractive(5000); } catch {}
     setTimeout(() => {
       try {
         win.setIgnoreMouseEvents(false);
@@ -742,15 +744,17 @@ function createWindow() {
 let userHiddenToolbar = false;
 
 // Re-apply always-on-top whenever we show or raise the toolbar. Windows can
-// silently drop the flag during certain transitions — lock screen, another
-// app taking exclusive fullscreen focus, a UAC prompt, some dictation tool
-// overlays — and once dropped the toolbar stays behind normal windows. The
-// 'floating' level keeps it above ordinary app windows without competing
-// with system-level overlays (taskbar auto-hide etc).
+// silently drop or outrank the flag during certain transitions — lock screen,
+// another app taking exclusive fullscreen focus, a UAC prompt, some dictation
+// tool overlays, or Windows Terminal itself sitting topmost. The Windows
+// screen-saver level is deliberately stronger than floating because this is a
+// compact control overlay and must stay usable in front of terminal windows.
 function forceOnTop() {
   if (!win || win.isDestroyed()) return;
   if (WINDOW_MODE) return;
-  try { win.setAlwaysOnTop(true, 'floating'); } catch {}
+  try { forceCursorInteractive(1200); } catch {}
+  try { win.setIgnoreMouseEvents(false, { forward: true }); } catch {}
+  try { win.setAlwaysOnTop(true, TOOLBAR_ALWAYS_ON_TOP_LEVEL); } catch {}
   try { win.moveTop(); } catch {}
 }
 
@@ -1606,7 +1610,7 @@ const SESSION_GRACE_SEC = 14400; // 4 hours
 function isRecentlyCleanedPluginShort(short, nowMs = Date.now()) {
   if (!SHORT_ID_RE.test(String(short || ''))) return false;
   const flagPath = path.join(SESSIONS_DIR, `${short}-plugin-cleaned.flag`);
-  let stat = null;
+  let stat;
   try { stat = fs.statSync(flagPath); } catch { return false; }
 
   let stampMs = NaN;
@@ -2061,6 +2065,7 @@ const _cursorClickthrough = createCursorClickthroughDriver({
 });
 const startCursorPollDriver = _cursorClickthrough.start;
 const setInteractiveRegion = _cursorClickthrough.setInteractiveRegion;
+const forceCursorInteractive = _cursorClickthrough.forceInteractive;
 
 const { createIpcHandlers } = require('./lib/ipc-handlers');
 let _codexIdentitySync = null;

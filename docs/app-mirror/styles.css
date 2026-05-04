@@ -36,6 +36,10 @@ html, body {
    but becomes click-through via setIgnoreMouseEvents so the area below
    the strip doesn't block interaction with other apps. */
 .bar.collapsed {
+  width: 96px;
+  align-self: center;
+  margin-left: auto;
+  margin-right: auto;
   height: 14px;
   padding: 0;
   opacity: 0.9;
@@ -59,7 +63,7 @@ html, body {
 .bar.collapsed .collapsed-signal {
   position: absolute;
   display: block;
-  inset: 3px 12px;
+  inset: 3px 8px;
   border-radius: 999px;
   opacity: 0;
   transform: scaleX(0.985);
@@ -90,6 +94,11 @@ body.window-mode .bar {
   border-color: rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   box-shadow: none;
+}
+body.window-mode .bar.collapsed {
+  width: 96px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 body.settings-open {
@@ -243,19 +252,47 @@ body.demo-settings-mode * {
   display: flex;
   align-items: center;
   padding: 0 4px;
+  gap: 4px;
   min-height: 0;   /* zero when .tabs is empty */
 }
 .tabs-row:empty,
 .tabs-row:has(.tabs:empty) { display: none; }
+.tab-scroll-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 11px;
+  background: #000;
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.tabs-row.has-overflow .tab-scroll-btn {
+  display: inline-flex;
+}
+.tab-scroll-btn:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+}
+.tab-scroll-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
 .tabs {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
   padding: 4px 0;
+  scroll-behavior: smooth;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs:empty { display: none; }

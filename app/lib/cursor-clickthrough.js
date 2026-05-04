@@ -38,6 +38,7 @@ function createCursorClickthroughDriver({
   testMode = false,
 }) {
   let interactiveRegion = null;
+  let forceInteractiveUntil = 0;
   let lastLogged = null;
   let lastStateKey = null;
   let timer = null;
@@ -46,6 +47,11 @@ function createCursorClickthroughDriver({
     const next = normaliseRegion(region);
     interactiveRegion = next;
     return !!next;
+  }
+
+  function forceInteractive(ms = 1200) {
+    const duration = Math.max(0, Math.floor(Number(ms) || 0));
+    forceInteractiveUntil = Math.max(forceInteractiveUntil, Date.now() + duration);
   }
 
   function pollOnce() {
@@ -57,23 +63,25 @@ function createCursorClickthroughDriver({
     let bounds;
     try { bounds = win.getBounds(); } catch { return; }
     const { overWindow, overInteractive } = cursorOverRegion(cursor, bounds, interactiveRegion);
-    const wantClickthrough = !overInteractive;
+    const forcedInteractive = Date.now() < forceInteractiveUntil;
+    const wantClickthrough = forcedInteractive ? false : !overInteractive;
     try {
       win.setIgnoreMouseEvents(wantClickthrough, { forward: true });
     } catch (e) {
       diag(`reload-trace: cursor-poll setIgnoreMouseEvents threw: ${e && e.message}`);
       return;
     }
-    const stateKey = `${overWindow ? 1 : 0}:${overInteractive ? 1 : 0}`;
+    const effectiveOverInteractive = forcedInteractive ? true : overInteractive;
+    const stateKey = `${overWindow ? 1 : 0}:${effectiveOverInteractive ? 1 : 0}`;
     if (stateKey !== lastStateKey) {
       lastStateKey = stateKey;
       if (typeof onStateChange === 'function') {
-        try { onStateChange({ overWindow, overInteractive }); } catch {}
+        try { onStateChange({ overWindow, overInteractive: effectiveOverInteractive }); } catch {}
       }
     }
     if (wantClickthrough !== lastLogged) {
       lastLogged = wantClickthrough;
-      diag(`reload-trace: cursor-poll overWindow=${overWindow} overInteractive=${overInteractive} ignoreMouseEvents=${wantClickthrough}`);
+      diag(`reload-trace: cursor-poll overWindow=${overWindow} overInteractive=${overInteractive} forcedInteractive=${forcedInteractive} ignoreMouseEvents=${wantClickthrough}`);
     }
   }
 
@@ -88,7 +96,7 @@ function createCursorClickthroughDriver({
     timer = null;
   }
 
-  return { start, stop, setInteractiveRegion, pollOnce };
+  return { start, stop, setInteractiveRegion, forceInteractive, pollOnce };
 }
 
 module.exports = {

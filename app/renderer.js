@@ -51,6 +51,9 @@ function setDynamicStyle(selector, cssText) {
 const audio = document.getElementById('audio');
 const dotsEl = document.getElementById('dots');
 const tabsEl = document.getElementById('tabs');
+const tabsRowEl = document.getElementById('tabsRow');
+const tabScrollLeftBtn = document.getElementById('tabScrollLeft');
+const tabScrollRightBtn = document.getElementById('tabScrollRight');
 const playPauseBtn = document.getElementById('playPause');
 const playIcon = document.getElementById('playIcon');
 const pauseIcon = document.getElementById('pauseIcon');
@@ -816,10 +819,8 @@ dotStrip.mount(dotsEl);
 
 // Tabs — per-session filter above the dot-strip. `selectedTab` is either
 // 'all' (unfiltered chronological view, default) or a session shortId.
-// `tabsExpanded` controls the [▾ N idle] overflow disclosure. Both persist
-// via writeConfig so the toolbar remembers across restarts; on load we
-// defensively fall back to 'all' if the previously-selected session no
-// longer exists in the registry.
+// The top strip is scoped to live sessions plus sessions with clips still
+// on disk; the full registry remains in Settings > Sessions.
 let selectedTab = 'all';
 let tabsExpanded = false;
 const tabs = new window.TT_TABS({
@@ -839,6 +840,36 @@ const tabs = new window.TT_TABS({
   },
 });
 tabs.mount(tabsEl);
+
+function updateTabScrollControls() {
+  if (!tabsEl || !tabsRowEl || !tabScrollLeftBtn || !tabScrollRightBtn) return;
+  const overflow = tabsEl.scrollWidth > tabsEl.clientWidth + 2;
+  tabsRowEl.classList.toggle('has-overflow', overflow);
+  if (!overflow) {
+    tabScrollLeftBtn.disabled = true;
+    tabScrollRightBtn.disabled = true;
+    return;
+  }
+  const maxScrollLeft = Math.max(0, tabsEl.scrollWidth - tabsEl.clientWidth);
+  tabScrollLeftBtn.disabled = tabsEl.scrollLeft <= 1;
+  tabScrollRightBtn.disabled = tabsEl.scrollLeft >= maxScrollLeft - 1;
+}
+
+function scheduleTabScrollControlsUpdate() {
+  requestAnimationFrame(updateTabScrollControls);
+}
+
+function scrollTabsBy(direction) {
+  if (!tabsEl) return;
+  const amount = Math.max(160, Math.floor(tabsEl.clientWidth * 0.72));
+  tabsEl.scrollBy({ left: direction * amount, behavior: 'smooth' });
+  setTimeout(updateTabScrollControls, 240);
+}
+
+if (tabScrollLeftBtn) tabScrollLeftBtn.addEventListener('click', () => scrollTabsBy(-1));
+if (tabScrollRightBtn) tabScrollRightBtn.addEventListener('click', () => scrollTabsBy(1));
+if (tabsEl) tabsEl.addEventListener('scroll', updateTabScrollControls, { passive: true });
+window.addEventListener('resize', scheduleTabScrollControlsUpdate);
 
 function persistTabsState() {
   try {
@@ -1002,15 +1033,17 @@ if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
 }
 
 function renderDots() {
-  // Defensive fallback: if the persisted selectedTab points at a short
-  // that no longer appears in either queue or sessionAssignments, revert
-  // to 'all' so the user isn't stuck staring at an empty strip.
-  if (selectedTab !== 'all' && !sessionAssignments[selectedTab]) {
-    const stillQueued = queue.some((f) => {
-      const fname = f.path.split(/[\\/]/).pop();
+  // Defensive fallback: if the persisted selectedTab no longer appears in
+  // the focused top strip (live session OR clip-backed session), revert to
+  // All so the user is not stuck staring at an empty strip.
+  if (selectedTab !== 'all') {
+    const selectedIsLive = !!(sessionAssignments[selectedTab] && !staleSessionPoller.has(selectedTab));
+    const selectedHasClips = [...queue.map((f) => f.path), ...allQueuePaths].some((p) => {
+      if (!p) return false;
+      const fname = p.split(/[\\/]/).pop();
       return window.TT_CLIP_PATHS.extractSessionShort(fname) === selectedTab;
     });
-    if (!stillQueued) {
+    if (!selectedIsLive && !selectedHasClips) {
       selectedTab = 'all';
       persistTabsState();
     }
@@ -1050,6 +1083,7 @@ function renderDots() {
     selectedTab,
     expanded: tabsExpanded,
   });
+  scheduleTabScrollControlsUpdate();
   // Transcript panel: refresh in lock-step with the dot strip so the
   // current-clip highlight updates on every audio-event-driven render.
   if (transcriptPanel) transcriptPanel.refresh();
@@ -2116,7 +2150,7 @@ if (isSettingsDemoMode) {
     return block ? block.querySelector(selector) : null;
   }
 
-  function scrollDemoElementIntoView(selectorOrFn, topPadding = 80) {
+  function _scrollDemoElementIntoView(selectorOrFn, topPadding = 80) {
     const panel = document.getElementById('panel');
     const el = demoElement(selectorOrFn);
     if (!panel || !el) return;

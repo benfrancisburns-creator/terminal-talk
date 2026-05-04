@@ -8534,7 +8534,7 @@ describe('TABS — unread count is derived, not stored', () => {
   delete require.cache[require.resolve(componentPath)];
   delete require.cache[require.resolve(tabsPath)];
   const tabsModule = require(tabsPath);
-  const { unreadCount, partitionSessions, truncateLabel } = tabsModule._internals;
+  const { unreadCount, partitionSessions, truncateLabel, collectClipSessionShorts } = tabsModule._internals;
 
   // Minimal clipPaths stub: filenames shaped "<kind>_<short8>_<ts>.mp3".
   // extractSessionShort returns the short8 token.
@@ -8697,13 +8697,14 @@ describe('TABS — unread count is derived, not stored', () => {
     }
   });
 
-  it('partitionSessions: fresh last_seen → active, old → stale', () => {
+  it('partitionSessions: fresh last_seen → active, old with clips → stale, registry-only old hidden', () => {
     const now = 1_700_000_000_000;
     const staleMs = 30 * 60 * 1000;
     const sessionAssignments = {
       aaaaaaaa: { last_seen: Math.floor(now / 1000) - 60, index: 0 },           // 60 s ago → active
       bbbbbbbb: { last_seen: Math.floor(now / 1000) - (60 * 60), index: 1 },    // 1 h ago → stale
       cccccccc: { last_seen: Math.floor(now / 1000) - (2 * 60), index: 2 },    // 2 min ago → active
+      dddddddd: { last_seen: Math.floor(now / 1000) - (2 * 60 * 60), index: 3 }, // old + no clips → hidden
     };
     const queue = [
       mkClip('aaaaaaaa', 0), mkClip('bbbbbbbb', 0), mkClip('cccccccc', 0),
@@ -8714,6 +8715,34 @@ describe('TABS — unread count is derived, not stored', () => {
     // Deterministic ordering: most-recent last_seen first.
     if (active[0] !== 'aaaaaaaa') throw new Error(`active[0] should be most-recent, got ${active[0]}`);
     if (stale[0] !== 'bbbbbbbb') throw new Error(`stale[0] should be bbbbbbbb, got ${stale[0]}`);
+    if (stale.includes('dddddddd')) throw new Error('registry-only stale sessions should stay out of the top tab strip');
+  });
+
+  it('partitionSessions: uncapped allPaths keeps inactive clip-backed sessions navigable', () => {
+    const now = 1_700_000_000_000;
+    const staleMs = 30 * 60 * 1000;
+    const sessionAssignments = {
+      aaaaaaaa: { last_seen: Math.floor(now / 1000) - 60, index: 0 },
+      bbbbbbbb: { last_seen: Math.floor(now / 1000) - (60 * 60), index: 1 },
+    };
+    const allPaths = [
+      'C:\\fake\\queue\\resp_bbbbbbbb_0.mp3',
+      'C:\\fake\\queue\\resp_cccccccc_0.mp3',
+    ];
+    const { active, stale } = partitionSessions(sessionAssignments, allPaths, stubClipPaths, now, staleMs);
+    assertDeepEqual(active, ['aaaaaaaa']);
+    assertTruthy(stale.includes('bbbbbbbb'), 'stale registered clip-backed session should remain visible');
+    assertTruthy(stale.includes('cccccccc'), 'unregistered clip-backed session should remain visible');
+  });
+
+  it('collectClipSessionShorts extracts only session-backed clip paths', () => {
+    const shorts = collectClipSessionShorts([
+      'C:\\fake\\queue\\resp_aaaaaaaa_0.mp3',
+      { path: 'C:\\fake\\queue\\resp_bbbbbbbb_0.mp3' },
+      'C:\\fake\\queue\\malformed.mp3',
+      null,
+    ], stubClipPaths);
+    assertDeepEqual([...shorts].sort(), ['aaaaaaaa', 'bbbbbbbb']);
   });
 
   it('truncateLabel: cuts with ellipsis when over maxChars', () => {
@@ -8983,6 +9012,54 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     assertEqual(calls[0].opts && calls[0].opts.forward, true);
   });
 
+  it('cursor click-through driver can force a short interactive raise grace', () => {
+    const { createCursorClickthroughDriver } = require(path.join(__dirname, '..', 'app', 'lib', 'cursor-clickthrough.js'));
+    const cursor = { x: 200, y: 20 };
+    const calls = [];
+    const states = [];
+    const driver = createCursorClickthroughDriver({
+      getWin: () => ({
+        isDestroyed: () => false,
+        getBounds: () => ({ x: 0, y: 0, width: 100, height: 100 }),
+        setIgnoreMouseEvents: (on, opts) => calls.push({ on, opts }),
+      }),
+      screen: { getCursorScreenPoint: () => cursor },
+      onStateChange: (state) => states.push(state),
+    });
+    assertTruthy(driver.setInteractiveRegion({ x: 10, y: 10, width: 30, height: 30 }));
+    driver.forceInteractive(2000);
+    driver.pollOnce();
+
+    assertDeepEqual(states, [
+      { overWindow: false, overInteractive: true },
+    ]);
+    assertEqual(calls.length, 1);
+    assertEqual(calls[0].on, false);
+    assertEqual(calls[0].opts && calls[0].opts.forward, true);
+  });
+
+  it('main.js raises the toolbar with click-through disabled and the Windows overlay topmost level', () => {
+    const mainSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
+    );
+    if (!/TOOLBAR_ALWAYS_ON_TOP_LEVEL\s*=\s*process\.platform\s*===\s*['"]win32['"]\s*\?\s*['"]screen-saver['"]\s*:\s*['"]floating['"]/.test(mainSrc)) {
+      throw new Error('main.js must use screen-saver always-on-top level on Windows');
+    }
+    const fn = mainSrc.match(/function forceOnTop\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    if (!fn) throw new Error('forceOnTop() not found in main.js');
+    const body = fn[0];
+    const graceIdx = body.search(/forceCursorInteractive\s*\(/);
+    const ignoreIdx = body.search(/setIgnoreMouseEvents\s*\(\s*false/);
+    const topIdx = body.search(/setAlwaysOnTop\s*\(\s*true\s*,\s*TOOLBAR_ALWAYS_ON_TOP_LEVEL\s*\)/);
+    const moveIdx = body.search(/moveTop\s*\(\s*\)/);
+    if (graceIdx < 0 || ignoreIdx < 0 || topIdx < 0 || moveIdx < 0) {
+      throw new Error('forceOnTop() must force interactive grace, disable click-through, set topmost level, and moveTop');
+    }
+    if (!(graceIdx < ignoreIdx && ignoreIdx < topIdx && topIdx < moveIdx)) {
+      throw new Error('forceOnTop() should make the toolbar clickable before raising/moving it');
+    }
+  });
+
   it('renderer keeps the full Settings viewport interactive while the panel is open', () => {
     const regionFn = rendererSrc.match(/function interactiveRegion\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     if (!regionFn) throw new Error('interactiveRegion() not found in renderer.js');
@@ -9052,6 +9129,31 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
     if (paletteIdx < 0 || guardIdx > paletteIdx) {
       throw new Error('signalCollapsedClip must check playback-held colour before repainting dataset.palette');
+    }
+  });
+
+  it('collapsed letterbox is short and preserves split-palette orientation', () => {
+    const stylesSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+    const collapsedRule = stylesSrc.match(/\.bar\.collapsed\s*\{[\s\S]*?\n\}/);
+    if (!collapsedRule) throw new Error('.bar.collapsed rule missing from styles.css');
+    if (!/width:\s*96px/.test(collapsedRule[0])) {
+      throw new Error('collapsed letterbox should be about one CSS inch wide (96px)');
+    }
+    if (!/align-self:\s*center/.test(collapsedRule[0]) ||
+        !/margin-left:\s*auto/.test(collapsedRule[0]) ||
+        !/margin-right:\s*auto/.test(collapsedRule[0])) {
+      throw new Error('collapsed letterbox should remain centered in the Electron window');
+    }
+    const signalRule = stylesSrc.match(/\.bar\.collapsed\s+\.collapsed-signal\s*\{[\s\S]*?\n\}/);
+    if (!signalRule || !/inset:\s*3px\s+8px/.test(signalRule[0])) {
+      throw new Error('collapsed signal should fit inside the short letterbox');
+    }
+    const paletteCss = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'palette-classes.css'), 'utf8');
+    if (!/\[data-palette="08"\]\s*\{\s*background:\s*linear-gradient\(to bottom/.test(paletteCss)) {
+      throw new Error('horizontal split palette keys must render top/bottom gradients');
+    }
+    if (!/\[data-palette="16"\]\s*\{\s*background:\s*linear-gradient\(to right/.test(paletteCss)) {
+      throw new Error('vertical split palette keys must render left/right gradients');
     }
   });
 
@@ -15441,7 +15543,6 @@ ${body}
 
 describe('CODEX SESSION WATCHER', () => {
   const {
-    createCodexSessionWatcher,
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
     extractCodexSessionMetaEvent,
@@ -15961,6 +16062,25 @@ describe('SETTINGS PANEL LAYOUT', () => {
     }
   });
 
+  it('keeps the top session tab strip focused and navigable with arrow controls', () => {
+    if (!/id="tabsRow"[\s\S]*id="tabScrollLeft"[\s\S]*id="tabs"[\s\S]*id="tabScrollRight"/.test(indexHtmlSrc)) {
+      throw new Error('top session tab strip should have left/right scroll buttons around the tablist');
+    }
+    if (!/function\s+updateTabScrollControls/.test(rendererSrc) ||
+        !/tabsRowEl\.classList\.toggle\('has-overflow'/.test(rendererSrc) ||
+        !/scrollTabsBy\s*\(\s*-1\s*\)/.test(rendererSrc) ||
+        !/scrollTabsBy\s*\(\s*1\s*\)/.test(rendererSrc)) {
+      throw new Error('renderer should reveal tab scroll arrows only when session chips overflow');
+    }
+    const tabsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tabs.js'), 'utf8');
+    if (/tab-overflow|idle session|__overflow__/.test(tabsSrc)) {
+      throw new Error('top session tab strip should use arrow navigation instead of an idle overflow chip');
+    }
+    if (!/registry-only stale sessions stay out of the top strip/i.test(tabsSrc)) {
+      throw new Error('tabs.js should document the focused top-strip rule');
+    }
+  });
+
   it('keeps shortcuts in the Shortcuts tab and turns About into a reference page', () => {
     const start = indexHtmlSrc.indexOf('<section class="panel-section settings-page about" id="aboutSection"');
     const end = indexHtmlSrc.indexOf('<audio id="audio"', start);
@@ -15974,6 +16094,9 @@ describe('SETTINGS PANEL LAYOUT', () => {
     }
     if (/class="ascii-banner"/.test(aboutSection)) {
       throw new Error('About should use the wallpaper hero only, not duplicate ASCII art beside it');
+    }
+    if (/ASCII mascot above|wallpaper character|stepped smile|chunky legs|hard offset shadow/.test(aboutSection)) {
+      throw new Error('About should not include the old mascot construction note');
     }
     const required = [
       'Intended use',
@@ -15998,6 +16121,7 @@ describe('SETTINGS PANEL LAYOUT', () => {
 });
 
 describe('CODEX TERMINAL IDENTITY', () => {
+  const { createCodexSessionWatcher } = require('../app/lib/codex-session-watcher.js');
   const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
   const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
   const wtLaunchPath = path.join(__dirname, '..', 'app', 'codex-wt-launch.ps1');

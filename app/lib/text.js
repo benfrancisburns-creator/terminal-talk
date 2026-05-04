@@ -196,7 +196,7 @@ function stripForTTS(text, includes) {
       if (!contextScope) {
         const m = line.match(/^[ \t]{0,3}#{1,6}\s+(.{1,100}?)\s*$/)
           || line.match(/^[ \t]*#region\s+(.{1,100}?)\s*$/i)
-          || line.match(/^[ \t]*(?:\/\/|#|--)\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*(.{1,100}?)\s*$/i)
+          || line.match(/^[ \t]*(?:\/\/|#|--)\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:-]\s*(.{1,100}?)\s*$/i)
           || line.match(/^[ \t]*(?:test\.)?(?:describe|context)\s*\(\s*['"]([^'"]{1,100})['"]/);
         if (m) {
           const label = cleanCodeBlockLabel(m[1]);

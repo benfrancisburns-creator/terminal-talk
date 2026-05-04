@@ -168,7 +168,7 @@ function createCodexIdentitySync(opts = {}) {
 
   function recordDesktopTitleStatus(result) {
     if (!result || !Array.isArray(result.results) || typeof loadAssignments !== 'function' || typeof saveAssignments !== 'function') return;
-    let assignments = {};
+    let assignments;
     try { assignments = loadAssignments() || {}; } catch { return; }
     if (!applyDesktopTitleSyncStatus(assignments, result.results)) return;
     try {
@@ -176,19 +176,6 @@ function createCodexIdentitySync(opts = {}) {
       if (ok && typeof notifyQueue === 'function') notifyQueue();
     } catch (e) {
       diag(`codex desktop title status save failed: ${e && e.message ? e.message : e}`);
-    }
-  }
-
-  function recordClaudeDesktopTitleStatus(result) {
-    if (!result || !Array.isArray(result.results) || typeof loadAssignments !== 'function' || typeof saveAssignments !== 'function') return;
-    let assignments = {};
-    try { assignments = loadAssignments() || {}; } catch { return; }
-    if (!applyClaudeDesktopTitleSyncStatus(assignments, result.results)) return;
-    try {
-      const ok = saveAssignments(assignments, 'claude-desktop-title-status');
-      if (ok && typeof notifyQueue === 'function') notifyQueue();
-    } catch (e) {
-      diag(`claude desktop title status save failed: ${e && e.message ? e.message : e}`);
     }
   }
 
@@ -240,7 +227,7 @@ function createCodexIdentitySync(opts = {}) {
 
   function startClaudeDesktopWatchers() {
     if (testMode || claudeWatchers.length > 0) return;
-    let roots = [];
+    let roots;
     try { roots = candidateClaudeRoots(); } catch { roots = []; }
     for (const root of roots) {
       const sessionsRoot = path.join(String(root || ''), 'claude-code-sessions');

@@ -97,7 +97,15 @@
       <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
     </div>
-    <div class="tabs-row"><div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div></div>
+    <div class="tabs-row" id="tabsRow">
+      <button class="tab-scroll-btn tab-scroll-left" id="tabScrollLeft" type="button" title="Previous sessions" aria-label="Show previous session tabs">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div>
+      <button class="tab-scroll-btn tab-scroll-right" id="tabScrollRight" type="button" title="More sessions" aria-label="Show more session tabs">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
     <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
     <!-- Transcript panel — expandable section showing the spoken text of
          recent audio clips with copy buttons. Collapsed by default;
@@ -433,10 +441,6 @@
             </ul>
           </section>
         </div>
-        <p class="panel-hint about-footer-note">
-          The ASCII mascot above mirrors the live scrubber mascot and wallpaper character: rectangular
-          pixel body, side ears, two square eyes, stepped smile, four chunky legs, and a hard offset shadow.
-        </p>
       </section>
     </div>
   </div>

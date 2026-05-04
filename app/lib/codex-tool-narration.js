@@ -1,6 +1,7 @@
 'use strict';
 
 const TOOL_EVENT_TYPES = new Set(['function_call', 'custom_tool_call']);
+// eslint-disable-next-line no-control-regex -- ANSI escape sequences start with ESC (\x1b)
 const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
 function parseJsonObjectMaybe(value) {
@@ -693,12 +694,12 @@ const CONTEXT_SCOPE_PATTERNS = [
   { re: /^[ \t]{0,3}#{1,6}\s+(.{1,100}?)\s*$/, kind: 'section' },
   { re: /^[ \t]*#region\s+(.{1,100}?)\s*$/i, kind: 'section' },
   {
-    re: /^[ \t]*(?:\/\/|#|--)\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*(.{1,100}?)\s*$/i,
+    re: /^[ \t]*(?:\/\/|#|--)\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:-]\s*(.{1,100}?)\s*$/i,
     kind: 'section',
   },
   { re: /^[ \t]*(?:\/\/|#|--)\s*[-=]{2,}\s*(.{3,100}?)\s*[-=]{2,}\s*$/i, kind: 'section' },
   {
-    re: /^[ \t]*\/\*+\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*(.{1,100}?)\s*\*+\/\s*$/i,
+    re: /^[ \t]*\/\*+\s*(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:-]\s*(.{1,100}?)\s*\*+\/\s*$/i,
     kind: 'section',
   },
   { re: /^[ \t]*\/\*+\s*[-=]{2,}\s*(.{3,100}?)\s*[-=]{2,}\s*\*+\/\s*$/i, kind: 'section' },
@@ -720,9 +721,9 @@ function cleanContextLabel(label) {
     .replace(/[-=]{2,}/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/^[ .:\-[\](){}\/]+|[ .:\-[\](){}\/]+$/g, '');
+    .replace(/^[ .:[\](){}/-]+|[ .:[\](){}/-]+$/g, '');
   if (!text) return '';
-  text = text.replace(/^(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:\-]\s*/i, '');
+  text = text.replace(/^(?:section|feature|region|phase|step|panel|toolbar|settings|audio|speech|narration|codex|claude|tts)\s*[:-]\s*/i, '');
   text = text
     .replace(/[^A-Za-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')

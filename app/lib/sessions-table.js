@@ -241,7 +241,7 @@
       const el = document.createElement('div');
       el.className = 'session-source-status';
       el.dataset.source = isCodex ? 'codex-desktop' : 'claude-desktop';
-      let statusTextEl = null;
+      let statusTextEl;
       if (status === 'live_synced') {
         el.dataset.tone = 'ok';
         statusTextEl = document.createElement('span');

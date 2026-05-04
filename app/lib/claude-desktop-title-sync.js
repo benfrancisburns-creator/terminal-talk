@@ -327,7 +327,6 @@ function registerClaudeDesktopCodeSessions(opts = {}) {
         const alloc = allocatePaletteIndex(short, assignments, 24);
         if (alloc.evicted) {
           delete assignments[alloc.evicted];
-          changed = true;
           diag(`claude desktop session-file evicted ${alloc.evicted} for ${short}`);
         }
         entry.index = alloc.index;
@@ -553,7 +552,7 @@ function appendClaudeTranscriptTitle(sessionId, title, opts = {}) {
   let changed = false;
   const touched = [];
   for (const filePath of files) {
-    let text = '';
+    let text;
     try { text = fsDep.readFileSync(filePath, 'utf8'); } catch { continue; }
     const tail = text.slice(Math.max(0, text.length - 20000));
     if (tail.includes(`"type":"custom-title"`) && tail.includes(`"customTitle":${JSON.stringify(cleanTitle)}`)) continue;

@@ -54,6 +54,7 @@ module.exports = [
       'app/main.js',
       'app/preload.js',
       'app/lib/*.js',
+      'app/terminal-talk-mcp-server.js',
       'scripts/**/*.cjs',
       'scripts/**/*.js',
       'eslint.config.js',

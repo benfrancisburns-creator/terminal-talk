@@ -1,5 +1,5 @@
-// Tabs component — one tab per active assistant session, plus [All N]
-// on the left and a [▾ N idle] overflow for stale sessions on the right.
+// Tabs component — a compact top strip for sessions that matter right now:
+// live assistant sessions plus any session that still has clips on disk.
 // Clicking a tab filters the dot-strip to that session's clips. Clicking
 // [All] clears the filter.
 //
@@ -10,10 +10,8 @@
 // reads as three. Bound to be correct by construction.
 //
 // State shape:
-//   { queue, heardPaths, sessionAssignments, selectedTab, expanded,
-//     synthInProgress }
+//   { queue, allPaths, heardPaths, sessionAssignments, selectedTab }
 //     selectedTab — 'all' | <shortId>
-//     expanded    — bool, whether the overflow menu is open
 //
 // UMD-lite so the same file loads from Node (unit tests) and from the
 // renderer's <script> tag. Matches app/lib/component.js + dot-strip.js.
@@ -64,35 +62,39 @@
     return n;
   }
 
-  // Pure: derive the active/stale split from sessionAssignments + now.
-  // Active = last_seen within staleMs of now. Stale = older. Unassigned
-  // (no entry in sessionAssignments) is treated as stale.
-  function partitionSessions(sessionAssignments, queue, clipPaths, now, staleMs) {
-    // Only surface sessions that have at least one clip in the current
-    // queue — otherwise tabs multiply indefinitely with every ghost
-    // registry entry. Union of queue-sessions ∪ active-registry-entries
-    // gives the right behaviour: empty-queue active sessions still show
-    // (so the user sees a tab waiting), but prune-candidate entries
-    // don't clutter the row.
-    const queueShorts = new Set();
-    for (const f of queue) {
-      const fname = f.path.split(/[\\/]/).pop();
-      const s = clipPaths.extractSessionShort(fname);
-      if (s) queueShorts.add(s);
+  function collectClipSessionShorts(pathsOrFiles, clipPaths) {
+    const shorts = new Set();
+    for (const item of pathsOrFiles || []) {
+      const p = typeof item === 'string' ? item : item && item.path;
+      if (!p) continue;
+      const fname = p.split(/[\\/]/).pop();
+      const short = clipPaths.extractSessionShort(fname);
+      if (short) shorts.add(short);
     }
+    return shorts;
+  }
+
+  // Pure: derive the active/stale split from sessionAssignments + now.
+  // Active = last_seen within staleMs of now. Stale here means "not
+  // currently live, but still relevant because at least one clip remains
+  // on disk". Registry-only stale sessions stay out of the top strip and
+  // remain available in Settings > Sessions.
+  function partitionSessions(sessionAssignments, pathsOrFiles, clipPaths, now, staleMs) {
+    const clipShorts = collectClipSessionShorts(pathsOrFiles, clipPaths);
     const active = [];
     const stale = [];
-    const registryShorts = new Set(Object.keys(sessionAssignments || {}));
-    const allShorts = new Set([...queueShorts, ...registryShorts]);
-    for (const short of allShorts) {
-      const entry = sessionAssignments[short];
+
+    for (const [short, entry] of Object.entries(sessionAssignments || {})) {
       const lastSeen = entry && entry.last_seen ? entry.last_seen * 1000 : 0;
       const isFresh = lastSeen && (now - lastSeen) < staleMs;
-      // Sessions with queued clips but no (or stale) registry entry are
-      // surfaced as stale so the user can still filter to them.
       if (isFresh) active.push(short);
-      else stale.push(short);
     }
+
+    const activeSet = new Set(active);
+    for (const short of clipShorts) {
+      if (!activeSet.has(short)) stale.push(short);
+    }
+
     // Deterministic ordering: sort by last_seen desc (most recent first),
     // fallback to lexical on the shortId so the row is stable frame-to-frame.
     const byLastSeenDesc = (a, b) => {
@@ -138,7 +140,6 @@
         heardPaths: new Set(),
         sessionAssignments: {},
         selectedTab: 'all',
-        expanded: false,
       };
     }
 
@@ -162,18 +163,17 @@
 
     _renderNow() {
       if (!this.root) return;
-      const { queue, allPaths, heardPaths, sessionAssignments, selectedTab, expanded } = this.state;
+      const { queue, allPaths, heardPaths, sessionAssignments, selectedTab } = this.state;
       const now = this._nowProvider();
+      const pathsForCount = (Array.isArray(allPaths) && allPaths.length > 0) ? allPaths : queue;
       const { active, stale } = partitionSessions(
-        sessionAssignments, queue, this._clipPaths, now, this._staleCollapseMs,
+        sessionAssignments, pathsForCount, this._clipPaths, now, this._staleCollapseMs,
       );
 
       // Prefer the uncapped on-disk path list for unread accounting;
       // fall back to queue (capped at MAX_FILES) when main hasn't
       // emitted allPaths. Either way, unreadCount normalises both
       // shapes so the per-tab badges stay honest.
-      const pathsForCount = (Array.isArray(allPaths) && allPaths.length > 0) ? allPaths : queue;
-
       this.root.innerHTML = '';
 
       // [All N] tab — always leftmost. Count is total unread clips.
@@ -202,36 +202,20 @@
         }));
       }
 
-      // Stale overflow — only shown if there are stale sessions to collapse.
-      if (stale.length > 0) {
-        // Toggle chip: [▾ N idle] / [▴ N idle]
-        const toggle = document.createElement('button');
-        toggle.className = 'tab tab-overflow';
-        toggle.type = 'button';
-        toggle.dataset.tabId = '__overflow__';
-        toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        toggle.textContent = `${expanded ? '▴' : '▾'} ${stale.length} idle`;
-        toggle.title = `${stale.length} idle session${stale.length === 1 ? '' : 's'} — click to ${expanded ? 'collapse' : 'expand'}`;
-        toggle.addEventListener('click', () => {
-          if (this._onExpandChange) this._onExpandChange(!expanded);
-        });
-        this.root.appendChild(toggle);
-
-        if (expanded) {
-          for (const short of stale) {
-            const entry = sessionAssignments[short] || {};
-            const fullLabel = entry.label && entry.label.trim() ? entry.label.trim() : short.slice(0, 6);
-            this.root.appendChild(this._buildTab({
-              id: short,
-              label: truncateLabel(fullLabel, this._maxLabelChars),
-              fullLabel,
-              count: unreadCount(pathsForCount, heardPaths, this._clipPaths, short),
-              selected: selectedTab === short,
-              paletteKey: this._clipPaths.paletteKeyForShort(short, sessionAssignments, this._paletteSize),
-              stale: true,
-            }));
-          }
-        }
+      // Clip-backed inactive sessions stay visible so the user can filter
+      // to unplayed/backlog audio without opening Settings.
+      for (const short of stale) {
+        const entry = sessionAssignments[short] || {};
+        const fullLabel = entry.label && entry.label.trim() ? entry.label.trim() : short.slice(0, 6);
+        this.root.appendChild(this._buildTab({
+          id: short,
+          label: truncateLabel(fullLabel, this._maxLabelChars),
+          fullLabel,
+          count: unreadCount(pathsForCount, heardPaths, this._clipPaths, short),
+          selected: selectedTab === short,
+          paletteKey: this._clipPaths.paletteKeyForShort(short, sessionAssignments, this._paletteSize),
+          stale: true,
+        }));
       }
     }
 
@@ -285,5 +269,5 @@
     }
   }
 
-  return { Tabs, _internals: { unreadCount, partitionSessions, truncateLabel } };
+  return { Tabs, _internals: { unreadCount, partitionSessions, truncateLabel, collectClipSessionShorts } };
 }));
