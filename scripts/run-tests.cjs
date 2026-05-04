@@ -16855,7 +16855,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/Get-RegistryEntryForLaunchMarker/.test(src) || !/-not\s+\$launchMarker/.test(src)) {
       throw new Error('codex-launch.ps1 must let token-launched sessions bind by hook token instead of rollout guessing');
     }
-    if (!/Add-TerminalTalkCodexTuiDefaults/.test(src) || !/tui\.status_line=\["session-id","thread-title"\]/.test(src)) {
+    if (!/Add-TerminalTalkCodexTuiDefaults/.test(src) || !/tui\.status_line=\['session-id','thread-title'\]/.test(src)) {
       throw new Error('codex-launch.ps1 must enable managed Codex footer identity via tui.status_line');
     }
     if (!/Test-CodexConfigOverride/.test(src) || !/tui\.terminal_title=\[\]/.test(src)) {

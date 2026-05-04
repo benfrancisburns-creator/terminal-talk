@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 17947,
+    "scripts/run-tests.cjs": 17953,
     "app/main.js": 2642,
     "app/renderer.js": 2583,
     "app/synth_turn.py": 1960,
@@ -32,7 +32,7 @@
     "app/codex-terminal.psm1": 413,
     "app/lib/terminal-talk-mcp-tools.js": 376,
     "app/lib/codex-desktop-title-sync.js": 373,
-    "app/codex-launch.ps1": 338,
+    "app/codex-launch.ps1": 367,
     "app/lib/codex-identity-sync.js": 336,
     "scripts/open-video-demo-terminals.ps1": 332,
     "app/statusline.ps1": 320,
