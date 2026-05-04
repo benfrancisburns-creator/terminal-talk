@@ -9,14 +9,19 @@
   - Runs npm install for Electron.
   - Copies app + hooks + config example.
   - Optionally registers Claude Code hooks in ~/.claude/settings.json.
-  - Adds Start Menu / optional Desktop shortcuts and can add a Startup shortcut for login auto-launch.
+  - Optionally registers Codex CLI lifecycle hooks in ~/.codex/hooks.json.
+  - Adds Start Menu / optional Desktop shortcuts for the toolbar and can add a Startup shortcut for login auto-launch.
 .PARAMETER Unattended
   Skip ALL interactive prompts and apply sensible defaults
-  (hooks yes, statusline yes, desktop shortcut yes, startup no). Use for CI / automation.
+  (Claude hooks yes, statusline yes, Codex hooks no, desktop shortcut yes, startup no). Use for CI / automation.
 .PARAMETER HooksYes
   In unattended mode, register Claude Code hooks. Default: $true.
 .PARAMETER StatuslineYes
   In unattended mode, install the per-terminal statusline. Default: $true.
+.PARAMETER CodexHooksYes
+  In unattended mode, register OpenAI Codex CLI hooks and let Terminal Talk own
+  the Codex terminal title. Default: $false because Codex hook configuration is
+  user-level and affects unrelated Codex sessions.
 .PARAMETER StartupYes
   In unattended mode, add a Startup shortcut. Default: $false
   (deliberate -- auto-launch is a per-user choice, not something
@@ -37,6 +42,7 @@ param(
     [switch]$Unattended,
     [bool]$HooksYes      = $true,
     [bool]$StatuslineYes = $true,
+    [bool]$CodexHooksYes = $false,
     [bool]$StartupYes    = $false,
     [bool]$DesktopShortcutYes = $true
 )
@@ -71,11 +77,14 @@ $programsFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $vbsStartup = Join-Path $startupFolder 'terminal-talk.vbs'
 $launcherVbs = Join-Path $installDir 'terminal-talk.vbs'
 $startMenuShortcut = Join-Path $programsFolder 'Terminal Talk.lnk'
-$codexShortcut = Join-Path $programsFolder 'Terminal Talk Codex.lnk'
 $desktopDir = [Environment]::GetFolderPath('DesktopDirectory')
 $desktopShortcut = Join-Path $desktopDir 'Terminal Talk.lnk'
-$desktopCodexShortcut = Join-Path $desktopDir 'Terminal Talk Codex.lnk'
+$legacyCodexShortcut = Join-Path $programsFolder 'Terminal Talk Codex.lnk'
+$legacyDesktopCodexShortcut = Join-Path $desktopDir 'Terminal Talk Codex.lnk'
 $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
+$codexHome = Join-Path $env:USERPROFILE '.codex'
+$codexConfig = Join-Path $codexHome 'config.toml'
+$codexHooksJson = Join-Path $codexHome 'hooks.json'
 
 function Write-Step($msg) { Write-Host ""; Write-Host ">> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "   OK  $msg" -ForegroundColor Green }
@@ -103,6 +112,84 @@ function New-Shortcut {
     if ($IconLocation) { $shortcut.IconLocation = $IconLocation }
     if ($Description) { $shortcut.Description = $Description }
     $shortcut.Save()
+}
+
+function Set-TomlSectionKey {
+    param(
+        [string[]]$Lines,
+        [Parameter(Mandatory = $true)] [string]$Section,
+        [Parameter(Mandatory = $true)] [string]$Key,
+        [Parameter(Mandatory = $true)] [string]$Value
+    )
+    $sectionRe = "^\s*\[$([regex]::Escape($Section))\]\s*$"
+    $subsectionRe = "^\s*\[$([regex]::Escape($Section))\."
+    $keyRe = "^\s*$([regex]::Escape($Key))\s*="
+    $start = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match $sectionRe) { $start = $i; break }
+    }
+    if ($start -lt 0) {
+        $insert = $Lines.Count
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i] -match $subsectionRe) { $insert = $i; break }
+        }
+        $before = if ($insert -gt 0) { @($Lines[0..($insert - 1)]) } else { @() }
+        $after = if ($insert -lt $Lines.Count) { @($Lines[$insert..($Lines.Count - 1)]) } else { @() }
+        return @($before + @('', "[$Section]", "$Key = $Value") + $after)
+    }
+    $end = $Lines.Count
+    for ($i = $start + 1; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^\s*\[[^\]]+\]\s*$') { $end = $i; break }
+    }
+    for ($i = $start + 1; $i -lt $end; $i++) {
+        if ($Lines[$i] -match $keyRe) {
+            $Lines[$i] = "$Key = $Value"
+            return $Lines
+        }
+    }
+    $before = @($Lines[0..($end - 1)])
+    $after = if ($end -lt $Lines.Count) { @($Lines[$end..($Lines.Count - 1)]) } else { @() }
+    return @($before + @("$Key = $Value") + $after)
+}
+
+function Update-CodexConfigToml {
+    param([Parameter(Mandatory = $true)] [string]$Path)
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    $lines = if (Test-Path $Path) { @(Get-Content $Path -Encoding utf8) } else { @() }
+    $lines = Set-TomlSectionKey -Lines $lines -Section 'features' -Key 'codex_hooks' -Value 'true'
+    $lines = Set-TomlSectionKey -Lines $lines -Section 'tui' -Key 'terminal_title' -Value '[]'
+    Set-Content -Path $Path -Value $lines -Encoding utf8
+}
+
+function Set-CodexHookGroup {
+    param(
+        [Parameter(Mandatory = $true)] $HooksRoot,
+        [Parameter(Mandatory = $true)] [string]$Event,
+        [string]$Matcher = '',
+        [Parameter(Mandatory = $true)] [string]$ScriptPath,
+        [int]$Timeout = 10
+    )
+    if (-not $HooksRoot.hooks) {
+        $HooksRoot | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $existing = @()
+    if ($HooksRoot.hooks.PSObject.Properties.Name -contains $Event) {
+        $existing = @($HooksRoot.hooks.$Event) | Where-Object {
+            $json = $_ | ConvertTo-Json -Depth 20 -Compress
+            $json -notmatch 'terminal-talk.*hooks.*codex-'
+        }
+    }
+    $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    $group = [pscustomobject]@{
+        matcher = $Matcher
+        hooks = @([pscustomobject]@{
+            type = 'command'
+            command = $command
+            timeout = $Timeout
+        })
+    }
+    $HooksRoot.hooks | Add-Member -NotePropertyName $Event -NotePropertyValue @($existing + $group) -Force
 }
 
 Write-Host ""
@@ -378,12 +465,51 @@ if ($slResp -eq '' -or $slResp -match '^[Yy]') {
     }
 }
 
+# 6c. Codex CLI native hooks and title ownership
+Write-Step "Codex CLI integration"
+$codexResp = Get-Consent "Register global OpenAI Codex CLI hooks and Terminal Talk tab titles? This affects every Codex session using ~/.codex. [y/N]" $CodexHooksYes
+if ($codexResp -match '^[Yy]') {
+    if (-not (Test-Path $codexHome)) { New-Item -ItemType Directory -Force -Path $codexHome | Out-Null }
+    if (Test-Path $codexConfig) {
+        Copy-Item -Force $codexConfig "$codexConfig.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    }
+    if (Test-Path $codexHooksJson) {
+        Copy-Item -Force $codexHooksJson "$codexHooksJson.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    }
+    Update-CodexConfigToml -Path $codexConfig
+
+    $codexHookRoot = [pscustomobject]@{ hooks = [pscustomobject]@{} }
+    if (Test-Path $codexHooksJson) {
+        try {
+            $rawCodexHooks = Get-Content $codexHooksJson -Raw -Encoding utf8
+            if ($rawCodexHooks) { $codexHookRoot = $rawCodexHooks | ConvertFrom-Json -ErrorAction Stop }
+            if (-not $codexHookRoot.hooks) {
+                $codexHookRoot | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
+            }
+        } catch {
+            Write-Fail "~/.codex/hooks.json is not valid JSON:"
+            Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
+            Write-Warn2 "Refusing to edit Codex hooks. Fix or delete hooks.json and rerun install.ps1."
+            exit 1
+        }
+    }
+
+    Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'SessionStart' -ScriptPath (Join-Path $hooksDir 'codex-session-start.ps1') -Timeout 10
+    Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'UserPromptSubmit' -ScriptPath (Join-Path $hooksDir 'codex-mark-working.ps1') -Timeout 10
+    Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'PreToolUse' -Matcher '' -ScriptPath (Join-Path $hooksDir 'codex-on-tool.ps1') -Timeout 10
+    Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'PostToolUse' -Matcher '' -ScriptPath (Join-Path $hooksDir 'codex-post-tool.ps1') -Timeout 10
+    Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'Stop' -ScriptPath (Join-Path $hooksDir 'codex-stop.ps1') -Timeout 10
+    $codexHookRoot | ConvertTo-Json -Depth 20 | Set-Content $codexHooksJson -Encoding utf8
+    Write-Ok "Codex hooks registered (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop)"
+    Write-Ok "Codex terminal_title emptied so Terminal Talk owns the tab title"
+} else {
+    Write-Warn2 "Skipped global Codex hooks. Codex rollout watching, Terminal Talk-launched Codex registration, and Codex Desktop title sync remain available."
+}
+
 # 7. Windows shortcuts
 Write-Step "Windows shortcuts"
 $terminalTalkExe = Join-Path $appDir 'node_modules\electron\dist\terminal-talk.exe'
 $wscriptExe = Join-Path $env:SystemRoot 'System32\wscript.exe'
-$powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$codexWtLauncher = Join-Path $appDir 'codex-wt-launch.ps1'
 New-Shortcut -Path $startMenuShortcut `
              -TargetPath $wscriptExe `
              -Arguments "`"$launcherVbs`"" `
@@ -392,13 +518,12 @@ New-Shortcut -Path $startMenuShortcut `
              -Description 'Launch Terminal Talk'
 Write-Ok "Start Menu shortcut installed"
 
-New-Shortcut -Path $codexShortcut `
-             -TargetPath $powershellExe `
-             -Arguments "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$codexWtLauncher`"" `
-             -WorkingDirectory $env:USERPROFILE `
-             -IconLocation $terminalTalkExe `
-             -Description 'Launch Codex CLI with Terminal Talk session identity and tab colour'
-Write-Ok "Codex launcher shortcut installed"
+foreach ($legacyShortcut in @($legacyCodexShortcut, $legacyDesktopCodexShortcut)) {
+    if (Test-Path $legacyShortcut) {
+        Remove-Item -Force $legacyShortcut -ErrorAction SilentlyContinue
+        Write-Ok "Removed legacy Codex launcher shortcut: $legacyShortcut"
+    }
+}
 
 $desktopResp = Get-Consent "Create a Desktop shortcut for Terminal Talk? [Y/n]" $DesktopShortcutYes
 if ($desktopResp -eq '' -or $desktopResp -match '^[Yy]') {
@@ -408,13 +533,7 @@ if ($desktopResp -eq '' -or $desktopResp -match '^[Yy]') {
                  -WorkingDirectory $installDir `
                  -IconLocation $terminalTalkExe `
                  -Description 'Launch Terminal Talk'
-    New-Shortcut -Path $desktopCodexShortcut `
-                 -TargetPath $powershellExe `
-                 -Arguments "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$codexWtLauncher`"" `
-                 -WorkingDirectory $env:USERPROFILE `
-                 -IconLocation $terminalTalkExe `
-                 -Description 'Launch Codex CLI with Terminal Talk session identity and tab colour'
-    Write-Ok "Desktop shortcuts installed"
+    Write-Ok "Desktop shortcut installed"
 }
 
 # 8. Startup shortcut
@@ -439,12 +558,10 @@ Write-Host "  (Stop, Notification, PreToolUse, UserPromptSubmit). Just"
 Write-Host "  start a Claude Code terminal -- the toolbar narrates"
 Write-Host "  responses + tool calls automatically."
 Write-Host ""
-Write-Host "Codex CLI (with TT tab title and colour):" -ForegroundColor Cyan
-Write-Host "  Start Menu -> Terminal Talk Codex"
-Write-Host "  or Desktop -> Terminal Talk Codex"
-Write-Host "  or: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\app\codex-launch.ps1`""
-Write-Host "  (or just run codex directly -- the watcher tails ~/.codex/sessions/"
-Write-Host "  every 1s and speaks commentary/final messages with no hooks needed)"
+Write-Host "Codex CLI:" -ForegroundColor Cyan
+Write-Host "  Open a normal terminal in any project folder and run codex."
+Write-Host "  Native Codex hooks sync identity, working state and tab titles;"
+Write-Host "  the rollout watcher remains fallback."
 Write-Host ""
 Write-Host "Highlight any text + say 'hey jarvis' (or press Ctrl+Shift+S) to read it aloud."
 Write-Host ""

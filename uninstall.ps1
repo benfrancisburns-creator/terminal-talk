@@ -6,6 +6,7 @@
   - Stops running Electron toolbar + Python listener processes.
   - Removes Startup, Start Menu and Desktop shortcuts.
   - Removes Stop, Notification and PreToolUse hooks from ~/.claude/settings.json (backup kept).
+  - Removes Terminal Talk Codex lifecycle hooks from ~/.codex/hooks.json (backup kept).
   - Optionally deletes %USERPROFILE%\.terminal-talk\ (preserves config.json if requested).
 #>
 
@@ -21,6 +22,7 @@ $desktopDir = [Environment]::GetFolderPath('DesktopDirectory')
 $desktopShortcut = Join-Path $desktopDir 'Terminal Talk.lnk'
 $desktopCodexShortcut = Join-Path $desktopDir 'Terminal Talk Codex.lnk'
 $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
+$codexHooksJson = Join-Path $env:USERPROFILE '.codex\hooks.json'
 
 function Write-Step($msg) { Write-Host ""; Write-Host ">> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "   OK  $msg" -ForegroundColor Green }
@@ -119,6 +121,39 @@ if (Test-Path $claudeSettings) {
     }
 } else {
     Write-Warn2 "~/.claude/settings.json not found"
+}
+
+# 3b. Codex CLI hooks
+Write-Step "Removing Codex CLI hooks"
+if (Test-Path $codexHooksJson) {
+    Copy-Item -Force $codexHooksJson "$codexHooksJson.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    try {
+        $codexHookRoot = Get-Content $codexHooksJson -Raw -Encoding utf8 | ConvertFrom-Json
+        $changed = $false
+        if ($codexHookRoot.hooks) {
+            foreach ($hookEvent in @('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop')) {
+                if ($codexHookRoot.hooks.PSObject.Properties.Name -contains $hookEvent) {
+                    $keep = @($codexHookRoot.hooks.$hookEvent | Where-Object {
+                        $json = $_ | ConvertTo-Json -Depth 20 -Compress
+                        $json -notmatch 'terminal-talk.*hooks.*codex-'
+                    })
+                    if ($keep.Count -eq 0) { $codexHookRoot.hooks.PSObject.Properties.Remove($hookEvent) }
+                    else { $codexHookRoot.hooks.$hookEvent = $keep }
+                    $changed = $true
+                }
+            }
+        }
+        if ($changed) {
+            $codexHookRoot | ConvertTo-Json -Depth 20 | Set-Content $codexHooksJson -Encoding utf8
+            Write-Ok "Codex hooks removed (hooks.json backed up)"
+        } else {
+            Write-Warn2 "No Terminal Talk Codex hooks found"
+        }
+    } catch {
+        Write-Warn2 "Could not parse ~/.codex/hooks.json; backup kept, file left unchanged"
+    }
+} else {
+    Write-Warn2 "~/.codex/hooks.json not found"
 }
 
 # 4. Secrets (always removed, regardless of install-dir decision below).
