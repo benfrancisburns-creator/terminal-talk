@@ -16572,8 +16572,15 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
       + `$payload = [pscustomobject]@{ session_id = 'abcdef12-1111-2222-3333-444444444444'; hook_event_name = 'Stop'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk' }; `
       + `$null = Sync-CodexHookSession -Payload $payload -Caller 'test-token-migration'; `
-      + `$r = Read-Registry -RegistryPath $p; `
-      + `$hasProv = $r.ContainsKey('deadbeef'); $hasReal = $r.ContainsKey('abcdef12'); $real = $r['abcdef12']; `
+      // Read the JSON file directly. Sync-CodexHookSession does an
+      // internal Import-Module session-registry.psm1 -Force, which tears
+      // down the test's prior reference to Read-Registry. Parsing the
+      // file is the assertion we actually care about anyway — proves the
+      // migration landed on disk.
+      + `$parsed = (Get-Content -LiteralPath $p -Raw -Encoding utf8 | ConvertFrom-Json).assignments; `
+      + `$keys = @($parsed.PSObject.Properties.Name); `
+      + `$hasProv = $keys -contains 'deadbeef'; $hasReal = $keys -contains 'abcdef12'; `
+      + `$real = if ($hasReal) { $parsed.abcdef12 } else { $null }; `
       + `Write-Output "$hasProv|$hasReal|$($real.label)|$($real.index)|$($real.source_originator)|$($real.claude_pid)"; `
       + `Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue`
     );
@@ -16855,11 +16862,8 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/Get-RegistryEntryForLaunchMarker/.test(src) || !/-not\s+\$launchMarker/.test(src)) {
       throw new Error('codex-launch.ps1 must let token-launched sessions bind by hook token instead of rollout guessing');
     }
-    if (!/Add-TerminalTalkCodexTuiDefaults/.test(src) || !/tui\.status_line=\['session-id','thread-title'\]/.test(src)) {
-      throw new Error('codex-launch.ps1 must enable managed Codex footer identity via tui.status_line');
-    }
-    if (!/Test-CodexConfigOverride/.test(src) || !/tui\.terminal_title=\[\]/.test(src)) {
-      throw new Error('codex-launch.ps1 must suppress Codex terminal-title churn without overriding explicit user config');
+    if (/tui\.status_line/.test(src) || /tui\.terminal_title/.test(src)) {
+      throw new Error('codex-launch.ps1 must not inject Codex TUI config into the launch path');
     }
   });
 
