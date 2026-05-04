@@ -25,8 +25,8 @@ How it works:
 - Auto-speaks Claude Code via hooks and Codex CLI via local session logs
 - "Hey jarvis" or Ctrl+Shift+S reads highlighted text from any app
 - Each Claude Code or Codex session gets its own colour and optional voice.
-  Claude can show a matching statusline glyph; Terminal Talk Codex can show a
-  matching tab title and Windows Terminal tab colour when launched from the shortcut.
+  Claude can show a matching statusline glyph; Codex gets a matching
+  Terminal Talk title/PID mapping when you run it normally in a project terminal.
 
 Stack is visible: Electron toolbar, Python for wake-word (openWakeWord, runs
 offline on CPU) and edge-tts wrapper, PowerShell hooks for Claude, and a JS
@@ -141,7 +141,7 @@ This is the single most-important thing. People won't read about a voice tool, t
 What to record (~30 seconds):
 1. **0–5s**: A Claude Code terminal visible. Send a short message ("Explain rate limiting in two sentences"). Claude responds and you hear it spoken aloud.
 2. **5–15s**: Switch to a browser tab, highlight a paragraph. Say _"hey jarvis"_. Hear it read aloud.
-3. **15–25s**: Open **Terminal Talk Codex**, send another prompt, and show the toolbar — two different colour dots for Claude and Codex. Briefly point out they're the same Terminal Talk queue.
+3. **15–25s**: Open a normal project terminal, run `codex`, send another prompt, and show the toolbar — two different colour dots for Claude and Codex. Briefly point out they're the same Terminal Talk queue.
 4. **25–30s**: End on the toolbar with both dots visible.
 
 How to record on Windows:

@@ -22,8 +22,9 @@ Show how Terminal Talk turns a set of Claude Code sessions into a controllable a
 2. Show playback controls.
 3. Show session naming and session identity.
 4. Show per-session voice selection.
-5. Show speech include overrides.
-6. Keep the cursor on the control being described.
+5. Show shortcut editing and reset defaults briefly.
+6. Show speech include overrides.
+7. Keep the cursor on the control being described.
 
 ## Shot order
 
@@ -32,18 +33,28 @@ Show how Terminal Talk turns a set of Claude Code sessions into a controllable a
 3. Narrate playback controls:
    - speed
    - volume
+   - auto-collapse delay
    - auto-prune
+   - auto-prune seconds
    - auto-continue after click
    - colour-blind palette
    - heartbeat narration
    - tool-call narration
-4. Scroll to sessions.
-5. Rename a session and show that the label changes the row identity.
-6. Change the session colour.
-7. Toggle focus on, then mute on.
-8. Expand the session row.
-9. Pick a voice for that session.
-10. Walk through the speech include toggles:
+4. Show the OpenAI section briefly:
+   - primary provider toggle
+   - paid fallback toggle
+   - test voice
+5. Show the Shortcuts section:
+   - click one accelerator field
+   - show the reset defaults button
+6. Scroll to sessions.
+7. Rename a session and show that the label changes the row identity.
+8. Change the session colour.
+9. Toggle focus on, then mute on.
+10. Expand the session row.
+11. Pick a voice for that session.
+12. Show the heartbeat override.
+13. Walk through the speech include toggles:
    - headings
    - bullets
    - URLs
@@ -51,13 +62,15 @@ Show how Terminal Talk turns a set of Claude Code sessions into a controllable a
    - code blocks
    - images
    - tool calls
-11. End with the settings panel still open so the viewer sees the full control surface.
+14. End with the settings panel still open so the viewer sees the full control surface.
 
 ## Narration points
 
 - Terminal Talk tracks multiple Claude Code sessions separately.
 - Each session can have its own colour, name, focus state, mute state, and voice.
 - Playback settings control how much audio is generated and what gets pruned automatically.
+- Auto-prune applies to body/response clips; tool narration and heartbeat clips are ambient and disappear quickly after playback.
+- Global shortcuts can be changed from Settings and restored to defaults.
 - Speech include rules decide which kinds of content become audio.
 - The cursor should always land on the control before the narration explains it.
 
@@ -78,6 +91,7 @@ Close on a still frame that shows:
 - one session renamed
 - one session colour chosen
 - voice selection visible
+- heartbeat override visible
 - speech include toggles visible
 
 That gives the viewer the whole mental model in one frame.

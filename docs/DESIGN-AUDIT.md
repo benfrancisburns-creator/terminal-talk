@@ -42,12 +42,13 @@ against any event-forwarding edge case we haven't seen yet.
 
 ---
 
-## 2. Edge snapping with vertical layout
+## 2. Edge snapping and multi-monitor rescue
 
-**What we ship.** Custom snap-on-drag: `move`/`moved` events, find
-nearest edge, snap within 50 px threshold, respect drag-direction intent
-(horizontal drag → left/right edge; vertical drag → top/bottom edge).
-Left/right edges trigger a vertical layout variant.
+**What we ship.** Custom snap-on-drag for the top and bottom screen
+edges. `move`/`moved` events find the display containing the toolbar
+centre, or the nearest display if the centre is between monitors, then
+snap within a 50 px threshold. Side-edge docking was removed
+after it created hard-to-recover states on multi-monitor rearrangements.
 
 **Industry pattern.** Electron itself doesn't ship drag-to-snap —
 `setMovable(true)` only enables OS-native Aero Snap on Windows, which is
@@ -57,10 +58,11 @@ the "drag window to screen edge → maximise" behaviour, not what we want
 top of `setBounds` — same pattern we're using.
 
 **Known friction we hit and resolved.** Corner tie-breaking (commit
-`2b40ada`) — tracking drag start position and using |dX| vs |dY| to pick
-the right axis. This was the biggest footgun; the "naive nearest-edge"
-approach snapped horizontal-bar-at-top-right to `top` instead of the
-intended `right` because top was numerically closer.
+`2b40ada`) handled the old four-edge model. The current two-edge model
+removes the vertical-dock recovery problem entirely. The 2026-04 pass
+also stopped using `screen.getPrimaryDisplay()` for snap/rescue, so
+secondary monitors now use their own work area instead of the primary
+display's edges.
 
 **Known Electron gotcha we accepted.** [Issue #37888][elec-37888]:
 `transparent: true` (which we use for the rounded letterbox) disables
@@ -72,16 +74,11 @@ matter — but it's worth being aware of if we ever want native snap back.
 ever tried to disable movement, the OS could still move our window. We
 don't hit this today but it's lurking.
 
-**Status.** ✅ Our snap design is equivalent to what IDE dock managers
-do; the direction-intent refinement puts us ahead of most naive
-implementations.
+**Status.** ✅ Top/bottom snap is robust and covered by unit + E2E tests.
+Multi-monitor rescue now follows the toolbar's current/nearest display.
 
-**Follow-ups.**
-- Multi-monitor support is untested. Currently we only query
-  `screen.getPrimaryDisplay()`. On a second monitor, snap would fire
-  against the primary display's edges — wrong. Should use
-  `screen.getDisplayNearestPoint(cursorPosition)` instead. Rework
-  needed before anyone with multi-monitor uses this seriously.
+**Follow-ups.** None urgent. Revisit only if we intentionally bring back
+side-edge docking as a separate product decision.
 
 ---
 
@@ -213,8 +210,10 @@ consuming events.
 ## 6. Auto-collapse / show-on-idle
 
 **What we ship.** 1-second poll that checks `lastActivityTs`. Collapses
-15 s after last "something interesting happened" event
-(mousemove-over-bar, click, keydown, new clip arrival, force-expand).
+after the configured idle delay (3 s default, 1-120 s Settings control)
+following the last user interaction (mousemove-over-bar, click, or
+force-expand). New clip arrivals keep the letterbox collapsed and flash
+the source session colour instead of expanding over the user's work.
 Suppressed while settings panel is open or audio queue is active.
 
 **Industry pattern.** This exact pattern is what hardware-media-key
@@ -230,9 +229,6 @@ on Electron issue #33281's mousemove-forwarding bug.
 
 **Follow-ups.**
 - Stretch to 2 s poll — imperceptible to the user, halves the wake-ups.
-- Document the 15 s delay as configurable via settings (already is in
-  theory via `COLLAPSE_DELAY_MS`; surfaced in the settings panel? Not
-  yet — could be added alongside auto-prune).
 
 ---
 
@@ -328,12 +324,10 @@ all holding the mic simultaneously.
 
 | # | Feature | Action | Risk if skipped |
 |---|---------|--------|----------------|
-| 1 | Multi-monitor edge snap | Use `getDisplayNearestPoint(cursor)` instead of `getPrimaryDisplay()` | Snap misfires on second monitor |
-| 2 | Sentence splitter robustness | Swap ours → pySBD | Edge cases in quoted text / some abbreviations mispronounced |
-| 3 | TTS chunking strategy | Benchmark single-stream vs parallel | Wasted subprocess overhead, potential rate-limit pressure |
-| 4 | Wispr Flow auto-pause UX | Document AutoHotkey / PowerToys recipe in README | Users have to bind manually; worth a runbook |
-| 5 | Registry growth | Soft LRU cap at ~500 entries | Long-term performance concern; not urgent |
-| 6 | Auto-collapse config | Surface `COLLAPSE_DELAY_MS` in settings panel | Currently requires hand-editing config |
+| 1 | Sentence splitter robustness | Swap ours → pySBD | Edge cases in quoted text / some abbreviations mispronounced |
+| 2 | TTS chunking strategy | Benchmark single-stream vs parallel | Wasted subprocess overhead, potential rate-limit pressure |
+| 3 | Wispr Flow auto-pause UX | Document AutoHotkey / PowerToys recipe in README | Users have to bind manually; worth a runbook |
+| 4 | Registry growth | Soft LRU cap at ~500 entries | Long-term performance concern; not urgent |
 
 ---
 
