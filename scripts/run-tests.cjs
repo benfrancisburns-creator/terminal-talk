@@ -333,7 +333,7 @@ describe('PRUNE LIB (#29 sub-2000 extract)', () => {
 
 describe('STATUSLINE ASSIGNMENT', () => {
   {
-    it('assigns lowest free index to a new session', () => {
+    it('assigns the first spread-order free index to a new session', () => {
       clearRegistry();
       const r = runStatusline('aaaaaaaa-1111-2222-3333-444444444444');
       assertEqual(r.code, 0);
@@ -610,6 +610,16 @@ describe('wake-word-listener.py + key_helper.py source-level invariants', () => 
     }
   });
 
+  it('main.js disables wake-word cleanly when POSIX optional deps are unavailable', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/wake-word-unavailable\.flag/.test(main) || !/isWakeWordAvailable/.test(main)) {
+      throw new Error('main.js must honour the POSIX wake-word-unavailable flag');
+    }
+    if (!/listening toggle ignored: wake-word dependencies unavailable/.test(main)) {
+      throw new Error('toggleListening must report unavailable wake-word deps instead of starting a crash loop');
+    }
+  });
+
   it('wake-word-listener writes to the canonical ~/.terminal-talk/queue/_voice.log', () => {
     // Downstream ops (install sanity, diagnostic sweep) grep this path.
     // If the log location drifts, those integrations silently stop.
@@ -756,6 +766,15 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('Hello\n```js\nconst x = 1;\n```\nWorld');
     if (out.includes('const x') || out.includes('```')) throw new Error(`expected code stripped: "${out}"`);
   });
+  it('summarises hidden code blocks instead of silently dropping them', () => {
+    const out = stripForTTS('Patch:\n```py\ndef render_toolbar():\n    return True\n```\nDone');
+    if (out.includes('def render_toolbar') || out.includes('```')) {
+      throw new Error(`raw code leaked: "${out}"`);
+    }
+    if (!out.includes('Code block: 2 lines of python, defines the render toolbar function.')) {
+      throw new Error(`code summary missing: "${out}"`);
+    }
+  });
   it('keeps code blocks when toggled on', () => {
     const out = stripForTTS('Hello\n```js\nconst x = 1;\n```', { code_blocks: true });
     if (!out.includes('const x')) throw new Error(`expected code kept: "${out}"`);
@@ -783,6 +802,38 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('  # my heading', { headings: false });
     if (out.includes('my heading')) throw new Error(`leading-ws heading leaked: "${out}"`);
   });
+  it('headings=true calls out section boundaries for audio', () => {
+    const out = stripForTTS('# Audio contract\nBody text', { headings: true });
+    if (!out.includes('Section: Audio contract.')) {
+      throw new Error(`section cue missing: "${out}"`);
+    }
+    if (out.includes('#')) throw new Error(`heading marker leaked: "${out}"`);
+  });
+  it('strips Codex hook-status noise from spoken text', () => {
+    const out = stripForTTS('Useful context.\nRunning four PostToolUse hooks\nRunning 2 PreToolUse hooks\nRan 3 hooks\nContinue.');
+    if (/PostToolUse|PreToolUse|\bhooks?\b/i.test(out)) {
+      throw new Error(`Codex hook status leaked: "${out}"`);
+    }
+    if (!out.includes('Useful context') || !out.includes('Continue')) {
+      throw new Error(`surrounding prose lost: "${out}"`);
+    }
+  });
+  it('strips Codex Desktop Electron/app-server debug logs from spoken text', () => {
+    const logs = [
+      '[electron-fetch-handler] codex-home request hostId=undefined params={"windowHostId":"local"}',
+      '[git] [git-origins] worker-complete dirCount=3 elapsedMs=0 hostId=local originCount=3',
+      '[electron-message-handler] Skills/list request cwdsCount=0 forceReload=false',
+      '[AppServerConnection] response_routed broadcastFallback=false conversationId=null method=thread/list',
+      '[      a       h       r [AppServerConnection] response_routed method=app/list',
+    ].join('\n');
+    const out = stripForTTS(`Before.\n${logs}\nAfter.`);
+    if (/electron-|AppServerConnection|git-origins|Skills\/list|conversationId/i.test(out)) {
+      throw new Error(`Codex Desktop debug log leaked: "${out}"`);
+    }
+    if (!out.includes('Before') || !out.includes('After')) {
+      throw new Error(`surrounding prose lost: "${out}"`);
+    }
+  });
   it('D4 (#19): strips single-underscore emphasis — parity with Python', () => {
     // Pre-D4, JS was missing the _X_ arm that Python's _EMPHASIS_RE has.
     // Prose like `this is _emphasized_` reached TTS as "this is underscore
@@ -790,6 +841,13 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('this is _emphasized_ text');
     if (out.includes('_')) throw new Error(`single-underscore emphasis leaked: "${out}"`);
     if (!out.includes('emphasized')) throw new Error(`emphasis content dropped: "${out}"`);
+  });
+  it('normalises deployment/status "live" so TTS does not use the verb pronunciation', () => {
+    const out = stripForTTS('Done and live. The live toolbar is now live. The live install is live.');
+    for (const needle of ['Done and running', 'active toolbar', 'now running', 'active install', 'is running']) {
+      if (!out.includes(needle)) throw new Error(`expected "${needle}" in "${out}"`);
+    }
+    if (/\blive\b/i.test(out)) throw new Error(`ambiguous live leaked: "${out}"`);
   });
   it('keeps URLs when toggled on', () => {
     const out = stripForTTS('See https://example.com for info', { urls: true });
@@ -842,6 +900,9 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     if (!/Table with 3 rows/.test(out)) throw new Error(`row count missing: "${out}"`);
     if (!/Columns: File, Line, Today, With Phase 3 v2/.test(out)) {
       throw new Error(`columns missing: "${out}"`);
+    }
+    if (!/First row: File: sentence group\.py; Line: 87; Today: A/.test(out)) {
+      throw new Error(`first-row sample missing: "${out}"`);
     }
     if (!out.includes('3 phrases would change')) throw new Error(`pre-table prose lost: "${out}"`);
     if (!out.includes('The other 20 hunks correctly stay')) throw new Error(`post-table prose lost: "${out}"`);
@@ -986,7 +1047,7 @@ describe('REGISTRY BOM HANDLING', () => {
 });
 
 describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
-  it('statusline preserves voice + speech_includes through a write cycle', () => {
+  it('statusline preserves voice + heartbeat + speech_includes through a write cycle', () => {
     clearRegistry();
     // Seed a registry with overrides
     const seed = {
@@ -995,6 +1056,7 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
           index: 5, session_id: 'beefcafe-x', claude_pid: 0,
           label: 'Frontend', pinned: true, last_seen: Math.floor(Date.now()/1000),
           voice: 'en-US-AriaNeural',
+          heartbeat_enabled: false,
           speech_includes: { code_blocks: true, urls: false }
         }
       }
@@ -1005,6 +1067,7 @@ describe('REGISTRY ROUND-TRIP PRESERVES OVERRIDES', () => {
     const reg = readRegistry();
     if (!reg['beefcafe']) throw new Error('beefcafe entry was wiped');
     if (reg['beefcafe'].voice !== 'en-US-AriaNeural') throw new Error(`voice override lost: ${JSON.stringify(reg['beefcafe'])}`);
+    if (reg['beefcafe'].heartbeat_enabled !== false) throw new Error(`heartbeat override lost: ${JSON.stringify(reg['beefcafe'])}`);
     if (!reg['beefcafe'].speech_includes) throw new Error('speech_includes wiped');
     if (reg['beefcafe'].speech_includes.code_blocks !== true) throw new Error('code_blocks override lost');
     if (reg['beefcafe'].speech_includes.urls !== false) throw new Error('urls override lost');
@@ -1418,7 +1481,7 @@ describe('PINNED SESSIONS NOT PRUNED', () => {
     // pinned=false (auto-pin not yet landed) got pruned once last_seen
     // slipped past the 4 h grace window and the queue-scan recreated
     // it with an empty label. isSessionLive now honours user intent
-    // (label / voice / muted / focus / speech_includes) alongside
+    // (label / voice / muted / focus / heartbeat / speech_includes) alongside
     // pinned, so historic entries from before auto-pin keep their
     // labels across pid rotation.
     // Use the installed mirror so the running toolbar's isSessionLive
@@ -1455,6 +1518,11 @@ describe('PINNED SESSIONS NOT PRUNED', () => {
     if (!isLive({ focus: true, pinned: false, claude_pid: 999999, last_seen: ancient },
                 now, isPidAlive, SESSION_GRACE_SEC)) {
       throw new Error('focused unpinned entry must be live');
+    }
+    // heartbeat override
+    if (!isLive({ heartbeat_enabled: false, pinned: false, claude_pid: 999999, last_seen: ancient },
+                now, isPidAlive, SESSION_GRACE_SEC)) {
+      throw new Error('heartbeat-override unpinned entry must be live');
     }
     // speech_includes
     if (!isLive({ speech_includes: { urls: true }, pinned: false, claude_pid: 999999, last_seen: ancient },
@@ -1701,7 +1769,7 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
   const DEFAULTS = {
     voices:          { edge_response: 'en-GB-RyanNeural' },
     hotkeys:         {},
-    playback:        { speed: 1.25, tts_provider: 'edge' },
+    playback:        { speed: 1.25, collapse_delay_sec: 3, tts_provider: 'edge', tts_fallback_provider: 'edge' },
     speech_includes: { code_blocks: false },
     panels:          { transcript_expanded: false, transcript_view: 'spoken' },
     heartbeat_enabled: true,
@@ -1736,11 +1804,22 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     const store = createConfigStore({ configPath: tmpCfg, defaults: DEFAULTS, validator: validateConfig });
     store.save({
       ...DEFAULTS,
-      panels: { transcript_expanded: true, transcript_view: 'original' },
+      panels: {
+        transcript_expanded: true,
+        transcript_view: 'original',
+        create_session_window_placements: {
+          'Claude TT A': { windowSize: '96,24', windowBounds: '-1008,-1080,960,516' },
+        },
+      },
     });
     const loaded = store.load();
     assertEqual(loaded.panels.transcript_expanded, true, 'panels.transcript_expanded must round-trip');
     assertEqual(loaded.panels.transcript_view, 'original', 'panels.transcript_view must round-trip');
+    assertDeepEqual(
+      loaded.panels.create_session_window_placements,
+      { 'Claude TT A': { windowSize: '96,24', windowBounds: '-1008,-1080,960,516' } },
+      'create_session_window_placements must round-trip under panels'
+    );
     clean();
   });
 
@@ -2015,8 +2094,8 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
   //
   // Intent-path writes (set-session-label, set-session-voice,
   // set-session-muted, set-session-focus, set-session-include,
-  // remove-session) bypass the guard — the user explicitly asked for
-  // the mutation.
+  // set-session-heartbeat, remove-session) bypass the guard — the
+  // user explicitly asked for the mutation.
   const mainJsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
   // #29 (2026-04-25): the guard implementation moved to app/lib/registry-guard.js
   // via factory extract. Source-pattern tests below now read the lib file.
@@ -2027,13 +2106,14 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     path.join(__dirname, '..', 'app', 'session-registry.psm1'), 'utf8'
   );
 
-  it('JS — USER_INTENT_WRITERS set lists the 6 intent-path callers', () => {
+  it('JS — USER_INTENT_WRITERS set lists the 7 intent-path callers', () => {
     const m = libRegistryGuardSrc.match(/USER_INTENT_WRITERS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
     if (!m) throw new Error('USER_INTENT_WRITERS allowlist not found in registry-guard.js — see #8 guard');
     const names = m[1];
     for (const expected of [
       'set-session-label', 'set-session-voice', 'set-session-muted',
-      'set-session-focus', 'set-session-include', 'remove-session',
+      'set-session-focus', 'set-session-include', 'set-session-heartbeat',
+      'remove-session',
     ]) {
       if (!names.includes(`'${expected}'`)) {
         throw new Error(`USER_INTENT_WRITERS missing "${expected}" — see #8 guard`);
@@ -2047,12 +2127,12 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     }
   });
 
-  it('JS — guardUserIntent restores label/pinned/voice/muted/focus/speech_includes', () => {
+  it('JS — guardUserIntent restores label/pinned/voice/muted/focus/heartbeat/speech_includes', () => {
     if (!/function\s+guardUserIntent\s*\(all,\s*caller\)/.test(libRegistryGuardSrc)) {
       throw new Error('guardUserIntent function signature missing — see #8 guard');
     }
     // Verify each user-intent field appears in a restoration branch.
-    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'speech_includes']) {
+    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'heartbeat_enabled', 'speech_includes']) {
       // Each field should appear on BOTH sides of an oldEntry/newEntry
       // comparison in the guard body.
       const rx = new RegExp(`oldEntry\\.${field}[\\s\\S]{0,200}newEntry\\.${field}`);
@@ -2085,9 +2165,9 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
 
   it('PS — Save-Registry preserves user-intent fields when disk has them', () => {
     // Mirror of the JS guard. Re-reads disk, compares per-short,
-    // restores the 6 user-intent fields (label/pinned/voice/muted/
-    // focus/speech_includes) when incoming payload would drop them.
-    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'speech_includes']) {
+    // restores the user-intent fields (label/pinned/voice/muted/
+    // focus/heartbeat/speech_includes) when incoming payload would drop them.
+    for (const field of ['label', 'pinned', 'voice', 'muted', 'focus', 'heartbeat_enabled', 'speech_includes']) {
       // The PS guard references $old.<field> and $new.<field> in
       // restoration branches; at least one branch must name each field.
       const rx = new RegExp(`\\$old\\.${field}[\\s\\S]{0,400}\\$new\\.${field}|\\$new\\.${field}[\\s\\S]{0,400}\\$old\\.${field}`);
@@ -2102,9 +2182,9 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
 
   it('JS — guard RUNTIME: ensure-for-files caller cannot wipe a labelled+pinned entry', () => {
     // End-to-end sync test: write a live entry to disk with
-    // label+pinned+voice+speech_includes, then call saveAssignments
+    // label+pinned+voice+heartbeat+speech_includes, then call saveAssignments
     // with caller='ensure-for-files' and a payload that strips those.
-    // Expect the guard to restore all four fields before the write.
+    // Expect the guard to restore every user-intent field before the write.
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-guard-'));
     const tmpRegistry = path.join(tmpDir, 'session-colours.json');
     const clean = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
@@ -2119,6 +2199,7 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
             label: 'My Terminal',
             pinned: true,
             voice: 'en-GB-SoniaNeural',
+            heartbeat_enabled: false,
             muted: false,
             focus: false,
             speech_includes: { tool_calls: false },
@@ -2156,6 +2237,10 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
         }
         if (oldEntry.pinned === true && newEntry.pinned !== true) newEntry.pinned = true;
         if (typeof oldEntry.voice === 'string' && oldEntry.voice && !newEntry.voice) newEntry.voice = oldEntry.voice;
+        if (typeof oldEntry.heartbeat_enabled === 'boolean' &&
+            typeof newEntry.heartbeat_enabled !== 'boolean') {
+          newEntry.heartbeat_enabled = oldEntry.heartbeat_enabled;
+        }
         if (oldEntry.speech_includes && typeof oldEntry.speech_includes === 'object' &&
             Object.keys(oldEntry.speech_includes).length > 0 &&
             (!newEntry.speech_includes || Object.keys(newEntry.speech_includes).length === 0)) {
@@ -2165,6 +2250,7 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
       assertEqual(wiped.abcdef01.label, 'My Terminal', 'label restored');
       assertEqual(wiped.abcdef01.pinned, true, 'pinned restored');
       assertEqual(wiped.abcdef01.voice, 'en-GB-SoniaNeural', 'voice restored');
+      assertEqual(wiped.abcdef01.heartbeat_enabled, false, 'heartbeat override restored');
       assertDeepEqual(wiped.abcdef01.speech_includes, { tool_calls: false }, 'speech_includes restored');
     } finally {
       clean();
@@ -2214,6 +2300,7 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
         e.pinned === true ||
         (typeof e.voice === 'string' && e.voice.length > 0) ||
         e.muted === true || e.focus === true ||
+        typeof e.heartbeat_enabled === 'boolean' ||
         (e.speech_includes && Object.keys(e.speech_includes).length > 0)
       );
       // Mode 1 — missing entries with intent.
@@ -3023,10 +3110,10 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     if (out.startsWith('Printing a value')) {
       throw new Error(`expected echo to be peeled, got: ${out}`);
     }
-    // Whatever phrase comes out, it shouldn't be the echo phrase —
-    // the whole point is that the post-pipe command drives narration.
-    if (!out.toLowerCase().includes('grep')) {
-      throw new Error(`expected post-pipe (grep) narration after peel, got: ${out}`);
+    // Whatever phrase comes out, it shouldn't be the echo phrase. The
+    // post-pipe command should drive narration.
+    if (!out.toLowerCase().includes('searching')) {
+      throw new Error(`expected post-pipe search narration after peel, got: ${out}`);
     }
   });
   it('dedup_phrases collapses identical narrations preserving order', () => {
@@ -3054,6 +3141,43 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     const out = JSON.parse(r.stdout.trim());
     if (JSON.stringify(out) !== JSON.stringify(['x', 'y'])) {
       throw new Error(`expected ['x', 'y'], got: ${JSON.stringify(out)}`);
+    }
+  });
+  it('vary_tool_phrase uses deterministic synonym pools without randomness', () => {
+    const code = `import sys, json; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); ` +
+      `from tool_narration import vary_tool_phrase; ` +
+      `cases = [` +
+      `('Searching for narrator', 'seed2'), ` +
+      `('Searching app and scripts for tool calls', 'seed7'), ` +
+      `('Looking at the renderer file', 'read|renderer'), ` +
+      `('Checking git status', 'bash|git status'), ` +
+      `('Listing files', 'bash|ls'), ` +
+      `('Running a PowerShell script', 'bash|pwsh')]; ` +
+      `print(json.dumps([vary_tool_phrase(p, s) for p, s in cases]))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    assertDeepEqual(JSON.parse(r.stdout.trim()), [
+      'Looking for narrator',
+      'Checking app and scripts for tool calls',
+      'Inspecting the renderer file',
+      'Reviewing git status',
+      'Collecting files',
+      'Launching a PowerShell script',
+    ]);
+  });
+
+  it('vary_tool_phrase can avoid recently spoken leading verbs', () => {
+    const code = `import sys, json; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); ` +
+      `from tool_narration import leading_tool_verb, vary_tool_phrase; ` +
+      `first = vary_tool_phrase('Looking at the app main file', 'read|main'); ` +
+      `second = vary_tool_phrase('Looking at the codex hook common file', 'read|common', avoid_verbs=[leading_tool_verb(first)]); ` +
+      `third = vary_tool_phrase('Reading the codex session watcher file', 'read|watcher', avoid_verbs=[leading_tool_verb(first), leading_tool_verb(second)]); ` +
+      `print(json.dumps([first, second, third, [leading_tool_verb(x) for x in (first, second, third)]]))`;
+    const r = runPythonInline(code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    const [first, second, third, verbs] = JSON.parse(r.stdout.trim());
+    if (verbs[0] === verbs[1] || verbs[1] === verbs[2]) {
+      throw new Error(`consecutive tool narration verbs repeated: ${first} | ${second} | ${third}`);
     }
   });
 
@@ -3171,9 +3295,30 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     const out = narrate('Bash', { command: 'find . -name "*.py" | xargs wc -l' });
     if (!/and running wc on each/.test(out)) throw new Error(`expected xargs phrase, got: ${out}`);
   });
-  it('Bash unrecognised pipe tail still falls back to generic tag', () => {
+  it('Bash unrecognised pipe tail keeps the useful head and skips generic pipeline noise', () => {
     const out = narrate('Bash', { command: 'cat foo | someweirdcommand --magic' });
-    if (!/in a pipeline/.test(out)) throw new Error(`fallback tag missing, got: ${out}`);
+    if (/in a pipeline/.test(out)) throw new Error(`generic pipeline tag leaked: ${out}`);
+    if (!/Reading foo/.test(out)) throw new Error(`head phrase missing, got: ${out}`);
+  });
+  it('Bash names PowerShell Select-Object pipeline tails', () => {
+    const out = narrate('Bash', {
+      command: 'Get-Content scripts\\run-tests.cjs | Select-Object -Skip 14640 -First 270',
+    });
+    if (!/and taking 270 after line 14640/.test(out)) {
+      throw new Error(`expected Select-Object tail description, got: ${out}`);
+    }
+    if (/in a pipeline/.test(out)) throw new Error(`generic pipeline tag leaked: ${out}`);
+  });
+  it('Bash normalises full powershell.exe launch paths before matching', () => {
+    const out = narrate('Bash', {
+      command: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Ben\\.terminal-talk\\app\\codex-launch.ps1 | Select-Object -First 1',
+    });
+    if (!/Running a PowerShell script/.test(out)) {
+      throw new Error(`expected PowerShell script narration, got: ${out}`);
+    }
+    if (/-NoProfile|in a pipeline/.test(out)) {
+      throw new Error(`launch noise leaked into narration: ${out}`);
+    }
   });
 
   // ---- Grep (smart pattern detection) ------------------------------
@@ -3598,6 +3743,89 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
     }
   });
 
+  it('Edit uses nearby source section heading when no function encloses it', () => {
+    const fakeOriginal = [
+      '# Speech Includes',
+      '',
+      'DEFAULT_SPEECH_INCLUDES = {',
+      ...Array(12).fill('    # option'),
+      '    "code_blocks": False,',
+      '}',
+    ].join('\n');
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'app/synth_turn.py',
+        old_string: '    "code_blocks": False,',
+        new_string: [
+          '    "code_blocks": False,',
+          '    "inline_code": False,',
+          '    "urls": False,',
+          '    "headings": True,',
+          '    "bullet_markers": False,',
+          '    "image_alt": False,',
+          '    "tool_calls": True,',
+        ].join('\n'),
+      }, null, {
+        originalFile: fakeOriginal,
+        structuredPatch: [{
+          oldStart: 16, oldLines: 1, newStart: 16, newLines: 7,
+          lines: [
+            '     # option',
+            '     # option',
+            '     # option',
+            '+    "inline_code": False,',
+            '+    "urls": False,',
+            '+    "headings": True,',
+            '+    "bullet_markers": False,',
+            '+    "image_alt": False,',
+            '+    "tool_calls": True,',
+          ]
+        }]
+      }),
+      'Edit to the speech includes section in the synth turn file — added 6 lines'
+    );
+  });
+
+  it('Edit uses nearby describe block as test context', () => {
+    const fakeOriginal = [
+      "describe('toolbar collapse', () => {",
+      "  it('collapses after idle', () => {",
+      ...Array(8).fill('    expect(toolbar).toBeVisible();'),
+      '  });',
+      '});',
+    ].join('\n');
+    assertEqual(
+      narrate('Edit', {
+        file_path: 'tests/e2e/settings.spec.ts',
+        old_string: '    expect(toolbar).toBeVisible();',
+        new_string: [
+          '    expect(toolbar).toBeVisible();',
+          '    expect(toolbar).toHaveClass(/letterbox/);',
+          '    expect(timer).toBe(3000);',
+          '    expect(panel).toBeHidden();',
+          '    expect(audio).toBeIdle();',
+          '    expect(bounds.height).toBeGreaterThan(0);',
+          '    expect(bounds.width).toBeGreaterThan(0);',
+        ].join('\n'),
+      }, null, {
+        originalFile: fakeOriginal,
+        structuredPatch: [{
+          oldStart: 8, oldLines: 1, newStart: 8, newLines: 7,
+          lines: [
+            '     expect(toolbar).toBeVisible();',
+            '+    expect(toolbar).toHaveClass(/letterbox/);',
+            '+    expect(timer).toBe(3000);',
+            '+    expect(panel).toBeHidden();',
+            '+    expect(audio).toBeIdle();',
+            '+    expect(bounds.height).toBeGreaterThan(0);',
+            '+    expect(bounds.width).toBeGreaterThan(0);',
+          ]
+        }]
+      }),
+      'Edit to the toolbar collapse tests in the settings test — added 6 lines'
+    );
+  });
+
   it('Edit rename does NOT get locality suffix (qualitative phrase)', () => {
     // Renames are already concise + meaningful; tacking " around line N"
     // adds clip length without adding signal. Same applies to
@@ -3832,6 +4060,38 @@ describe('TOOL NARRATION (v0.5 — smart semantic phrases)', () => {
       throw new Error(`expected partial-read narration, got: ${out}`);
     }
   });
+  it('Read with offset uses tool_result code to name the function area', () => {
+    const out = narrate('Read', {
+      file_path: 'app/synth_turn.py',
+      offset: 1200,
+      limit: 50,
+    }, null, {
+      content: [
+        '1200|def format_elapsed_phrase(seconds):',
+        '1201|    minutes = seconds // 60',
+        '1202|    return f"{minutes} minutes"',
+      ].join('\n'),
+    });
+    if (!out || !out.includes('around format elapsed phrase')) {
+      throw new Error(`expected function context in read narration, got: ${out}`);
+    }
+  });
+  it('Read with offset can fall back to plain-English comment context', () => {
+    const out = narrate('Read', {
+      file_path: 'app/lib/window-dock.js',
+      offset: 80,
+      limit: 40,
+    }, null, {
+      content: [
+        '80|// Rescue off-display windows before restoring the toolbar.',
+        '81|// Leave positions alone when already visible.',
+        '82|const bounds = primary.workArea;',
+      ].join('\n'),
+    });
+    if (!out || !out.includes('around the rescue off display windows before restoring the toolbar area')) {
+      throw new Error(`expected prose context in read narration, got: ${out}`);
+    }
+  });
   it('Read without offset narrates the file as a whole', () => {
     const out = narrate('Read', { file_path: 'app/synth_turn.py' });
     if (!out || out.includes('part of')) {
@@ -4064,6 +4324,32 @@ describe('HEARTBEAT TIMER LOGIC (HB1/HB2/HB3)', () => {
     assertEqual(action.type, 'skip');
   });
 
+  it('session override=true emits even when global heartbeat is off', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      heartbeatEnabled: false,
+      sessionHeartbeatOverrides: { a29f747b: true },
+    }));
+    assertEqual(action.type, 'emit');
+    assertEqual(action.sessionShort, 'a29f747b');
+  });
+
+  it('session override=false skips that session and falls through to next enabled one', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      workingSessionsCache: ['a29f747b', '921d862c'],
+      sessionHeartbeatOverrides: { a29f747b: false },
+    }));
+    assertEqual(action.type, 'emit');
+    assertEqual(action.sessionShort, '921d862c');
+  });
+
+  it('session override=false skips all when every working session is disabled', () => {
+    const action = heartbeat.decideHeartbeatAction(makeState({
+      workingSessionsCache: ['a29f747b', '921d862c'],
+      sessionHeartbeatOverrides: { a29f747b: false, '921d862c': false },
+    }));
+    assertEqual(action.type, 'skip');
+  });
+
   it('HB4: isSystemAutoPaused=true always skips (mic is elsewhere)', () => {
     // User is dictating via Wispr Flow or similar — suppress all
     // heartbeat emission so clips don't pile up in the queue and
@@ -4239,8 +4525,8 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
   // toggle's tooltip in app/index.html promised heartbeats would play
   // in OpenAI's voice but the code never branched. These tests pin the
   // UI-contract promise: heartbeat synth must route via the configured
-  // provider, pick the configured clip voice, and fall back to the
-  // other provider on synth failure.
+  // provider, pick the configured clip voice, and only use OpenAI as
+  // fallback when playback.tts_fallback_provider explicitly asks for it.
   //
   // Harness constraint: `it()` is sync-only (async fn bodies silently
   // pass because the harness doesn't await). Tests instead rely on
@@ -4263,7 +4549,7 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
       openai_response: 'onyx',
       openai_clip:     'shimmer',
     },
-    playback: { tts_provider: 'edge' },
+    playback: { tts_provider: 'edge', tts_fallback_provider: 'edge' },
     heartbeat_enabled: true,
   });
   const register = (overrides = {}) => {
@@ -4282,7 +4568,7 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
         || ((apiKey, input, voice, outPath) => { openaiCalls.push({ apiKey, input, voice, outPath }); return Promise.resolve(); }),
       getAppVersion: () => '0.0.0-test',
       getCFG: () => cfg,
-      loadAssignments: () => ({}),
+      loadAssignments: () => (overrides.assignments || {}),
       getQueueFiles: () => [],
       getQueueAllPaths: () => [],
       ensureAssignmentsForFiles: () => {},
@@ -4362,32 +4648,44 @@ describe('HEARTBEAT VOICE ROUTING respects tts_provider (#15)', () => {
     assertEqual(r.edgeCalls.length + r.openaiCalls.length, 0, 'no synth attempted when disabled');
   });
 
-  it('speak-heartbeat handler references tts_provider + callOpenAITTS + fallback try/catch (structural)', () => {
-    // Structural guard: the fallback runtime behaviour (openai throws →
-    // edge) can't be fully verified pre-await with the current harness,
-    // so we pin the source shape instead. If someone rewrites the
-    // handler without a tts_provider branch or without a try/catch
-    // fallback to callEdgeTTS, this test fires.
+  it('per-session heartbeat override=true bypasses a disabled global toggle (runtime)', () => {
+    const r = register({
+      cfg: () => ({ ...baseCfg(), heartbeat_enabled: false }),
+      assignments: { a29f747b: { heartbeat_enabled: true } },
+    });
+    const p = r.handlers['speak-heartbeat']({}, 'Moonwalking', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(r.edgeCalls.length, 1, 'session override=true should allow synth');
+  });
+
+  it('per-session heartbeat override=false blocks an enabled global toggle (runtime)', () => {
+    const r = register({
+      assignments: { a29f747b: { heartbeat_enabled: false } },
+    });
+    const p = r.handlers['speak-heartbeat']({}, 'Moonwalking', 'a29f747b');
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    assertEqual(r.edgeCalls.length + r.openaiCalls.length, 0, 'session override=false should block synth');
+  });
+
+  it('speak-heartbeat handler references explicit fallback routing (structural)', () => {
+    // Structural guard: the async fallback runtime behaviour can't be
+    // fully verified pre-await with the current harness, so we pin the
+    // source shape instead. If someone rewrites the handler to infer
+    // OpenAI fallback from key presence, this test fires.
     const m = ipcSrc.match(/ipcMain\.handle\(\s*'speak-heartbeat'[\s\S]*?\n\s*\}\);/);
     if (!m) throw new Error('speak-heartbeat handler not found in ipc-handlers.js');
     const body = m[0];
-    if (!/tts_provider/.test(body)) {
-      throw new Error('speak-heartbeat handler must branch on cfg.playback.tts_provider — see #15');
+    if (!/providerOrder/.test(body)) {
+      throw new Error('speak-heartbeat handler must use providerOrder for explicit fallback routing');
     }
     if (!/callOpenAITTS/.test(body)) {
       throw new Error('speak-heartbeat handler must call callOpenAITTS when provider=openai — see #15');
     }
     if (!/callEdgeTTS/.test(body)) {
-      throw new Error('speak-heartbeat handler must keep callEdgeTTS path for provider=edge + openai-fallback — see #15');
+      throw new Error('speak-heartbeat handler must keep callEdgeTTS path for Edge routing — see #15');
     }
-    // Fallback mechanism: either the traditional try/catch-calls-other
-    // pattern OR the "two-wrappers + result-check + await second()"
-    // pattern. Require SOMETHING that can rescue a failed first attempt.
-    const hasTryCatchFallback = /(callOpenAITTS[\s\S]{0,400}catch[\s\S]{0,400}callEdgeTTS)|(callEdgeTTS[\s\S]{0,400}catch[\s\S]{0,400}callOpenAITTS)/.test(body);
-    const hasResultFallback = /!result[\s\S]{0,500}await\s+second/.test(body);
-    const hasTryCatchAround = /try\s*\{[\s\S]{0,600}await\s+first[\s\S]{0,400}\}\s*catch/.test(body);
-    if (!(hasTryCatchFallback || (hasResultFallback && hasTryCatchAround))) {
-      throw new Error('speak-heartbeat must have a fallback mechanism between the two synth paths (try/catch OR two-wrappers + result-check) — see #15');
+    if (!/for\s*\(\s*const\s+provider\s+of\s+providers\s*\)/.test(body)) {
+      throw new Error('speak-heartbeat must iterate explicit providerOrder routes');
     }
     if (!/voices\.edge_clip/.test(body) || !/voices\.openai_clip/.test(body)) {
       throw new Error('speak-heartbeat must use voices.edge_clip + voices.openai_clip (not edge_response) — see #15');
@@ -4436,11 +4734,11 @@ describe('SPEAKCLIPBOARD VOICE ROUTING respects tts_provider (#16)', () => {
   })();
 
   it('speakClipboard branches on cfg.playback.tts_provider', () => {
-    if (!/tts_provider/.test(speakClipBlock)) {
-      throw new Error('speakClipboard must branch on cfg.playback.tts_provider — see #16');
+    if (!/providerOrder/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must use providerOrder for primary + explicit fallback routing — see #16');
     }
-    if (!/provider\s*===?\s*['"]openai['"]/.test(speakClipBlock)) {
-      throw new Error('speakClipboard must compare provider to "openai" — see #16');
+    if (!/tts_fallback_provider/.test(mainJsSrc)) {
+      throw new Error('main.js defaults/diagnostics must include playback.tts_fallback_provider');
     }
   });
 
@@ -4462,15 +4760,9 @@ describe('SPEAKCLIPBOARD VOICE ROUTING respects tts_provider (#16)', () => {
     }
   });
 
-  it('speakClipboard has fallback when first provider returns null/throws', () => {
-    // The fix uses the two-wrappers pattern: provider chooses first, the
-    // other runs as fallback if the first returns null. Either order
-    // accepted (openai-first OR edge-first); both branches must wire
-    // the OR fallback.
-    const openaiFirstFallback = /tryOpenAI[\s\S]{0,200}\|\|\s*\(?\s*await\s+tryEdge/.test(speakClipBlock);
-    const edgeFirstFallback   = /tryEdge[\s\S]{0,200}\|\|\s*\(?\s*await\s+tryOpenAI/.test(speakClipBlock);
-    if (!openaiFirstFallback || !edgeFirstFallback) {
-      throw new Error('speakClipboard must have BOTH provider branches each with a fallback to the other — see #16');
+  it('speakClipboard iterates explicit providerOrder routes', () => {
+    if (!/for\s*\(\s*const\s+provider\s+of\s+providers\s*\)/.test(speakClipBlock)) {
+      throw new Error('speakClipboard must only try the configured primary plus explicit fallback provider — see #16');
     }
   });
 
@@ -4568,12 +4860,10 @@ describe('TOOL_CALLS GLOBAL CHECKBOX (#24, Ben B-2)', () => {
   });
 });
 
-describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
-  // Per-panel-open default: OpenAI section should re-default to
-  // collapsed every time the user opens the panel (assuming key saved
-  // + last test passed). Prior to #25 the `_openaiCollapseDecided`
-  // flag was per-instance, so once the user expanded the section it
-  // stayed expanded for the lifetime of the renderer process.
+describe('OPENAI SECTION ALWAYS EXPANDED', () => {
+  const indexHtmlSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'app', 'index.html'), 'utf8'
+  );
   const settingsFormSrc = fs.readFileSync(
     path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8'
   );
@@ -4581,54 +4871,43 @@ describe('OPENAI SECTION COLLAPSE DEFAULT (#25, Ben B-4)', () => {
     path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8'
   );
 
-  it('SettingsForm exposes an onPanelOpen() lifecycle method', () => {
-    if (!/onPanelOpen\s*\(\s*\)\s*\{/.test(settingsFormSrc)) {
-      throw new Error('SettingsForm must expose onPanelOpen() — see #25');
+  it('renders the OpenAI settings as a normal always-visible page', () => {
+    const section = indexHtmlSrc.match(/<section class="panel-section settings-page" id="openaiSection"[\s\S]*?<\/section>/);
+    if (!section) throw new Error('openaiSection not found');
+    if (!/<header>OpenAI <span class="panel-header-sub">\(premium\)<\/span><\/header>/.test(section[0])) {
+      throw new Error('OpenAI page should have a plain header, not a collapse button');
+    }
+    if (/openaiSectionToggle|openaiBody|section-toggle|collapsed/.test(section[0])) {
+      throw new Error('OpenAI page must not include the old collapse toggle/body wiring');
     }
   });
 
-  it('onPanelOpen resets _openaiCollapseDecided to false', () => {
-    const m = settingsFormSrc.match(/onPanelOpen\s*\(\s*\)\s*\{[\s\S]*?\n\s{4}\}/);
-    if (!m) throw new Error('onPanelOpen body not found');
-    const body = m[0];
-    if (!/this\._openaiCollapseDecided\s*=\s*false/.test(body)) {
-      throw new Error('onPanelOpen must reset _openaiCollapseDecided to false — see #25');
-    }
-    // Should also re-trigger _populateOpenAi so the auto-collapse
-    // branch fires on the now-undecided state.
-    if (!/this\._populateOpenAi\(/.test(body)) {
-      throw new Error('onPanelOpen must call _populateOpenAi to apply the reset — see #25');
+  it('SettingsForm no longer carries OpenAI collapse state or DOM refs', () => {
+    const stale = [
+      'openaiSectionToggle',
+      '_openaiCollapseDecided',
+      'onPanelOpen',
+      "classList.add('collapsed'",
+      "classList.toggle('collapsed'",
+    ];
+    for (const needle of stale) {
+      if (settingsFormSrc.includes(needle)) {
+        throw new Error(`SettingsForm still contains stale OpenAI collapse wiring: ${needle}`);
+      }
     }
   });
 
-  it('renderer settings open path calls settingsForm.onPanelOpen() when opening', () => {
-    // The click handler delegates to setSettingsOpen(open). The lifecycle
-    // call may live in that helper as long as it is still gated to the
-    // opening path so the collapse decision re-applies once per panel open.
-    const helper = rendererSrc.match(/async function setSettingsOpen\s*\(\s*open\s*\)\s*\{[\s\S]*?\n\}/);
-    if (!helper) throw new Error('setSettingsOpen(open) helper not found');
-    const body = helper[0];
-    if (!/if\s*\(open\)[\s\S]*?settingsForm\.onPanelOpen\(\)/.test(body)) {
-      throw new Error('setSettingsOpen(open) must call settingsForm.onPanelOpen() inside the `if (open)` branch — see #25');
+  it('renderer demo and settings-open path use the always-visible OpenAI page', () => {
+    const stale = ['openaiSectionToggle', 'openaiBody', 'settingsForm.onPanelOpen', 'onPanelOpen'];
+    for (const needle of stale) {
+      if (rendererSrc.includes(needle)) {
+        throw new Error(`renderer still references stale OpenAI collapse wiring: ${needle}`);
+      }
     }
     const click = rendererSrc.match(/settingsBtn\.addEventListener\(['"]click['"][\s\S]*?\n\}\);/);
     if (!click) throw new Error('settingsBtn click handler not found');
     if (!/setSettingsOpen\s*\(\s*open\s*\)/.test(click[0])) {
-      throw new Error('settingsBtn click handler must delegate to setSettingsOpen(open) — see #25');
-    }
-  });
-
-  it('_openaiCollapseDecided still gates the auto-collapse one-shot per decision (regression guard)', () => {
-    // The flag's purpose is unchanged: it prevents the auto-collapse
-    // from re-firing on every queue-updated tick within a panel
-    // session (which would re-collapse a user who manually expanded
-    // mid-session). Resetting on panel open is the new behaviour;
-    // the one-shot-per-decision shape must remain.
-    if (!/if\s*\(openaiSection\s*&&\s*!this\._openaiCollapseDecided\)/.test(settingsFormSrc)) {
-      throw new Error('_populateOpenAi must still gate auto-collapse on !this._openaiCollapseDecided — see #25');
-    }
-    if (!/this\._openaiCollapseDecided\s*=\s*true/.test(settingsFormSrc)) {
-      throw new Error('_populateOpenAi must set _openaiCollapseDecided=true after deciding — see #25');
+      throw new Error('settingsBtn click handler must still delegate to setSettingsOpen(open)');
     }
   });
 });
@@ -4810,64 +5089,112 @@ print('RC', rc)
   // ---------------------------------------------------------------------
   // OpenAI provider preference plumbing (2026-04-23).
   //
-  // resolve_tts_routing reads playback.tts_provider + voices.openai_response
-  // off the config dict. The turn runner passes those through to
-  // synthesize_parallel, which reorders the edge-vs-openai attempt chain
-  // accordingly. These tests drive the pure resolver so we don't depend
-  // on a live edge-tts / OpenAI endpoint.
+  // resolve_tts_routing reads playback.tts_provider,
+  // playback.tts_fallback_provider, and voices.openai_response off the
+  // config dict. The turn runner passes those through to
+  // synthesize_parallel, which tries only the configured routes.
+  // These tests drive the pure resolver so we don't depend on live TTS
+  // endpoints.
   // ---------------------------------------------------------------------
 
   it('resolve_tts_routing defaults to edge when tts_provider is missing', () => {
-    const out = run(`p, v = synth_turn.resolve_tts_routing({}); print(p, v)`);
-    assertEqual(out, 'edge alloy');
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({}); print(p, f, v)`);
+    assertEqual(out, 'edge edge alloy');
   });
 
   it('resolve_tts_routing honours an explicit "openai" choice', () => {
-    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}, 'voices': {'openai_response': 'onyx'}}); print(p, v)`);
-    assertEqual(out, 'openai onyx');
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}, 'voices': {'openai_response': 'onyx'}}); print(p, f, v)`);
+    assertEqual(out, 'openai edge onyx');
+  });
+
+  it('resolve_tts_routing honours explicit OpenAI fallback opt-in', () => {
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'edge', 'tts_fallback_provider': 'openai'}}); print(p, f, v)`);
+    assertEqual(out, 'edge openai alloy');
   });
 
   it('resolve_tts_routing normalises unknown values to edge', () => {
     // Garbage input — e.g. legacy config, typo, hand-edit — must NOT
     // crash and must NOT silently route to OpenAI (which would spend
     // the user's credits unexpectedly).
-    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'premium'}}); print(p)`);
-    assertEqual(out, 'edge');
-    const out2 = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': None}}); print(p)`);
-    assertEqual(out2, 'edge');
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'premium', 'tts_fallback_provider': 'premium'}}); print(p, f)`);
+    assertEqual(out, 'edge edge');
+    const out2 = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': None, 'tts_fallback_provider': None}}); print(p, f)`);
+    assertEqual(out2, 'edge edge');
+  });
+
+  it('resolve_tts_routing accepts "none" fallback', () => {
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_fallback_provider': 'none'}}); print(p, f)`);
+    assertEqual(out, 'edge none');
   });
 
   it('resolve_tts_routing: case-insensitive provider string', () => {
-    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'OpenAI'}}); print(p)`);
-    assertEqual(out, 'openai');
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'OpenAI', 'tts_fallback_provider': 'None'}}); print(p, f)`);
+    assertEqual(out, 'openai none');
   });
 
   it('resolve_tts_routing: openai_voice defaults to "alloy" when not set', () => {
-    const out = run(`p, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}}); print(v)`);
+    const out = run(`p, f, v = synth_turn.resolve_tts_routing({'playback': {'tts_provider': 'openai'}}); print(v)`);
     assertEqual(out, 'alloy');
   });
 
-  it('synthesize_parallel signature accepts provider + openai_voice kwargs', () => {
+  it('synthesize_parallel signature accepts provider + fallback_provider + openai_voice kwargs', () => {
     // Guard: if someone refactors synthesize_parallel to drop these
     // kwargs, every caller in run() starts throwing TypeError at the
     // first synth attempt. Smoke-test the signature accepts them.
-    const out = run(`import inspect; sig = inspect.signature(synth_turn.synthesize_parallel); print('provider' in sig.parameters, 'openai_voice' in sig.parameters)`);
-    assertEqual(out, 'True True');
+    const out = run(`import inspect; sig = inspect.signature(synth_turn.synthesize_parallel); print('provider' in sig.parameters, 'fallback_provider' in sig.parameters, 'openai_voice' in sig.parameters)`);
+    assertEqual(out, 'True True True');
   });
 
-  it('config-validate accepts the new playback.tts_provider string', () => {
+  it('config-validate accepts the new playback.tts_provider and tts_fallback_provider strings', () => {
     // Keep the JS validator + Python resolver in agreement about the
-    // field being string-typed. Values other than 'edge' / 'openai'
+    // fields being string-typed. Values other than enumerated choices
     // still pass validation (Python resolver normalises them) — so
     // a stale config can't lock users out.
     const { validateConfig } = require(path.join(__dirname, '..', 'app', 'lib', 'config-validate.js'));
-    const ok = validateConfig({ playback: { tts_provider: 'openai' } });
-    if (!ok.ok) throw new Error(`validator rejected 'openai': ${JSON.stringify(ok.violations)}`);
-    const ok2 = validateConfig({ playback: { tts_provider: 'edge' } });
-    if (!ok2.ok) throw new Error(`validator rejected 'edge': ${JSON.stringify(ok2.violations)}`);
+    const ok = validateConfig({ playback: { tts_provider: 'openai', tts_fallback_provider: 'edge' } });
+    if (!ok.ok) throw new Error(`validator rejected openai/edge: ${JSON.stringify(ok.violations)}`);
+    const ok2 = validateConfig({ playback: { tts_provider: 'edge', tts_fallback_provider: 'openai' } });
+    if (!ok2.ok) throw new Error(`validator rejected edge/openai: ${JSON.stringify(ok2.violations)}`);
+    const ok3 = validateConfig({ playback: { tts_fallback_provider: 'none' } });
+    if (!ok3.ok) throw new Error(`validator rejected fallback none: ${JSON.stringify(ok3.violations)}`);
     // Numeric instead of string should be rejected.
     const bad = validateConfig({ playback: { tts_provider: 42 } });
     if (bad.ok) throw new Error(`validator must reject non-string tts_provider`);
+    const bad2 = validateConfig({ playback: { tts_fallback_provider: 42 } });
+    if (bad2.ok) throw new Error(`validator must reject non-string tts_fallback_provider`);
+  });
+});
+
+describe('TTS ROUTING HELPER', () => {
+  const routing = require(path.join(__dirname, '..', 'app', 'lib', 'tts-routing.js'));
+
+  it('does not infer OpenAI fallback when Edge is primary', () => {
+    assertDeepEqual(routing.providerOrder({ tts_provider: 'edge' }), ['edge']);
+  });
+
+  it('adds OpenAI only when fallback provider explicitly opts in', () => {
+    assertDeepEqual(
+      routing.providerOrder({ tts_provider: 'edge', tts_fallback_provider: 'openai' }),
+      ['edge', 'openai']
+    );
+  });
+
+  it('uses Edge fallback for OpenAI-primary by default', () => {
+    assertDeepEqual(routing.providerOrder({ tts_provider: 'openai' }), ['openai', 'edge']);
+  });
+
+  it('keeps Edge as the real fallback if OpenAI-primary also has OpenAI fallback set', () => {
+    assertDeepEqual(
+      routing.providerOrder({ tts_provider: 'openai', tts_fallback_provider: 'openai' }),
+      ['openai', 'edge']
+    );
+  });
+
+  it('supports disabling fallback entirely', () => {
+    assertDeepEqual(
+      routing.providerOrder({ tts_provider: 'openai', tts_fallback_provider: 'none' }),
+      ['openai']
+    );
   });
 });
 
@@ -4955,9 +5282,12 @@ describe('INSTALL SANITY', () => {
       'app/sentence_split.py', 'app/sentence_group.py', 'app/tool_narration.py', 'app/synth_turn.py',
       'app/lib/text.js',
       'app/session-registry.psm1',
+      'app/codex-hook-common.psm1',
       'app/tts-helper.psm1',
       'hooks/speak-response.ps1', 'hooks/speak-notification.ps1',
       'hooks/speak-on-tool.ps1',
+      'hooks/codex-session-start.ps1', 'hooks/codex-mark-working.ps1',
+      'hooks/codex-on-tool.ps1', 'hooks/codex-post-tool.ps1', 'hooks/codex-stop.ps1',
       'config.json'
     ];
     for (const rel of required) {
@@ -4969,6 +5299,74 @@ describe('INSTALL SANITY', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(INSTALL_DIR, 'config.json'), 'utf8'));
     assertTruthy(cfg.voices, 'cfg.voices missing');
     assertTruthy(cfg.voices.edge_response, 'edge_response missing');
+  });
+});
+
+describe('CREATE SESSION WINDOW PLACEMENT', () => {
+  const {
+    normaliseCreateSessionWindowPlacement,
+    placementCandidateKeys,
+    resolveCreateSessionWindowPlacement,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'create-session-placement.js'));
+
+  it('normalises bounds strings and object placement values', () => {
+    assertDeepEqual(
+      normaliseCreateSessionWindowPlacement('-1008,-1080,960,516'),
+      { windowBounds: '-1008,-1080,960,516' }
+    );
+    assertDeepEqual(
+      normaliseCreateSessionWindowPlacement({
+        windowPosition: '-1008,-1080',
+        windowSize: '96,24',
+        windowBounds: '-1008,-1080,960,516',
+      }),
+      {
+        windowPosition: '-1008,-1080',
+        windowSize: '96,24',
+        windowBounds: '-1008,-1080,960,516',
+      }
+    );
+    assertDeepEqual(normaliseCreateSessionWindowPlacement({ windowBounds: 'bad' }), {});
+  });
+
+  it('matches placement by label, slug, kind:index, and kind fallback', () => {
+    assertDeepEqual(
+      placementCandidateKeys('codex', 'Codex TT A', 5),
+      ['codex:Codex TT A', 'Codex TT A', 'codex:codex-tt-a', 'codex-tt-a', 'codex:5', '5', 'codex']
+    );
+    const panels = {
+      create_session_window_placements: {
+        'claude:4': '-1008,-1080,960,516',
+        'codex:codex-tt-a': { windowSize: '96,24', windowBounds: '-48,-1080,960,516' },
+        codex: '0,0,960,516',
+      },
+    };
+    assertDeepEqual(
+      resolveCreateSessionWindowPlacement({ panels, kind: 'claude', label: 'Claude TT A', index: 4 }),
+      { windowBounds: '-1008,-1080,960,516' }
+    );
+    assertDeepEqual(
+      resolveCreateSessionWindowPlacement({ panels, kind: 'codex', label: 'Codex TT A', index: 5 }),
+      { windowSize: '96,24', windowBounds: '-48,-1080,960,516' }
+    );
+  });
+
+  it('lets direct launch payload placement override config placement', () => {
+    const panels = {
+      create_session_window_placements: {
+        'Codex TT A': { windowSize: '96,24', windowBounds: '-48,-1080,960,516' },
+      },
+    };
+    assertDeepEqual(
+      resolveCreateSessionWindowPlacement({
+        payload: { windowBounds: '-1008,-564,960,516' },
+        panels,
+        kind: 'codex',
+        label: 'Codex TT A',
+        index: 5,
+      }),
+      { windowSize: '96,24', windowBounds: '-1008,-564,960,516' }
+    );
   });
 });
 
@@ -5315,13 +5713,44 @@ describe('speech_includes combinatorial smoke', () => {
       'image URL must be dropped regardless of image_alt setting');
   });
 
-  it('isolation: bullet_markers=true keeps the leading "- " markers', () => {
+  it('isolation: bullet_markers=true numbers list items without raw "-" markers', () => {
     const out = stripForTTS(KITCHEN_SINK, on('bullet_markers'));
-    // Can't assert a literal "- " on a single line (whitespace
-    // normaliser collapses everything) but we CAN assert the bullet
-    // content didn't get the implicit period appended.
-    assertFalsy(/First bullet item\.\s/.test(out),
-      'bullet_markers=true must NOT add the implicit period that stripping applies');
+    assertTruthy(out.includes('1. First bullet item.'));
+    assertTruthy(out.includes('2. Second bullet item.'));
+    assertFalsy(out.includes('Bullet:'),
+      'bullet_markers=true must not repeat "Bullet:" for every list item');
+    assertFalsy(out.includes('- First bullet item'),
+      'bullet_markers=true must not pass raw markdown markers to TTS');
+  });
+
+  it('isolation: bullet_markers=true preserves explicit ordered-list numbers across prose', () => {
+    const input = [
+      '1. Platform Layer',
+      'Create something like:',
+      '- app/platform/index.js',
+      '- app/platform/windows.js',
+      '2. Cross-Platform Hooks',
+      'Move hooks to Node.',
+      '3. Installers',
+    ].join('\n');
+    const out = stripForTTS(input, on('bullet_markers'));
+    assertTruthy(out.includes('1. Platform Layer.'));
+    assertTruthy(out.includes('1. app/platform/index.js.'));
+    assertTruthy(out.includes('2. app/platform/windows.js.'));
+    assertTruthy(out.includes('2. Cross-Platform Hooks.'));
+    assertTruthy(out.includes('3. Installers.'));
+    assertFalsy(out.includes('1. Cross-Platform Hooks.'),
+      'explicit ordered-list numbers must not be scrubbed back to one');
+  });
+
+  it('isolation: bullet_markers=true increments contiguous Markdown ordered lists', () => {
+    const input = [
+      '1. Alpha',
+      '1. Beta',
+      '1. Gamma',
+    ].join('\n');
+    const out = stripForTTS(input, on('bullet_markers'));
+    assertTruthy(out.includes('1. Alpha. 2. Beta. 3. Gamma.'));
   });
 
   it('isolation: bullet_markers=false strips markers and appends implicit period', () => {
@@ -5401,12 +5830,10 @@ describe('speech_includes combinatorial smoke', () => {
     assertEqual(stripForTTS('', on('code_blocks', 'urls')), '');
   });
 
-  it('tool_calls flag does not affect stripForTTS output (Python-side only)', () => {
-    // Per text.js comment line ~31: JS stripForTTS keeps tool_calls in
-    // the DEFAULTS shape for config lock-step with Python but does not
-    // act on it. This test locks in that invariant — if someone adds a
-    // JS-side action for tool_calls without updating the Python mirror,
-    // we want to know.
+  it('tool_calls flag does not affect stripForTTS output', () => {
+    // tool_calls is a routing flag for Claude synth_turn.py and the
+    // Codex rollout watcher, not a markdown-stripping rule. This test
+    // locks in that stripForTTS does not mutate body text based on it.
     const outA = stripForTTS(KITCHEN_SINK, { tool_calls: true });
     const outB = stripForTTS(KITCHEN_SINK, { tool_calls: false });
     assertEqual(outA, outB,
@@ -5852,6 +6279,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
         index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
         label: 'MATE.AIN brain', pinned: true, muted: true, focus: true,
         last_seen: FRESH, voice: 'en-GB-RyanNeural',
+        heartbeat_enabled: false,
         speech_includes: { urls: true, code_blocks: false, headings: true }
       }
     };
@@ -5870,6 +6298,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(migrated.muted, true);
     assertEqual(migrated.focus, true);
     assertEqual(migrated.voice, 'en-GB-RyanNeural');
+    assertEqual(migrated.heartbeat_enabled, false);
     assertDeepEqual(migrated.speech_includes, { urls: true, code_blocks: false, headings: true });
     assertEqual(migrated.session_id, 'newshort-uuid');  // refreshed to new UUID
     assertEqual(migrated.claude_pid, 1234);             // pid carried forward
@@ -5889,7 +6318,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { returnedIndex, assignments } = runUpdate({
       seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW,
     });
-    // oldshort keeps its slot (it's pinned), newshort gets the lowest free
+    // oldshort keeps its slot (it's pinned), newshort gets the first spread-order free
     // slot that isn't 7. That's 0.
     assertEqual(returnedIndex, 0);
     assertTruthy(assignments['oldshort'], 'stale entry must remain (not migrated)');
@@ -5913,7 +6342,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { returnedIndex, assignments } = runUpdate({
       seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 0, now: NOW,
     });
-    // Lowest free index NOT equal to 5 is 0.
+    // First spread-order free index NOT equal to 5 is 0.
     assertEqual(returnedIndex, 0);
     assertTruthy(assignments['oldshort'], 'pid=0 entry must remain');
     assertTruthy(assignments['newshort'], 'new entry created fresh');
@@ -6000,6 +6429,20 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     });
   });
 
+  it('per-session heartbeat override survives /clear migration', () => {
+    const seed = {
+      'ab000000': {
+        index: 4, session_id: 'old-uuid', claude_pid: 9999,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH, heartbeat_enabled: false,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'ab111111', sessionId: 'new-uuid', claudePid: 9999, now: NOW,
+    });
+    assertEqual(assignments['ab111111'].heartbeat_enabled, false);
+  });
+
   it('multi-terminal isolation: migration touches ONLY the matching pid', () => {
     // Terminals A (pid 1111, idx 3) and B (pid 2222, idx 7). /clear on
     // A must migrate A only — B's entry and its metadata are untouched.
@@ -6013,6 +6456,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
         index: 7, session_id: 'term-b', claude_pid: 2222,
         label: 'terminal B', pinned: true, muted: true, focus: false,
         last_seen: FRESH, voice: 'en-GB-SoniaNeural',
+        heartbeat_enabled: true,
         speech_includes: { urls: false },
       },
     };
@@ -6031,11 +6475,12 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(b.label, 'terminal B');
     assertEqual(b.muted, true);
     assertEqual(b.voice, 'en-GB-SoniaNeural');
+    assertEqual(b.heartbeat_enabled, true);
     assertDeepEqual(b.speech_includes, { urls: false });
     assertEqual(b.claude_pid, 2222);
   });
 
-  it('no matching pid: falls through to lowest-free palette slot', () => {
+  it('no matching pid: falls through to spread-first free palette slot', () => {
     const seed = {
       'filler00': { index: 0, session_id: 'f-uuid', claude_pid: 100, label: '', pinned: false, muted: false, focus: false, last_seen: FRESH },
       'filler11': { index: 1, session_id: 'f-uuid', claude_pid: 200, label: '', pinned: false, muted: false, focus: false, last_seen: FRESH },
@@ -6044,7 +6489,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     const { returnedIndex } = runUpdate({
       seed, short: 'newentry', sessionId: 'n-uuid', claudePid: 9999, now: NOW,
     });
-    assertEqual(returnedIndex, 3);
+    assertEqual(returnedIndex, 4);
   });
 
   it('pinned entry preserves pinned=true through migration', () => {
@@ -6122,7 +6567,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       'roundtri': {
         index: 11, session_id: 'seed-uuid', claude_pid: 7070,
         label: 'round-trip', pinned: true, muted: true, focus: true,
-        last_seen: FRESH, voice: 'shimmer',
+        last_seen: FRESH, voice: 'shimmer', voice_auto: false,
         speech_includes: { urls: true, tool_calls: true, inline_code: false },
       }
     };
@@ -6136,6 +6581,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(e.muted, true);
     assertEqual(e.focus, true);
     assertEqual(e.voice, 'shimmer');
+    assertEqual(e.voice_auto, false);
     assertDeepEqual(e.speech_includes, { urls: true, tool_calls: true, inline_code: false });
   });
 
@@ -6161,11 +6607,10 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     }
   });
 
-  it('entry without voice stays voice-free through migration (no ghost field)', () => {
-    // Regression guard: an entry with no per-session voice override
-    // (falling back to the global default) must not suddenly sprout a
-    // voice field after /clear. That would silently pin the session
-    // to whatever the global default happened to be at migration time.
+  it('entry without voice gets an automatic voice through migration', () => {
+    // New behaviour: older unvoiced entries are eligible for a Terminal
+    // Talk-assigned Edge voice, marked voice_auto=true so later manual
+    // choices can be distinguished from automatic defaults.
     const seed = {
       'novoice1': {
         index: 2, session_id: 'nv-uuid', claude_pid: 1313,
@@ -6177,9 +6622,24 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       seed, short: 'novoice2', sessionId: 'nv-new', claudePid: 1313, now: NOW,
     });
     const e = assignments['novoice2'];
-    if (e.voice !== undefined && e.voice !== null && e.voice !== '') {
-      throw new Error(`no-voice entry acquired voice '${e.voice}' across migration`);
-    }
+    assertEqual(e.voice, 'en-AU-NatashaNeural');
+    assertEqual(e.voice_auto, true);
+  });
+
+  it('manual follow-global voice opt-out stays voice-free through migration', () => {
+    const seed = {
+      'novoice1': {
+        index: 2, session_id: 'nv-uuid', claude_pid: 1313,
+        label: '', pinned: false, muted: false, focus: false,
+        last_seen: FRESH, voice_auto: false,
+      }
+    };
+    const { assignments } = runUpdate({
+      seed, short: 'novoice2', sessionId: 'nv-new', claudePid: 1313, now: NOW,
+    });
+    const e = assignments['novoice2'];
+    assertEqual(e.voice, undefined);
+    assertEqual(e.voice_auto, false);
   });
 
   it('ghost-then-hook: pre-existing pid=0 entry for same short is updated in place', () => {
@@ -7032,6 +7492,9 @@ describe('LOG-AUDIT BATCH 3 (#6 G0/G4/G5/G7 — observability polish)', () => {
     if (!/tts_provider=\$\{provider\}/.test(body)) {
       throw new Error('boot diag must include tts_provider (#15/#16-class regression suspect) — see #6 G5');
     }
+    if (!/tts_fallback_provider=\$\{fallbackProvider\}/.test(body)) {
+      throw new Error('boot diag must include tts_fallback_provider so hidden paid fallback regressions surface');
+    }
     if (!/cfg_keys=\[/.test(body)) {
       throw new Error('boot diag must include cfg_keys=[...] so dropped-key bugs surface — see #6 G5');
     }
@@ -7486,6 +7949,19 @@ describe('SESSION STALE DETECTION', () => {
     assertEqual(stale, []);
   });
 
+  it('desktop-hosted sessions are not marked closed just because there is no terminal PID', () => {
+    const stale = computeStaleSessions(
+      {
+        aabbccdd: { index: 0, source_kind: 'codex-desktop', session_id: 'aabbccdd-1111-2222-3333-444444444444', last_seen: 0 },
+        bbccddee: { index: 1, source_kind: 'claude-desktop', session_id: 'bbccddee-1111-2222-3333-444444444444', last_seen: 0 },
+      },
+      new Set(),
+      new Set(),
+      NOW
+    );
+    assertEqual(stale, []);
+  });
+
   // v0.3.3 — renderer playback guard. The stale set was previously a
   // visual-only signal; playNextPending filtered muted clips but not
   // stale ones, so a late-arriving detached-synth clip (or a leaked
@@ -7545,7 +8021,7 @@ describe('SESSION STALE DETECTION', () => {
 });
 
 // =============================================================================
-// PALETTE ALLOCATION — lowest-free-index with LRU eviction fallback.
+// PALETTE ALLOCATION — spread-first free-index with LRU eviction fallback.
 // =============================================================================
 // Fixes G10: when the 24-slot palette was full, the old hash-mod fallback
 // produced a GUARANTEED visual collision (two different sessions painted
@@ -7563,13 +8039,13 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
     assertEqual(r.reason, 'free');
   });
 
-  it('lowest free index -- fills 0,1,2,... in order', () => {
+  it('free index uses spread-first order so early sessions are visually distinct', () => {
     const all = {};
     for (let i = 0; i < 10; i++) {
       all[`sess${i.toString().padStart(4, '0')}`] = { index: i, last_seen: 100 + i };
     }
     const r = allocatePaletteIndex('aabbccdd', all, 24);
-    assertEqual(r.index, 10);
+    assertEqual(r.index, 16);
     assertEqual(r.reason, 'free');
   });
 
@@ -7600,7 +8076,7 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
     assertEqual(r.index, 1);
   });
 
-  it('LRU eviction SKIPS entries with user intent (label / voice / muted / focus / speech_includes)', () => {
+  it('LRU eviction SKIPS entries with user intent (label / voice / muted / focus / heartbeat / speech_includes)', () => {
     // The auto-pin in ipc-handlers.js should catch these via pinned=true,
     // but historic entries from before auto-pin landed still carry
     // user intent without the pin flag. Eviction must respect both.
@@ -7612,6 +8088,7 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
       [0, { voice: 'shimmer' }],
       [0, { muted: true }],
       [0, { focus: true }],
+      [0, { heartbeat_enabled: false }],
       [0, { speech_includes: { urls: true } }],
     ]) {
       const all = {};
@@ -7626,6 +8103,37 @@ describe('PALETTE ALLOCATION (LRU eviction)', () => {
       assertEqual(r.evicted, 's0000001');
       assertEqual(r.index, 1);
     }
+  });
+
+  it('auto-assigned voices do not protect an otherwise stale palette slot', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i,
+        last_seen: 1000 + i,
+        pinned: false,
+        voice: i === 0 ? 'en-GB-RyanNeural' : undefined,
+        voice_auto: i === 0 ? true : undefined,
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000000');
+  });
+
+  it('manual voice opt-out protects a session as user intent', () => {
+    const all = {};
+    for (let i = 0; i < 24; i++) {
+      all[`s${i.toString().padStart(7, '0')}`] = {
+        index: i,
+        last_seen: 1000 + i,
+        pinned: false,
+        voice_auto: i === 0 ? false : undefined,
+      };
+    }
+    const r = allocatePaletteIndex('newshort', all, 24);
+    assertEqual(r.reason, 'lru');
+    assertEqual(r.evicted, 's0000001');
   });
 
   it('LRU: label="" (retracted) is NOT user intent, evicts normally', () => {
@@ -8351,6 +8859,12 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     if (!/terminal-talk/.test(src)) {
       throw new Error('mic-watcher self-filter must include the terminal-talk install path');
     }
+    if (!/pythoncore-\*#python\.exe/.test(src)) {
+      throw new Error('mic-watcher must ignore Windows Store Python wake-listener paths');
+    }
+    if (!/listener-python-path\.txt/.test(src) || !/Get-ListenerPathFragment/.test(src)) {
+      throw new Error('mic-watcher must honour the live listener-python-path.txt marker');
+    }
   });
 
   it('main.js spawns the mic-watcher on app ready', () => {
@@ -8439,6 +8953,67 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
   });
 
+  it('cursor click-through driver publishes authoritative interactive state', () => {
+    const { createCursorClickthroughDriver } = require(path.join(__dirname, '..', 'app', 'lib', 'cursor-clickthrough.js'));
+    let cursor = { x: 20, y: 20 };
+    const calls = [];
+    const states = [];
+    const driver = createCursorClickthroughDriver({
+      getWin: () => ({
+        isDestroyed: () => false,
+        getBounds: () => ({ x: 0, y: 0, width: 100, height: 100 }),
+        setIgnoreMouseEvents: (on, opts) => calls.push({ on, opts }),
+      }),
+      screen: { getCursorScreenPoint: () => cursor },
+      onStateChange: (state) => states.push(state),
+    });
+    assertTruthy(driver.setInteractiveRegion({ x: 10, y: 10, width: 30, height: 30 }));
+    driver.pollOnce();
+    cursor = { x: 80, y: 20 };
+    driver.pollOnce();
+    cursor = { x: 200, y: 20 };
+    driver.pollOnce();
+
+    assertDeepEqual(states, [
+      { overWindow: true, overInteractive: true },
+      { overWindow: true, overInteractive: false },
+      { overWindow: false, overInteractive: false },
+    ]);
+    assertEqual(calls.map((c) => c.on), [false, true, true]);
+    assertEqual(calls[0].opts && calls[0].opts.forward, true);
+  });
+
+  it('renderer keeps the full Settings viewport interactive while the panel is open', () => {
+    const regionFn = rendererSrc.match(/function interactiveRegion\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    if (!regionFn) throw new Error('interactiveRegion() not found in renderer.js');
+    if (!/if\s*\(\s*settingsOpen\s*\)[\s\S]*?window\.innerWidth[\s\S]*?window\.innerHeight/.test(regionFn[0])) {
+      throw new Error('interactiveRegion() must return the full viewport while Settings is open');
+    }
+    const clickFn = rendererSrc.match(/async function updateClickthrough\s*\(\s*\)\s*\{[\s\S]*?const overBar = isMouseOverBar/);
+    if (!clickFn) throw new Error('updateClickthrough() settings-open guard not found');
+    if (!/if\s*\(\s*settingsOpen\s*\)[\s\S]*?setClickthrough\s*\(\s*false\s*\)/.test(clickFn[0])) {
+      throw new Error('updateClickthrough() must force click-through off while Settings is open');
+    }
+  });
+
+  it('main/preload/renderer wire authoritative cursor state into idle collapse', () => {
+    if (!/onStateChange:\s*\(state\)\s*=>[\s\S]{0,300}cursor-interactive-state/.test(mainSrc)) {
+      throw new Error('main.js must send cursor-interactive-state from the main cursor poll');
+    }
+    if (!/onCursorInteractiveState[\s\S]{0,120}cursor-interactive-state/.test(preloadSrc)) {
+      throw new Error('preload.js must expose window.api.onCursorInteractiveState');
+    }
+    if (!/let\s+mainCursorOverInteractive\s*=\s*null/.test(rendererSrc)) {
+      throw new Error('renderer.js must track mainCursorOverInteractive');
+    }
+    if (!/mainCursorOverInteractive\s*!==\s*null\)\s*return\s+mainCursorOverInteractive/.test(rendererSrc)) {
+      throw new Error('isMouseOverBar must prefer main cursor state over stale renderer mouse coordinates');
+    }
+    if (!/onCursorInteractiveState[\s\S]{0,500}cursorX\s*=\s*-1[\s\S]{0,120}cursorY\s*=\s*-1/.test(rendererSrc)) {
+      throw new Error('renderer.js must clear stale mouse coordinates when main says cursor left the interactive region');
+    }
+  });
+
   it('renderer.js mic-captured-elsewhere callback MUST NOT early-return before systemAutoPause', () => {
     // 2026-04-26 regression-class lock: pre-fix, the callback returned
     // when `!audio.src || audio.ended || audio.paused` BEFORE calling
@@ -8463,6 +9038,43 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
         'renderer mic-captured-elsewhere callback must not early-return before '
         + 'systemAutoPause — that breaks heartbeat suppression during silent dictation'
       );
+    }
+  });
+
+  it('collapsed letterbox keeps the speaking session colour during playback', () => {
+    const match = rendererSrc.match(/function\s+signalCollapsedClip\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!match) throw new Error('signalCollapsedClip function body not found in renderer.js');
+    const body = match[1];
+    const guardIdx = body.indexOf('!holdForPlayback && collapsedSignalPlaybackPath');
+    const paletteIdx = body.indexOf('collapsedSignalEl.dataset.palette');
+    if (guardIdx < 0) {
+      throw new Error('signalCollapsedClip must ignore arrival flashes while playback owns the collapsed colour');
+    }
+    if (paletteIdx < 0 || guardIdx > paletteIdx) {
+      throw new Error('signalCollapsedClip must check playback-held colour before repainting dataset.palette');
+    }
+  });
+
+  it('idle collapse immediately adopts the currently-playing clip colour', () => {
+    const helper = rendererSrc.match(/function\s+signalCollapsedCurrentPlayback\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    if (!helper) throw new Error('signalCollapsedCurrentPlayback helper missing from renderer.js');
+    const helperBody = helper[1];
+    if (!/audioPlayer\.getCurrentPath\s*\(\s*\)/.test(helperBody)) {
+      throw new Error('signalCollapsedCurrentPlayback must read the active audioPlayer path');
+    }
+    if (!/isPlaybackActive\s*\(\s*\)/.test(helperBody)) {
+      throw new Error('signalCollapsedCurrentPlayback must only flash while audio is actually active');
+    }
+    if (!/signalCollapsedClip\s*\(\s*currentPath\s*,\s*\{\s*holdForPlayback:\s*true\s*\}\s*\)/.test(helperBody)) {
+      throw new Error('signalCollapsedCurrentPlayback must hold the collapsed colour for the speaking clip');
+    }
+    const apply = rendererSrc.match(/async\s+function\s+applyCollapsed\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!apply) throw new Error('applyCollapsed function body not found in renderer.js');
+    const applyBody = apply[1];
+    const addCollapsedIdx = applyBody.indexOf("barEl.classList.add('collapsed')");
+    const adoptIdx = applyBody.indexOf('signalCollapsedCurrentPlayback()');
+    if (addCollapsedIdx < 0 || adoptIdx < 0 || adoptIdx < addCollapsedIdx) {
+      throw new Error('applyCollapsed(true) must adopt the active playback colour immediately after collapsing');
     }
   });
 
@@ -8646,6 +9258,54 @@ describe('S4.2 — voices.json parity with generated voices-window.js', () => {
     if (!/window\.TT_VOICES/.test(rend)) {
       throw new Error('renderer.js must destructure voices from window.TT_VOICES');
     }
+  });
+});
+
+describe('S4.3 — auto session voice allocation', () => {
+  const {
+    AUTO_EDGE_VOICE_ORDER,
+    allocateAutoVoice,
+    ensureAutoVoice,
+    hasManualVoiceIntent,
+    shouldAutoAssignVoice,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'voice-alloc.js'));
+
+  it('starts with the current preferred Edge voices', () => {
+    assertEqual(AUTO_EDGE_VOICE_ORDER.slice(0, 3), [
+      'en-AU-NatashaNeural',
+      'en-GB-SoniaNeural',
+      'en-GB-RyanNeural',
+    ]);
+  });
+
+  it('chooses the first unused voice, then least-used when saturated', () => {
+    let r = allocateAutoVoice({ a: { voice: 'en-AU-NatashaNeural' } }, AUTO_EDGE_VOICE_ORDER.slice(0, 3));
+    assertEqual(r.voice, 'en-GB-SoniaNeural');
+    assertEqual(r.reason, 'free');
+    r = allocateAutoVoice({
+      a: { voice: 'en-AU-NatashaNeural' },
+      b: { voice: 'en-GB-SoniaNeural' },
+      c: { voice: 'en-GB-RyanNeural' },
+      d: { voice: 'en-AU-NatashaNeural' },
+    }, AUTO_EDGE_VOICE_ORDER.slice(0, 3));
+    assertEqual(r.voice, 'en-GB-SoniaNeural');
+    assertEqual(r.reason, 'least-used');
+  });
+
+  it('adds voice_auto=true only when the user has not opted out', () => {
+    const assignments = {};
+    const entry = { index: 0 };
+    const r = ensureAutoVoice(entry, assignments, AUTO_EDGE_VOICE_ORDER.slice(0, 3));
+    assertEqual(r.voice, 'en-AU-NatashaNeural');
+    assertEqual(entry.voice, 'en-AU-NatashaNeural');
+    assertEqual(entry.voice_auto, true);
+    assertEqual(shouldAutoAssignVoice({ voice_auto: false }), false);
+  });
+
+  it('manual voices and explicit follow-global opt-outs are user intent; auto voices are not', () => {
+    assertEqual(hasManualVoiceIntent({ voice: 'en-GB-RyanNeural' }), true);
+    assertEqual(hasManualVoiceIntent({ voice: 'en-GB-RyanNeural', voice_auto: true }), false);
+    assertEqual(hasManualVoiceIntent({ voice_auto: false }), true);
   });
 });
 
@@ -8857,8 +9517,8 @@ describe('D2 — safeStorage-backed API key store', () => {
     if (!/_load_openai_key_from_secrets\s*\(\s*\)/.test(synthPy)) {
       throw new Error('synth_turn.py is not calling _load_openai_key_from_secrets()');
     }
-    if (!/SECRETS_PATH\s*=\s*TT_HOME\s*\/\s*['"]config\.secrets\.json['"]/.test(synthPy)) {
-      throw new Error('synth_turn.py SECRETS_PATH constant missing or wrong path');
+    if (!/TT_SECRETS_PATH/.test(synthPy) || !/CONFIG_PATH\.parent\s*\/\s*['"]config\.secrets\.json['"]/.test(synthPy)) {
+      throw new Error('synth_turn.py SECRETS_PATH must follow the config directory with an env override');
     }
     // The or-chain must try sidecar FIRST so a legacy key in config.json
     // loses to the freshly-written sidecar on any user that upgraded.
@@ -8927,9 +9587,28 @@ describe('D2-5 — config.schema.json parity with validator rules', () => {
     const speed = schema.properties.playback.properties.speed;
     assertEqual(speed.minimum, 0.25);
     assertEqual(speed.maximum, 4.0);
+    const collapse = schema.properties.playback.properties.collapse_delay_sec;
+    assertEqual(collapse.minimum, 1);
+    assertEqual(collapse.maximum, 120);
+    assertEqual(collapse.default, 3);
     const prune = schema.properties.playback.properties.auto_prune_sec;
     assertEqual(prune.minimum, 1);
     assertEqual(prune.maximum, 600);
+  });
+
+  it('playback.collapse_delay_sec present in schema + validator with [1,120] bounds', () => {
+    const collapse = schema.properties.playback.properties.collapse_delay_sec;
+    if (!collapse) throw new Error('schema missing playback.collapse_delay_sec');
+    assertEqual(collapse.type, 'integer');
+    assertEqual(collapse.minimum, 1);
+    assertEqual(collapse.maximum, 120);
+    assertEqual(collapse.default, 3);
+    const { RULES } = require('../app/lib/config-validate');
+    const rule = RULES.find(r => r.path === 'playback.collapse_delay_sec');
+    if (!rule) throw new Error('validator missing playback.collapse_delay_sec rule');
+    assertEqual(rule.type, 'number');
+    assertEqual(rule.min, 1);
+    assertEqual(rule.max, 120);
   });
 
   it('6244bfd playback.master_volume present in schema + validator with [0,1] bounds', () => {
@@ -8991,6 +9670,24 @@ describe('D2-5 — config.schema.json parity with validator rules', () => {
     const paletteCss = fs.readFileSync(paletteCssPath, 'utf8');
     if (!/body\[data-palette-variant="cb"\]/.test(paletteCss)) {
       throw new Error('palette-classes.css missing body[data-palette-variant="cb"] override block — run generate-tokens-css.cjs');
+    }
+  });
+
+  it('paid fallback config is explicit in schema + validator', () => {
+    const primary = schema.properties.playback.properties.tts_provider;
+    const fallback = schema.properties.playback.properties.tts_fallback_provider;
+    if (!primary) throw new Error('schema missing playback.tts_provider');
+    if (!fallback) throw new Error('schema missing playback.tts_fallback_provider');
+    assertDeepEqual(primary.enum, ['edge', 'openai']);
+    assertDeepEqual(fallback.enum, ['edge', 'openai', 'none']);
+    assertEqual(primary.default, 'edge');
+    assertEqual(fallback.default, 'edge');
+    const { RULES } = require('../app/lib/config-validate');
+    if (!RULES.find(r => r.path === 'playback.tts_provider')) {
+      throw new Error('validator missing playback.tts_provider rule');
+    }
+    if (!RULES.find(r => r.path === 'playback.tts_fallback_provider')) {
+      throw new Error('validator missing playback.tts_fallback_provider rule');
     }
   });
 });
@@ -9506,6 +10203,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     const registry = overrides.registry || {};
     const saveLog = [];
     const notifyLog = [];
+    const syncLog = [];
     const fakeWin = { isDestroyed: () => false };
     return {
       ipcMain: makeFakeIpcMain(),
@@ -9525,22 +10223,24 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
       computeStaleSessions: () => [],
       SESSIONS_DIR: '/nope',
       notifyQueue: () => notifyLog.push(Date.now()),
+      syncCodexIdentity: () => syncLog.push(Date.now()),
       allowMutation: () => true,
       validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
       ...overrides,
       _registry: registry,
       _saveLog: saveLog,
       _notifyLog: notifyLog,
+      _syncLog: syncLog,
     };
   }
 
-  it('register() wires all seven session-edit channels', () => {
+  it('register() wires all eight session-edit channels', () => {
     const deps = mutationDeps();
     createIpcHandlers(deps).register();
     const required = [
       'set-session-label', 'set-session-index', 'set-session-focus',
       'remove-session', 'set-session-muted', 'set-session-voice',
-      'set-session-include',
+      'set-session-include', 'set-session-heartbeat',
     ];
     for (const name of required) {
       try { deps.ipcMain.invoke(name, 'aabbccdd', true); }
@@ -9561,6 +10261,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', true), null);
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'shimmer'), null);
     assertEqual(deps.ipcMain.invoke('set-session-include', 'aabbccdd', 'urls', true), null);
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', true), null);
     assertEqual(deps._saveLog.length, 0);
   });
 
@@ -9571,9 +10272,16 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps._registry.aabbccdd.label, 'a b c');
   });
 
+  it('set-session-label refreshes live Codex terminal identity after saving', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-label', 'aabbccdd', 'Codex Current'), true);
+    assertEqual(deps._syncLog.length, 1);
+  });
+
   // ---------------------------------------------------------------------
   // Auto-pin behaviour. Any user customisation (label / focus / voice /
-  // muted / speech_includes) must set pinned=true so the grace-window
+  // heartbeat / muted / speech_includes) must set pinned=true so the grace-window
   // prune in ensureAssignmentsForFiles can't strip it when the CLI pid
   // goes stale. Ben hit this overnight 2026-04-22→23: laptop on, Claude
   // Code CLI rotated pid, entry dropped out of 4 h grace, prune-then-
@@ -9637,6 +10345,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'en-GB-RyanNeural'), true);
     assertEqual(deps._registry.aabbccdd.voice, 'en-GB-RyanNeural');
+    assertEqual(deps._registry.aabbccdd.voice_auto, false);
     assertEqual(deps._registry.aabbccdd.pinned, true);
   });
 
@@ -9645,6 +10354,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
     assertFalsy(deps._registry.aabbccdd.voice, 'voice should be deleted');
+    assertEqual(deps._registry.aabbccdd.voice_auto, false);
     assertEqual(deps._registry.aabbccdd.pinned, false);
   });
 
@@ -9665,6 +10375,28 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps._registry.aabbccdd.pinned, false);
   });
 
+  it('set-session-heartbeat auto-pins when a session override is set true/false', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: { pinned: false } } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.heartbeat_enabled, true);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+    deps._registry.aabbccdd.pinned = false;
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', false), true);
+    assertEqual(deps._registry.aabbccdd.heartbeat_enabled, false);
+    assertEqual(deps._registry.aabbccdd.pinned, true);
+  });
+
+  it('set-session-heartbeat clears to follow global without pinning', () => {
+    const deps = mutationDeps({
+      registry: { aabbccdd: { pinned: false, heartbeat_enabled: false } },
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', null), true);
+    assertFalsy('heartbeat_enabled' in deps._registry.aabbccdd, 'override should be deleted');
+    assertEqual(deps._registry.aabbccdd.pinned, false);
+  });
+
   it('set-session-label rejects invalid shortId', () => {
     const deps = mutationDeps({ registry: { aabbccdd: {} } });
     createIpcHandlers(deps).register();
@@ -9680,6 +10412,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps._registry.aabbccdd.pinned, true);
     assertEqual(deps.ipcMain.invoke('set-session-index', 'aabbccdd', -5), true);
     assertEqual(deps._registry.aabbccdd.index, 0);
+    assertEqual(deps._syncLog.length, 2);
   });
 
   it('set-session-index rejects NaN', () => {
@@ -9720,7 +10453,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
 
   it('remove-session purges queue files matching the deleted short', () => {
     // Regression guard: the queue-watcher re-creates a ghost registry
-    // entry (pid=0, empty label, lowest-free palette slot) any time it
+    // entry (pid=0, empty label, spread-order free palette slot) any time it
     // sees a clip filename whose short has no registry entry. Without
     // this purge, clicking × on a session made it "come back in a
     // different colour" seconds later -- visible bug Ben reported
@@ -9730,8 +10463,16 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     const fakeFs = {
       _files: new Set([
         '20260422T204301220-0000-aabbccdd.mp3',
+        '20260422T204301220-0000-aabbccdd.txt',
+        '20260422T204301220-0000-aabbccdd.original.txt',
+        '20260422T204301220-T-0001-aabbccdd.mp3',
+        '20260422T204301220-T-0001-aabbccdd.txt',
+        '20260422T204301220-H-0001-aabbccdd.mp3',
+        '20260422T204301220-clip-aabbccdd-02.mp3',
+        '20260422T204301220-clip-aabbccdd-02.original.txt',
         '20260422T204301220-0001-aabbccdd.mp3',
         '20260422T210029277-0015-ffeeddcc.mp3',  // another session
+        '20260422T210029277-clip-ffeeddcc-02.original.txt',
         '_hook.log',                              // non-clip file
       ]),
       existsSync: () => true,
@@ -9757,10 +10498,20 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('remove-session', 'aabbccdd'), true);
     // Files for removed short gone.
     assertFalsy(fakeFs._files.has('20260422T204301220-0000-aabbccdd.mp3'), 'aabbccdd clip not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-0000-aabbccdd.txt'), 'aabbccdd sidecar not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-0000-aabbccdd.original.txt'), 'aabbccdd original sidecar not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-T-0001-aabbccdd.mp3'), 'aabbccdd T clip not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-T-0001-aabbccdd.txt'), 'aabbccdd T sidecar not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-H-0001-aabbccdd.mp3'), 'aabbccdd heartbeat clip not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-clip-aabbccdd-02.mp3'), 'aabbccdd hey-jarvis clip not purged');
+    assertFalsy(fakeFs._files.has('20260422T204301220-clip-aabbccdd-02.original.txt'), 'aabbccdd hey-jarvis sidecar not purged');
     assertFalsy(fakeFs._files.has('20260422T204301220-0001-aabbccdd.mp3'), 'aabbccdd clip not purged');
     // Unrelated files left alone.
     if (!fakeFs._files.has('20260422T210029277-0015-ffeeddcc.mp3')) {
       throw new Error('other session\'s clip was incorrectly purged');
+    }
+    if (!fakeFs._files.has('20260422T210029277-clip-ffeeddcc-02.original.txt')) {
+      throw new Error('other session\'s sidecar was incorrectly purged');
     }
     if (!fakeFs._files.has('_hook.log')) {
       throw new Error('non-clip file was incorrectly purged');
@@ -9775,10 +10526,24 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps._notifyLog.length, 1);
   });
 
+  it('set-session-heartbeat stores + broadcasts when window alive', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', true), true);
+    assertEqual(deps._registry.aabbccdd.heartbeat_enabled, true);
+    assertEqual(deps._notifyLog.length, 1);
+  });
+
   it('set-session-muted rejects non-boolean value', () => {
     const deps = mutationDeps({ registry: { aabbccdd: {} } });
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-session-muted', 'aabbccdd', 1), false);
+  });
+
+  it('set-session-heartbeat rejects non-boolean/non-null value', () => {
+    const deps = mutationDeps({ registry: { aabbccdd: {} } });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', 'aabbccdd', 'true'), false);
   });
 
   it('set-session-voice validates + persists; null clears', () => {
@@ -9787,9 +10552,11 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     // valid edge-tts id
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'en-GB-RyanNeural'), true);
     assertEqual(deps._registry.aabbccdd.voice, 'en-GB-RyanNeural');
+    assertEqual(deps._registry.aabbccdd.voice_auto, false);
     // null clears
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
     assertFalsy(deps._registry.aabbccdd.voice, 'voice should be deleted');
+    assertEqual(deps._registry.aabbccdd.voice_auto, false);
     // garbage rejected
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', 'not-a-voice'), false);
   });
@@ -9820,6 +10587,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('set-session-muted', missing, true), false);
     assertEqual(deps.ipcMain.invoke('set-session-voice', missing, 'shimmer'), false);
     assertEqual(deps.ipcMain.invoke('set-session-include', missing, 'urls', true), false);
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', missing, true), false);
   });
 
   // -----------------------------------------------------------------
@@ -9836,7 +10604,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
   //
   // This test exercises the full write-then-reload cycle for every
   // per-session setting the UI exposes: label, palette index, focus,
-  // muted, voice, and all 7 speech-includes keys. It asserts each
+  // muted, voice, heartbeat override, and all 7 speech-includes keys. It asserts each
   // value is present AFTER a JSON.stringify → JSON.parse → sanitise
   // round-trip, which is what actually happens when the registry
   // file is written to disk and read back by loadAssignments.
@@ -9875,6 +10643,7 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(deps.ipcMain.invoke('set-session-focus', short, true), true);
     assertEqual(deps.ipcMain.invoke('set-session-muted', short, true), true);
     assertEqual(deps.ipcMain.invoke('set-session-voice', short, 'en-GB-RyanNeural'), true);
+    assertEqual(deps.ipcMain.invoke('set-session-heartbeat', short, false), true);
     const includeKeys = ['code_blocks', 'inline_code', 'urls', 'headings', 'bullet_markers', 'image_alt', 'tool_calls'];
     for (const k of includeKeys) {
       // Alternate true/false so we catch bugs that only treat "true"
@@ -9903,6 +10672,8 @@ describe('EX6f-2 — ipc-handlers (session-edit mutations)', () => {
     assertEqual(e.focus, true);
     assertEqual(e.muted, true);
     assertEqual(e.voice, 'en-GB-RyanNeural');
+    assertEqual(e.voice_auto, false);
+    assertEqual(e.heartbeat_enabled, false);
     assertEqual(e.pinned, true);  // at least one write-path auto-pinned
     if (!e.speech_includes) throw new Error('speech_includes dropped entirely on round-trip');
     for (const k of includeKeys) {
@@ -9942,7 +10713,7 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     const win = {
       isDestroyed: () => false,
       getPosition: () => [100, 200],
-      getSize: () => [680, 144],
+      getSize: () => [680, 192],
       setBounds: (b) => { calls.push(['setBounds', b]); },
       setSize: (w, h, anim) => { calls.push(['setSize', w, h, anim]); },
       setIgnoreMouseEvents: (on, opts) => { calls.push(['setIgnoreMouseEvents', on, opts]); },
@@ -10195,8 +10966,8 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
     const call = deps._winCalls.find((c) => c[0] === 'setBounds');
     assertTruthy(call, 'should call setBounds');
-    // curY=200, curH=144, newH=618 -> newY = 200 + (144 - 618) = -274
-    assertEqual(call[1].y, -274);
+    // curY=200, curH=192, newH=618 -> newY = 200 + (192 - 618) = -226
+    assertEqual(call[1].y, -226);
     assertEqual(call[1].width, 680);
     assertEqual(call[1].height, 618);
     // applying-dock latch must flip true then eventually back to false
@@ -10920,7 +11691,7 @@ describe('EX7d-1 — SessionsTable', () => {
 
   function makeTable(opts = {}) {
     const calls = {
-      label: [], index: [], focus: [], muted: [], remove: [], voice: [], include: [],
+      label: [], index: [], focus: [], muted: [], remove: [], voice: [], heartbeat: [], include: [],
       afterMutation: 0,
     };
     const deps = {
@@ -10930,7 +11701,7 @@ describe('EX7d-1 — SessionsTable', () => {
       colourNames: ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'brown'],
       hsplitPartner: [1, 0, 3, 2, 5, 4, 7, 6],
       vsplitPartner: [2, 3, 0, 1, 6, 7, 4, 5],
-      edgeVoices: [{ id: 'en-GB-RyanNeural', label: 'Ryan (GB)' }],
+      edgeVoices: opts.edgeVoices || [{ id: 'en-GB-RyanNeural', label: 'Ryan (GB)' }],
       includeLabels: [['urls', 'URLs'], ['code_blocks', 'Code blocks']],
       onSetLabel:   async (s, v) => { calls.label.push([s, v]); return true; },
       onSetIndex:   async (s, v) => { calls.index.push([s, v]); return true; },
@@ -10938,6 +11709,7 @@ describe('EX7d-1 — SessionsTable', () => {
       onSetMuted:   async (s, v) => { calls.muted.push([s, v]); return opts.muteOk !== false; },
       onRemove:     async (s)    => { calls.remove.push(s); return opts.removeOk !== false; },
       onSetVoice:   async (s, v) => { calls.voice.push([s, v]); return true; },
+      onSetHeartbeat: async (s, v) => { calls.heartbeat.push([s, v]); return opts.heartbeatOk !== false; },
       onSetInclude: async (s, k, v) => { calls.include.push([s, k, v]); return true; },
       onAfterMutation: () => { calls.afterMutation++; },
     };
@@ -11110,6 +11882,71 @@ describe('EX7d-1 — SessionsTable', () => {
     table.unmount();
   });
 
+  it('voice dropdown marks used voices with the owning session palette and manual changes clear auto mode', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable({
+      edgeVoices: [
+        { id: 'en-GB-RyanNeural', label: 'Ryan (GB)' },
+        { id: 'en-GB-SoniaNeural', label: 'Sonia (GB)' },
+      ],
+    });
+    table.mount(root);
+    const assignments = {
+      aa: { index: 4, label: 'TT Blue', voice: 'en-GB-RyanNeural', voice_auto: true },
+      bb: { index: 0, label: 'TT Red', voice: 'en-GB-SoniaNeural', voice_auto: false },
+    };
+    table.update({ sessionAssignments: assignments });
+    let aaBlock = root._children.find((block) => block._children[0]._children.some((c) => c._classes.has('short') && c.textContent === 'aa'));
+    const chevron = aaBlock._children[0]._children.find((c) => c._classes.has('chevron'));
+    chevron._listeners.find((l) => l.ev === 'click').fn();
+    aaBlock = root._children.find((block) => block._children[0]._children.some((c) => c._classes.has('short') && c.textContent === 'aa'));
+    const voiceSelect = aaBlock._children[1]._children[0]._children[1];
+    const ryan = voiceSelect._children.find((o) => o.value === 'en-GB-RyanNeural');
+    const sonia = voiceSelect._children.find((o) => o.value === 'en-GB-SoniaNeural');
+    assertTruthy(ryan._classes.has('voice-option-used'));
+    assertEqual(ryan.dataset.palette, '04');
+    assertTruthy(/used by TT Blue/.test(ryan.textContent));
+    assertTruthy(/\(auto\)/.test(ryan.textContent));
+    assertEqual(sonia.dataset.palette, '00');
+
+    voiceSelect.value = 'en-GB-SoniaNeural';
+    await voiceSelect._listeners.find((l) => l.ev === 'change').fn();
+    assertEqual(calls.voice, [['aa', 'en-GB-SoniaNeural']]);
+    assertEqual(assignments.aa.voice, 'en-GB-SoniaNeural');
+    assertEqual(assignments.aa.voice_auto, false);
+    table.unmount();
+  });
+
+  it('expanded heartbeat override buttons persist tri-state choices locally', async () => {
+    const root = makeFakeEl('div');
+    const { table, calls } = makeTable();
+    table.mount(root);
+    const assignments = { aa: { index: 0 } };
+    table.update({ sessionAssignments: assignments });
+    const chevron = root._children[0]._children[0]._children.find((c) => c._classes.has('chevron'));
+    chevron._listeners.find((l) => l.ev === 'click').fn();
+    const expanded = root._children[0]._children[1];
+    const heartbeatGrid = expanded._children[2];
+    const ctrl = heartbeatGrid._children[0]._children[1];
+    const onBtn = ctrl._children[1];
+    await onBtn._listeners.find((l) => l.ev === 'click').fn();
+    assertEqual(calls.heartbeat, [['aa', true]]);
+    assertEqual(assignments.aa.heartbeat_enabled, true);
+
+    const expanded2 = root._children[0]._children[1];
+    const offBtn = expanded2._children[2]._children[0]._children[1]._children[2];
+    await offBtn._listeners.find((l) => l.ev === 'click').fn();
+    assertEqual(calls.heartbeat[1], ['aa', false]);
+    assertEqual(assignments.aa.heartbeat_enabled, false);
+
+    const expanded3 = root._children[0]._children[1];
+    const defaultBtn = expanded3._children[2]._children[0]._children[1]._children[0];
+    await defaultBtn._listeners.find((l) => l.ev === 'click').fn();
+    assertEqual(calls.heartbeat[2], ['aa', null]);
+    assertFalsy('heartbeat_enabled' in assignments.aa, 'default should clear override');
+    table.unmount();
+  });
+
   it('muted entry adds session-muted class to block', () => {
     const root = makeFakeEl('div');
     const { table } = makeTable();
@@ -11125,6 +11962,53 @@ describe('EX7d-1 — SessionsTable', () => {
     table.mount(root);
     table.update({ sessionAssignments: { aa: { index: 0, focus: true } } });
     assertTruthy(root._children[0]._classes.has('session-focused'));
+    table.unmount();
+  });
+
+  it('shows Codex Desktop title persistence as pending visible refresh', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({
+      sessionAssignments: {
+        aa: {
+          index: 4,
+          source_kind: 'codex-desktop',
+          codex_desktop_title_status: 'persisted_pending_refresh',
+          codex_desktop_title: 'TT Blue · CodexAPPxTT',
+        },
+      },
+    });
+    const block = root._children[0];
+    const status = block._children.find((c) => c._classes.has('session-source-status'));
+    assertTruthy(status, 'Codex Desktop status row should render');
+    assertEqual(status.dataset.source, 'codex-desktop');
+    assertEqual(status.dataset.tone, 'pending');
+    assertTruthy(
+      status._children.some((child) => /title saved/.test(child.textContent || '')),
+      'status text should mention the saved Desktop title',
+    );
+    table.unmount();
+  });
+
+  it('shows Codex Desktop title status even when source metadata is unavailable', () => {
+    const root = makeFakeEl('div');
+    const { table } = makeTable();
+    table.mount(root);
+    table.update({
+      sessionAssignments: {
+        aa: {
+          index: 4,
+          codex_desktop_title_status: 'persisted_pending_refresh',
+          codex_desktop_title: 'TT Blue · CodexAPPxTT',
+        },
+      },
+    });
+    const block = root._children[0];
+    const status = block._children.find((c) => c._classes.has('session-source-status'));
+    assertTruthy(status, 'Codex Desktop status row should render from persisted title state');
+    assertEqual(status.dataset.source, 'codex-desktop');
+    assertEqual(status.dataset.tone, 'pending');
     table.unmount();
   });
 
@@ -11447,14 +12331,14 @@ describe('EX7e — AudioPlayer', () => {
     player.unmount();
   });
 
-  it('playPath(p) with manual=false does not mark heard', () => {
+  it('playPath(p) with manual=false marks heard for autoplay visual state', () => {
     const { player, calls } = makePlayer({
       queue: [{ path: '/a.mp3', mtime: 1 }],
     });
     player.mount();
     player.playPath('/a.mp3');
     assertEqual(calls.played, ['/a.mp3']);
-    assertEqual(calls.heard, []);                // not marked heard
+    assertEqual(calls.heard, ['/a.mp3']);        // autoplayed still counts as heard
     player.unmount();
   });
 
@@ -12075,54 +12959,70 @@ describe('EX6c — queue-watcher', () => {
 });
 
 describe('EX6b — window-dock geometry', () => {
-  const { findDockedEdge, clampToVisibleDisplay } = require(
+  const { findDockedEdge, clampToVisibleDisplay, displayForWindowCenter } = require(
     path.join(__dirname, '..', 'app', 'lib', 'window-dock.js')
   );
+  const BAR_H = 192;
 
   it('findDockedEdge returns null when bar is mid-screen', () => {
-    const edge = findDockedEdge({ y: 0, height: 1080 }, 500, 114, 50);
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 500, BAR_H, 50);
     if (edge !== null) throw new Error(`expected null, got ${edge}`);
   });
 
   it('findDockedEdge returns "top" when bar is near top edge', () => {
-    const edge = findDockedEdge({ y: 0, height: 1080 }, 10, 114, 50);
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 10, BAR_H, 50);
     if (edge !== 'top') throw new Error(`expected "top", got ${edge}`);
   });
 
   it('findDockedEdge returns "bottom" when bar is near bottom edge', () => {
-    const edge = findDockedEdge({ y: 0, height: 1080 }, 1080 - 114 - 10, 114, 50);
+    const edge = findDockedEdge({ y: 0, height: 1080 }, 1080 - BAR_H - 10, BAR_H, 50);
     if (edge !== 'bottom') throw new Error(`expected "bottom", got ${edge}`);
   });
 
   it('findDockedEdge prefers the nearer edge when both within threshold', () => {
-    // tiny display; 114-high bar at y=20 is 20px from top, only 30px from bottom.
+    // Tiny display; 192-high bar at y=20 is 20px from top, only 30px from bottom.
     // threshold 100 ensures both candidates; nearer edge wins.
-    const edge = findDockedEdge({ y: 0, height: 164 }, 20, 114, 100);
+    const edge = findDockedEdge({ y: 0, height: 242 }, 20, BAR_H, 100);
     if (edge !== 'top') throw new Error(`expected "top" (20 < 30), got ${edge}`);
   });
 
   it('clampToVisibleDisplay preserves position when bar centre is on-screen', () => {
     const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
     const primary = displays[0];
-    const r = clampToVisibleDisplay(500, 200, 680, 114, displays, primary);
+    const r = clampToVisibleDisplay(500, 200, 680, BAR_H, displays, primary);
     assertEqual(r, { x: 500, y: 200 });
   });
 
   it('clampToVisibleDisplay rescues off-screen bar to primary centre', () => {
     const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
     const primary = displays[0];
-    const r = clampToVisibleDisplay(-5000, -5000, 680, 114, displays, primary);
+    const r = clampToVisibleDisplay(-5000, -5000, 680, BAR_H, displays, primary);
     assertEqual(r.x, Math.floor((1920 - 680) / 2));
     assertEqual(r.y, 12);
   });
 
+  it('displayForWindowCenter picks the display containing the bar centre', () => {
+    const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
+    const secondary = { workArea: { x: 1920, y: 0, width: 1280, height: 1024 } };
+    const d = displayForWindowCenter(2100, 80, 680, BAR_H, [primary, secondary], primary);
+    assertEqual(d, secondary);
+  });
+
+  it('clampToVisibleDisplay rescues off-screen bar to nearest display', () => {
+    const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
+    const secondary = { workArea: { x: 1920, y: 0, width: 1280, height: 1024 } };
+    const r = clampToVisibleDisplay(3350, 200, 680, BAR_H, [primary, secondary], primary);
+    assertEqual(r.x, secondary.workArea.x + Math.floor((secondary.workArea.width - 680) / 2));
+    assertEqual(r.y, 12);
+  });
+
   it('clampToVisibleDisplay tests bar centre only, not full window', () => {
-    // Expanded panel makes window 680×618 but the BAR is the top 114.
-    // If the bar centre (y=350+57=407) is on-screen, don't rescue even
+    // Expanded panel makes window 680x618 but the BAR is the top 192.
+    // If the bar centre (y=350+96=446) is on-screen, don't rescue even
     // though the bottom of the window (968) might be.
     const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
     const primary = displays[0];
-    const r = clampToVisibleDisplay(500, 350, 680, 114, displays, primary);
+    const r = clampToVisibleDisplay(500, 350, 680, BAR_H, displays, primary);
     assertEqual(r, { x: 500, y: 350 });
   });
 });
@@ -13035,7 +13935,7 @@ describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
     assertEqual(r.index, 0);
   });
 
-  it('paletteSize=1000 still allocates cleanly at lowest free', () => {
+  it('paletteSize=1000 still allocates cleanly at the first spread-order free slot', () => {
     const r = allocatePaletteIndex('aabbccdd', {}, 1000);
     assertEqual(r.index, 0);
     assertEqual(r.reason, 'free');
@@ -13050,7 +13950,7 @@ describe('PHASE 4 #2 — palette-alloc vulnerability pass', () => {
       s0000001: { index: 5, last_seen: 200 },
     };
     const r = allocatePaletteIndex('newshort', all, 24);
-    // 0..4 are free; 5 is busy; 6..23 are free. Lowest free = 0.
+    // 0..4 are free; 5 is busy; 6..23 are free. First spread-order free = 0.
     assertEqual(r.index, 0);
     assertEqual(r.reason, 'free');
   });
@@ -13869,6 +14769,8 @@ describe('PHASE 4 #4 — ipc-handlers validator edge coverage', () => {
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', null), true);
     assertEqual(deps._registry.aabbccdd.voice, undefined,
       'null voiceId must delete the voice field (follow global default)');
+    assertEqual(deps._registry.aabbccdd.voice_auto, false,
+      'clearing a voice is a manual follow-global opt-out, not eligible for auto reassignment');
   });
 
   it('set-session-voice with empty string "" clears', () => {
@@ -13878,6 +14780,7 @@ describe('PHASE 4 #4 — ipc-handlers validator edge coverage', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-session-voice', 'aabbccdd', ''), true);
     assertEqual(deps._registry.aabbccdd.voice, undefined);
+    assertEqual(deps._registry.aabbccdd.voice_auto, false);
   });
 
   it('set-session-voice with invalid voice name returns false', () => {
@@ -14004,6 +14907,26 @@ describe('VOICE COMMAND (Phase 1)', () => {
     }
   });
 
+  it('wake listener falls through to highlighted text when no command matches', () => {
+    const src = fs.readFileSync(path.join(repoApp, 'wake-word-listener.py'), 'utf8');
+    if (!/POST_WAKE_COMMAND_LEAD_SKIP_SAMPLES\s*=\s*5120/.test(src)) {
+      throw new Error('wake-word listener must trim the wake-word tail before SAPI command recognition');
+    }
+    const minConfidence = src.match(/MIN_CONFIDENCE\s*=\s*([0-9.]+)/);
+    if (!minConfidence || Number(minConfidence[1]) < 0.8) {
+      throw new Error('wake-word listener must keep command dispatch conservative enough to reject wake-tail false matches');
+    }
+    if (!/post-wake no command[\s\S]{0,300}send_hotkey\(\)/.test(src)) {
+      throw new Error('wake-word listener must send Ctrl+Shift+S when SAPI returns no command');
+    }
+    if (!/post-wake low-confidence[\s\S]{0,400}send_hotkey\(\)/.test(src)) {
+      throw new Error('wake-word listener must send Ctrl+Shift+S on low-confidence command-shaped audio');
+    }
+    if (/post-wake unrecognised speech/.test(src) || /nomatch-speech/.test(src) || /MessageBeep|winsound|_play_success_chime/.test(src)) {
+      throw new Error('wake-word listener must not chime on wake-word tail or ambiguous post-wake audio');
+    }
+  });
+
   it('recognizer returns {} on silent WAV', () => {
     // Build a 1-second 16kHz mono silent WAV (44-byte header + 32000 bytes
     // of zeros). Feed to the recognizer. SAPI on pure silence returns
@@ -14052,8 +14975,9 @@ describe('VOICE COMMAND (Phase 1)', () => {
     // End-to-end round trip: use System.Speech.Synthesis to speak "play"
     // into a WAV, then run the recognizer over the same WAV. If both
     // halves of SAPI agree, we confirm the grammar + script wiring.
-    // Accepted matches at confidence >= 0.5 per MIN_CONFIDENCE in the
-    // Python listener.
+    // The recognizer itself should produce a clear grammar match for
+    // synthesized speech; the Python listener may apply a stricter live
+    // confidence gate before dispatching a command.
     const wavPath = path.join(os.tmpdir(), `tt-voice-play-${process.pid}-${Date.now()}.wav`);
     const synth = spawnSync('powershell.exe', [
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
@@ -14394,36 +15318,30 @@ describe('VOICE COMMAND (Phase 1)', () => {
     const appDirRepo = path.join(__dirname, '..', 'app');
 
     function runPy(body) {
-      // Use a multi-line shim so Python class/import statements work.
-      // wake-word-listener.py imports heavy deps (numpy, sounddevice,
-      // openwakeword) — stub the ones that might not be on a CI box.
-      // numpy is a required dep and always installed (requirements.txt
-      // ships it), so we don't stub that one.
-      const shim = `import sys, types, importlib.util, pathlib
-sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
-# Stub sounddevice if not present (keeps CI headless boxes happy).
-if 'sounddevice' not in sys.modules:
-    try:
-        import sounddevice  # noqa
-    except Exception:
-        sys.modules['sounddevice'] = types.ModuleType('sounddevice')
-# Stub openwakeword if not present.
-if 'openwakeword' not in sys.modules:
-    try:
-        import openwakeword  # noqa
-    except Exception:
-        ow = types.ModuleType('openwakeword')
-        owm = types.ModuleType('openwakeword.model')
-        owm.Model = type('Model', (), {})
-        sys.modules['openwakeword'] = ow
-        sys.modules['openwakeword.model'] = owm
-# Load wake-word-listener.py by path (its filename has a dash so
-# 'import wake-word-listener' is not valid Python).
+      // Load only the pure EPD function and its default constants from
+      // wake-word-listener.py. Importing the whole listener opens log files
+      // and may load native audio/ML libraries, which makes this unit test
+      // dependent on the user's live mic/runtime state.
+      const shim = `import ast, pathlib
 _path = pathlib.Path(r'${appDirRepo.replace(/\\/g, '\\\\')}') / 'wake-word-listener.py'
-_spec = importlib.util.spec_from_file_location('wwl_mod', _path)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-should_finalise = _mod._should_finalise_capture
+_src = _path.read_text(encoding='utf-8')
+_tree = ast.parse(_src)
+_names = {
+    'POST_WAKE_CAPTURE_SAMPLES',
+    'POST_WAKE_MIN_CAPTURE_SAMPLES',
+    'POST_WAKE_TRAILING_SILENCE_CHUNKS',
+}
+_body = []
+for _node in _tree.body:
+    if isinstance(_node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in _names for t in _node.targets):
+        _body.append(_node)
+    elif isinstance(_node, ast.FunctionDef) and _node.name == '_should_finalise_capture':
+        _body.append(_node)
+_module = ast.Module(body=_body, type_ignores=[])
+ast.fix_missing_locations(_module)
+_ns = {}
+exec(compile(_module, str(_path), 'exec'), _ns)
+should_finalise = _ns['_should_finalise_capture']
 ${body}
 `;
       const r = spawnSync('python', ['-c', shim], { encoding: 'utf8', timeout: 15000 });
@@ -14523,8 +15441,20 @@ ${body}
 
 describe('CODEX SESSION WATCHER', () => {
   const {
+    createCodexSessionWatcher,
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
+    extractCodexSessionMetaEvent,
+    extractCodexWorkingStateEvent,
+    extractCodexToolCallEvent,
+    extractCodexToolOutputEvent,
+    isCodexTerminalSource,
+    narrateCodexToolCallPayload,
+    naturalisePath,
+    leadingToolVerb,
+    summariseShellCommand,
+    varyToolPhrase,
+    chunkText,
   } = require('../app/lib/codex-session-watcher.js');
 
   it('parses the trailing Codex session id from a rollout filename', () => {
@@ -14583,6 +15513,49 @@ describe('CODEX SESSION WATCHER', () => {
     );
   });
 
+  it('extracts Codex final_answer payloads as final speech events', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-04-29T20:35:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: 'final_answer',
+        message: '  Deployed to the live install does not mean committed to Git.  ',
+      },
+    });
+    assertDeepEqual(
+      extractCodexAgentMessageEvent(line),
+      {
+        timestamp: '2026-04-29T20:35:00.000Z',
+        phase: 'final',
+        message: 'Deployed to the live install does not mean committed to Git.',
+      },
+      'Codex final_answer lines must be spoken like final responses',
+    );
+  });
+
+  it('chunks long Codex final answers into Edge-safe speech pieces', () => {
+    const text = Array.from({ length: 18 }, (_, i) =>
+      `Section ${i + 1} explains a practical platform point with enough detail to make the final answer realistic.`
+    ).join(' ');
+    const chunks = chunkText(text, 900);
+    if (chunks.length < 2) throw new Error(`expected multiple chunks, got ${chunks.length}`);
+    if (chunks.some((chunk) => chunk.length > 900)) {
+      throw new Error(`final chunks must stay under the Edge-safe limit: ${chunks.map((c) => c.length).join(', ')}`);
+    }
+    assertEqual(chunks.join(' '), text, 'chunking should preserve the spoken text content');
+  });
+
+  it('hard-splits oversized Codex speech segments with no sentence break', () => {
+    const text = 'A'.repeat(760);
+    const chunks = chunkText(text, 320);
+    if (chunks.length < 3) throw new Error(`expected hard split for oversized segment, got ${chunks.length}`);
+    if (chunks.some((chunk) => chunk.length > 320)) {
+      throw new Error(`oversized segment escaped chunking: ${chunks.map((c) => c.length).join(', ')}`);
+    }
+    assertEqual(chunks.join(''), text, 'hard split should not drop characters');
+  });
+
   it('ignores non-agent lines, unsupported phases, blank messages, and malformed json', () => {
     const responseItem = JSON.stringify({
       timestamp: '2026-04-26T20:48:20.342Z',
@@ -14605,12 +15578,335 @@ describe('CODEX SESSION WATCHER', () => {
     assertEqual(extractCodexAgentMessageEvent('{not json'), null);
   });
 
+  it('detects Codex terminal-source rollouts and rejects background agent rollouts', () => {
+    const cliLine = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019dd52c-7d0d-7292-b6fe-8d1f81dd5cd2',
+        source: 'cli',
+        originator: 'codex-tui',
+        cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+      },
+    });
+    const agentLine = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019dd6e3-035f-71d3-a7ca-98f07c17a9cc',
+        source: 'vscode',
+        originator: 'Claude Code',
+        cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
+      },
+    });
+    assertEqual(isCodexTerminalSource(extractCodexSessionMetaEvent(cliLine)), true);
+    assertEqual(isCodexTerminalSource(extractCodexSessionMetaEvent(agentLine)), false);
+  });
+
+  it('treats Codex Desktop rollouts as speakable Codex sessions', () => {
+    const desktopLine = JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019dedda-54b7-73b3-b630-4ff53089ea2c',
+        source: 'vscode',
+        originator: 'Codex Desktop',
+        cwd: String.raw`C:\Users\Ben\Documents\Codex\2026-05-03\we-are-testing-whether-terminal-talk`,
+      },
+    });
+    assertEqual(isCodexTerminalSource(extractCodexSessionMetaEvent(desktopLine)), true);
+  });
+
+  it('naturalises file paths using the same style as Claude tool narration', () => {
+    assertEqual(naturalisePath('app/lib/codex-session-watcher.js'), 'the codex session watcher file');
+    assertEqual(naturalisePath('package.json'), 'the package json');
+    assertEqual(naturalisePath('tests/e2e/settings.spec.ts'), 'the settings test');
+  });
+
+  it('summarises Codex shell commands as intent phrases', () => {
+    assertEqual(summariseShellCommand('npm test'), 'Running the tests');
+    assertEqual(summariseShellCommand('git diff main'), 'Comparing against main');
+    assertEqual(summariseShellCommand('git diff --check'), 'Checking the diff for whitespace issues');
+    assertEqual(summariseShellCommand('git diff -- app/lib/codex-tool-narration.js'), 'Looking at changes in the codex tool narration file');
+    assertEqual(summariseShellCommand('Get-Content app\\renderer.js | Select-Object -First 20'), 'Looking at the renderer file, first 20 lines');
+    assertEqual(summariseShellCommand('Get-Content scripts\\run-tests.cjs | Select-Object -Skip 14640 -First 270'), 'Looking at the run tests file, 270 lines after line 14640');
+    assertEqual(summariseShellCommand('Start-Sleep -Seconds 4; Get-ChildItem ~/.terminal-talk/queue | Select-Object -First 8'), 'Listing the queue folder, first 8 results');
+    assertEqual(summariseShellCommand('node scripts\\sync-app-mirror.cjs'), 'Syncing the app mirror');
+    assertEqual(summariseShellCommand('rg -n "tool_calls" app scripts'), 'Searching app and scripts for tool calls');
+    assertEqual(summariseShellCommand('rg -n "tool_calls" app scripts | Select-Object -First 20'), 'Searching app and scripts for tool calls, first 20 matches');
+    assertEqual(summariseShellCommand('rg -n "tool_calls" app scripts | Measure-Object -Line'), 'Searching app and scripts for tool calls and counting matches');
+  });
+
+  it('varies Codex tool narration verbs deterministically at delivery time', () => {
+    assertEqual(varyToolPhrase('Searching for narrator', 'seed2'), 'Looking for narrator');
+    assertEqual(
+      varyToolPhrase('Searching app and scripts for tool calls', 'seed7'),
+      'Checking app and scripts for tool calls',
+    );
+    assertEqual(varyToolPhrase('Looking at the renderer file', 'read|renderer'), 'Inspecting the renderer file');
+    assertEqual(varyToolPhrase('Checking git status', 'bash|git status'), 'Reviewing git status');
+    assertEqual(varyToolPhrase('Listing files', 'bash|ls'), 'Collecting files');
+    assertEqual(varyToolPhrase('Running a PowerShell script', 'bash|pwsh'), 'Launching a PowerShell script');
+    assertEqual(
+      varyToolPhrase('Searching for narrator', 'seed2'),
+      varyToolPhrase('Searching for narrator', 'seed2'),
+      'same phrase + seed must stay stable',
+    );
+  });
+
+  it('avoids repeating the same leading verb in consecutive Codex tool narrations', () => {
+    const first = varyToolPhrase('Looking at the app main file', 'read|main');
+    const second = varyToolPhrase('Looking at the codex hook common file', 'read|common', {
+      avoidVerbs: [leadingToolVerb(first)],
+    });
+    const third = varyToolPhrase('Reading the codex session watcher file', 'read|watcher', {
+      avoidVerbs: [leadingToolVerb(first), leadingToolVerb(second)],
+    });
+    const verbs = [first, second, third].map(leadingToolVerb);
+    if (verbs[0] === verbs[1] || verbs[1] === verbs[2]) {
+      throw new Error(`consecutive tool narration verbs repeated: ${first} | ${second} | ${third}`);
+    }
+  });
+
+  it('extracts Codex shell tool calls from response_item lines', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-04-26T20:48:20.345Z',
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        name: 'shell_command',
+        call_id: 'call_123',
+        arguments: JSON.stringify({ command: 'rg -n "tool_calls" app scripts' }),
+      },
+    });
+    assertDeepEqual(
+      extractCodexToolCallEvent(line),
+      {
+        timestamp: '2026-04-26T20:48:20.345Z',
+        callId: 'call_123',
+        toolName: 'shell_command',
+        phrase: 'Searching app and scripts for tool calls',
+      },
+    );
+  });
+
+  it('extracts native Codex hook Bash payloads with tool_input context', () => {
+    const phrase = narrateCodexToolCallPayload({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'git diff --check' },
+    });
+    assertEqual(phrase, 'Checking the diff for whitespace issues');
+  });
+
+  it('uses Codex command output context when a read result is available', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'function_call',
+      name: 'shell_command',
+      arguments: JSON.stringify({
+        command: 'Get-Content app\\lib\\window-dock.js | Select-Object -Skip 90 -First 20',
+      }),
+      tool_result: {
+        aggregated_output: [
+          'function clampToVisibleDisplay(x, y, winWidth, barHeight, displays, primary) {',
+          '  const cx = x + winWidth / 2;',
+          '}',
+        ].join('\n'),
+      },
+    });
+    if (!phrase || !phrase.includes('around clamp to visible display')) {
+      throw new Error(`expected Codex read context, got: ${phrase}`);
+    }
+  });
+
+  it('extracts Codex exec_command_end output for delayed read context pairing', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-04-30T19:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'exec_command_end',
+        call_id: 'call_read_1',
+        aggregated_output: 'function clampToVisibleDisplay() {}\n',
+      },
+    });
+    assertDeepEqual(
+      extractCodexToolOutputEvent(line),
+      {
+        timestamp: '2026-04-30T19:00:00.000Z',
+        callId: 'call_read_1',
+        output: 'function clampToVisibleDisplay() {}\n',
+      },
+    );
+  });
+
+  it('speaks Codex permission requests from escalated tool calls', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'function_call',
+      name: 'shell_command',
+      arguments: JSON.stringify({
+        command: 'node scripts\\run-tests.cjs',
+        sandbox_permissions: 'require_escalated',
+        justification: 'Do you want to run the full Terminal Talk test harness outside the sandbox? The sandboxed run could not execute the Python/PowerShell probes reliably.',
+      }),
+    });
+    assertEqual(phrase, 'Codex needs permission to run the full Terminal Talk test harness outside the sandbox');
+  });
+
+  it('speaks a concise permission fallback when no justification is present', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'function_call',
+      name: 'shell_command',
+      arguments: JSON.stringify({
+        command: 'git pull',
+        sandbox_permissions: 'require_escalated',
+      }),
+    });
+    assertEqual(phrase, 'Codex needs permission to pull latest');
+  });
+
+  it('summarises Codex apply_patch custom tool calls with file counts', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'custom_tool_call',
+      name: 'apply_patch',
+      input: [
+        '*** Begin Patch',
+        '*** Update File: app/lib/codex-session-watcher.js',
+        '@@',
+        '+example',
+        '*** Add File: docs/example.md',
+        '+example',
+        '*** End Patch',
+      ].join('\n'),
+    });
+    assertEqual(phrase, 'Applying a code patch to 2 files, adding 2 lines');
+  });
+
+  it('summarises native Codex apply_patch hook payloads', () => {
+    const phrase = narrateCodexToolCallPayload({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: [
+          '*** Begin Patch',
+          '*** Update File: app/lib/codex-tool-narration.js',
+          '@@',
+          '+example',
+          '*** End Patch',
+        ].join('\n'),
+      },
+    });
+    assertEqual(phrase, 'Editing the codex tool narration file, adding 1 line');
+  });
+
+  it('summarises Codex apply_patch line counts and nearby code scope', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'custom_tool_call',
+      name: 'apply_patch',
+      input: [
+        '*** Begin Patch',
+        '*** Update File: app/renderer.js',
+        '@@',
+        ' function renderToolbar() {',
+        '-  drawOldToolbar();',
+        '+  drawNewToolbar();',
+        '+  updateRestingBounds();',
+        ' }',
+        '*** End Patch',
+      ].join('\n'),
+    });
+    assertEqual(phrase, 'Editing the renderer file around render toolbar, adding 2 lines and removing 1 line');
+  });
+
+  it('summarises Codex apply_patch with nearby feature section context', () => {
+    const phrase = narrateCodexToolCallPayload({
+      type: 'custom_tool_call',
+      name: 'apply_patch',
+      input: [
+        '*** Begin Patch',
+        '*** Update File: app/renderer.js',
+        '@@',
+        ' // ---- Toolbar collapse ----',
+        ' const collapseDelayMs = 15000;',
+        '-scheduleCollapse(collapseDelayMs);',
+        '+scheduleCollapse(3000);',
+        '+markCollapseSource("idle");',
+        '*** End Patch',
+      ].join('\n'),
+    });
+    assertEqual(phrase, 'Editing the renderer file around the toolbar collapse section, adding 2 lines and removing 1 line');
+  });
+
+  it('skips Codex meta tool calls that would be audio noise', () => {
+    assertEqual(narrateCodexToolCallPayload({ type: 'function_call', name: 'update_plan' }), null);
+  });
+
+  it('maps Codex rollout events to the shared working-flag heartbeat lifecycle', () => {
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'user_message' },
+    })), 'mark');
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'function_call', name: 'shell_command' },
+    })), 'mark');
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'agent_message', phase: 'commentary', message: 'Working.' },
+    })), 'mark');
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'agent_message', phase: 'final', message: 'Done.' },
+    })), 'clear');
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'agent_message', phase: 'final_answer', message: 'Done.' },
+    })), 'clear');
+    assertEqual(extractCodexWorkingStateEvent(JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'turn_aborted' },
+    })), 'clear');
+  });
+
+  it('Codex tool narration uses ephemeral T-prefix clip filenames and respects the tool_calls toggle', () => {
+    const watcherSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
+    );
+    if (!/\$\{turnTs\}-T-\$\{seq\}-\$\{state\.shortId\}/.test(watcherSrc)) {
+      throw new Error('Codex tool narration must write T-prefixed ephemeral clips');
+    }
+    if (!/includes\.tool_calls\s*===\s*false/.test(watcherSrc)) {
+      throw new Error('Codex tool narration must respect speech_includes.tool_calls=false');
+    }
+    if (!/TOOL_PHRASE_DEDUP_WINDOW_MS/.test(watcherSrc) || !/_rememberToolPhrase/.test(watcherSrc)) {
+      throw new Error('Codex tool narration must suppress repeated phrases in a short session window');
+    }
+  });
+
+  it('Codex watcher writes the same working flags consumed by heartbeat', () => {
+    const watcherSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
+    );
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/\$\{shortId\}-working\.flag/.test(watcherSrc)) {
+      throw new Error('Codex watcher must write <short>-working.flag for heartbeat');
+    }
+    if (!/extractCodexWorkingStateEvent/.test(watcherSrc) || !/_applyWorkingState/.test(watcherSrc)) {
+      throw new Error('Codex watcher must apply rollout working-state events');
+    }
+    if (!/sessionsDir:\s*SESSIONS_DIR/.test(mainSrc)) {
+      throw new Error('main.js must pass SESSIONS_DIR into createCodexSessionWatcher');
+    }
+  });
+
   it('touches the session registry when delivering Codex messages', () => {
     const watcherSrc = fs.readFileSync(
       path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
     );
     if (!/saveAssignments\(assignments,\s*'codex-session-watcher'\)/.test(watcherSrc)) {
       throw new Error('Codex watcher must persist last_seen via saveAssignments');
+    }
+    if (!/onAssignmentTouched/.test(watcherSrc)) {
+      throw new Error('Codex watcher must expose an assignment-change callback for event-bound identity refresh');
+    }
+    if (!/saveAssignments\(assignments,\s*'codex-session-watcher'\)[\s\S]*onAssignmentTouched\(shortId\)/.test(watcherSrc)) {
+      throw new Error('Codex watcher must refresh identity when Codex input touches the registry');
     }
     if (!/allocatePaletteIndex\(shortId,\s*assignments,\s*24\)/.test(watcherSrc)) {
       throw new Error('Codex watcher must allocate a registry row for launcher-free sessions');
@@ -14619,6 +15915,82 @@ describe('CODEX SESSION WATCHER', () => {
     if (!/createCodexSessionWatcher\(\{[\s\S]*?saveAssignments,/.test(mainSrc)) {
       throw new Error('main.js must inject saveAssignments into createCodexSessionWatcher');
     }
+    if (!/createCodexSessionWatcher\(\{[\s\S]*?onAssignmentTouched:[\s\S]*?_codexIdentitySync\.sync\(\)/.test(mainSrc)) {
+      throw new Error('main.js must sync Codex terminal identity when the watcher learns a session assignment');
+    }
+  });
+});
+
+describe('SETTINGS PANEL LAYOUT', () => {
+  const indexHtmlSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+
+  it('splits create-session controls away from the active sessions list', () => {
+    if (!/data-settings-tab="create-session"[\s\S]*>Create<\/button>/.test(indexHtmlSrc)) {
+      throw new Error('settings tabs must expose a top-level Create tab for launching sessions');
+    }
+    const sessionsSection = indexHtmlSrc.match(/<section class="panel-section settings-page" id="sessionsSection"[\s\S]*?<\/section>/);
+    if (!sessionsSection) throw new Error('sessionsSection not found');
+    if (!/<header>Active sessions<\/header>/.test(sessionsSection[0])) {
+      throw new Error('sessionsSection should be labelled Active sessions');
+    }
+    if (!/id="sessionsTable"[\s\S]*aria-label="Active assistant sessions"/.test(sessionsSection[0])) {
+      throw new Error('sessionsSection should contain the active sessions table');
+    }
+    if (/id="sessionCreate"/.test(sessionsSection[0])) {
+      throw new Error('sessionsSection must not include the create-session form');
+    }
+    const createSection = indexHtmlSrc.match(/<section class="panel-section settings-page" id="createSessionSection"[\s\S]*?<\/section>/);
+    if (!createSection) throw new Error('createSessionSection not found');
+    if (!/data-settings-page="create-session"/.test(createSection[0]) || !/id="sessionCreate"/.test(createSection[0])) {
+      throw new Error('createSessionSection must own the create-session form');
+    }
+  });
+
+  it('routes create-session tab targets and resets the real settings scroll host', () => {
+    const route = rendererSrc.match(/function\s+settingsTabForTarget[\s\S]*?\n\}/);
+    if (!route) throw new Error('settingsTabForTarget not found');
+    if (!/create-session[\s\S]*return 'create-session'/.test(route[0])) {
+      throw new Error('settingsTabForTarget must route create-session to the Create tab');
+    }
+    if (!/const\s+settingsPanelInnerEl\s*=\s*document\.querySelector\('\.panel-inner'\)/.test(rendererSrc)) {
+      throw new Error('renderer must keep a handle to .panel-inner, the real settings scroll host');
+    }
+    if (!/settingsPanelInnerEl\)\s*settingsPanelInnerEl\.scrollTop\s*=\s*0/.test(rendererSrc)) {
+      throw new Error('settings tab switches must reset .panel-inner.scrollTop');
+    }
+  });
+
+  it('keeps shortcuts in the Shortcuts tab and turns About into a reference page', () => {
+    const start = indexHtmlSrc.indexOf('<section class="panel-section settings-page about" id="aboutSection"');
+    const end = indexHtmlSrc.indexOf('<audio id="audio"', start);
+    if (start < 0 || end < 0) throw new Error('aboutSection not found');
+    const aboutSection = indexHtmlSrc.slice(start, end);
+    if (/Global shortcuts|aboutHotkey|class="shortcuts"|<kbd/.test(aboutSection)) {
+      throw new Error('About must not duplicate the global shortcuts table now that Shortcuts has its own tab');
+    }
+    if (!/class="about-wallpaper-card"/.test(aboutSection) || !/about-terminal-talk-wallpaper\.png/.test(aboutSection)) {
+      throw new Error('About should use the real Terminal Talk wallpaper mascot asset');
+    }
+    const required = [
+      'Intended use',
+      'Daily workflow',
+      'Playback model',
+      'Session identity',
+      'Claude and Codex',
+      'Voice setup',
+      'Toolbar controls',
+      'Privacy boundary',
+      'Good habits',
+    ];
+    for (const heading of required) {
+      if (!aboutSection.includes(`<h3>${heading}</h3>`)) {
+        throw new Error(`About reference is missing ${heading}`);
+      }
+    }
+    if (!/class="about-guide"/.test(aboutSection) || !/class="about-card/.test(aboutSection)) {
+      throw new Error('About should use compact guide cards');
+    }
   });
 });
 
@@ -14626,7 +15998,22 @@ describe('CODEX TERMINAL IDENTITY', () => {
   const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
   const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
   const wtLaunchPath = path.join(__dirname, '..', 'app', 'codex-wt-launch.ps1');
-  const importMod = `Import-Module '${modPath}' -Force -DisableNameChecking`;
+  const identifyPath = path.join(__dirname, '..', 'app', 'codex-identify-live.ps1');
+  const hookCommonPath = path.join(__dirname, '..', 'app', 'codex-hook-common.psm1');
+  const identitySyncPath = path.join(__dirname, '..', 'app', 'lib', 'codex-identity-sync.js');
+  const codexHookScripts = [
+    'codex-session-start.ps1',
+    'codex-mark-working.ps1',
+    'codex-on-tool.ps1',
+    'codex-post-tool.ps1',
+    'codex-stop.ps1',
+  ].map((name) => path.join(__dirname, '..', 'hooks', name));
+  const codexAuxHookScripts = [
+    'codex-plugin-announce.ps1',
+    'codex-plugin-cleanup.ps1',
+  ].map((name) => path.join(__dirname, '..', 'hooks', name));
+  const importMod = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Import-Module '${modPath}' -Force -DisableNameChecking`;
+  const hookCommonMod = hookCommonPath.replace(/'/g, "''");
 
   it('Parse-CodexSessionMetaLine extracts session id, short, cwd, and timestamp', () => {
     const line = JSON.stringify({
@@ -14635,6 +16022,8 @@ describe('CODEX TERMINAL IDENTITY', () => {
         id: '019dcb88-bc99-7082-a04b-a208631d111c',
         cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
         timestamp: '2026-04-26T20:43:49.294Z',
+        source: 'cli',
+        originator: 'codex-tui',
       },
     }).replace(/'/g, "''");
     const out = runPowershellBody(
@@ -14646,7 +16035,20 @@ describe('CODEX TERMINAL IDENTITY', () => {
       short: '019dcb88',
       cwd: String.raw`C:\Users\Ben\Desktop\terminal-talk`,
       timestamp: '2026-04-26T20:43:49.294Z',
+      source: 'cli',
+      originator: 'codex-tui',
     });
+  });
+
+  it('Test-CodexTerminalRolloutMeta rejects VS Code agent rollouts', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$cli = [pscustomobject]@{ source = 'cli'; originator = 'codex-tui' }; `
+      + `$agent = [pscustomobject]@{ source = 'vscode'; originator = 'Claude Code' }; `
+      + `$legacy = [pscustomobject]@{ source = ''; originator = '' }; `
+      + `Write-Output "$([bool](Test-CodexTerminalRolloutMeta -Meta $cli))|$([bool](Test-CodexTerminalRolloutMeta -Meta $agent))|$([bool](Test-CodexTerminalRolloutMeta -Meta $legacy))"`
+    );
+    assertEqual(out, 'True|False|True');
   });
 
   it('Parse-CodexSessionMetaLine rejects malformed or non-session-meta lines', () => {
@@ -14676,9 +16078,10 @@ describe('CODEX TERMINAL IDENTITY', () => {
       `${importMod}; `
       + `$launch = [datetime]'2026-04-26T21:00:00Z'; `
       + `$candidates = @(`
-      + `[pscustomobject]@{ path = 'older.jsonl'; session_id = 'aaaaaaaa-1111-2222-3333-444444444444'; short = 'aaaaaaaa'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; timestamp = '2026-04-26T21:00:02Z'; mtime_utc = [datetime]'2026-04-26T21:00:02Z' }, `
-      + `[pscustomobject]@{ path = 'newer.jsonl'; session_id = 'bbbbbbbb-1111-2222-3333-444444444444'; short = 'bbbbbbbb'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; timestamp = '2026-04-26T21:00:05Z'; mtime_utc = [datetime]'2026-04-26T21:00:05Z' }, `
-      + `[pscustomobject]@{ path = 'wrong-cwd.jsonl'; session_id = 'cccccccc-1111-2222-3333-444444444444'; short = 'cccccccc'; cwd = 'C:\\Users\\Ben\\Desktop\\other'; timestamp = '2026-04-26T21:00:06Z'; mtime_utc = [datetime]'2026-04-26T21:00:06Z' }`
+      + `[pscustomobject]@{ path = 'older.jsonl'; session_id = 'aaaaaaaa-1111-2222-3333-444444444444'; short = 'aaaaaaaa'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; source = 'cli'; originator = 'codex-tui'; terminal_source = $true; timestamp = '2026-04-26T21:00:02Z'; mtime_utc = [datetime]'2026-04-26T21:00:02Z' }, `
+      + `[pscustomobject]@{ path = 'agent.jsonl'; session_id = 'dddddddd-1111-2222-3333-444444444444'; short = 'dddddddd'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; source = 'vscode'; originator = 'Claude Code'; terminal_source = $false; timestamp = '2026-04-26T21:00:06Z'; mtime_utc = [datetime]'2026-04-26T21:00:06Z' }, `
+      + `[pscustomobject]@{ path = 'newer.jsonl'; session_id = 'bbbbbbbb-1111-2222-3333-444444444444'; short = 'bbbbbbbb'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; source = 'cli'; originator = 'codex-tui'; terminal_source = $true; timestamp = '2026-04-26T21:00:05Z'; mtime_utc = [datetime]'2026-04-26T21:00:05Z' }, `
+      + `[pscustomobject]@{ path = 'wrong-cwd.jsonl'; session_id = 'cccccccc-1111-2222-3333-444444444444'; short = 'cccccccc'; cwd = 'C:\\Users\\Ben\\Desktop\\other'; source = 'cli'; originator = 'codex-tui'; terminal_source = $true; timestamp = '2026-04-26T21:00:06Z'; mtime_utc = [datetime]'2026-04-26T21:00:06Z' }`
       + `); `
       + `$pick = Select-CodexRolloutCandidate -Candidates $candidates -TargetCwd 'C:\\Users\\Ben\\Desktop\\terminal-talk' -LaunchStartUtc $launch; `
       + `$pick | ConvertTo-Json -Compress`
@@ -14688,21 +16091,35 @@ describe('CODEX TERMINAL IDENTITY', () => {
     assertEqual(parsed.short, 'bbbbbbbb');
   });
 
-  it('Format-CodexWindowTitle uses the TT slot, label, and short id', () => {
+  it('Select-CodexRolloutCandidate treats ISO Z timestamps as UTC', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$launch = [datetime]'2026-04-28T17:39:15Z'; `
+      + `$candidates = @(`
+      + `[pscustomobject]@{ path = 'bst.jsonl'; session_id = 'dddddddd-1111-2222-3333-444444444444'; short = 'dddddddd'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk'; source = 'cli'; originator = 'codex-tui'; terminal_source = $true; timestamp = '2026-04-28T17:39:15.923Z'; mtime_utc = '2026-04-28T17:39:15.923Z' }`
+      + `); `
+      + `$pick = Select-CodexRolloutCandidate -Candidates $candidates -TargetCwd 'C:\\Users\\Ben\\Desktop\\terminal-talk' -LaunchStartUtc $launch; `
+      + `if ($pick) { Write-Output $pick.short }`
+    );
+    assertEqual(out, 'dddddddd');
+  });
+
+  it('Format-CodexWindowTitle uses the palette marker and assigned label without noisy ids', () => {
     const out = runPowershellBody(
       `${importMod}; `
       + `Format-CodexWindowTitle -Short '019dcb88' -Entry ([pscustomobject]@{ index = 1; label = 'Voice output' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk'`
     );
-    assertEqual(out, 'TT 2 (Voice output) | 019dcb88 | Codex');
+    const orange = String.fromCodePoint(0x1F7E0);
+    assertEqual(out, `${orange} Voice output`);
   });
 
-  it('Get-TerminalTalkIdentityText does not duplicate an existing TT label', () => {
+  it('Get-TerminalTalkIdentityText extracts user text from legacy TT labels', () => {
     const out = runPowershellBody(
       `${importMod}; `
       + `Get-TerminalTalkIdentityText -Entry ([pscustomobject]@{ index = 1; label = 'TT 2 (Voice output)' })`
     );
-    assertEqual(out, 'TT 2 (Voice output)');
+    assertEqual(out, 'Voice output');
   });
 
   it('Get-TerminalTalkIdentityText reads registry hashtables as well as objects', () => {
@@ -14710,7 +16127,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
       `${importMod}; `
       + `Get-TerminalTalkIdentityText -Entry @{ index = 6; label = '' } -FallbackLabel Codex`
     );
-    assertEqual(out, 'TT 7 (Codex)');
+    assertEqual(out, 'Session 7');
   });
 
   it('Get-TerminalTalkPaletteHex maps split slots back to their primary colour', () => {
@@ -14723,25 +16140,387 @@ describe('CODEX TERMINAL IDENTITY', () => {
     assertEqual(out, '60a5fa|60a5fa');
   });
 
+  it('Get-TerminalTalkTitleMarker uses the same 24-slot solid/split arrangements as the settings dots', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = Get-TerminalTalkTitleMarker -Index 0; `
+      + `$b = Get-TerminalTalkTitleMarker -Index 8; `
+      + `$c = Get-TerminalTalkTitleMarker -Index 17; `
+      + `Write-Output "$a|$b|$c"`
+    );
+    const red = String.fromCodePoint(0x1F534);
+    const green = String.fromCodePoint(0x1F7E2);
+    const orange = String.fromCodePoint(0x1F7E0);
+    const purple = String.fromCodePoint(0x1F7E3);
+    assertEqual(out, `${red}|${red}${green}|${orange}${purple}`);
+  });
+
+  it('Get-TerminalTalkPaletteAnsiGlyph emits exact coloured solid/split terminal markers', () => {
+    const out = runPowershellBody(
+      `${importMod}; `
+      + `$a = Get-TerminalTalkPaletteAnsiGlyph -Index 0; `
+      + `$b = Get-TerminalTalkPaletteAnsiGlyph -Index 8; `
+      + `$c = Get-TerminalTalkPaletteAnsiGlyph -Index 17; `
+      + `Write-Output ($a + '|' + $b + '|' + $c)`
+    );
+    if (!out.includes('\u001b[38;2;255;94;94m●\u001b[0m')) {
+      throw new Error(`expected solid red ANSI glyph, got ${JSON.stringify(out)}`);
+    }
+    if (!out.includes('▀') || !out.includes('▌')) {
+      throw new Error(`expected split block glyphs, got ${JSON.stringify(out)}`);
+    }
+  });
+
+  it('Codex hook common resolves native hook session ids to registry shorts', () => {
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `$a = Get-CodexSessionShort -SessionId '019dcb88-bc99-7082-a04b-a208631d111c'; `
+      + `$b = Get-CodexSessionShort -SessionId 'thread-not-hex'; `
+      + `Write-Output "$a|$b"`
+    );
+    const [a, b] = out.split('|');
+    assertEqual(a, '019dcb88');
+    if (!/^[a-f0-9]{8}$/.test(b)) throw new Error(`hashed non-hex session id should become short hex, got ${b}`);
+  });
+
+  it('Get-StableCodexPid walks to the long-lived codex.exe ancestor', () => {
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `$map = @{ `
+      + `100 = [pscustomobject]@{ Name = 'powershell.exe'; ProcessId = 100; ParentProcessId = 200 }; `
+      + `200 = [pscustomobject]@{ Name = 'codex.exe'; ProcessId = 200; ParentProcessId = 300 }; `
+      + `300 = [pscustomobject]@{ Name = 'WindowsTerminal.exe'; ProcessId = 300; ParentProcessId = 0 } `
+      + `}; `
+      + `$resolvedPid = Get-StableCodexPid -StartPid 100 -ProcessLookup { param($id) $map[[int]$id] }; `
+      + `Write-Output $resolvedPid`
+    );
+    assertEqual(out, '200');
+  });
+
   it('Format-CodexWindowTitle falls back to attaching + project name before bind', () => {
     const out = runPowershellBody(
       `${importMod}; `
       + `Format-CodexWindowTitle -Short 'deadbeef' -Entry ([pscustomobject]@{ index = 0; label = '' }) `
       + `-CurrentDir 'C:\\Users\\Ben\\Desktop\\terminal-talk' -Attaching`
     );
-    assertEqual(out, 'TT 1 (Codex) | deadbeef | terminal-talk | attaching');
+    const red = String.fromCodePoint(0x1F534);
+    assertEqual(out, `${red} Session 1 | terminal-talk | attaching`);
   });
 
   it('Codex launcher scripts parse without PowerShell syntax errors', () => {
     const launchEsc = launchPath.replace(/'/g, "''");
     const wtLaunchEsc = wtLaunchPath.replace(/'/g, "''");
+    const identifyEsc = identifyPath.replace(/'/g, "''");
+    const commonEsc = hookCommonPath.replace(/'/g, "''");
+    const hookEsc = codexHookScripts.map((p) => p.replace(/'/g, "''"));
+    const auxHookEsc = codexAuxHookScripts.map((p) => p.replace(/'/g, "''"));
     const out = runPowershellBody(
       `$tokens = $null; $errors = $null; `
       + `[System.Management.Automation.Language.Parser]::ParseFile('${launchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
       + `[System.Management.Automation.Language.Parser]::ParseFile('${wtLaunchEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + `[System.Management.Automation.Language.Parser]::ParseFile('${identifyEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + `[System.Management.Automation.Language.Parser]::ParseFile('${commonEsc}', [ref]$tokens, [ref]$errors) | Out-Null; `
+      + hookEsc.map((p) => `[System.Management.Automation.Language.Parser]::ParseFile('${p}', [ref]$tokens, [ref]$errors) | Out-Null; `).join('')
+      + auxHookEsc.map((p) => `[System.Management.Automation.Language.Parser]::ParseFile('${p}', [ref]$tokens, [ref]$errors) | Out-Null; `).join('')
       + `Write-Output $errors.Count`
     );
     assertEqual(out, '0');
+  });
+
+  it('Codex native hook scripts use stdin payloads and never print developer-context noise', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    if (!/ReadToEnd\(\)[\s\S]*ConvertFrom-Json/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must read Codex hook JSON from stdin');
+    }
+    if (!/session_id/.test(common) || !/Update-SessionAssignment/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must use hook session_id as the registry source of truth');
+    }
+    if (!/Set-CodexTerminalTitleForPid/.test(common) || !/Format-CodexWindowTitle/.test(common)) {
+      throw new Error('Codex hooks must reapply Terminal Talk tab titles directly from hook events');
+    }
+    for (const p of codexHookScripts) {
+      const src = fs.readFileSync(p, 'utf8');
+      if (!/Read-CodexHookPayload/.test(src) || !/Sync-CodexHookSession/.test(src)) {
+        throw new Error(`${path.basename(p)} must read the Codex hook payload and sync the session`);
+      }
+      if (/Write-Host|Write-Output/.test(src)) {
+        throw new Error(`${path.basename(p)} must not write visible output into Codex`);
+      }
+    }
+  });
+
+  it('Codex hook migrates toolbar launch identity from provisional to real session short', () => {
+    const regMod = path.join(__dirname, '..', 'app', 'session-registry.psm1').replace(/'/g, "''");
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `$root = Join-Path ([IO.Path]::GetTempPath()) ('tt-codex-token-migrate-' + [guid]::NewGuid().ToString()); `
+      + `New-Item -ItemType Directory -Path $root, (Join-Path $root 'queue'), (Join-Path $root 'sessions') -Force | Out-Null; `
+      + `$p = Join-Path $root 'session-colours.json'; `
+      + `$env:TT_HOME = $root; $env:TT_REGISTRY_PATH = $p; $env:TT_FAKE_CODEX_PID = '12345'; $env:TT_LAUNCH_TOKEN = 'tokentest12345678'; `
+      + `$marker = 'toolbar-launch:tokentest12345678'; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `Import-Module '${regMod}' -Force -DisableNameChecking; `
+      + `$a = @{ `
+      + `deadbeef = @{ index = 6; session_id = 'codex-provisional-777'; claude_pid = 777; label = 'Codex X2'; pinned = $true; muted = $false; focus = $false; last_seen = 1; source_kind = 'toolbar-launch'; source_label = 'Codex'; source_originator = $marker; voice = 'en-GB-ThomasNeural'; voice_auto = $true }; `
+      + `019de274 = @{ index = 3; session_id = '019de274-1b9b-7f83-a3e1-e35dfab7615e'; claude_pid = 34936; label = 'TerminalTalk'; pinned = $true; muted = $false; focus = $false; last_seen = 1 } `
+      + `}; `
+      + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
+      + `$payload = [pscustomobject]@{ session_id = 'abcdef12-1111-2222-3333-444444444444'; hook_event_name = 'Stop'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk' }; `
+      + `$null = Sync-CodexHookSession -Payload $payload -Caller 'test-token-migration'; `
+      + `$r = Read-Registry -RegistryPath $p; `
+      + `$hasProv = $r.ContainsKey('deadbeef'); $hasReal = $r.ContainsKey('abcdef12'); $real = $r['abcdef12']; `
+      + `Write-Output "$hasProv|$hasReal|$($real.label)|$($real.index)|$($real.source_originator)|$($real.claude_pid)"; `
+      + `Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue`
+    );
+    assertEqual(out, 'False|True|Codex X2|6|toolbar-launch:tokentest12345678|12345');
+  });
+
+  it('Codex hook keeps simultaneous Codex sessions when native short ids collide', () => {
+    const regMod = path.join(__dirname, '..', 'app', 'session-registry.psm1').replace(/'/g, "''");
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `$root = Join-Path ([IO.Path]::GetTempPath()) ('tt-codex-short-collision-' + [guid]::NewGuid().ToString()); `
+      + `New-Item -ItemType Directory -Path $root, (Join-Path $root 'queue'), (Join-Path $root 'sessions') -Force | Out-Null; `
+      + `$p = Join-Path $root 'session-colours.json'; `
+      + `$env:TT_HOME = $root; $env:TT_REGISTRY_PATH = $p; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `Import-Module '${regMod}' -Force -DisableNameChecking; `
+      + `$markerA = 'toolbar-launch:codextta10000000'; $markerB = 'toolbar-launch:codexttb20000000'; `
+      + `$a = @{ `
+      + `a1b2c3d4 = @{ index = 5; session_id = 'codex-provisional-a'; claude_pid = 52312; label = 'Codex TT A'; pinned = $true; muted = $false; focus = $false; last_seen = 1; source_kind = 'toolbar-launch'; source_label = 'Codex'; source_originator = $markerA; voice = 'en-GB-ThomasNeural'; voice_auto = $true }; `
+      + `b1c2d3e4 = @{ index = 7; session_id = 'codex-provisional-b'; claude_pid = 13592; label = 'Codex TT B'; pinned = $true; muted = $false; focus = $false; last_seen = 1; source_kind = 'toolbar-launch'; source_label = 'Codex'; source_originator = $markerB; voice = 'en-GB-RyanNeural'; voice_auto = $true } `
+      + `}; `
+      + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
+      + `$env:TT_FAKE_CODEX_PID = '52312'; $env:TT_LAUNCH_TOKEN = 'codextta10000000'; `
+      + `$payloadA = [pscustomobject]@{ session_id = '019dea27-d00e-7dc0-bfaf-a3c44508070a'; hook_event_name = 'Stop'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk' }; `
+      + `$null = Sync-CodexHookSession -Payload $payloadA -Caller 'test-short-collision'; `
+      + `$env:TT_FAKE_CODEX_PID = '13592'; $env:TT_LAUNCH_TOKEN = 'codexttb20000000'; `
+      + `$payloadB = [pscustomobject]@{ session_id = '019dea27-de3c-7433-9564-034d6699e346'; hook_event_name = 'Stop'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk' }; `
+      + `$null = Sync-CodexHookSession -Payload $payloadB -Caller 'test-short-collision'; `
+      + `$json = Get-Content -LiteralPath $p -Raw -Encoding utf8 | ConvertFrom-Json; `
+      + `$props = @($json.assignments.PSObject.Properties); `
+      + `$real = @($props | Where-Object { ([string]$_.Value.session_id) -like '019dea27-*' }); `
+      + `$aReal = @($real | Where-Object { $_.Value.label -eq 'Codex TT A' } | Select-Object -First 1); `
+      + `$bReal = @($real | Where-Object { $_.Value.label -eq 'Codex TT B' } | Select-Object -First 1); `
+      + `$hasProv = [bool](@($props | Where-Object { $_.Name -in @('a1b2c3d4','b1c2d3e4') }).Count); `
+      + `$nonPreferred = @($real | Where-Object { $_.Name -ne '019dea27' }).Count; `
+      + `Write-Output "$($real.Count)|$($aReal.Value.index)|$($bReal.Value.index)|$hasProv|$nonPreferred|$($aReal.Name -ne $bReal.Name)|$($aReal.Value.claude_pid)|$($bReal.Value.claude_pid)"; `
+      + `Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue`
+    );
+    assertEqual(out, '2|5|7|False|1|True|52312|13592');
+  });
+
+  it('Codex hooks classify app-server/plugin processes instead of treating them as stray terminals', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    if (!/Get-CodexHookProcessKind/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must classify hook-side process kind');
+    }
+    if (!/codex-plugin/.test(common) || !/app-server/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must identify Codex app-server helper/plugin processes');
+    }
+    if (!/source_kind.+codex-plugin/.test(common) && !/\['source_kind'\]\s*=\s*'codex-plugin'/.test(common)) {
+      throw new Error('Codex plugin hooks must stamp source_kind=codex-plugin into the registry');
+    }
+    if (!/Get-CodexPluginSessionLabel/.test(common) || !/Claude Codex/.test(common)) {
+      throw new Error('Codex plugin hooks must generate a clear Claude Codex session label');
+    }
+  });
+
+  it('Codex hooks reject non-terminal rollout metadata unless it belongs to a hook-identified plugin session', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    if (!/Resolve-CodexHookRolloutMeta/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must resolve rollout metadata for hook payloads');
+    }
+    if (!/Get-CodexRolloutSessionMeta/.test(common) || !/terminal_source/.test(common)) {
+      throw new Error('Codex hooks must use rollout terminal_source metadata');
+    }
+    if (!/\$processKind\s+-ne\s+'codex-plugin'[\s\S]*terminal_source/.test(common)) {
+      throw new Error('Codex hooks must allow non-terminal rollout metadata only for codex-plugin sessions');
+    }
+    if (!/skip non-terminal hook[\s\S]*source=/.test(common)) {
+      throw new Error('Codex hook non-terminal rollout skips must log source/originator');
+    }
+  });
+
+  it('Codex hooks map prompt/tool/stop events to the heartbeat working flag lifecycle', () => {
+    const mark = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-mark-working.ps1'), 'utf8');
+    const pre = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-on-tool.ps1'), 'utf8');
+    const post = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-post-tool.ps1'), 'utf8');
+    const stop = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-stop.ps1'), 'utf8');
+    if (!/Set-CodexWorkingFlag[\s\S]*-Action mark/.test(mark)) throw new Error('UserPromptSubmit hook must mark working');
+    if (!/Set-CodexWorkingFlag[\s\S]*-Action mark/.test(pre)) throw new Error('PreToolUse hook must refresh working');
+    if (!/Set-CodexWorkingFlag[\s\S]*-Action mark/.test(post)) throw new Error('PostToolUse hook must refresh working');
+    if (!/Set-CodexWorkingFlag[\s\S]*-Action clear/.test(stop)) throw new Error('Stop hook must clear working');
+  });
+
+  it('Codex per-tool hooks stay lightweight and avoid full title sync churn', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    const pre = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-on-tool.ps1'), 'utf8');
+    const post = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-post-tool.ps1'), 'utf8');
+    if (!/function\s+Resolve-CodexHookWorkingShort/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must expose a fast working-short resolver for per-tool hooks');
+    }
+    if (!/Resolve-CodexHookWorkingShort[\s\S]{0,160}Set-CodexWorkingFlag/.test(pre)) {
+      throw new Error('PreToolUse hook must use the lightweight working-short path');
+    }
+    if (!/Resolve-CodexHookWorkingShort[\s\S]{0,160}Set-CodexWorkingFlag/.test(post)) {
+      throw new Error('PostToolUse hook must use the lightweight working-short path');
+    }
+    if (/Sync-CodexHookSession[\s\S]*-UpdateTitle/.test(pre) || /Sync-CodexHookSession[\s\S]*-UpdateTitle/.test(post)) {
+      throw new Error('Per-tool Codex hooks must not run full title sync before/after every tool call');
+    }
+  });
+
+  it('Codex plugin sessions announce their child identity on start', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    const start = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-session-start.ps1'), 'utf8');
+    const announce = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-plugin-announce.ps1'), 'utf8');
+    if (!/function\s+Start-CodexPluginStartAnnouncement/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must expose plugin start announcements');
+    }
+    if (!/Test-CodexPluginEntry[\s\S]{0,240}source_kind/.test(common)) {
+      throw new Error('plugin start announcements must be gated to source_kind=codex-plugin');
+    }
+    if (!/Start-CodexPluginStartAnnouncement[\s\S]{0,120}-Sync\s+\$sync/.test(start)) {
+      throw new Error('codex-session-start.ps1 must announce hook-identified plugin sessions');
+    }
+    if (!/plugin-start/.test(announce) || !/Session ID/.test(announce) || !/colourNames/.test(announce) || !/JobPath/.test(announce)) {
+      throw new Error('codex-plugin-announce.ps1 must queue a labelled, colour-aware start clip');
+    }
+  });
+
+  it('Codex Stop hook removes finished plugin/app-server sessions only', () => {
+    const common = fs.readFileSync(hookCommonPath, 'utf8');
+    const stop = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'codex-stop.ps1'), 'utf8');
+    if (!/function\s+Remove-CodexPluginSession/.test(common)) {
+      throw new Error('codex-hook-common.psm1 must expose Remove-CodexPluginSession for app-server cleanup');
+    }
+    if (!/source_kind[\s\S]{0,240}codex-plugin/.test(common)) {
+      throw new Error('Remove-CodexPluginSession must guard removal to source_kind=codex-plugin entries');
+    }
+    if (!/Save-Registry[\s\S]{0,300}-SkipRestoreShorts\s+@\(\$shortId\)/.test(common)) {
+      throw new Error('plugin cleanup must bypass missing-entry restore for the removed short');
+    }
+    if (!/Start-CodexPluginSessionCleanup[\s\S]{0,120}-Sync\s+\$sync/.test(stop)) {
+      throw new Error('codex-stop.ps1 must schedule plugin cleanup for the synced short');
+    }
+    if (!/Remove-CodexPluginQueueFiles/.test(common) || !/codex-plugin-cleanup\.ps1/.test(common)) {
+      throw new Error('plugin cleanup must purge queue files through the delayed cleanup helper');
+    }
+    if (!/Set-CodexPluginCleanupTombstone/.test(common) || !/plugin-cleaned\.flag/.test(common)) {
+      throw new Error('plugin cleanup must leave a recent tombstone so stale queue scans cannot resurrect the short');
+    }
+    if (!/Test-CodexPluginMarker[\s\S]{0,260}plugin-start/.test(common)) {
+      throw new Error('plugin cleanup must tolerate source_kind metadata being clobbered while marker files still prove plugin identity');
+    }
+  });
+
+  it('main queue assignment skips recently-cleaned Codex plugin shorts', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/PLUGIN_CLEANED_TOMBSTONE_MS/.test(main) || !/function\s+isRecentlyCleanedPluginShort/.test(main)) {
+      throw new Error('main.js must define a recent plugin-cleaned tombstone guard');
+    }
+    if (!/plugin-cleaned\.flag/.test(main)) {
+      throw new Error('main.js must read the <short>-plugin-cleaned.flag tombstone');
+    }
+    if (!/isRecentlyCleanedPluginShort\(k,\s*nowMs\)[\s\S]{0,180}delete all\[k\]/.test(main)) {
+      throw new Error('ensureAssignmentsForFiles must prune any ghost entry for a recently cleaned plugin short');
+    }
+    if (!/isRecentlyCleanedPluginShort\(short,\s*nowMs\)[\s\S]{0,180}continue/.test(main)) {
+      throw new Error('ensureAssignmentsForFiles must skip stale queue files for recently cleaned plugin shorts');
+    }
+  });
+
+  it('Codex rollout watcher writes and respects plugin cleanup tombstones', () => {
+    const watcher = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8');
+    if (!/PLUGIN_CLEANED_TOMBSTONE_MS/.test(watcher) || !/_writePluginCleanupTombstone/.test(watcher)) {
+      throw new Error('codex-session-watcher must write cleanup tombstones when it removes plugin sessions');
+    }
+    if (!/plugin-cleaned\.flag/.test(watcher)) {
+      throw new Error('codex-session-watcher must use the same <short>-plugin-cleaned.flag tombstone');
+    }
+    if (!/_isRecentlyCleanedPluginShort\(shortId\)[\s\S]{0,180}return/.test(watcher)) {
+      throw new Error('_touchAssignment must not recreate a recently cleaned plugin short');
+    }
+    if (!/_writePluginCleanupTombstone\(shortId\)[\s\S]{0,180}_purgeQueueFilesForShort/.test(watcher)) {
+      throw new Error('_removePluginSession must tombstone before stale queue files can recreate the assignment');
+    }
+  });
+
+  it('Save-Registry -SkipRestoreShorts permits deliberate plugin removal', () => {
+    const regMod = path.join(__dirname, '..', 'app', 'session-registry.psm1').replace(/'/g, "''");
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `Import-Module '${regMod}' -Force -DisableNameChecking; `
+      + `$p = Join-Path ([IO.Path]::GetTempPath()) ('tt-skiprestore-' + [guid]::NewGuid().ToString() + '.json'); `
+      + `$seed = @{ assignments = @{ deadbeef = @{ index = 1; session_id = 'deadbeef-1111-2222-3333-444444444444'; claude_pid = 123; label = 'Claude Codex - Project'; pinned = $false; muted = $false; focus = $false; last_seen = 1; auto_label = $true; source_kind = 'codex-plugin' } } }; `
+      + `$seed | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $p -Encoding utf8; `
+      + `$a = @{}; `
+      + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'test' -SkipRestoreShorts @('deadbeef'); `
+      + `$r = Read-Registry -RegistryPath $p; `
+      + `if ($r.ContainsKey('deadbeef')) { Write-Output 'present' } else { Write-Output 'absent' }; `
+      + `Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue`
+    );
+    assertEqual(out, 'absent');
+  });
+
+  it('Remove-CodexPluginSession removes plugin rows and leaves normal sessions alone', () => {
+    const regMod = path.join(__dirname, '..', 'app', 'session-registry.psm1').replace(/'/g, "''");
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `$root = Join-Path ([IO.Path]::GetTempPath()) ('tt-plugin-clean-' + [guid]::NewGuid().ToString()); `
+      + `New-Item -ItemType Directory -Path $root, (Join-Path $root 'queue'), (Join-Path $root 'sessions') -Force | Out-Null; `
+      + `$p = Join-Path $root 'session-colours.json'; `
+      + `$env:TT_HOME = $root; $env:TT_REGISTRY_PATH = $p; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `Import-Module '${regMod}' -Force -DisableNameChecking; `
+      + `$a = @{ `
+      + `feedface = @{ index = 0; session_id = 'feedface-1111-2222-3333-444444444444'; claude_pid = 111; label = 'Real terminal'; pinned = $true; muted = $false; focus = $false; last_seen = 1 }; `
+      + `deadbeef = @{ index = 1; session_id = 'deadbeef-1111-2222-3333-444444444444'; claude_pid = 222; label = 'Claude Codex - Project'; pinned = $false; muted = $false; focus = $false; last_seen = 1; auto_label = $true; source_kind = 'codex-plugin' } `
+      + `}; `
+      + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
+      + `Set-Content -LiteralPath (Join-Path $root 'sessions\\deadbeef-working.flag') -Value '1' -Encoding utf8; `
+      + `Set-Content -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start-announced.flag') -Value '1' -Encoding utf8; `
+      + `Set-Content -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start.json') -Value '{}' -Encoding utf8; `
+      + `Set-Content -LiteralPath (Join-Path $root 'queue\\20260429T010203004-plugin-start-deadbeef.mp3') -Value 'audio' -Encoding utf8; `
+      + `Set-Content -LiteralPath (Join-Path $root 'queue\\20260429T010203004-plugin-start-deadbeef.txt') -Value 'spoken' -Encoding utf8; `
+      + `$normal = Remove-CodexPluginSession -Short 'feedface' -Caller 'test'; `
+      + `$plugin = Remove-CodexPluginSession -Short 'deadbeef' -Caller 'test' -PurgeQueue; `
+      + `$names = @(((Get-Content -LiteralPath $p -Raw | ConvertFrom-Json).assignments.PSObject.Properties.Name)); `
+      + `$flag = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-working.flag'); `
+      + `$ann = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start-announced.flag'); `
+      + `$job = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start.json'); `
+      + `$cleaned = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-cleaned.flag'); `
+      + `$clips = @((Get-ChildItem -LiteralPath (Join-Path $root 'queue') -File | Where-Object { $_.Name -match 'deadbeef' })).Count; `
+      + `Write-Output "$normal|$plugin|$($names -contains 'feedface')|$($names -contains 'deadbeef')|$flag|$ann|$job|$cleaned|$clips"; `
+      + `Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue`
+    );
+    assertEqual(out, 'False|True|True|False|False|False|False|True|0');
+  });
+
+  it('Remove-CodexPluginSession still removes a plugin short after source_kind is clobbered', () => {
+    const regMod = path.join(__dirname, '..', 'app', 'session-registry.psm1').replace(/'/g, "''");
+    const out = runPowershellBody(
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `
+      + `$root = Join-Path ([IO.Path]::GetTempPath()) ('tt-plugin-clobber-' + [guid]::NewGuid().ToString()); `
+      + `New-Item -ItemType Directory -Path $root, (Join-Path $root 'queue'), (Join-Path $root 'sessions') -Force | Out-Null; `
+      + `$p = Join-Path $root 'session-colours.json'; `
+      + `$env:TT_HOME = $root; $env:TT_REGISTRY_PATH = $p; `
+      + `Import-Module '${hookCommonMod}' -Force -DisableNameChecking; `
+      + `Import-Module '${regMod}' -Force -DisableNameChecking; `
+      + `$a = @{ deadbeef = @{ index = 1; session_id = 'deadbeef'; claude_pid = 0; label = ''; pinned = $false; muted = $false; focus = $false; last_seen = 1 } }; `
+      + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
+      + `Set-Content -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start.json') -Value '{}' -Encoding utf8; `
+      + `$plugin = Remove-CodexPluginSession -Short 'deadbeef' -Caller 'test' -PurgeQueue; `
+      + `$names = @(((Get-Content -LiteralPath $p -Raw | ConvertFrom-Json).assignments.PSObject.Properties.Name)); `
+      + `$cleaned = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-cleaned.flag'); `
+      + `$job = Test-Path -LiteralPath (Join-Path $root 'sessions\\deadbeef-plugin-start.json'); `
+      + `Write-Output "$plugin|$($names -contains 'deadbeef')|$cleaned|$job"; `
+      + `Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue`
+    );
+    assertEqual(out, 'True|False|True|False');
   });
 
   it('codex-launch.ps1 wires into registry, title, pid-file, and Start-Process', () => {
@@ -14766,6 +16545,12 @@ describe('CODEX TERMINAL IDENTITY', () => {
     }
     if (!/Start-Process[\s\S]*-NoNewWindow[\s\S]*-PassThru/.test(src)) {
       throw new Error('codex-launch.ps1 must launch Codex in the current terminal via Start-Process -NoNewWindow -PassThru');
+    }
+    if (!/Test-CodexCandidateOwnedByOtherLiveProcess/.test(src) || !/already owned by live pid/.test(src)) {
+      throw new Error('codex-launch.ps1 must not bind a toolbar-launched terminal to another live Codex rollout');
+    }
+    if (!/Get-RegistryEntryForLaunchMarker/.test(src) || !/-not\s+\$launchMarker/.test(src)) {
+      throw new Error('codex-launch.ps1 must let token-launched sessions bind by hook token instead of rollout guessing');
     }
   });
 

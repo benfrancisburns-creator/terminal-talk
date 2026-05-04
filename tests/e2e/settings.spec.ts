@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { openSettings, clickById } from './helpers';
+import { openSettings, clickById, switchSettingsTab } from './helpers';
 
 test.describe('Settings panel', () => {
   test('opens and closes when ⚙ cog is clicked', async ({ window }) => {
@@ -16,9 +16,10 @@ test.describe('Settings panel', () => {
     await expect(window.locator('body.settings-open')).toHaveCount(0);
   });
 
-  test('Playback section shows speed + auto-prune controls', async ({ window }) => {
+  test('Playback section shows speed + collapse-delay + auto-prune controls', async ({ window }) => {
     await openSettings(window);
     await expect(window.locator('#speedSlider')).toBeVisible();
+    await expect(window.locator('#collapseDelaySec')).toBeVisible();
     // The underlying <input type=checkbox> is visually hidden under the
     // new pill-toggle UI (2026-04-23); the visible control is the pair
     // of .tri-btn pill buttons inside the .pill-toggle wrapper. Check
@@ -28,6 +29,32 @@ test.describe('Settings panel', () => {
     await expect(prunePill.locator('.tri-btn.on')).toBeVisible();
     await expect(prunePill.locator('.tri-btn.off')).toBeVisible();
     await expect(window.locator('#autoPruneSec')).toBeVisible();
+  });
+
+  test('settings tabs switch between section pages', async ({ window }) => {
+    await openSettings(window);
+    await expect(window.locator('#speedSlider')).toBeVisible();
+    await expect(window.locator('#sessionsTable')).not.toBeVisible();
+
+    await switchSettingsTab(window, 'sessions');
+    await expect(window.locator('#sessionsTable')).toBeVisible();
+    await expect(window.locator('#speedSlider')).not.toBeVisible();
+
+    await switchSettingsTab(window, 'shortcuts');
+    await expect(window.locator('#hotkeyToggleWindow')).toBeVisible();
+    await expect(window.locator('#sessionsTable')).not.toBeVisible();
+  });
+
+  test('auto-collapse delay clamps to 1-120 seconds', async ({ window }) => {
+    await openSettings(window);
+    const delayInput = window.locator('#collapseDelaySec');
+    await delayInput.fill('999');
+    await delayInput.press('Tab');
+    await expect(delayInput).toHaveValue('120');
+
+    await delayInput.fill('0');
+    await delayInput.press('Tab');
+    await expect(delayInput).toHaveValue('1');
   });
 
   test('auto-prune toggle persists a change to the config', async ({ window }) => {
@@ -81,7 +108,7 @@ test.describe('Settings panel', () => {
   });
 
   test('S6: About Terminal Talk section renders with ASCII banner + shortcuts table', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'about');
     // ASCII banner is wrapped in <pre class="ascii-banner"> per index.html.
     await expect(window.locator('pre.ascii-banner')).toBeVisible();
     // Shortcuts table — now wrapped in <thead>/<tbody> for a11y (v0.3.8 N5-N9 fixes).

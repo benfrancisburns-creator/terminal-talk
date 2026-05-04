@@ -45,7 +45,7 @@ export const test = base.extend<Fixtures>({
     fs.mkdirSync(path.join(dir, 'sessions'), { recursive: true });
     const cfg = {
       voices: { edge_response: 'en-GB-RyanNeural' },
-      playback: { speed: 1.25, auto_prune: true, auto_prune_sec: 20 },
+      playback: { speed: 1.25, collapse_delay_sec: 3, auto_prune: true, auto_prune_sec: 20 },
       hotkeys: {
         toggle_window: 'Control+Shift+A',
         speak_clipboard: 'Control+Shift+S',

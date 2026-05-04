@@ -16,11 +16,24 @@ const SEED_TWO_SESSIONS = {
   }
 };
 
+const SEED_TWO_CLOSED_SESSIONS = {
+  assignments: {
+    'beefcafe': {
+      index: 0, session_id: 'beefcafe-session-id', claude_pid: 0,
+      label: 'Primary', pinned: false, last_seen: now() - 3600
+    },
+    'deadbee1': {
+      index: 1, session_id: 'deadbee1-session-id', claude_pid: 0,
+      label: 'Secondary', pinned: false, last_seen: now() - 3600
+    },
+  }
+};
+
 test.describe('Sessions table', () => {
   test.use({ seed: SEED_TWO_SESSIONS });
 
   test('renders both seeded sessions with labels', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const table = window.locator('#sessionsTable');
     await expect(table).toBeVisible();
     // Two rows, one per seeded session
@@ -31,7 +44,7 @@ test.describe('Sessions table', () => {
   });
 
   test('mute button toggles mute class on the row', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const firstRow = window.locator('.session-block').first();
     await expect(firstRow).not.toHaveClass(/session-muted/);
     await clickByCss(window, '.session-block:nth-child(1) .mute-btn');
@@ -41,7 +54,7 @@ test.describe('Sessions table', () => {
   });
 
   test('focus button is exclusive — clicking one clears the other', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const rows = window.locator('.session-block');
     const row1 = rows.nth(0);
     const row2 = rows.nth(1);
@@ -54,7 +67,7 @@ test.describe('Sessions table', () => {
   });
 
   test('mute and focus are independent', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const row = window.locator('.session-block').first();
     await clickByCss(window, '.session-block:nth-child(1) .mute-btn');
     await clickByCss(window, '.session-block:nth-child(1) .focus-btn');
@@ -63,7 +76,7 @@ test.describe('Sessions table', () => {
   });
 
   test('remove (×) deletes the session from the table', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     await expect(window.locator('.session-block')).toHaveCount(2);
     await clickByCss(window, '.session-block:nth-child(1) .session-remove');
     await expect(window.locator('.session-block')).toHaveCount(1);
@@ -72,7 +85,7 @@ test.describe('Sessions table', () => {
   // S6 — new tests targeting gaps surfaced by the v0.4 quality-tier audit.
 
   test('S6: label input is editable and dispatches on change', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const labelInput = window.locator('.session-block:nth-child(1) input[type="text"]');
     await labelInput.fill('Renamed');
     // Trigger change event (Tab blurs the input).
@@ -85,13 +98,31 @@ test.describe('Sessions table', () => {
     // 8 hsplit + 8 vsplit arrangements). Assertion on the control's shape
     // rather than end-to-end persistence (which races against the IPC
     // round-trip + subsequent renderSessionsTable rebuild).
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const select = window.locator('.session-block:nth-child(1) select').first();
     await expect(select).toHaveValue('0');  // seeded index
     const optionCount = await select.locator('option').count();
     if (optionCount !== 24) {
       throw new Error(`expected 24 palette options, got ${optionCount}`);
     }
+  });
+
+  test('create-session colour selector marks colours already in use', async ({ window }) => {
+    await openSettings(window, 'sessions');
+    const options = await window.locator('#createSessionIndex').evaluate((select: HTMLSelectElement) => (
+      Array.from(select.options).map((o) => ({
+        value: o.value,
+        text: o.textContent || '',
+        used: o.dataset.used || '',
+        palette: o.dataset.palette || '',
+      }))
+    ));
+    expect(options).toHaveLength(24);
+    expect(options[0]).toMatchObject({ value: '0', used: 'true', palette: '00' });
+    expect(options[0].text).toContain('used by Primary');
+    expect(options[1]).toMatchObject({ value: '1', used: 'true', palette: '01' });
+    expect(options[1].text).toContain('used by Secondary');
+    expect(options[2]).toMatchObject({ value: '2', used: '', palette: '02' });
   });
 
   test('S6: each seeded session renders a single dot per clip (none yet)', async ({ window }) => {
@@ -102,12 +133,23 @@ test.describe('Sessions table', () => {
   });
 
   test('S6: focus star uses filled/hollow glyph to reflect state', async ({ window }) => {
-    await openSettings(window);
+    await openSettings(window, 'sessions');
     const focusBtn = window.locator('.session-block:nth-child(1) .focus-btn');
     // Initially hollow star ☆
     await expect(focusBtn).toHaveText('\u2606');
     await clickByCss(window, '.session-block:nth-child(1) .focus-btn');
     // Filled star ★
     await expect(focusBtn).toHaveText('\u2605');
+  });
+});
+
+test.describe('Closed sessions', () => {
+  test.use({ seed: SEED_TWO_CLOSED_SESSIONS });
+
+  test('remove (×) deletes a closed session row', async ({ window }) => {
+    await openSettings(window, 'sessions');
+    await expect(window.locator('.session-block.stale')).toHaveCount(2, { timeout: 3000 });
+    await clickByCss(window, '.session-block:nth-child(1) .session-remove');
+    await expect(window.locator('.session-block')).toHaveCount(1);
   });
 });

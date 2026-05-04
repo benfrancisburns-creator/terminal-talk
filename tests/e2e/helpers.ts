@@ -1,12 +1,14 @@
 import { Page, expect } from '@playwright/test';
 
+export type SettingsTab = 'playback' | 'sessions' | 'openai' | 'shortcuts' | 'about';
+
 /**
  * Opens the settings panel and waits for the window to finish resizing
  * + the panel content to become visible. Fire-and-forget click isn't
  * enough because main.js resizes the BrowserWindow synchronously but
  * Chromium's layout reflow takes a beat to catch up.
  */
-export async function openSettings(window: Page): Promise<void> {
+export async function openSettings(window: Page, tab?: SettingsTab): Promise<void> {
   // Use .evaluate() instead of .click() — Playwright's synthetic mouse
   // events race with our Electron mousemove→IPC click-through pipeline
   // even with TT_TEST_MODE on. Calling the button's click() via the page
@@ -19,6 +21,16 @@ export async function openSettings(window: Page): Promise<void> {
   // Wait a frame so the BrowserWindow resize + Chromium reflow settle
   // before the test starts interacting with panel contents.
   await window.waitForFunction(() => document.getElementById('sessionsTable') !== null);
+  if (tab) await switchSettingsTab(window, tab);
+}
+
+export async function switchSettingsTab(window: Page, tab: SettingsTab): Promise<void> {
+  await window.evaluate((tabName) => {
+    const btn = document.querySelector(`[data-settings-tab="${tabName}"]`) as HTMLElement | null;
+    if (btn) btn.click();
+  }, tab);
+  await expect(window.locator(`[data-settings-tab="${tab}"]`)).toHaveAttribute('aria-selected', 'true', { timeout: 2000 });
+  await expect(window.locator(`[data-settings-page="${tab}"]`)).toBeVisible({ timeout: 2000 });
 }
 
 /** Programmatically click any element by id — bypasses mouse races. */
