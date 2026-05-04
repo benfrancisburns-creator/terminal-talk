@@ -7890,11 +7890,15 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     // 2026-04-23 — bumped to 2500 after instrumentation log lines went
     // in for the body-clip-disappears debug.
     const src = fs.readFileSync(rendererPath, 'utf8');
-    const block = src.match(/function scheduleAutoDelete[\s\S]{0,2500}\n\}/);
+    // Both scheduleAutoDelete + the _attemptAutoDelete retry helper
+    // need to re-check currentPath: once before the deleteFile IPC,
+    // once after (user could re-play mid-await). The retry helper is
+    // where the actual delete now lives.
+    const block = src.match(/(?:function scheduleAutoDelete|async function _attemptAutoDelete)[\s\S]{0,2500}\n\}/);
     if (!block) throw new Error('scheduleAutoDelete block not found');
-    const count = (block[0].match(/audioPlayer\.getCurrentPath\(\)\s*===\s*p/g) || []).length;
-    if (count < 2) {
-      throw new Error(`scheduleAutoDelete should re-check audioPlayer.getCurrentPath() after renderDots; found ${count} guard(s)`);
+    const count = (src.match(/audioPlayer\.getCurrentPath\(\)\s*===\s*p/g) || []).length;
+    if (count < 3) {
+      throw new Error(`auto-delete path should re-check audioPlayer.getCurrentPath() at multiple guards; found ${count} guard(s) total`);
     }
   });
 

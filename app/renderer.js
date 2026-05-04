@@ -479,21 +479,53 @@ function scheduleAutoDelete(p, _wasManual = false) {
   const delay = ephemeral
     ? EPHEMERAL_DELETE_DELAY_MS
     : Math.max(3, Math.min(600, autoPruneSec)) * 1000;
-  const t = setTimeout(async () => {
-    deleteTimers.delete(p);
-    if (audioPlayer.getCurrentPath() === p) return;
-    try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
+  const t = setTimeout(() => _attemptAutoDelete(p, ephemeral, 0), delay);
+  deleteTimers.set(p, t);
+}
+
+// Retry schedule for failed auto-deletes. Files can be locked transiently
+// by Windows AV scans, the player's own teardown, or a queue-watcher poll.
+// Backoff = 250 ms, 1 s, 3 s, 8 s, 20 s, 60 s, 60 s, ... (capped at 60 s
+// per attempt, capped at 12 attempts ≈ 5 min total). Two invariants:
+//   - playedPaths/heardPaths/queue ONLY get cleaned up after a successful
+//     delete (so a still-on-disk file can never re-enter auto-play).
+//   - Retries continue until success — no silent abandonment of a file
+//     that's still on disk.
+const _AUTO_DELETE_RETRY_DELAYS_MS = [250, 1000, 3000, 8000, 20000, 60000];
+const _AUTO_DELETE_MAX_ATTEMPTS = 12;
+async function _attemptAutoDelete(p, ephemeral, attempt) {
+  deleteTimers.delete(p);
+  if (audioPlayer.getCurrentPath() === p) {
+    // Currently playing — push the retry out so we don't unlink a live file.
+    const t = setTimeout(() => _attemptAutoDelete(p, ephemeral, attempt), 1000);
+    deleteTimers.set(p, t);
+    return;
+  }
+  try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'attempt=' + attempt, 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
+  let deleted = false;
+  try {
+    await window.api.deleteFile(p);
+    deleted = true;
+  } catch (e) {
+    try { console.warn('[scheduleAutoDelete] deleteFile failed', p.split(/[\\/]/).pop(), 'attempt=' + attempt, e && e.message); } catch {}
+  }
+  // Re-check after the IPC returns — user may have re-played mid-await.
+  if (audioPlayer.getCurrentPath() === p) return;
+  if (deleted) {
     playedPaths.delete(p);
     heardPaths.delete(p);
     queue = queue.filter(f => f.path !== p);
     renderDots();
-    // Race defence: between the sync checks above and the IPC returning,
-    // the user could have re-played the clip (priority re-queue, manual
-    // click landing on a queue-updated event). Re-verify the path really
-    // isn't the current one before the file is unlinked on disk.
-    if (audioPlayer.getCurrentPath() === p) return;
-    try { await window.api.deleteFile(p); } catch {}
-  }, delay);
+    return;
+  }
+  // Retry. Keep playedPaths populated so the file does not re-enter
+  // auto-play on the next queue update.
+  if (attempt + 1 >= _AUTO_DELETE_MAX_ATTEMPTS) {
+    try { console.error('[scheduleAutoDelete] giving up after', attempt + 1, 'attempts:', p.split(/[\\/]/).pop()); } catch {}
+    return;
+  }
+  const nextDelay = _AUTO_DELETE_RETRY_DELAYS_MS[Math.min(attempt, _AUTO_DELETE_RETRY_DELAYS_MS.length - 1)];
+  const t = setTimeout(() => _attemptAutoDelete(p, ephemeral, attempt + 1), nextDelay);
   deleteTimers.set(p, t);
 }
 
