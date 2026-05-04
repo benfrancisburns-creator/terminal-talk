@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
   [string]$RegistryPath = "$env:USERPROFILE\.terminal-talk\session-colours.json",
-  [int]$Pid,
+  [int]$ClaudePid,
   [string]$Short,
   [string]$Label,
   [int]$Index = -1,
@@ -13,8 +13,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (!$Pid -and !$Short) {
-  throw 'Pass either -Pid or -Short.'
+if (!$ClaudePid -and !$Short) {
+  throw 'Pass either -ClaudePid or -Short.'
 }
 
 function Read-Registry {
@@ -31,7 +31,7 @@ function Read-Registry {
 function Find-Assignment($json) {
   foreach ($prop in $json.assignments.PSObject.Properties) {
     if ($Short -and $prop.Name -ieq $Short) { return $prop }
-    if ($Pid -and [int]$prop.Value.claude_pid -eq $Pid) { return $prop }
+    if ($ClaudePid -and [int]$prop.Value.claude_pid -eq $ClaudePid) { return $prop }
   }
   return $null
 }
@@ -47,7 +47,7 @@ while ((Get-Date) -lt $deadline) {
 }
 
 if (!$target) {
-  $id = if ($Pid) { "pid=$Pid" } else { "short=$Short" }
+  $id = if ($ClaudePid) { "pid=$ClaudePid" } else { "short=$Short" }
   throw "No Terminal Talk session found for $id after $TimeoutSeconds seconds."
 }
 

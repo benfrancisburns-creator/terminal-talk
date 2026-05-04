@@ -4,10 +4,10 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 17800,
+    "scripts/run-tests.cjs": 17815,
     "app/main.js": 2642,
     "app/renderer.js": 2583,
-    "app/synth_turn.py": 1964,
+    "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1153,
     "app/lib/codex-tool-narration.js": 1020,

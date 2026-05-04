@@ -9145,8 +9145,40 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
       throw new Error('collapsed letterbox should remain centered in the Electron window');
     }
     const signalRule = stylesSrc.match(/\.bar\.collapsed\s+\.collapsed-signal\s*\{[\s\S]*?\n\}/);
-    if (!signalRule || !/inset:\s*3px\s+8px/.test(signalRule[0])) {
-      throw new Error('collapsed signal should fit inside the short letterbox');
+    if (!signalRule || !/inset:\s*0/.test(signalRule[0])) {
+      throw new Error('collapsed signal should cover the short letterbox so its border can show session identity');
+    }
+    const activeRule = stylesSrc.match(/\.bar\.collapsed\.collapsed-signal-active\s*\{[\s\S]*?\n\}/);
+    if (!activeRule || !/height:\s*22px/.test(activeRule[0])) {
+      throw new Error('collapsed letterbox should expand slightly while a session is speaking');
+    }
+    const borderRule = stylesSrc.match(/\.bar\.collapsed\s+\.collapsed-signal::before\s*\{[\s\S]*?\n\}/);
+    if (!borderRule ||
+        !/background:\s*var\(--collapsed-signal-bg/.test(stylesSrc) ||
+        !/padding:\s*1px/.test(borderRule[0]) ||
+        !/mask-composite:\s*exclude/.test(borderRule[0])) {
+      throw new Error('collapsed signal border should use the session palette background as a readable ID ring');
+    }
+    if (/transform:\s*scale/.test(signalRule[0])) {
+      throw new Error('collapsed signal shell should not scale; the outer border edge must stay fixed');
+    }
+    if (!/@keyframes\s+collapsedSignalBorderPulse[\s\S]*?padding:\s*3px[\s\S]*?padding:\s*1px/.test(stylesSrc)) {
+      throw new Error('collapsed border should thin inward when the waveform grows');
+    }
+    if (!/\.collapsed-signal-active\s+\.collapsed-signal::before[\s\S]*?collapsedSignalBorderPulse/.test(stylesSrc)) {
+      throw new Error('collapsed border pulse should run on the border layer, not the outer shell');
+    }
+    const waveRule = (stylesSrc.match(/\.bar\.collapsed\s+\.collapsed-signal::after\s*\{[\s\S]*?\n\}/g) || [])
+      .find((rule) => /clip-path:\s*polygon/.test(rule));
+    if (!waveRule || !/inset:\s*3px\s+8px/.test(waveRule) ||
+        !/clip-path:\s*polygon/.test(waveRule) ||
+        !/-webkit-mask-image:\s*repeating-linear-gradient\(90deg/.test(waveRule) ||
+        !/mask-image:\s*repeating-linear-gradient\(90deg/.test(waveRule)) {
+      throw new Error('collapsed signal should render palette colour as waveform bars, not a solid block');
+    }
+    if (!/@keyframes\s+collapsedSignalWave/.test(stylesSrc) ||
+        !/collapsedSignalWave\s+780ms\s+linear\s+infinite/.test(stylesSrc)) {
+      throw new Error('collapsed waveform bars should animate while active');
     }
     const paletteCss = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'palette-classes.css'), 'utf8');
     if (!/\[data-palette="08"\]\s*\{\s*background:\s*linear-gradient\(to bottom/.test(paletteCss)) {
@@ -9154,6 +9186,12 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
     if (!/\[data-palette="16"\]\s*\{\s*background:\s*linear-gradient\(to right/.test(paletteCss)) {
       throw new Error('vertical split palette keys must render left/right gradients');
+    }
+    if (!/\.collapsed-signal\[data-palette="08"\]\s*\{\s*--collapsed-signal-bg:\s*linear-gradient\(to bottom/.test(paletteCss)) {
+      throw new Error('collapsed border must expose horizontal split palette orientation');
+    }
+    if (!/\.collapsed-signal\[data-palette="16"\]\s*\{\s*--collapsed-signal-bg:\s*linear-gradient\(to right/.test(paletteCss)) {
+      throw new Error('collapsed border must expose vertical split palette orientation');
     }
   });
 
@@ -16369,8 +16407,14 @@ describe('CODEX TERMINAL IDENTITY', () => {
     }
     for (const p of codexHookScripts) {
       const src = fs.readFileSync(p, 'utf8');
-      if (!/Read-CodexHookPayload/.test(src) || !/Sync-CodexHookSession/.test(src)) {
-        throw new Error(`${path.basename(p)} must read the Codex hook payload and sync the session`);
+      // Every Codex hook must read the stdin payload, but per-tool hooks
+      // (on-tool/post-tool) deliberately use the lighter
+      // Resolve-CodexHookWorkingShort path instead of Sync-CodexHookSession
+      // to avoid registry-lock pressure on every tool call. The
+      // session-lifecycle hooks (session-start/mark-working/stop) still
+      // call Sync-CodexHookSession.
+      if (!/Read-CodexHookPayload/.test(src) || !/(Sync-CodexHookSession|Resolve-CodexHookWorkingShort)/.test(src)) {
+        throw new Error(`${path.basename(p)} must read the Codex hook payload and resolve or sync the session`);
       }
       if (/Write-Host|Write-Output/.test(src)) {
         throw new Error(`${path.basename(p)} must not write visible output into Codex`);
@@ -16391,7 +16435,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
       + `Import-Module '${regMod}' -Force -DisableNameChecking; `
       + `$a = @{ `
       + `deadbeef = @{ index = 6; session_id = 'codex-provisional-777'; claude_pid = 777; label = 'Codex X2'; pinned = $true; muted = $false; focus = $false; last_seen = 1; source_kind = 'toolbar-launch'; source_label = 'Codex'; source_originator = $marker; voice = 'en-GB-ThomasNeural'; voice_auto = $true }; `
-      + `019de274 = @{ index = 3; session_id = '019de274-1b9b-7f83-a3e1-e35dfab7615e'; claude_pid = 34936; label = 'TerminalTalk'; pinned = $true; muted = $false; focus = $false; last_seen = 1 } `
+      + `'019de274' = @{ index = 3; session_id = '019de274-1b9b-7f83-a3e1-e35dfab7615e'; claude_pid = 34936; label = 'TerminalTalk'; pinned = $true; muted = $false; focus = $false; last_seen = 1 } `
       + `}; `
       + `Save-Registry -RegistryPath $p -Assignments $a -Caller 'seed' -LogPath (Join-Path $root 'queue\\_hook.log'); `
       + `$payload = [pscustomobject]@{ session_id = 'abcdef12-1111-2222-3333-444444444444'; hook_event_name = 'Stop'; cwd = 'C:\\Users\\Ben\\Desktop\\terminal-talk' }; `
@@ -16539,7 +16583,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/Set-CodexPluginCleanupTombstone/.test(common) || !/plugin-cleaned\.flag/.test(common)) {
       throw new Error('plugin cleanup must leave a recent tombstone so stale queue scans cannot resurrect the short');
     }
-    if (!/Test-CodexPluginMarker[\s\S]{0,260}plugin-start/.test(common)) {
+    if (!/Test-CodexPluginMarker[\s\S]{0,400}plugin-start/.test(common)) {
       throw new Error('plugin cleanup must tolerate source_kind metadata being clobbered while marker files still prove plugin identity');
     }
   });

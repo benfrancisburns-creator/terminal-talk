@@ -139,6 +139,7 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     const bg = arrangementBgFor(i, baseColours);
     const primary = primaryForArrangement(i, baseColours);
     lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; }`);
+    lines.push(`${selectorPrefix}.collapsed-signal[data-palette="${k}"] { --collapsed-signal-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { border-color: ${primary}; box-shadow: 0 0 0 2px ${primary}; }`);
     // Mascot: SVG upper body/ears use fill: currentColor (primary); lower
     // body + legs use fill: var(--mascot-secondary, currentColor). Split
@@ -151,6 +152,7 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; --mascot-secondary: ${secondary}; }`);
   }
   lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}.collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { border-color: ${palette.NEUTRAL_COLOUR}; box-shadow: 0 0 0 2px ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; --mascot-secondary: ${palette.NEUTRAL_COLOUR}; }`);
   return lines;

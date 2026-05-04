@@ -14,7 +14,7 @@ const {
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Electron's Wayland global-shortcut path is portal-backed. The feature
-// must be enabled before `app.whenReady()` for Linux desktop sessions.
+// must be enabled before app is ready for Linux desktop sessions.
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
 }
