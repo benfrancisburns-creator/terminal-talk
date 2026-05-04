@@ -692,10 +692,16 @@ function createIpcHandlers(deps) {
           if (!m) continue;
           const full = path.join(SESSIONS_DIR, name);
           try {
-            const content = fs.readFileSync(full, 'utf8').trim();
-            const ts = Number(content) || 0;
-            if (!ts) continue;
-            const age = now - ts;
+            // Staleness uses mtime, NOT file content. Content = turn-
+            // start epoch (read by speak-response for the "Cogitated
+            // for X" footer); mtime = last tool-call time (bumped by
+            // speak-on-tool.ps1 to keep heartbeat alive on long turns).
+            // If we used content here, every long turn with active
+            // tool calls would still age out at STALE_SEC.
+            const stat = fs.statSync(full);
+            const mtimeSec = Math.floor(Number(stat.mtimeMs) / 1000);
+            if (!mtimeSec) continue;
+            const age = now - mtimeSec;
             if (age <= STALE_SEC) {
               out.push(m[1]);
             } else {

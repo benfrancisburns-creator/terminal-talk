@@ -101,17 +101,33 @@ try {
 Write-SessionPidFile -SessionsDir $sessionsDir -ClaudePid $claudePid `
                       -SessionId $sessionId -Short $sessionShort -Now $now
 
-# Refresh the -working.flag timestamp. mark-working.ps1 stamps it on
-# UserPromptSubmit and speak-response.ps1 deletes it on Stop — but
-# long turns (> 10 min between prompt and Stop) let the flag's content
-# age past get-working-sessions' STALE_SEC=600 cutoff, so heartbeat
-# stops firing for the session even though Claude is still actively
-# tool-calling. Each PreToolUse bumps the timestamp so the flag stays
-# fresh for the whole active-tool-call stretch.
+# Refresh the -working.flag timestamp. mark-working.ps1 stamps the flag
+# on UserPromptSubmit and speak-response.ps1 deletes it on Stop — but
+# long turns (> 10 min between prompt and Stop) let the flag age past
+# get-working-sessions' STALE_SEC=600 cutoff, so heartbeat stops firing
+# even though Claude is still actively tool-calling. Each PreToolUse
+# bumps mtime so heartbeat sees the session as fresh.
+#
+# CRITICAL: only touch mtime — don't rewrite content. The content is the
+# turn-start epoch read by speak-response (Stop) to compute elapsedSec
+# for the "Cogitated for X" footer clip. Rewriting it on each tool use
+# resets the apparent turn duration to "since the last tool call" — so
+# a 9-minute turn with tool calls every 10 s spoke "Cogitated for 9 s"
+# instead of "Cogitated for 9 minutes". get-working-sessions in
+# app/lib/ipc-handlers.js reads mtime for staleness, so this stays
+# heartbeat-safe.
 try {
     $flagPath = Join-Path $sessionsDir "$sessionShort-working.flag"
-    $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-    Set-Content -Path $flagPath -Value $nowSec -Encoding utf8 -NoNewline
+    $item = Get-Item -LiteralPath $flagPath -ErrorAction SilentlyContinue
+    if ($item) {
+        $item.LastWriteTime = Get-Date
+    } else {
+        # No flag yet (mark-working.ps1 missed UserPromptSubmit, e.g.
+        # Claude Desktop subagent paths). Create with current epoch so
+        # heartbeat works; speak-response will read this as turn-start.
+        $nowSec = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+        Set-Content -Path $flagPath -Value $nowSec -Encoding utf8 -NoNewline
+    }
 } catch {}
 
 # --- Spawn detached synth process ---

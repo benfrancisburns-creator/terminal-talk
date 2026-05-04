@@ -6872,8 +6872,8 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
     if (!/dropped\s*=\s*\[\]/.test(body)) {
       throw new Error('handler must declare a dropped array — see #6 G8');
     }
-    if (!/age\s*=\s*now\s*-\s*ts/.test(body)) {
-      throw new Error('handler must compute age = now - ts — see #6 G8');
+    if (!/age\s*=\s*now\s*-\s*mtimeSec/.test(body)) {
+      throw new Error('handler must compute age = now - mtimeSec (mtime, NOT content) — see Cogitated-for-9s bug');
     }
     if (!/dropped\.push\(/.test(body)) {
       throw new Error('handler must push stale shorts to dropped — see #6 G8');
@@ -6897,10 +6897,15 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
     try {
       const now = Math.floor(Date.now() / 1000);
-      // Fresh: 30s old → kept.
-      fs.writeFileSync(path.join(tmpDir, 'aaaa1111-working.flag'), String(now - 30));
-      // Stale: 700s old → dropped + logged.
-      fs.writeFileSync(path.join(tmpDir, 'bbbb2222-working.flag'), String(now - 700));
+      // Fresh: mtime 30s old → kept. Content can be anything (real
+      // content is the turn-start epoch; staleness uses mtime only).
+      const fresh = path.join(tmpDir, 'aaaa1111-working.flag');
+      fs.writeFileSync(fresh, String(now - 30));
+      fs.utimesSync(fresh, now - 30, now - 30);
+      // Stale: mtime 700s old → dropped + logged.
+      const stale = path.join(tmpDir, 'bbbb2222-working.flag');
+      fs.writeFileSync(stale, String(now - 700));
+      fs.utimesSync(stale, now - 700, now - 700);
 
       const captured = [];
       const handlers = {};
@@ -6961,6 +6966,102 @@ describe('STALE-FLAG FILTER LOGGING (#6 G8)', () => {
       }
     } finally {
       cleanup();
+    }
+  });
+
+  // Cogitated-for-9s regression: a long turn (e.g. 9-minute prompt with
+  // tool calls every 10 s) used to spoke "Cogitated for 9 s" because
+  // speak-on-tool.ps1 rewrote the flag content with the current epoch
+  // on every PreToolUse. Stop-hook then computed elapsed = now - last
+  // tool call, not now - turn start. Fix: speak-on-tool only touches
+  // mtime; content stays as the turn-start epoch. get-working-sessions
+  // must use mtime (not content) for staleness so heartbeat still
+  // works on long active turns.
+  it('mtime touches keep heartbeat fresh without corrupting elapsed-since-turn-start', () => {
+    const { createIpcHandlers } = require(
+      path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js')
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-cogitate-'));
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      // Simulate a 9-minute turn: turn-start was 540s ago (content),
+      // but the most recent tool-use bumped mtime 5s ago (still fresh).
+      const turnStart = now - 540;
+      const lastTool = now - 5;
+      const flag = path.join(tmpDir, 'cccc3333-working.flag');
+      fs.writeFileSync(flag, String(turnStart));
+      fs.utimesSync(flag, lastTool, lastTool);
+
+      const handlers = {};
+      const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
+      createIpcHandlers({
+        ipcMain,
+        diag: () => {},
+        callEdgeTTS: () => {},
+        callOpenAITTS: () => {},
+        getAppVersion: () => '0',
+        getCFG: () => ({}),
+        loadAssignments: () => ({}),
+        getQueueFiles: () => [],
+        getQueueAllPaths: () => [],
+        ensureAssignmentsForFiles: () => {},
+        shortFromFile: () => null,
+        isPidAlive: () => false,
+        computeStaleSessions: () => [],
+        SESSIONS_DIR: tmpDir,
+        getWin: () => null,
+        saveAssignments: () => true,
+        notifyQueue: () => {},
+        allowMutation: () => true,
+        validShort: () => true,
+        validVoice: () => true,
+        sanitiseLabel: (s) => s,
+        ALLOWED_INCLUDE_KEYS: new Set(),
+        setCFG: () => {},
+        saveConfig: () => true,
+        apiKeyStore: { get: () => null, set: () => {} },
+        redactForLog: (x) => x,
+        setApplyingDock: () => {},
+        testMode: true,
+        QUEUE_DIR: tmpDir,
+        isPathInside: () => true,
+        getWatchdog: () => null,
+        getWatchdogIntervalMs: () => 0,
+      }).register();
+
+      // Heartbeat sees the session as fresh because mtime is recent —
+      // even though the turn started 9 minutes ago.
+      const result = handlers['get-working-sessions']({});
+      assertDeepEqual(result, ['cccc3333'],
+        '9-minute turn with recent tool-use must remain in working set');
+
+      // The content was preserved by speak-on-tool (touch only) so
+      // speak-response would compute elapsed = 540 s, producing
+      // "Cogitated for 9 minutes". The bug we fixed: rewriting content
+      // would have left this as `now - 5`, producing "Cogitated for 5
+      // seconds" instead.
+      const persistedTurnStart = Number(fs.readFileSync(flag, 'utf8').trim());
+      assertEqual(persistedTurnStart, turnStart,
+        'flag content must remain the turn-start epoch — speak-on-tool must NOT rewrite it');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  // Lock down the speak-on-tool.ps1 contract: only mtime, never content.
+  it('speak-on-tool.ps1 touches mtime instead of rewriting flag content', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'hooks', 'speak-on-tool.ps1'), 'utf8'
+    );
+    if (!/\$item\.LastWriteTime\s*=\s*Get-Date/.test(src)) {
+      throw new Error('speak-on-tool.ps1 must touch LastWriteTime (mtime), not Set-Content the flag — see Cogitated-for-9s bug');
+    }
+    // Set-Content is allowed only as the create-if-missing branch.
+    // The presence of `$item` (Get-Item check) before Set-Content
+    // is the structural guard.
+    const m = src.match(/Get-Item\s+-LiteralPath\s+\$flagPath[\s\S]{0,500}Set-Content\s+-Path\s+\$flagPath/);
+    if (!m) {
+      throw new Error('speak-on-tool.ps1 must Get-Item the flag and only Set-Content as a fallback when missing — see Cogitated-for-9s bug');
     }
   });
 });
