@@ -1540,22 +1540,16 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             if clean:
                 body_clips = group_sentences_for_tts(clean)
 
-        # End-of-response elapsed-time clip. Only appended in on-stop
-        # mode (the Stop hook is the only site that knows the turn's
-        # end). Preference order:
-        #   1. footer_phrase — the actual string Claude Code printed to
-        #      the terminal (scraped by speak-response.ps1 via UIA over
-        #      the Windows Terminal buffer). Ben's explicit ask: match
-        #      what the terminal shows.
-        #   2. Computed fallback via format_elapsed_phrase — used when
-        #      the scrape returned empty (UIA blocked, Windows Terminal
-        #      not the host, scrape too stale vs elapsedSec, etc.).
-        if mode == 'on-stop' and elapsed_sec and elapsed_sec >= 1:
-            phrase = footer_phrase.strip() if footer_phrase else ''
-            if not phrase:
-                phrase = format_elapsed_phrase(elapsed_sec)
-            if phrase:
-                body_clips.append(phrase)
+        # End-of-response elapsed-time audio is now produced by the
+        # main app's footer-watcher (app/lib/footer-watcher.js), which
+        # scrapes Claude Code's literal "Worked for Xm Ys" footer line
+        # off the Windows Terminal buffer via UIA and queues a clip
+        # with the matching natural-English phrase. We don't append
+        # one here — earlier attempts to compute the duration ourselves
+        # always diverged from Claude Code's footer by 20–60 s
+        # (mark-working flag fires at user-prompt-submit; Claude
+        # Code's clock starts when generation begins, and the footer
+        # is printed AFTER the Stop hook completes).
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '

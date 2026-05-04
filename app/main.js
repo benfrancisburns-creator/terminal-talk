@@ -2132,13 +2132,14 @@ const stopWatchdog = _watchdog.stop;
 const { TranscriptWatcher } = require('./lib/transcript-watcher');
 const _transcriptWatcher = new TranscriptWatcher({
   ttHome: INSTALL_DIR,
-  synthScript: path.join(INSTALL_DIR, 'app', 'synth_turn.py'),
-  pythonExe: 'python',
+  synthScript: path.join(__dirname, 'synth_turn.py'),
+  pythonExe: PYTHON_EXE,
   killProc: (proc) => _hardKillProc(proc, 'transcript synth'),
   diag,
 });
 const { createCodexSessionWatcher } = require('./lib/codex-session-watcher');
 const { createCodexIdentitySync } = require('./lib/codex-identity-sync');
+const { createFooterWatcher } = require('./lib/footer-watcher');
 const _codexSessionWatcher = createCodexSessionWatcher({
   queueDir: QUEUE_DIR,
   sessionsDir: SESSIONS_DIR,
@@ -2154,8 +2155,28 @@ const _codexSessionWatcher = createCodexSessionWatcher({
 });
 _codexIdentitySync = createCodexIdentitySync({
   appDir: __dirname,
+  enabled: platform.supportsCodexIdentitySync,
   powershellExe: POWERSHELL_EXE,
   testMode: process.env.TT_TEST_MODE === '1',
+  loadAssignments,
+  saveAssignments,
+  notifyQueue,
+  diag,
+});
+// Footer-audio watcher. Watches *-working.flag deletions, scrapes
+// Claude Code's "Worked for X" footer off the terminal via UIA AFTER
+// the Stop hook has finished, and queues a TTS clip with the literal
+// scraped text. Lives in the main app process because UIA hangs in the
+// hook process tree (inherited Claude-Code-CLI stdio/COM context).
+const _footerWatcher = createFooterWatcher({
+  appDir: __dirname,
+  sessionsDir: SESSIONS_DIR,
+  queueDir: QUEUE_DIR,
+  registryPath: COLOURS_REGISTRY,
+  callEdgeTTS,
+  getCFG: () => CFG,
+  loadAssignments,
+  notifyQueue,
   diag,
 });
 
@@ -2209,6 +2230,7 @@ app.whenReady().then(() => {
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
   _codexIdentitySync.start();
+  _footerWatcher.start();
 
   if (CAPTURE_MODE) {
     Menu.setApplicationMenu(null);

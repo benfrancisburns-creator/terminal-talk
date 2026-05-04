@@ -4695,37 +4695,32 @@ describe('SYNTH TURN SYNC STATE', () => {
     }
   });
 
-  it('run() prefers --footer-phrase over computed fallback when provided', () => {
-    // Ben's 2026-04-23 ask: the end-of-reply clip should say the EXACT
-    // phrase Claude Code printed to the terminal, not something we
-    // made up. speak-response.ps1 scrapes the Windows Terminal buffer
-    // via UIA and passes the phrase here as --footer-phrase; run()
-    // must use that string verbatim. This test drives run() with a
-    // fake transcript + a non-empty footer_phrase and asserts the
-    // body_clips log line reports the scraped phrase landed.
+  it('run() does NOT append a duration phrase to body clips', () => {
+    // The end-of-reply duration audio is produced out-of-band by
+    // app/lib/footer-watcher.js (which scrapes Claude Code's
+    // literal "Worked for X" terminal footer). synth_turn.py used
+    // to compute its own duration from elapsed_sec, then from
+    // JSONL timestamps — both diverged from Claude Code's footer
+    // by 20–60 s. The watcher reads the screen directly, so
+    // synth_turn must NOT add anything itself or we'd double-up.
     const tmpDir = os.tmpdir();
-    const fakeTranscript = path.join(tmpDir, `tt-footer-test-${process.pid}-${Date.now()}.jsonl`);
+    const fakeTranscript = path.join(tmpDir, `tt-no-elapsed-${process.pid}-${Date.now()}.jsonl`);
     fs.writeFileSync(fakeTranscript,
-      '{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
-      '{"type":"assistant","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
+      '{"type":"user","timestamp":"2026-05-04T12:00:00.000Z","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
+      '{"type":"assistant","timestamp":"2026-05-04T12:05:19.000Z","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
       'utf8');
-    // Deterministic session id so we can wipe any prior sync state.
     const testSession = 'deadbeef-1111-2222-3333-444455556666';
     try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
-    const scrapedPhrase = 'Sauteed for 1m 0s';  // ASCII-only so PS arg parse doesn't muck about
     const code = `
 import sys
 sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
 import synth_turn
-# Short-circuit the actual edge-tts spawn so we don't network out during the test.
-# synthesize_parallel is the single call site for clip writing; replace with a
-# recorder that captures (phrase-list, prefix) tuples.
 captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy', originals=None, original_full=None):
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', fallback_provider='edge', openai_voice='alloy', originals=None, original_full=None):
     captured.append((list(phrases), prefix))
 synth_turn.synthesize_parallel = fake_synth
 rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
-                    'on-stop', elapsed_sec=60, footer_phrase='${scrapedPhrase}')
+                    'on-stop', elapsed_sec=600)
 print('RC', rc)
 for ph, pref in captured:
     print('CLIP', repr(pref), repr(ph))
@@ -4733,53 +4728,18 @@ for ph, pref in captured:
     const r = runPythonInline(code);
     try { fs.unlinkSync(fakeTranscript); } catch {}
     if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
-    // Exactly one synthesize_parallel call, no prefix (= body clip path),
-    // containing BOTH the reply text AND the scraped footer verbatim.
     const clips = [...r.stdout.matchAll(/^CLIP '(.*?)' (\[.*)$/gm)].map((m) => ({ prefix: m[1], list: m[2] }));
     const body = clips.find((c) => c.prefix === '');
     if (!body) throw new Error(`no body-clip call; stdout:\n${r.stdout}`);
-    if (!body.list.includes(scrapedPhrase)) {
-      throw new Error(`scraped footer '${scrapedPhrase}' not in body clips: ${body.list}`);
+    // Body should contain the reply text, NOT a duration phrase.
+    if (/\bfor \d+ (minute|second)s?\b/.test(body.list)) {
+      throw new Error(`body clips must NOT contain a duration phrase — that's the watcher's job: ${body.list}`);
+    }
+    if (!body.list.includes('Short reply.')) {
+      throw new Error(`body clips should still contain the reply text: ${body.list}`);
     }
   });
 
-  it('run() falls back to format_elapsed_phrase when footer_phrase is empty', () => {
-    const tmpDir = os.tmpdir();
-    const fakeTranscript = path.join(tmpDir, `tt-footer-fallback-${process.pid}-${Date.now()}.jsonl`);
-    fs.writeFileSync(fakeTranscript,
-      '{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
-      '{"type":"assistant","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
-      'utf8');
-    const testSession = 'feedface-aaaa-bbbb-cccc-dddddddddddd';
-    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
-    const code = `
-import sys, random
-sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
-import synth_turn
-captured = []
-def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', openai_voice='alloy', originals=None, original_full=None):
-    captured.append((list(phrases), prefix))
-synth_turn.synthesize_parallel = fake_synth
-# Seed random so the fallback verb is deterministic for asserting.
-random.seed(42)
-rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}',
-                    'on-stop', elapsed_sec=90, footer_phrase='')
-print('RC', rc)
-for ph, pref in captured:
-    print('CLIP', repr(pref), repr(ph))
-`;
-    const r = runPythonInline(code);
-    try { fs.unlinkSync(fakeTranscript); } catch {}
-    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
-    const clips = [...r.stdout.matchAll(/^CLIP '(.*?)' (\[.*)$/gm)].map((m) => ({ prefix: m[1], list: m[2] }));
-    const body = clips.find((c) => c.prefix === '');
-    if (!body) throw new Error(`no body-clip call; stdout:\n${r.stdout}`);
-    // Fallback must include the duration in words ("1 minute and 30 seconds"
-    // for elapsed_sec=90). Verb is random so we don't assert on it.
-    if (!/1 minute and 30 seconds/.test(body.list)) {
-      throw new Error(`fallback phrase not in body clips: ${body.list}`);
-    }
-  });
 
   it('format_elapsed_phrase uses a varied verb pool (not always "Worked")', () => {
     // Regression guard for Ben's 2026-04-23 ask: the first cut always
@@ -5721,96 +5681,68 @@ describe('TranscriptWatcher lifecycle (EX7f / audit 2026-04-23)', () => {
 });
 
 // =============================================================================
-// SCRAPE SUBPROCESS TIMEOUT (d4dddac) — the Stop hook must bound the
-// scrape subprocess at 4 s so Claude Code can't time out the whole
-// hook mid-scrape and skip `Stop: spawned synth_turn.py`. Before
-// d4dddac, the scrape used `& powershell.exe ...` which has no timeout
-// primitive; live observation showed 30-s scrapes killing the hook
-// and leaving NO audio (body or footer) for long turns.
-//
-// These are source-level checks against the installed hook. The
-// behavioural path (real subprocess + kill) needs a desktop session,
-// so it stays out of the harness — but the wiring is verifiable here.
+// HOOK ORCHESTRATION: no terminal scrape. Earlier we tried scraping
+// Claude Code's "Cooked for X" footer off the Windows Terminal buffer
+// via UIA (inline, subprocess, ShellExecute-detached subprocess) — UIA
+// hangs in every process spawned by Claude Code's CLI hook tree. The
+// final design drops the scrape and computes elapsed from the JSONL
+// transcript timestamps in synth_turn.py instead. These tests lock in
+// "no scrape" as a permanent invariant so the rabbit hole isn't
+// revisited.
 // =============================================================================
-describe('HOOK ORCHESTRATION: scrape subprocess timeout (d4dddac)', () => {
-  // Read from the REPO, not INSTALL_DIR — CI Linux jobs run the logic
-  // harness without an install, and a top-level read of INSTALL_DIR
-  // would ENOENT at module-eval time before the LOGIC_ONLY gate can
-  // skip the block. These are source-level invariants either way.
+describe('HOOK ORCHESTRATION: no terminal scrape', () => {
   const respHookPath = path.join(__dirname, '..', 'hooks', 'speak-response.ps1');
   const respHook = fs.readFileSync(respHookPath, 'utf8');
 
-  it('Stop hook uses System.Diagnostics.Process (not bare `& powershell.exe`)', () => {
-    // & ... has no timeout. Process.Start does.
-    if (!/System\.Diagnostics\.ProcessStartInfo/.test(respHook)) {
-      throw new Error('speak-response.ps1 must use System.Diagnostics.ProcessStartInfo for the scrape subprocess');
+  it('speak-response.ps1 does NOT spawn a scrape subprocess', () => {
+    if (/scrape-footer\.ps1/.test(respHook)) {
+      throw new Error('speak-response.ps1 must not reference scrape-footer.ps1 (the helper was deleted)');
     }
-    if (!/\[System\.Diagnostics\.Process\]::Start/.test(respHook)) {
-      throw new Error('speak-response.ps1 must call [System.Diagnostics.Process]::Start');
+    if (/Get-TerminalFooter/.test(respHook)) {
+      throw new Error('speak-response.ps1 must not call Get-TerminalFooter (the module was deleted)');
     }
-  });
-
-  it('scrape subprocess has a 4-second WaitForExit budget', () => {
-    if (!/WaitForExit\s*\(\s*4000\s*\)/.test(respHook)) {
-      throw new Error('speak-response.ps1 must bound the scrape subprocess at WaitForExit(4000)');
+    if (/UIAutomationClient/.test(respHook)) {
+      throw new Error('speak-response.ps1 must not load UI Automation assemblies — duration comes from the JSONL transcript now');
     }
   });
 
-  it('timeout branch calls .Kill() on the subprocess', () => {
-    // Otherwise the child keeps running past the hook's lifetime,
-    // holding UIA handles + chewing CPU.
-    if (!/\.Kill\(\)/.test(respHook)) {
-      throw new Error('speak-response.ps1 must call .Kill() on the scrape subprocess in the timeout branch');
+  it('terminal-scrape.psm1 module is gone (replaced by inline scrape-footer.ps1)', () => {
+    // The Import-Module path was the source of UIA hangs. The replacement
+    // is a flat scrape-footer.ps1 that inlines all UIA work — invoked by
+    // the main app's footer-watcher, never by a Stop hook.
+    const modulePath = path.join(__dirname, '..', 'app', 'terminal-scrape.psm1');
+    if (fs.existsSync(modulePath)) {
+      throw new Error(`${modulePath} must be deleted — module-load context broke UIA`);
     }
   });
 
-  it('timeout branch logs a distinct message separate from "scrape empty"', () => {
-    // Operators need to tell "UIA ran but returned nothing" from
-    // "UIA hung and we killed it". Two different action items.
-    if (!/scrape timed out after 4s/.test(respHook)) {
-      throw new Error('speak-response.ps1 must log a distinct timeout message (not just "scrape empty")');
+  it('scrape-footer.ps1 exists and inlines UIA (no Import-Module)', () => {
+    const helperPath = path.join(__dirname, '..', 'app', 'scrape-footer.ps1');
+    if (!fs.existsSync(helperPath)) {
+      throw new Error(`${helperPath} must exist — used by app/lib/footer-watcher.js`);
     }
-    if (!/scrape empty/.test(respHook)) {
-      throw new Error('speak-response.ps1 must also keep the "scrape empty" log for the clean-no-match case');
+    const src = fs.readFileSync(helperPath, 'utf8');
+    // Strip comment lines before checking — a "no Import-Module"
+    // comment is fine, an actual Import-Module call isn't.
+    const codeOnly = src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    if (/Import-Module/.test(codeOnly)) {
+      throw new Error('scrape-footer.ps1 must NOT Import-Module (the module-load path hangs UIA)');
     }
-  });
-
-  it('scrape block runs BEFORE the spawn-synth_turn block (fall-through on timeout)', () => {
-    // After the 4s timeout fires, the hook must proceed to spawning
-    // synth_turn.py with an EMPTY footer phrase — the fallback path.
-    // Confirm textual ordering: scrape block is before the synth
-    // spawn.
-    // Match the actual Log call, not the comment prose that also
-    // contains the phrase. indexOf on raw strings would hit the
-    // comment first (line 96 in the current hook) and wrongly
-    // report scrape AFTER spawn.
-    const scrapeAt = respHook.search(/Log\s+"terminal footer scraped/);
-    const spawnAt  = respHook.search(/Log\s+"Stop:\s+spawned synth_turn\.py/);
-    if (scrapeAt < 0 || spawnAt < 0) {
-      throw new Error(`speak-response.ps1 missing required scrape or spawn Log() calls (scrape@${scrapeAt}, spawn@${spawnAt})`);
+    if (!/Add-Type\s+-AssemblyName\s+UIAutomationClient/.test(src)) {
+      throw new Error('scrape-footer.ps1 must inline Add-Type for UIAutomationClient');
     }
-    if (!(scrapeAt < spawnAt)) {
-      throw new Error(`scrape block must precede synth_turn spawn (scrape@${scrapeAt}, spawn@${spawnAt})`);
+    if (!/CASCADIA_HOSTING_WINDOW_CLASS/.test(src)) {
+      throw new Error('scrape-footer.ps1 must look for the Windows Terminal class CASCADIA_HOSTING_WINDOW_CLASS');
     }
   });
 
-  it('scrape block is inside try/catch so any PS exception still falls through', () => {
-    // The scrape block is wrapped in `try { ... } catch { Log ... }`.
-    // Without the catch, a typo or missing file would hard-kill the
-    // hook before reaching the synth_turn spawn — exactly the silent-
-    // death class of bug we just fixed. Confirm the scrape-fail log
-    // still exists (the catch branch).
-    if (!/terminal footer scrape failed/.test(respHook)) {
-      throw new Error('speak-response.ps1 scrape block must have a catch that logs "scrape failed" — prevents silent death on any unexpected exception');
+  it('main.js wires up the footer-watcher', () => {
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/createFooterWatcher/.test(mainSrc)) {
+      throw new Error('main.js must require createFooterWatcher from ./lib/footer-watcher');
     }
-  });
-
-  it('elapsedSec guard skips the subprocess entirely when flag was never set', () => {
-    // First-ever invocation (or after a fresh install) has no working
-    // flag → elapsedSec=0. Skipping the scrape avoids paying the
-    // subprocess spawn cost for a case that can never match.
-    if (!/\$elapsedSec\s*-ge\s*1/.test(respHook)) {
-      throw new Error('speak-response.ps1 must skip scrape when elapsedSec < 1 (saves the subprocess spawn)');
+    if (!/_footerWatcher\.start\(\)/.test(mainSrc)) {
+      throw new Error('main.js must call _footerWatcher.start() in app.whenReady');
     }
   });
 });

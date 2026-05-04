@@ -312,7 +312,11 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
             matcher = ''
             hooks = @(@{
                 type = 'command'
-                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
+                # -STA so UIA works inline. Without it speak-response.ps1
+                # can't scrape Claude Code's "Cooked for X" footer
+                # (RootElement silently hangs in MTA). The other hooks
+                # don't use UIA so they keep the default apartment.
+                command = "powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File `"$respHook`""
                 timeout = 120
             })
         })

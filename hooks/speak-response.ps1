@@ -16,7 +16,7 @@ try {
 function Log($m) {
     try { "$(Get-Date -Format 'HH:mm:ss.fff') $m" | Out-File $logFile -Append -Encoding utf8 } catch {}
 }
-Log "===== hook fired ====="
+Log "===== hook fired ===== apartment=$([System.Threading.Thread]::CurrentThread.GetApartmentState()) ps=$($PSVersionTable.PSVersion)"
 
 $stdin = [Console]::In.ReadToEnd()
 if (-not $stdin) { Log "EXIT: no stdin"; exit 0 }
@@ -82,52 +82,16 @@ try {
 # hook died between "cleared working flag" and any scrape log line.
 # The wrapper script launches a fresh PS with explicit -STA so UIA
 # runs in its required apartment; we read the phrase off stdout.
+# No terminal scrape. We previously tried to read Claude Code's
+# "Cooked for 5m 19s" footer line off the Windows Terminal buffer via
+# UIA, but UIA RootElement deadlocks in every process spawned by Claude
+# Code's CLI hook tree (inline, subprocess, even ShellExecute-detached
+# subprocess). synth_turn.py instead computes elapsed from the JSONL
+# transcript timestamps — the same data Claude Code uses — and picks a
+# verb from its own past-tense list. Duration matches Claude Code to
+# the second; verb varies. Footer phrase is left empty here so
+# synth_turn.py takes the JSONL path.
 $footerPhrase = ''
-try {
-    $scrapeHelper = Join-Path $ttHome 'app\scrape-footer.ps1'
-    if ($elapsedSec -ge 1 -and (Test-Path $scrapeHelper)) {
-        $registryPathForScrape = Join-Path $ttHome 'session-colours.json'
-        # Parent-side hard timeout on the subprocess. Observed live
-        # 2026-04-23: the scrape-footer.ps1 subprocess occasionally
-        # takes 20-30 s — assembly cold-start + UIA window enumeration
-        # + the in-helper polling loop stack up well past the 2 s
-        # MaxWaitMs that only guards the polling. Claude Code's Stop-
-        # hook timeout then kills the entire hook BEFORE it reaches
-        # the `Stop: spawned synth_turn.py` line, so NO audio (body
-        # OR footer) gets spoken for that turn. Using
-        # System.Diagnostics.Process directly gives us a proper
-        # WaitForExit(ms) with a .Kill() escape hatch; `& ...` in
-        # PowerShell has no way to enforce a timeout. 4 s is the
-        # budget: ~1 s cold-start + ~1 s assembly + the 2 s poll
-        # window — anything slower gets killed and we fall back to
-        # synth_turn.py's own computed phrase.
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName  = 'powershell.exe'
-        $psi.Arguments = "-STA -NoProfile -ExecutionPolicy Bypass -File `"$scrapeHelper`" " +
-                         "-SessionShort `"$sessionShort`" " +
-                         "-RegistryPath `"$registryPathForScrape`" " +
-                         "-ExpectedSec $elapsedSec"
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow  = $true
-        $scrapeProc = [System.Diagnostics.Process]::Start($psi)
-        $out = $null
-        $scrapeTimedOut = $false
-        if ($scrapeProc.WaitForExit(4000)) {
-            $out = $scrapeProc.StandardOutput.ReadToEnd()
-        } else {
-            try { $scrapeProc.Kill() } catch {}
-            $scrapeTimedOut = $true
-        }
-        if ($out) { $footerPhrase = [string]($out -split "`n" | Select-Object -First 1).Trim() }
-        if     ($footerPhrase)    { Log "terminal footer scraped: '$footerPhrase'" }
-        elseif ($scrapeTimedOut)  { Log "terminal footer scrape timed out after 4s (fallback to computed phrase)" }
-        else                      { Log "terminal footer scrape empty (fallback to computed phrase)" }
-    }
-} catch {
-    Log "terminal footer scrape failed: $($_.Exception.Message)"
-}
 
 if ($sessionShort -and $sessionShort.Length -eq 8) {
     $registryPath = Join-Path $ttHome 'session-colours.json'
