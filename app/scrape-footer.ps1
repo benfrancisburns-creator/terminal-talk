@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory = $true)] [string]$RegistryPath
 )
 
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
 # Read Claude Code's "Worked for X" footer from a Windows Terminal pane
 # via UI Automation. Emits the matched footer string on stdout (or
 # nothing on no-match). Spawned by Terminal Talk's main app process —
