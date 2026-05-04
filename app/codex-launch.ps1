@@ -3,15 +3,18 @@ param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$CodexArgs = @(),
     [string]$PreassignedShort = '',
-    [string]$PreassignedSessionId = ''
+    [string]$PreassignedSessionId = '',
+    [string]$InitialLabel = '',
+    [int]$InitialIndex = -1,
+    [string]$LaunchToken = ''
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $queueDir = Join-Path $ttHome 'queue'
 $sessionsDir = Join-Path $ttHome 'sessions'
-$registryPath = Join-Path $ttHome 'session-colours.json'
+$registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join-Path $ttHome 'session-colours.json' }
 $codexSessionsDir = Join-Path $env:USERPROFILE '.codex\sessions'
 $logPath = Join-Path $queueDir '_hook.log'
 $currentDir = (Get-Location).Path
@@ -36,9 +39,11 @@ function Test-HasUserIntent($entry) {
     if (-not $entry) { return $false }
     if ($entry.label -and ([string]$entry.label).Trim().Length -gt 0) { return $true }
     if ($entry.pinned -eq $true) { return $true }
-    if ($entry.voice) { return $true }
+    if ($entry.voice -and -not ($entry.ContainsKey('voice_auto') -and $entry.voice_auto -eq $true)) { return $true }
+    if ($entry.ContainsKey('voice_auto') -and $entry.voice_auto -eq $false) { return $true }
     if ($entry.muted -eq $true) { return $true }
     if ($entry.focus -eq $true) { return $true }
+    if ($entry.ContainsKey('heartbeat_enabled') -and ($entry.heartbeat_enabled -is [bool])) { return $true }
     if ($entry.speech_includes -and $entry.speech_includes.Count -gt 0) { return $true }
     return $false
 }
@@ -54,11 +59,18 @@ function Merge-IntentFields($from, $into) {
     if ($from.voice -and -not $into.voice) {
         $into.voice = [string]$from.voice
     }
+    if ($from.ContainsKey('voice_auto') -and ($from.voice_auto -is [bool]) -and -not $into.ContainsKey('voice_auto')) {
+        $into.voice_auto = [bool]$from.voice_auto
+    }
     if ($from.muted -eq $true -and $into.muted -ne $true) {
         $into.muted = $true
     }
     if ($from.focus -eq $true -and $into.focus -ne $true) {
         $into.focus = $true
+    }
+    if ($from.ContainsKey('heartbeat_enabled') -and ($from.heartbeat_enabled -is [bool]) -and
+        -not ($into.ContainsKey('heartbeat_enabled') -and ($into.heartbeat_enabled -is [bool]))) {
+        $into.heartbeat_enabled = [bool]$from.heartbeat_enabled
     }
     if ($from.speech_includes -and $from.speech_includes.Count -gt 0 -and (-not $into.speech_includes -or $into.speech_includes.Count -eq 0)) {
         $into.speech_includes = $from.speech_includes
@@ -76,6 +88,44 @@ function Get-EntryForShort([string]$Short) {
 function Set-TerminalTitle([string]$Title) {
     if (-not $Title) { return }
     try { $Host.UI.RawUI.WindowTitle = $Title } catch {}
+}
+
+function Sanitise-InitialLabel([string]$Value) {
+    if (-not $Value) { return '' }
+    $clean = ($Value -replace '[\r\n\t]', ' ').Trim()
+    if ($clean.Length -gt 60) { return $clean.Substring(0, 60) }
+    return $clean
+}
+
+function Clamp-InitialIndex([int]$Value) {
+    if ($Value -lt 0) { return -1 }
+    if ($Value -gt 23) { return 23 }
+    return $Value
+}
+
+function Apply-InitialIntent($Entry) {
+    if (-not $Entry) { return }
+    $label = Sanitise-InitialLabel $InitialLabel
+    $index = Clamp-InitialIndex $InitialIndex
+    $hasIntent = $false
+    $marker = ''
+    if ($LaunchToken) { $marker = "toolbar-launch:$LaunchToken" }
+    if ($marker -and $Entry.ContainsKey('source_originator') -and $Entry.source_originator -eq $marker) { return }
+    if ($label) {
+        $Entry.label = $label
+        if ($Entry.ContainsKey('auto_label')) { [void]$Entry.Remove('auto_label') }
+        $hasIntent = $true
+    }
+    if ($index -ge 0) {
+        $Entry.index = [int]$index
+        $hasIntent = $true
+    }
+    if ($hasIntent) {
+        $Entry.pinned = $true
+        $Entry.source_kind = 'toolbar-launch'
+        $Entry.source_label = 'Codex'
+        if ($marker) { $Entry.source_originator = $marker }
+    }
 }
 
 function Sync-CodexAssignment([string]$Short, [string]$SessionId, [int]$CodexPid, [string]$ProvisionalShort = '') {
@@ -101,6 +151,7 @@ function Sync-CodexAssignment([string]$Short, [string]$SessionId, [int]$CodexPid
             }
         }
         $entry = $all[$Short]
+        Apply-InitialIntent $entry
         Save-Registry -RegistryPath $registryPath -Assignments $all -Caller 'codex-launch' -LogPath $logPath
     } finally {
         if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
@@ -133,7 +184,52 @@ function Remove-SessionPidFile([int]$CodexPid) {
     } catch {}
 }
 
-function Get-CodexRolloutCandidateForLaunch {
+function Test-LiveProcessId([int]$ProcessId) {
+    if ($ProcessId -le 0) { return $false }
+    try {
+        $p = Get-Process -Id $ProcessId -ErrorAction Stop
+        return $null -ne $p
+    } catch {
+        return $false
+    }
+}
+
+function Test-CodexCandidateOwnedByOtherLiveProcess([string]$Short, [int]$CodexPid) {
+    if (-not $Short -or $Short -notmatch '^[a-fA-F0-9]{8}$') { return $false }
+    try {
+        $all = Read-Registry -RegistryPath $registryPath
+        if (-not $all.ContainsKey($Short)) { return $false }
+        $ownerPid = if ($all[$Short].claude_pid) { [int]$all[$Short].claude_pid } else { 0 }
+        if ($ownerPid -le 0 -or $ownerPid -eq $CodexPid) { return $false }
+        if (Test-LiveProcessId -ProcessId $ownerPid) {
+            Log "skip rollout candidate $Short for pid=$CodexPid; already owned by live pid=$ownerPid"
+            return $true
+        }
+    } catch {}
+    return $false
+}
+
+function Get-RegistryEntryForLaunchMarker([string]$Marker, [string]$ExcludeShort = '') {
+    if (-not $Marker) { return $null }
+    try {
+        $all = Read-Registry -RegistryPath $registryPath
+        foreach ($key in @($all.Keys)) {
+            if ($ExcludeShort -and $key -eq $ExcludeShort) { continue }
+            $entry = $all[$key]
+            if (-not $entry) { continue }
+            $originator = ''
+            try {
+                if ($entry.ContainsKey('source_originator')) { $originator = [string]$entry.source_originator }
+            } catch {}
+            if ($originator -eq $Marker) {
+                return [pscustomobject]@{ short = $key; entry = $entry }
+            }
+        }
+    } catch {}
+    return $null
+}
+
+function Get-CodexRolloutCandidateForLaunch([int]$CodexPid) {
     if (-not (Test-Path $codexSessionsDir)) { return $null }
     $cutoff = $launchStartUtc.AddSeconds(-5)
     $candidates = @()
@@ -142,7 +238,9 @@ function Get-CodexRolloutCandidateForLaunch {
             Where-Object { $_.LastWriteTimeUtc -ge $cutoff } |
             ForEach-Object {
                 $meta = Get-CodexRolloutSessionMeta -Path $_.FullName
-                if ($meta) { $candidates += $meta }
+                if ($meta -and -not (Test-CodexCandidateOwnedByOtherLiveProcess -Short ([string]$meta.short) -CodexPid $CodexPid)) {
+                    $candidates += $meta
+                }
             }
     } catch {}
     if ($candidates.Count -eq 0) { return $null }
@@ -186,13 +284,23 @@ $provisionalEntry = Sync-CodexAssignment -Short $provisionalShort -SessionId $pr
 $lastTitle = ''
 $boundShort = ''
 $boundSessionId = ''
+$launchMarker = if ($LaunchToken) { "toolbar-launch:$LaunchToken" } else { '' }
 
 try {
     while ($true) {
         try { $proc.Refresh() } catch {}
 
-        if (-not $boundShort) {
-            $candidate = Get-CodexRolloutCandidateForLaunch
+        if (-not $boundShort -and $launchMarker) {
+            $tokenBound = Get-RegistryEntryForLaunchMarker -Marker $launchMarker -ExcludeShort $provisionalShort
+            if ($tokenBound) {
+                $boundShort = [string]$tokenBound.short
+                try { $boundSessionId = [string]$tokenBound.entry.session_id } catch { $boundSessionId = '' }
+                Log "observed hook token binding short=$boundShort marker=$launchMarker"
+            }
+        }
+
+        if (-not $boundShort -and -not $launchMarker) {
+            $candidate = Get-CodexRolloutCandidateForLaunch -CodexPid $proc.Id
             if ($candidate) {
                 $boundShort = [string]$candidate.short
                 $boundSessionId = [string]$candidate.session_id

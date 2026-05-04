@@ -6,15 +6,39 @@ const path = require('node:path');
 
 const { stripForTTS } = require('./text');
 const { allocatePaletteIndex } = require('./palette-alloc');
+const { ensureAutoVoice, shouldAutoAssignVoice } = require('./voice-alloc');
+const {
+  extractCodexToolCallEvent,
+  extractCodexToolOutputEvent,
+  enrichCodexToolPhraseWithResult,
+  narrateCodexToolCallPayload,
+  naturalisePath,
+  leadingToolVerb,
+  summariseShellCommand,
+  varyToolPhrase,
+  wantsCodexToolResultContext,
+} = require('./codex-tool-narration');
+const { providerOrder } = require('./tts-routing');
 
-const SUPPORTED_PHASES = new Set(['commentary', 'final']);
+const SUPPORTED_PHASES = new Map([
+  ['commentary', 'commentary'],
+  ['final', 'final'],
+  ['final_answer', 'final'],
+]);
 const SHORT_RE = /^[a-f0-9]{8}$/;
 const ROLLOUT_SESSION_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 const EDGE_VOICE_RE = /^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z]+(?:Multilingual|Expressive)?Neural$/;
 const OPENAI_VOICES = new Set(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']);
 const MAX_RECENT_SIGNATURES = 64;
+const MAX_RECENT_TOOL_PHRASES = 32;
+const TOOL_PHRASE_DEDUP_WINDOW_MS = 30000;
+const TOOL_RESULT_CONTEXT_WAIT_MS = 1600;
 const DEFAULT_MAX_SESSION_AGE_MS = 72 * 60 * 60 * 1000;
-const DEFAULT_CHUNK_LEN = 3800;
+const DEFAULT_CHUNK_LEN = 1200;
+const FINAL_CHUNK_LEN = 900;
+const COMMENTARY_CHUNK_LEN = 1200;
+const DEFAULT_PLUGIN_CLEANUP_DELAY_MS = 120000;
+const PLUGIN_CLEANED_TOMBSTONE_MS = 30 * 60 * 1000;
 
 function parseSessionIdFromRolloutPath(filePath) {
   const m = String(filePath || '').match(ROLLOUT_SESSION_RE);
@@ -32,14 +56,105 @@ function extractCodexAgentMessageEvent(line) {
   if (parsed.type !== 'event_msg') return null;
   const payload = parsed.payload || {};
   if (payload.type !== 'agent_message') return null;
-  if (!SUPPORTED_PHASES.has(payload.phase)) return null;
+  const phase = SUPPORTED_PHASES.get(payload.phase);
+  if (!phase) return null;
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   if (!message) return null;
   return {
     timestamp: parsed.timestamp || '',
-    phase: payload.phase,
+    phase,
     message,
   };
+}
+
+function extractCodexSessionMetaEvent(line) {
+  if (!line || !line.trim()) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (parsed.type !== 'session_meta') return null;
+  const payload = parsed.payload || {};
+  const sessionId = String(payload.id || '').toLowerCase();
+  if (!sessionId || sessionId.length < 8) return null;
+  return {
+    sessionId,
+    source: String(payload.source || ''),
+    originator: String(payload.originator || ''),
+    cwd: String(payload.cwd || ''),
+    timestamp: String(payload.timestamp || parsed.timestamp || ''),
+  };
+}
+
+function isCodexTerminalSource(meta) {
+  if (!meta) return true;
+  const source = String(meta.source || '').toLowerCase();
+  const originator = String(meta.originator || '').toLowerCase();
+  const cwd = String(meta.cwd || '');
+  if (source === 'cli' || originator === 'codex-tui') return true;
+  if (source === 'vscode' && originator === 'codex desktop') return true;
+  if (source === 'vscode' && /[\\/]Documents[\\/]Codex[\\/]\d{4}-\d{2}-\d{2}[\\/]/i.test(cwd)) return true;
+  if (!source && !originator) return true;
+  return false;
+}
+
+function isCodexDesktopSource(meta) {
+  if (!meta) return false;
+  const source = String(meta.source || '').toLowerCase();
+  const originator = String(meta.originator || '').toLowerCase();
+  const cwd = String(meta.cwd || '');
+  if (source === 'vscode' && originator === 'codex desktop') return true;
+  return source === 'vscode' && /[\\/]Documents[\\/]Codex[\\/]\d{4}-\d{2}-\d{2}[\\/]/i.test(cwd);
+}
+
+function extractCodexLineEvent(line) {
+  const tool = extractCodexToolCallEvent(line);
+  if (tool) return { kind: 'tool', event: tool };
+  const message = extractCodexAgentMessageEvent(line);
+  if (message) return { kind: 'message', event: message };
+  return null;
+}
+
+function readCodexRolloutMeta(filePath, fsDep = fs) {
+  try {
+    const fd = fsDep.openSync(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(256 * 1024);
+      const bytes = fsDep.readSync(fd, buffer, 0, buffer.length, 0);
+      const firstLine = buffer.subarray(0, bytes).toString('utf8').split(/\r?\n/, 1)[0] || '';
+      return extractCodexSessionMetaEvent(firstLine);
+    } finally {
+      fsDep.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
+function extractCodexWorkingStateEvent(line) {
+  if (!line || !line.trim()) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const payload = parsed.payload || {};
+  if (parsed.type === 'event_msg') {
+    if (payload.type === 'user_message' || payload.type === 'task_started') return 'mark';
+    if (payload.type === 'agent_message' && payload.phase === 'commentary') return 'mark';
+    if (payload.type === 'agent_message' && (payload.phase === 'final' || payload.phase === 'final_answer')) return 'clear';
+    if (payload.type === 'task_complete' || payload.type === 'turn_aborted') return 'clear';
+  }
+  if (parsed.type === 'response_item') {
+    if (payload.type === 'message' && payload.role === 'user') return 'mark';
+    if (payload.type === 'function_call' || payload.type === 'custom_tool_call' || payload.type === 'reasoning') {
+      return 'mark';
+    }
+  }
+  return null;
 }
 
 function formatQueueTimestamp(isoString) {
@@ -53,17 +168,37 @@ function formatQueueTimestamp(isoString) {
   );
 }
 
+function splitOversizeChunk(text, maxLen) {
+  const parts = [];
+  let rest = String(text || '').trim();
+  while (rest.length > maxLen) {
+    let cut = rest.lastIndexOf(' ', maxLen);
+    if (cut < Math.floor(maxLen * 0.55)) cut = maxLen;
+    parts.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
 function chunkText(text, maxLen = DEFAULT_CHUNK_LEN) {
-  if (text.length <= maxLen) return [text];
+  const limit = Math.max(300, Math.floor(Number(maxLen) || DEFAULT_CHUNK_LEN));
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  if (clean.length <= limit) return [clean];
   const chunks = [];
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  const sentences = clean.split(/(?<=[.!?])\s+/);
   let current = '';
   for (const sentence of sentences) {
-    if ((current + ' ' + sentence).length > maxLen && current) {
-      chunks.push(current.trim());
-      current = sentence;
-    } else {
-      current = current ? `${current} ${sentence}` : sentence;
+    const pieces = sentence.length > limit ? splitOversizeChunk(sentence, limit) : [sentence];
+    for (const piece of pieces) {
+      const candidate = current ? `${current} ${piece}` : piece;
+      if (candidate.length > limit && current) {
+        chunks.push(current.trim());
+        current = piece;
+      } else {
+        current = candidate;
+      }
     }
   }
   if (current) chunks.push(current.trim());
@@ -84,6 +219,7 @@ function createCodexSessionWatcher(opts = {}) {
   const {
     codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions'),
     queueDir = path.join(os.homedir(), '.terminal-talk', 'queue'),
+    sessionsDir = path.join(os.homedir(), '.terminal-talk', 'sessions'),
     getCFG = () => ({}),
     loadAssignments = () => ({}),
     saveAssignments = null,
@@ -91,9 +227,12 @@ function createCodexSessionWatcher(opts = {}) {
     callEdgeTTS,
     callOpenAITTS,
     notifyQueue = () => {},
+    onAssignmentTouched = () => {},
     diag = () => {},
     pollIntervalMs = 1000,
     maxSessionAgeMs = DEFAULT_MAX_SESSION_AGE_MS,
+    pluginCleanupDelayMs = DEFAULT_PLUGIN_CLEANUP_DELAY_MS,
+    requireHookIdentity = process.env.TT_REQUIRE_CODEX_HOOK_IDENTITY === '1',
     now = () => Date.now(),
     fsDep = fs,
   } = opts;
@@ -107,9 +246,90 @@ function createCodexSessionWatcher(opts = {}) {
   let armed = false;
   let timer = null;
   let polling = false;
+  const pluginCleanupTimers = new Map();
 
-  function _touchAssignment(shortId, sessionId) {
+  function _pluginCleanedFlagPath(shortId) {
+    if (!SHORT_RE.test(shortId || '') || !sessionsDir) return null;
+    return path.join(sessionsDir, `${shortId}-plugin-cleaned.flag`);
+  }
+
+  function _writePluginCleanupTombstone(shortId) {
+    const flagPath = _pluginCleanedFlagPath(shortId);
+    if (!flagPath) return false;
+    try {
+      fsDep.mkdirSync(sessionsDir, { recursive: true });
+      fsDep.writeFileSync(flagPath, String(Math.floor(now() / 1000)), 'utf8');
+      return true;
+    } catch (e) {
+      diag(`codex-session-watcher: cleanup tombstone write fail ${shortId}: ${e.message}`);
+      return false;
+    }
+  }
+
+  function _isRecentlyCleanedPluginShort(shortId) {
+    const flagPath = _pluginCleanedFlagPath(shortId);
+    if (!flagPath) return false;
+    let stat = null;
+    try { stat = fsDep.statSync(flagPath); } catch { return false; }
+    let stampMs = NaN;
+    try {
+      const raw = fsDep.readFileSync(flagPath, 'utf8').trim();
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        stampMs = parsed > 1000000000000 ? parsed : parsed * 1000;
+      }
+    } catch {}
+    const basisMs = Number.isFinite(stampMs) ? stampMs : stat.mtimeMs;
+    const ageMs = now() - basisMs;
+    if (ageMs <= PLUGIN_CLEANED_TOMBSTONE_MS) return true;
+    try { fsDep.unlinkSync(flagPath); } catch {}
+    return false;
+  }
+
+  function _applySourceMeta(entry, sourceMeta) {
+    if (!entry || !sourceMeta || !isCodexDesktopSource(sourceMeta)) return false;
+    let changed = false;
+    const setString = (key, value, maxLen = 240) => {
+      const clean = String(value || '').slice(0, maxLen);
+      if (!clean || entry[key] === clean) return;
+      entry[key] = clean;
+      changed = true;
+    };
+    setString('source_kind', 'codex-desktop');
+    setString('source_label', 'Codex Desktop');
+    setString('source_app', 'Codex');
+    setString('adapter', 'desktop-rollout');
+    setString('source_cwd', sourceMeta.cwd || '', 4096);
+    setString('source', sourceMeta.source || '');
+    setString('source_originator', sourceMeta.originator || '');
+    if (entry.pinned !== true) {
+      entry.pinned = true;
+      changed = true;
+    }
+    const caps = entry.capabilities && typeof entry.capabilities === 'object' ? { ...entry.capabilities } : {};
+    const desiredCaps = {
+      auto_register: true,
+      tool_events: true,
+      response_events: true,
+      mcp_speak: false,
+      manual_speak_selection: true,
+    };
+    for (const [key, value] of Object.entries(desiredCaps)) {
+      if (caps[key] !== value) {
+        caps[key] = value;
+        changed = true;
+      }
+    }
+    entry.capabilities = caps;
+    return changed;
+  }
+
+  function _touchAssignment(shortId, sessionId, sourceMeta = null) {
     if (!SHORT_RE.test(shortId || '') || typeof saveAssignments !== 'function') return;
+    if (_isRecentlyCleanedPluginShort(shortId)) {
+      diag(`codex-session-watcher: skipped recently cleaned codex-plugin ${shortId}`);
+      return;
+    }
     let assignments = {};
     try { assignments = loadAssignments() || {}; } catch {}
     const nowSec = Math.floor(now() / 1000);
@@ -117,10 +337,15 @@ function createCodexSessionWatcher(opts = {}) {
     if (assignments[shortId]) {
       assignments[shortId].last_seen = nowSec;
       assignments[shortId].session_id = fullSessionId;
+      _applySourceMeta(assignments[shortId], sourceMeta);
+      if (shouldAutoAssignVoice(assignments[shortId])) {
+        const voiceAlloc = ensureAutoVoice(assignments[shortId], assignments);
+        if (voiceAlloc) diag(`codex-session-watcher: auto voice ${shortId} -> ${voiceAlloc.voice} (${voiceAlloc.reason})`);
+      }
     } else {
       const alloc = allocatePaletteIndex(shortId, assignments, 24);
       if (alloc.evicted) delete assignments[alloc.evicted];
-      assignments[shortId] = {
+      const entry = {
         index: alloc.index,
         session_id: fullSessionId,
         claude_pid: 0,
@@ -130,10 +355,107 @@ function createCodexSessionWatcher(opts = {}) {
         focus: false,
         last_seen: nowSec,
       };
-      diag(`codex-session-watcher: registered ${shortId} -> index ${alloc.index} (${alloc.reason})`);
+      _applySourceMeta(entry, sourceMeta);
+      const voiceAlloc = ensureAutoVoice(entry, assignments);
+      assignments[shortId] = entry;
+      diag(`codex-session-watcher: registered ${shortId} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
     }
-    try { saveAssignments(assignments, 'codex-session-watcher'); }
-    catch (e) { diag(`codex-session-watcher: assignment touch fail ${shortId}: ${e.message}`); }
+    try {
+      const saved = saveAssignments(assignments, 'codex-session-watcher');
+      if (saved !== false) {
+        try { onAssignmentTouched(shortId); } catch {}
+      }
+    } catch (e) {
+      diag(`codex-session-watcher: assignment touch fail ${shortId}: ${e.message}`);
+    }
+  }
+
+  function _isHookIdentifiedPluginSession(shortId) {
+    if (!SHORT_RE.test(shortId || '')) return false;
+    try {
+      const assignments = loadAssignments() || {};
+      const entry = assignments[shortId];
+      return !!(entry && entry.source_kind === 'codex-plugin');
+    } catch {
+      return false;
+    }
+  }
+
+  function _purgeQueueFilesForShort(shortId) {
+    if (!SHORT_RE.test(shortId || '') || !queueDir) return 0;
+    let purged = 0;
+    const rx = new RegExp(`-${shortId}(?:\\.original)?\\.(?:mp3|wav|txt)(?:\\.partial)?$`, 'i');
+    try {
+      for (const name of fsDep.readdirSync(queueDir)) {
+        if (!rx.test(name)) continue;
+        try {
+          fsDep.unlinkSync(path.join(queueDir, name));
+          purged += 1;
+        } catch {}
+      }
+    } catch {}
+    if (purged > 0) diag(`codex-session-watcher: purged ${purged} plugin queue file(s) for ${shortId}`);
+    return purged;
+  }
+
+  function _removePluginSession(shortId, reason) {
+    if (!SHORT_RE.test(shortId || '') || typeof saveAssignments !== 'function') return false;
+    let assignments = {};
+    try { assignments = loadAssignments() || {}; } catch {}
+    const entry = assignments[shortId];
+    if (!entry || entry.source_kind !== 'codex-plugin') return false;
+    delete assignments[shortId];
+    let saved = false;
+    try { saved = saveAssignments(assignments, 'codex-plugin-cleanup') !== false; } catch (e) {
+      diag(`codex-session-watcher: plugin cleanup save fail ${shortId}: ${e.message}`);
+      return false;
+    }
+    if (!saved) return false;
+    _writePluginCleanupTombstone(shortId);
+    _purgeQueueFilesForShort(shortId);
+    try { fsDep.unlinkSync(_workingFlagPath(shortId)); } catch {}
+    try { fsDep.unlinkSync(path.join(sessionsDir, `${shortId}-plugin-start-announced.flag`)); } catch {}
+    try { fsDep.unlinkSync(path.join(sessionsDir, `${shortId}-plugin-start.json`)); } catch {}
+    try { notifyQueue(); } catch {}
+    try { onAssignmentTouched(shortId); } catch {}
+    diag(`codex-session-watcher: removed finished codex-plugin session ${shortId} (${reason || 'complete'})`);
+    return true;
+  }
+
+  function _schedulePluginCleanup(state, reason) {
+    if (!state || state.terminalSource !== false || !SHORT_RE.test(state.shortId || '')) return;
+    if (!_isHookIdentifiedPluginSession(state.shortId)) return;
+    if (pluginCleanupTimers.has(state.shortId)) return;
+    const delay = Number.isFinite(pluginCleanupDelayMs) && pluginCleanupDelayMs >= 0
+      ? pluginCleanupDelayMs
+      : DEFAULT_PLUGIN_CLEANUP_DELAY_MS;
+    const handle = setTimeout(() => {
+      pluginCleanupTimers.delete(state.shortId);
+      _removePluginSession(state.shortId, reason);
+    }, delay);
+    pluginCleanupTimers.set(state.shortId, handle);
+    diag(`codex-session-watcher: scheduled codex-plugin cleanup for ${state.shortId} in ${delay}ms (${reason || 'complete'})`);
+  }
+
+  function _workingFlagPath(shortId) {
+    if (!SHORT_RE.test(shortId || '') || !sessionsDir) return null;
+    return path.join(sessionsDir, `${shortId}-working.flag`);
+  }
+
+  function _applyWorkingState(state, action) {
+    if (!action || !SHORT_RE.test(state.shortId || '')) return;
+    const flagPath = _workingFlagPath(state.shortId);
+    if (!flagPath) return;
+    try {
+      if (action === 'mark') {
+        fsDep.mkdirSync(sessionsDir, { recursive: true });
+        fsDep.writeFileSync(flagPath, String(Math.floor(now() / 1000)), 'utf8');
+      } else if (action === 'clear' && fsDep.existsSync(flagPath)) {
+        fsDep.unlinkSync(flagPath);
+      }
+    } catch (e) {
+      diag(`codex-session-watcher: working flag ${action} fail ${state.shortId}: ${e.message}`);
+    }
   }
 
   function _listCandidateFiles() {
@@ -179,9 +501,7 @@ function createCodexSessionWatcher(opts = {}) {
       }
     }
 
-    const provider = String((((cfg || {}).playback) || {}).tts_provider || 'edge').toLowerCase() === 'openai'
-      ? 'openai'
-      : 'edge';
+    const providers = providerOrder(((cfg || {}).playback) || {});
     const voices = ((cfg || {}).voices) || {};
     const customVoice = entry && typeof entry.voice === 'string' ? entry.voice : '';
     let apiKey = null;
@@ -192,7 +512,7 @@ function createCodexSessionWatcher(opts = {}) {
     return {
       muted: !!(entry && entry.muted),
       includes,
-      provider,
+      providers,
       apiKey,
       edgeVoice: EDGE_VOICE_RE.test(customVoice)
         ? customVoice
@@ -214,29 +534,33 @@ function createCodexSessionWatcher(opts = {}) {
       return openaiOut;
     };
 
-    if (routing.provider === 'openai') {
+    let lastError = null;
+    for (const provider of (routing.providers || ['edge'])) {
       try {
-        const out = await tryOpenAI();
+        const out = provider === 'openai' ? await tryOpenAI() : await tryEdge();
         if (out) return out;
       } catch (e) {
-        diag(`codex-session-watcher: OpenAI fail, falling back to edge: ${e.message}`);
+        lastError = e;
+        diag(`codex-session-watcher: ${provider} synth failed: ${e.message}`);
       }
-      return tryEdge();
     }
+    if (lastError) throw lastError;
+    return null;
+  }
 
+  function _isHookIdentifiedSession(shortId) {
+    if (!SHORT_RE.test(shortId || '')) return false;
     try {
-      return await tryEdge();
-    } catch (e) {
-      diag(`codex-session-watcher: edge fail, falling back to OpenAI: ${e.message}`);
-      const out = await tryOpenAI();
-      if (out) return out;
-      throw e;
+      const assignments = loadAssignments() || {};
+      return !!assignments[shortId];
+    } catch {
+      return false;
     }
   }
 
   async function _deliverMessage(state, event, batchSeq) {
     if (!SHORT_RE.test(state.shortId || '')) return;
-    _touchAssignment(state.shortId, state.sessionId);
+    _touchAssignment(state.shortId, state.sessionId, state.rolloutMeta);
     const initialRouting = _resolveRouting(state.shortId);
     if (initialRouting.muted) {
       diag(`codex-session-watcher: muted ${state.shortId}; skipping ${event.phase}`);
@@ -245,9 +569,12 @@ function createCodexSessionWatcher(opts = {}) {
 
     const spoken = stripForTTS(event.message, initialRouting.includes).trim();
     if (!spoken) return;
-    const chunks = chunkText(spoken);
+    const maxChunkLen = event.phase === 'final' ? FINAL_CHUNK_LEN : COMMENTARY_CHUNK_LEN;
+    const chunks = chunkText(spoken, maxChunkLen);
     const turnTs = formatQueueTimestamp(event.timestamp);
     const phaseTag = event.phase === 'commentary' ? 'C' : 'F';
+    let producedCount = 0;
+    let failedCount = 0;
 
     for (let i = 0; i < chunks.length; i++) {
       const routing = _resolveRouting(state.shortId);
@@ -260,13 +587,53 @@ function createCodexSessionWatcher(opts = {}) {
       const stem = `${turnTs}-${phaseTag}${batch}-${seq}-${state.shortId}`;
       const edgeOut = path.join(queueDir, `${stem}.mp3`);
       const openaiOut = path.join(queueDir, `${stem}.wav`);
-      const produced = await _synthesizeChunk(chunks[i], routing, edgeOut, openaiOut);
+      let produced = null;
+      try {
+        produced = await _synthesizeChunk(chunks[i], routing, edgeOut, openaiOut);
+      } catch (e) {
+        failedCount += 1;
+        diag(`codex-session-watcher: ${event.phase} chunk ${i + 1}/${chunks.length} failed for ${state.shortId}: ${e.message}`);
+        continue;
+      }
       if (!produced) continue;
+      producedCount += 1;
       writeSpokenSidecar(produced, chunks[i], diag);
       try { notifyQueue(); } catch {}
     }
 
-    diag(`codex-session-watcher: spoke ${event.phase} for ${state.shortId} (${chunks.length} chunk(s))`);
+    diag(`codex-session-watcher: spoke ${event.phase} for ${state.shortId} (${producedCount}/${chunks.length} chunk(s), failed=${failedCount})`);
+  }
+
+  async function _deliverToolNarration(state, event, batchSeq) {
+    if (!SHORT_RE.test(state.shortId || '')) return;
+    _touchAssignment(state.shortId, state.sessionId, state.rolloutMeta);
+    const routing = _resolveRouting(state.shortId);
+    if (routing.muted) {
+      diag(`codex-session-watcher: muted ${state.shortId}; skipping tool narration`);
+      return;
+    }
+    if (routing.includes && routing.includes.tool_calls === false) return;
+
+    const recentVerbs = Array.isArray(state.recentToolVerbs) ? state.recentToolVerbs : [];
+    const variedPhrase = varyToolPhrase(event.phrase, `${event.toolName || ''}|${event.phrase || ''}`, {
+      avoidVerbs: recentVerbs.slice(-3),
+    });
+    const spoken = stripForTTS(variedPhrase, routing.includes).trim();
+    if (!spoken) return;
+    const verb = leadingToolVerb(spoken);
+    if (verb) {
+      state.recentToolVerbs = [...recentVerbs, verb].slice(-6);
+    }
+    const turnTs = formatQueueTimestamp(event.timestamp);
+    const seq = String(batchSeq).padStart(4, '0');
+    const stem = `${turnTs}-T-${seq}-${state.shortId}`;
+    const edgeOut = path.join(queueDir, `${stem}.mp3`);
+    const openaiOut = path.join(queueDir, `${stem}.wav`);
+    const produced = await _synthesizeChunk(spoken, routing, edgeOut, openaiOut);
+    if (!produced) return;
+    writeSpokenSidecar(produced, spoken, diag);
+    try { notifyQueue(); } catch {}
+    diag(`codex-session-watcher: spoke tool narration for ${state.shortId}: ${spoken}`);
   }
 
   function _rememberSignature(state, signature) {
@@ -280,23 +647,49 @@ function createCodexSessionWatcher(opts = {}) {
     return true;
   }
 
+  function _rememberToolPhrase(state, phrase) {
+    const key = String(phrase || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!key) return false;
+    const cutoff = now() - TOOL_PHRASE_DEDUP_WINDOW_MS;
+    state.recentToolPhrases = (state.recentToolPhrases || []).filter((entry) => entry.at >= cutoff);
+    if (state.recentToolPhrases.some((entry) => entry.key === key)) {
+      diag(`codex-session-watcher: suppressed repeated tool narration for ${state.shortId}: ${phrase}`);
+      return false;
+    }
+    state.recentToolPhrases.push({ key, at: now() });
+    if (state.recentToolPhrases.length > MAX_RECENT_TOOL_PHRASES) state.recentToolPhrases.shift();
+    return true;
+  }
+
   function _ensureState(meta) {
     let state = files.get(meta.path);
     if (state) return state;
     const sessionId = parseSessionIdFromRolloutPath(meta.path);
     const shortId = sessionId ? sessionId.slice(0, 8).toLowerCase() : '';
+    const rolloutMeta = readCodexRolloutMeta(meta.path, fsDep);
+    const terminalSource = isCodexTerminalSource(rolloutMeta);
     const createdMs = meta.birthtimeMs || Number.POSITIVE_INFINITY;
     const existedBeforeBoot = createdMs <= bootMs;
     state = {
       sessionId,
       shortId,
+      rolloutSource: rolloutMeta ? rolloutMeta.source : '',
+      rolloutOriginator: rolloutMeta ? rolloutMeta.originator : '',
+      rolloutMeta,
+      terminalSource,
       offset: existedBeforeBoot ? meta.size : 0,
       remainder: '',
       tail: Promise.resolve(),
       nextBatchSeq: 1,
       signatures: [],
       signatureSet: new Set(),
+      recentToolPhrases: [],
+      recentToolVerbs: [],
+      pendingToolCalls: new Map(),
     };
+    if (!terminalSource) {
+      diag(`codex-session-watcher: non-terminal rollout ${shortId} source=${state.rolloutSource || 'unknown'} originator=${state.rolloutOriginator || 'unknown'} waiting for hook identity`);
+    }
     files.set(meta.path, state);
     return state;
   }
@@ -318,8 +711,72 @@ function createCodexSessionWatcher(opts = {}) {
     }
   }
 
+  function _queueParsedEvent(state, parsed) {
+    if (!parsed) return false;
+    const { kind, event } = parsed;
+    const signature = kind === 'tool'
+      ? `tool|${event.callId || event.timestamp}|${event.toolName}|${event.phrase}`
+      : `${event.timestamp}|${event.phase}|${event.message}`;
+    if (!_rememberSignature(state, signature)) return false;
+    if (kind === 'tool' && !_rememberToolPhrase(state, event.phrase)) return false;
+    const batchSeq = state.nextBatchSeq++;
+    const deliver = kind === 'tool' ? _deliverToolNarration : _deliverMessage;
+    state.tail = state.tail
+      .then(() => deliver(state, event, batchSeq))
+      .catch((e) => {
+        diag(`codex-session-watcher: delivery fail ${state.shortId || 'unknown'}: ${e.message}`);
+    });
+    return true;
+  }
+
+  function _queueOrHoldParsedEvent(state, parsed) {
+    if (!parsed) return false;
+    if (
+      parsed.kind === 'tool'
+      && parsed.event
+      && parsed.event.callId
+      && wantsCodexToolResultContext(parsed.event)
+    ) {
+      state.pendingToolCalls.set(parsed.event.callId, {
+        parsed,
+        expiresAt: now() + TOOL_RESULT_CONTEXT_WAIT_MS,
+      });
+      return true;
+    }
+    return _queueParsedEvent(state, parsed);
+  }
+
+  function _applyToolOutputContext(state, outputEvent) {
+    if (!outputEvent || !outputEvent.callId || !state.pendingToolCalls) return false;
+    const pending = state.pendingToolCalls.get(outputEvent.callId);
+    if (!pending) return false;
+    state.pendingToolCalls.delete(outputEvent.callId);
+    const event = { ...pending.parsed.event };
+    event.timestamp = event.timestamp || outputEvent.timestamp;
+    event.phrase = enrichCodexToolPhraseWithResult(event.phrase, outputEvent.output);
+    return _queueParsedEvent(state, { kind: 'tool', event });
+  }
+
+  function _flushExpiredToolContext(state, force = false) {
+    if (!state.pendingToolCalls || state.pendingToolCalls.size === 0) return;
+    const t = now();
+    for (const [callId, pending] of Array.from(state.pendingToolCalls.entries())) {
+      if (!force && pending.expiresAt > t) continue;
+      state.pendingToolCalls.delete(callId);
+      _queueParsedEvent(state, pending.parsed);
+    }
+  }
+
   function _processFile(meta) {
     const state = _ensureState(meta);
+    if (state.terminalSource === false && !_isHookIdentifiedPluginSession(state.shortId)) return;
+    if (requireHookIdentity && !_isHookIdentifiedSession(state.shortId)) {
+      if (!state.waitingForHookIdentityLogged) {
+        state.waitingForHookIdentityLogged = true;
+        diag(`codex-session-watcher: waiting for hook identity before reading ${state.shortId || 'unknown'}`);
+      }
+      return;
+    }
     const delta = _readDelta(meta, state);
     if (!delta) return;
 
@@ -328,35 +785,30 @@ function createCodexSessionWatcher(opts = {}) {
     state.remainder = combined.endsWith('\n') ? '' : (lines.pop() || '');
 
     for (const line of lines) {
-      const event = extractCodexAgentMessageEvent(line);
-      if (!event) continue;
-      const signature = `${event.timestamp}|${event.phase}|${event.message}`;
-      if (!_rememberSignature(state, signature)) continue;
-      const batchSeq = state.nextBatchSeq++;
-      state.tail = state.tail
-        .then(() => _deliverMessage(state, event, batchSeq))
-        .catch((e) => {
-          diag(`codex-session-watcher: delivery fail ${state.shortId || 'unknown'}: ${e.message}`);
-        });
+      const workingState = extractCodexWorkingStateEvent(line);
+      if (workingState === 'mark') _touchAssignment(state.shortId, state.sessionId, state.rolloutMeta);
+      _applyWorkingState(state, workingState);
+      if (workingState === 'clear') _schedulePluginCleanup(state, 'rollout clear');
+      _applyToolOutputContext(state, extractCodexToolOutputEvent(line));
+      _queueOrHoldParsedEvent(state, extractCodexLineEvent(line));
     }
 
-    const tailEvent = extractCodexAgentMessageEvent(state.remainder);
-    if (!tailEvent) return;
-    const signature = `${tailEvent.timestamp}|${tailEvent.phase}|${tailEvent.message}`;
-    if (!_rememberSignature(state, signature)) return;
-    const batchSeq = state.nextBatchSeq++;
-    state.remainder = '';
-    state.tail = state.tail
-      .then(() => _deliverMessage(state, tailEvent, batchSeq))
-      .catch((e) => {
-        diag(`codex-session-watcher: delivery fail ${state.shortId || 'unknown'}: ${e.message}`);
-      });
+    const remainderState = extractCodexWorkingStateEvent(state.remainder);
+    if (remainderState === 'mark') _touchAssignment(state.shortId, state.sessionId, state.rolloutMeta);
+    _applyWorkingState(state, remainderState);
+    if (remainderState === 'clear') _schedulePluginCleanup(state, 'rollout clear');
+    _applyToolOutputContext(state, extractCodexToolOutputEvent(state.remainder));
+    if (_queueOrHoldParsedEvent(state, extractCodexLineEvent(state.remainder))) {
+      state.remainder = '';
+    }
+    _flushExpiredToolContext(state);
   }
 
   async function _poll() {
     const candidates = _listCandidateFiles();
     const livePaths = new Set(candidates.map((f) => f.path));
     for (const meta of candidates) _processFile(meta);
+    for (const state of files.values()) _flushExpiredToolContext(state);
     for (const tracked of Array.from(files.keys())) {
       if (!livePaths.has(tracked)) files.delete(tracked);
     }
@@ -397,6 +849,8 @@ function createCodexSessionWatcher(opts = {}) {
       clearTimeout(timer);
       timer = null;
     }
+    for (const handle of pluginCleanupTimers.values()) clearTimeout(handle);
+    pluginCleanupTimers.clear();
     diag('codex-session-watcher: stopped');
   }
 
@@ -406,5 +860,17 @@ function createCodexSessionWatcher(opts = {}) {
 module.exports = {
   createCodexSessionWatcher,
   extractCodexAgentMessageEvent,
+  extractCodexSessionMetaEvent,
+  extractCodexWorkingStateEvent,
+  extractCodexToolCallEvent,
+  extractCodexToolOutputEvent,
+  isCodexTerminalSource,
+  isCodexDesktopSource,
+  leadingToolVerb,
+  narrateCodexToolCallPayload,
+  naturalisePath,
+  summariseShellCommand,
+  varyToolPhrase,
+  chunkText,
   parseSessionIdFromRolloutPath,
 };

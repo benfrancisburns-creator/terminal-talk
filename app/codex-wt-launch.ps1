@@ -1,15 +1,21 @@
 [CmdletBinding()]
 param(
+    [string]$ProjectDir = '',
+    [switch]$DryRun,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$CodexArgs = @()
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-$ttHome = Join-Path $env:USERPROFILE '.terminal-talk'
+$ttHome = if ($env:TT_HOME) { $env:TT_HOME } else { Join-Path $env:USERPROFILE '.terminal-talk' }
 $queueDir = Join-Path $ttHome 'queue'
-$registryPath = Join-Path $ttHome 'session-colours.json'
-$currentDir = (Get-Location).Path
+$registryPath = if ($env:TT_REGISTRY_PATH) { $env:TT_REGISTRY_PATH } else { Join-Path $ttHome 'session-colours.json' }
+$currentDir = if ($ProjectDir) {
+    try { (Resolve-Path -LiteralPath $ProjectDir -ErrorAction Stop).Path } catch { (Get-Location).Path }
+} else {
+    (Get-Location).Path
+}
 $launchMs = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
 
 if (-not (Test-Path $queueDir)) {
@@ -25,7 +31,7 @@ function Join-ProcessArguments([string[]]$Items) {
     return (($Items | ForEach-Object {
         $s = [string]$_
         if ($s -match '[\s"]') {
-            '"' + ($s -replace '"', '\"') + '"'
+            '"' + ($s -replace '"', '""') + '"'
         } else {
             $s
         }
@@ -39,21 +45,23 @@ $provisionalShort = New-ProvisionalCodexShort -CodexPid $PID -CurrentDir $curren
 $provisionalSessionId = "codex-provisional-$PID-$launchMs"
 $entry = $null
 
-$locked = Enter-RegistryLock -RegistryPath $registryPath
-try {
-    if ($locked) {
-        $all = Read-Registry -RegistryPath $registryPath
-        $null = Update-SessionAssignment -Assignments $all -Short $provisionalShort `
-                                         -SessionId $provisionalSessionId -ClaudePid 0 `
-                                         -Now ([DateTimeOffset]::Now.ToUnixTimeSeconds()) `
-                                         -LogPath (Join-Path $queueDir '_hook.log') -Caller 'codex-wt-launch'
-        $entry = $all[$provisionalShort]
-        Save-Registry -RegistryPath $registryPath -Assignments $all -Caller 'codex-wt-launch' -LogPath (Join-Path $queueDir '_hook.log')
-    } else {
-        Log "registry lock unavailable before wt launch; using fallback title/colour"
+if (-not $DryRun) {
+    $locked = Enter-RegistryLock -RegistryPath $registryPath
+    try {
+        if ($locked) {
+            $all = Read-Registry -RegistryPath $registryPath
+            $null = Update-SessionAssignment -Assignments $all -Short $provisionalShort `
+                                             -SessionId $provisionalSessionId -ClaudePid 0 `
+                                             -Now ([DateTimeOffset]::Now.ToUnixTimeSeconds()) `
+                                             -LogPath (Join-Path $queueDir '_hook.log') -Caller 'codex-wt-launch'
+            $entry = $all[$provisionalShort]
+            Save-Registry -RegistryPath $registryPath -Assignments $all -Caller 'codex-wt-launch' -LogPath (Join-Path $queueDir '_hook.log')
+        } else {
+            Log "registry lock unavailable before wt launch; using fallback title/colour"
+        }
+    } finally {
+        if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
     }
-} finally {
-    if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
 }
 
 if (-not $entry) {
@@ -89,10 +97,19 @@ if ($wt) {
         $currentDir,
         $powershellExe
     ) + $launchArgs
-    $wtArgumentLine = Join-ProcessArguments -Items $wtArgs
+    if ($DryRun) {
+        [pscustomobject]@{
+            mode = 'wt'
+            cwd = $currentDir
+            title = $tabTitle
+            tabColor = "#$tabHex"
+            args = $wtArgs
+        } | ConvertTo-Json -Depth 5
+        exit 0
+    }
     try {
-        Start-Process -FilePath $wt.Source -ArgumentList $wtArgumentLine -WorkingDirectory $currentDir
-        Log "started wt title=$tabTitle tabColor=#$tabHex short=$provisionalShort args=$wtArgumentLine"
+        & $wt.Source @wtArgs
+        Log "started wt title=$tabTitle tabColor=#$tabHex short=$provisionalShort cwd=$currentDir"
         exit 0
     } catch {
         Log "wt launch failed: $($_.Exception.Message)"
@@ -100,7 +117,18 @@ if ($wt) {
 }
 
 try {
-    Start-Process -FilePath $powershellExe -ArgumentList (Join-ProcessArguments -Items $launchArgs) -WorkingDirectory $currentDir
+    $fallbackArgs = Join-ProcessArguments -Items $launchArgs
+    if ($DryRun) {
+        [pscustomobject]@{
+            mode = 'powershell'
+            cwd = $currentDir
+            title = $tabTitle
+            tabColor = "#$tabHex"
+            args = $fallbackArgs
+        } | ConvertTo-Json -Depth 5
+        exit 0
+    }
+    Start-Process -FilePath $powershellExe -ArgumentList $fallbackArgs -WorkingDirectory $currentDir
     Log "started powershell fallback title=$tabTitle short=$provisionalShort"
 } catch {
     Write-Error "failed to launch Terminal Talk Codex: $($_.Exception.Message)"

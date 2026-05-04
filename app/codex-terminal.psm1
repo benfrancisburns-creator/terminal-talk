@@ -17,6 +17,10 @@ function _To-UtcDateTime {
         return $Value.ToUniversalTime()
     }
     try {
+        if ($Value -is [string] -and $Value.Trim()) {
+            $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+            return ([DateTimeOffset]::Parse($Value, [Globalization.CultureInfo]::InvariantCulture, $styles)).UtcDateTime
+        }
         return ([datetime]$Value).ToUniversalTime()
     } catch {
         return [datetime]::MinValue
@@ -34,6 +38,50 @@ $script:TerminalTalkPaletteHex = @(
     'e0e0e0'
 )
 
+$script:TerminalTalkPaletteEmojiCodepoints = @(
+    0x1F534,
+    0x1F7E0,
+    0x1F7E1,
+    0x1F7E2,
+    0x1F535,
+    0x1F7E3,
+    0x1F7E4,
+    0x26AA
+)
+
+$script:TerminalTalkHsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
+$script:TerminalTalkVsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
+
+function _HexToRgbText {
+    param([string]$Hex)
+    $h = ([string]$Hex).Trim().TrimStart('#')
+    if ($h -notmatch '^[a-fA-F0-9]{6}$') { return '255;255;255' }
+    return "$([Convert]::ToInt32($h.Substring(0, 2), 16));$([Convert]::ToInt32($h.Substring(2, 2), 16));$([Convert]::ToInt32($h.Substring(4, 2), 16))"
+}
+
+function _Normalise-PaletteIndex {
+    param([int]$Index = 0)
+    $i = $Index % 24
+    if ($i -lt 0) { $i += 24 }
+    return $i
+}
+
+function _EmojiFromCodePoint {
+    param([int]$CodePoint)
+    try {
+        return [char]::ConvertFromUtf32($CodePoint)
+    } catch {
+        return [string][char]0x25CF
+    }
+}
+
+function _PaletteTitleEmoji {
+    param([int]$Index = 0)
+    $i = $Index % 8
+    if ($i -lt 0) { $i += 8 }
+    return _EmojiFromCodePoint $script:TerminalTalkPaletteEmojiCodepoints[$i]
+}
+
 function _Clean-TitlePart {
     param([string]$Value)
     if (-not $Value) { return '' }
@@ -44,9 +92,47 @@ function Get-TerminalTalkPaletteHex {
     [CmdletBinding()]
     param([int]$Index = 0)
 
-    $i = $Index % 24
-    if ($i -lt 0) { $i += 24 }
+    $i = _Normalise-PaletteIndex $Index
     return $script:TerminalTalkPaletteHex[$i % 8]
+}
+
+function Get-TerminalTalkTitleMarker {
+    [CmdletBinding()]
+    param([int]$Index = 0)
+
+    $i = _Normalise-PaletteIndex $Index
+    $primary = _PaletteTitleEmoji ($i % 8)
+    if ($i -lt 8) { return $primary }
+    if ($i -lt 16) {
+        $partner = _PaletteTitleEmoji $script:TerminalTalkHsplitPartner[$i - 8]
+        return "$primary$partner"
+    }
+    $vpartner = _PaletteTitleEmoji $script:TerminalTalkVsplitPartner[$i - 16]
+    return "$primary$vpartner"
+}
+
+function Get-TerminalTalkPaletteAnsiGlyph {
+    [CmdletBinding()]
+    param([int]$Index = 0)
+
+    $i = _Normalise-PaletteIndex $Index
+    $ESC = [char]27
+    if ($i -lt 8) {
+        $rgb = _HexToRgbText $script:TerminalTalkPaletteHex[$i]
+        return "${ESC}[38;2;${rgb}m$([char]0x25CF)${ESC}[0m"
+    }
+    if ($i -lt 16) {
+        $p = $i - 8
+        $s = $script:TerminalTalkHsplitPartner[$p]
+        $fg = _HexToRgbText $script:TerminalTalkPaletteHex[$p]
+        $bg = _HexToRgbText $script:TerminalTalkPaletteHex[$s]
+        return "${ESC}[38;2;${fg};48;2;${bg}m$([char]0x2580)${ESC}[0m"
+    }
+    $vp = $i - 16
+    $vs = $script:TerminalTalkVsplitPartner[$vp]
+    $vfg = _HexToRgbText $script:TerminalTalkPaletteHex[$vp]
+    $vbg = _HexToRgbText $script:TerminalTalkPaletteHex[$vs]
+    return "${ESC}[38;2;${vfg};48;2;${vbg}m$([char]0x258C)${ESC}[0m"
 }
 
 function _Get-EntryValue {
@@ -84,18 +170,22 @@ function Get-TerminalTalkIdentityText {
     if ($entryLabel) {
         $label = _Clean-TitlePart ([string]$entryLabel)
     }
-    if (-not $label) { $label = _Clean-TitlePart $FallbackLabel }
-    if (-not $label) { $label = 'Codex' }
+
+    if ($label -match '^TT\s+\d+\s*\((.+)\)$') {
+        $parsedLabel = _Clean-TitlePart $Matches[1]
+        if ($parsedLabel) { return $parsedLabel }
+    }
 
     if ($label -match '^TT\s+\d+\b') {
-        return $label
+        return "Session $($Matches[0] -replace '[^\d]+', '')"
     }
 
-    if ($slotNumber -gt 0) {
-        return "TT $slotNumber ($label)"
-    }
+    if ($label) { return $label }
+    if ($slotNumber -gt 0) { return "Session $slotNumber" }
 
-    return $label
+    $fallback = _Clean-TitlePart $FallbackLabel
+    if ($fallback) { return $fallback }
+    return 'Codex'
 }
 
 function New-ProvisionalCodexShort {
@@ -144,7 +234,23 @@ function Parse-CodexSessionMetaLine {
         short      = $short
         cwd        = if ($parsed.payload.cwd) { [string]$parsed.payload.cwd } else { '' }
         timestamp  = if ($parsed.payload.timestamp) { [string]$parsed.payload.timestamp } else { '' }
+        source     = if ($parsed.payload.source) { [string]$parsed.payload.source } else { '' }
+        originator = if ($parsed.payload.originator) { [string]$parsed.payload.originator } else { '' }
     }
+}
+
+function Test-CodexTerminalRolloutMeta {
+    [CmdletBinding()]
+    param([object]$Meta = $null)
+
+    if (-not $Meta) { return $true }
+    $source = ''
+    $originator = ''
+    try { $source = ([string]$Meta.source).ToLowerInvariant() } catch {}
+    try { $originator = ([string]$Meta.originator).ToLowerInvariant() } catch {}
+    if ($source -eq 'cli' -or $originator -eq 'codex-tui') { return $true }
+    if (-not $source -and -not $originator) { return $true }
+    return $false
 }
 
 function Get-CodexRolloutSessionMeta {
@@ -172,6 +278,9 @@ function Get-CodexRolloutSessionMeta {
         short      = $meta.short
         cwd        = $meta.cwd
         timestamp  = $meta.timestamp
+        source     = $meta.source
+        originator = $meta.originator
+        terminal_source = (Test-CodexTerminalRolloutMeta -Meta $meta)
         mtime_utc  = $item.LastWriteTimeUtc
     }
 }
@@ -192,6 +301,7 @@ function Select-CodexRolloutCandidate {
 
     foreach ($cand in $Candidates) {
         if (-not $cand) { continue }
+        if ($cand.PSObject.Properties.Name -contains 'terminal_source' -and $cand.terminal_source -eq $false) { continue }
         $candShort = [string]$cand.short
         if ($candShort -notmatch '^[a-f0-9]{8}$') { continue }
 
@@ -207,6 +317,9 @@ function Select-CodexRolloutCandidate {
             short      = $candShort.ToLowerInvariant()
             cwd        = [string]$cand.cwd
             timestamp  = _To-UtcDateTime $cand.timestamp
+            source     = if ($cand.PSObject.Properties.Name -contains 'source') { [string]$cand.source } else { '' }
+            originator = if ($cand.PSObject.Properties.Name -contains 'originator') { [string]$cand.originator } else { '' }
+            terminal_source = $true
             mtime_utc  = $mtime
         }
     }
@@ -230,29 +343,30 @@ function Format-CodexWindowTitle {
         [switch]$Attaching
     )
 
-    $identity = Get-TerminalTalkIdentityText -Entry $Entry -FallbackLabel 'Codex'
-
-    $shortText = ''
-    if ($Short -and $Short -match '^[a-f0-9]{8}$') {
-        $shortText = $Short.ToLowerInvariant()
-    }
+    $identity = Get-TerminalTalkIdentityText -Entry $Entry -FallbackLabel $(if ($Short) { "Codex $Short" } else { 'Codex' })
 
     $project = ''
     try { $project = Split-Path -Leaf $CurrentDir } catch {}
     if (-not $project) { $project = $CurrentDir }
     $project = _Clean-TitlePart $project
 
-    $parts = @($identity)
+    $marker = ''
+    $entryIndex = _Get-EntryValue -Entry $Entry -Name 'index'
+    if ($null -ne $entryIndex) {
+        try { $marker = Get-TerminalTalkTitleMarker -Index ([int]$entryIndex) } catch {}
+    }
+
+    $parts = @()
+    if ($marker -and $identity) {
+        $parts += "$marker $identity"
+    } elseif ($marker) {
+        $parts += $marker
+    } else {
+        $parts += $identity
+    }
     if ($Attaching) {
-        if ($shortText) { $parts += $shortText }
         if ($project) { $parts += $project }
         $parts += 'attaching'
-    } elseif ($shortText) {
-        $parts += $shortText
-        $parts += 'Codex'
-    } elseif ($project) {
-        $parts += $project
-        $parts += 'Codex'
     }
 
     $title = (($parts | Where-Object { $_ -and $_.ToString().Trim().Length -gt 0 }) -join ' | ')
@@ -266,7 +380,10 @@ Export-ModuleMember -Function `
     New-ProvisionalCodexShort, `
     Get-TerminalTalkIdentityText, `
     Get-TerminalTalkPaletteHex, `
+    Get-TerminalTalkTitleMarker, `
+    Get-TerminalTalkPaletteAnsiGlyph, `
     Parse-CodexSessionMetaLine, `
     Get-CodexRolloutSessionMeta, `
+    Test-CodexTerminalRolloutMeta, `
     Select-CodexRolloutCandidate, `
     Format-CodexWindowTitle
