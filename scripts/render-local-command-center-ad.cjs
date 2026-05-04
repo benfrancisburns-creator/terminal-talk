@@ -66,31 +66,31 @@ const cyan = '#22d3ee';
 const orange = '#ffa726';
 
 const lines = [
-  { at: 0.7,  end: 4.3,  who: 'MASCOT',   text: 'Terminal Talk online. Bring every session into view.' },
-  { at: 5.2,  end: 7.0,  who: 'MASCOT',   text: 'Frontend, report.' },
-  { at: 7.2,  end: 10.3, who: 'FRONTEND', text: 'Settings panel is clean. Voice controls are ready.' },
+  { at: 0.7,  end: 4.3,  who: 'MASCOT',   text: 'Terminal Talk online. Claude and Codex sessions are in view.' },
+  { at: 5.2,  end: 7.0,  who: 'MASCOT',   text: 'Frontend, settings status.' },
+  { at: 7.2,  end: 10.3, who: 'FRONTEND', text: 'Auto collapse, shortcuts, and voice controls are ready.' },
   { at: 11.0, end: 12.3, who: 'MASCOT',   text: 'Backend?' },
-  { at: 12.7, end: 15.4, who: 'BACKEND',  text: 'Hooks are live. Queue handling is stable.' },
+  { at: 12.7, end: 15.4, who: 'BACKEND',  text: 'Native hooks are live. Queue handling and auto prune are stable.' },
   { at: 16.1, end: 18.0, who: 'MASCOT',   text: 'Tests and docs, status.' },
-  { at: 18.2, end: 20.2, who: 'TESTS',    text: 'Checks green. No blockers.' },
-  { at: 20.5, end: 22.7, who: 'DOCS',     text: 'Landing page assets updated.' },
-  { at: 23.5, end: 25.8, who: 'MASCOT',   text: 'Codex, give me the review queue.' },
-  { at: 26.0, end: 28.0, who: 'CODEX',    text: 'Review queue clear.' },
-  { at: 28.6, end: 30.9, who: 'CLAUDE',   text: 'Implementation notes captured.' },
-  { at: 31.4, end: 35.2, who: 'MASCOT',   text: 'Decision point: merge after review, then deploy.' },
+  { at: 18.2, end: 20.2, who: 'TESTS',    text: 'Checks green. Capture scripts verified.' },
+  { at: 20.5, end: 22.7, who: 'DOCS',     text: 'Video feature list updated.' },
+  { at: 23.5, end: 25.8, who: 'MASCOT',   text: 'Codex, give me heartbeat state.' },
+  { at: 26.0, end: 28.0, who: 'CODEX',    text: 'Working state mapped. Terminal title synced.' },
+  { at: 28.6, end: 30.9, who: 'CLAUDE',   text: 'Plugin session cleanup is complete.' },
+  { at: 31.4, end: 35.2, who: 'MASCOT',   text: 'Decision point: OpenAI fallback stays opt in.' },
   { at: 36.0, end: 39.0, who: 'MASCOT',   text: 'Hey Jarvis clip received. Priority audio goes first.' },
-  { at: 40.0, end: 45.4, who: 'MASCOT',   text: 'Every terminal has a voice now. Keep building. I will keep watch.' },
-  { at: 46.2, end: 51.0, who: 'NARRATOR', text: 'Terminal Talk gives Claude Code and Codex a voice, so you can keep building while the work speaks back.' },
+  { at: 40.0, end: 45.4, who: 'MASCOT',   text: 'Each session has a label, colour, voice, and transcript. Keep building.' },
+  { at: 46.2, end: 51.0, who: 'NARRATOR', text: 'Terminal Talk gives Claude Code and Codex one spoken queue, with identity, shortcuts, and voice fallback.' },
 ];
 
 const panels = [
-  { id: 'FRONTEND', label: 'FRONTEND', side: -1, x: -420, z: 760, y: -68, w: 250, h: 142, c: cyan, active: [5.2, 10.5], rows: ['toolbar', 'settings', 'voices', 'palette'] },
-  { id: 'BACKEND', label: 'BACKEND', side: 1, x: 420, z: 750, y: -62, w: 250, h: 142, c: orange, active: [11.0, 15.6], rows: ['hooks', 'queue', 'sessions', 'prune'] },
+  { id: 'FRONTEND', label: 'FRONTEND', side: -1, x: -420, z: 760, y: -68, w: 250, h: 142, c: cyan, active: [5.2, 10.5], rows: ['toolbar', 'settings', 'shortcuts', 'collapse'] },
+  { id: 'BACKEND', label: 'BACKEND', side: 1, x: 420, z: 750, y: -62, w: 250, h: 142, c: orange, active: [11.0, 15.6], rows: ['hooks', 'queue', 'fallback', 'prune'] },
   { id: 'TESTS', label: 'TESTS', side: -1, x: -520, z: 440, y: 130, w: 230, h: 120, c: '#4ade80', active: [16.1, 20.4], rows: ['unit', 'sync', 'audio', 'green'] },
-  { id: 'DOCS', label: 'DOCS', side: -1, x: -210, z: 360, y: 190, w: 210, h: 105, c: '#ffd93d', active: [19.9, 23.0], rows: ['landing', 'video', 'release'] },
-  { id: 'CODEX', label: 'CODEX CLI', side: 1, x: 520, z: 430, y: 126, w: 250, h: 118, c: '#60a5fa', active: [23.2, 28.3], rows: ['review', 'patch', 'ready'] },
-  { id: 'CLAUDE', label: 'CLAUDE CODE', side: 0, x: 0, z: 900, y: -198, w: 260, h: 108, c: '#c084fc', active: [27.7, 31.0], rows: ['plan', 'notes', 'handoff'] },
-  { id: 'DEPLOY', label: 'DEPLOY', side: 1, x: 330, z: 300, y: 12, w: 230, h: 100, c: '#ff5e5e', active: [31.1, 37.0], rows: ['review', 'merge', 'deploy'] },
+  { id: 'DOCS', label: 'DOCS', side: -1, x: -210, z: 360, y: 190, w: 210, h: 105, c: '#ffd93d', active: [19.9, 23.0], rows: ['videos', 'features', 'settings'] },
+  { id: 'CODEX', label: 'CODEX CLI', side: 1, x: 520, z: 430, y: 126, w: 250, h: 118, c: '#60a5fa', active: [23.2, 28.3], rows: ['heartbeat', 'title', 'working'] },
+  { id: 'CLAUDE', label: 'CLAUDE CODE', side: 0, x: 0, z: 900, y: -198, w: 260, h: 108, c: '#c084fc', active: [27.7, 31.0], rows: ['plugin', 'cleanup', 'notes'] },
+  { id: 'DEPLOY', label: 'OPENAI', side: 1, x: 330, z: 300, y: 12, w: 230, h: 100, c: '#ff5e5e', active: [31.1, 37.0], rows: ['primary', 'fallback', 'test'] },
 ];
 
 function clamp(v, min = 0, max = 1) { return Math.max(min, Math.min(max, v)); }
@@ -448,10 +448,10 @@ function drawDecision(t) {
   ctx.fillText('DECISION RECEIVED', 640, 216);
   ctx.fillStyle = '#f8fafc';
   ctx.font = '900 31px "Segoe UI", Arial, sans-serif';
-  ctx.fillText('MERGE AFTER REVIEW', 640, 257);
+  ctx.fillText('FALLBACK IS OPT IN', 640, 257);
   ctx.fillStyle = 'rgba(232, 240, 255, 0.78)';
   ctx.font = '700 15px "Segoe UI", Arial, sans-serif';
-  ctx.fillText('then deploy the release candidate', 640, 282);
+  ctx.fillText('free voices stay available by default', 640, 282);
   ctx.restore();
 }
 
@@ -474,7 +474,11 @@ function drawSubtitle(t) {
   ctx.font = '900 14px "Segoe UI", Arial, sans-serif';
   ctx.fillText(line.who, 640, 645);
   ctx.fillStyle = '#f8fafc';
-  ctx.font = '650 21px "Segoe UI", Arial, sans-serif';
+  let size = 21;
+  do {
+    ctx.font = '650 ' + size + 'px "Segoe UI", Arial, sans-serif';
+    size -= 1;
+  } while (ctx.measureText(line.text).width > 940 && size >= 14);
   ctx.fillText(line.text, 640, 672);
   ctx.restore();
 }
@@ -495,7 +499,7 @@ function drawEndCard(t) {
   ctx.shadowBlur = 0;
   ctx.font = '700 20px "Segoe UI", Arial, sans-serif';
   ctx.fillStyle = 'rgba(230, 239, 255, 0.84)';
-  ctx.fillText('Hands-free workflow for Claude Code and Codex', 640, 194);
+  ctx.fillText('Spoken queue, session identity, shortcuts, and fallback voices', 640, 194);
   for (let i = 0; i < palette.length; i++) {
     ctx.fillStyle = palette[i];
     ctx.globalAlpha = a * 0.86;

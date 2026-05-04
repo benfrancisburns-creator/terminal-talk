@@ -49,6 +49,7 @@ function seedHome() {
       auto_continue_after_click: true,
       palette_variant: 'default',
       tts_provider: 'edge',
+      tts_fallback_provider: 'edge',
       master_volume: 1,
     },
     speech_includes: {

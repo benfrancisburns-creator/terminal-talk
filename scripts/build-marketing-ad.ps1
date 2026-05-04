@@ -30,11 +30,11 @@ New-Item -ItemType Directory -Path $Tmp, $VideoDir -Force | Out-Null
 
 $copy = @'
 Terminal Talk turns every busy terminal into a calm command center.
-Frontend changes, backend checks, tests, docs, deployments, and assistant responses all arrive as spoken updates.
-The mascot keeps the battlefield overview: which project is talking, which session matters, and what needs your attention next.
-Use Hey Jarvis to read anything on screen.
-Keep building while Terminal Talk watches the queue.
-Less context switching. Fewer missed messages. A clearer workflow for Claude Code and Codex.
+Claude Code hooks and Codex rollout logs feed one spoken queue, with native session identity layered on top.
+Colours, labels, tabs, transcripts, auto voices, and heartbeat overrides keep each terminal readable by sight and by ear.
+Use Hey Jarvis for priority clips, then let auto collapse and auto prune keep the toolbar quiet.
+Settings cover shortcuts, playback, OpenAI primary and fallback routing, sessions, and speech rules.
+Keep building while Terminal Talk watches Claude Code and Codex.
 '@
 
 function Get-FfmpegPath {

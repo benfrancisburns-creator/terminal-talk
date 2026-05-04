@@ -368,7 +368,7 @@ function drawHeroWordmark(time) {
   ctx.shadowBlur = 0;
   ctx.font = '600 17px "Segoe UI", Arial, sans-serif';
   ctx.fillStyle = 'rgba(231, 238, 255, 0.78)';
-  ctx.fillText('HANDS-FREE WORKFLOW FOR CLAUDE CODE AND CODEX', W / 2, 154);
+  ctx.fillText('SPOKEN QUEUE, SESSION IDENTITY, AND SHORTCUTS FOR CLAUDE CODE AND CODEX', W / 2, 154);
   const dotsX = W / 2 - 80;
   for (let i = 0; i < palette.length; i++) {
     ctx.fillStyle = palette[i];
@@ -408,11 +408,11 @@ function drawScene(img, ms) {
   const phrase = phrases[Math.floor(time / 5.2) % phrases.length];
   drawPixelBubble(W / 2 + 132, 248 + Math.sin(time * 2.0) * 3, 0.86, phrase, time, alphaBetween(time, 2.4, 38.0, 0.8));
 
-  drawCaption('Every busy terminal becomes a command center.', 'Terminal Talk turns assistant output into spoken situational awareness.', time, 0.5, 7.2);
-  drawCaption('Frontend, backend, tests, docs, deployments.', 'One mascot, one queue, every project still visible.', time, 7.2, 15.2);
-  drawCaption('Hear the work without staring at the log.', 'Responses, tool calls, heartbeats, and priority clips stay in rhythm.', time, 15.2, 24.2);
-  drawCaption('Hey Jarvis reads anything on screen.', 'Select text anywhere and push it straight to the spoken queue.', time, 24.2, 32.5);
-  drawCaption('Claude Code and Codex stay in the loop.', 'Less context switching. Fewer missed messages. Cleaner flow.', time, 32.5, 39.4);
+  drawCaption('Every busy terminal becomes a command center.', 'Claude Code and Codex feed one spoken queue.', time, 0.5, 7.2);
+  drawCaption('Identity follows the work.', 'Native hooks keep colours, labels, voices, and Codex titles in sync.', time, 7.2, 15.2);
+  drawCaption('Hear progress without watching the log.', 'Responses, tool calls, heartbeats, and priority clips stay in rhythm.', time, 15.2, 24.2);
+  drawCaption('The toolbar stays out of your way.', 'Collapsed audio flashes the session colour instead of stealing focus.', time, 24.2, 32.5);
+  drawCaption('Settings control the whole workflow.', 'Playback, shortcuts, OpenAI fallback, sessions, voices, and transcripts.', time, 32.5, 39.4);
   drawHeroWordmark(time);
 
   const fadeIn = between(time, 0, 1.0);

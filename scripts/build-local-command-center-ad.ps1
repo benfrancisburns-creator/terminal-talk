@@ -7,6 +7,7 @@ $Tmp = Join-Path $Root 'tmp\local-command-center-ad'
 $VideoDir = Join-Path $Root 'docs\videos'
 $Bundle = Join-Path $Root 'docs\assets\ad\ai-video-upload-bundle'
 $Manifest = Join-Path $Bundle 'dialogue-manifest.json'
+$BundleScript = Join-Path $Root 'scripts\build-ai-video-upload-bundle.ps1'
 $Renderer = Join-Path $Root 'scripts\render-local-command-center-ad.cjs'
 $Electron = Join-Path $Root 'app\node_modules\electron\dist\electron.exe'
 if (!(Test-Path $Electron)) { $Electron = Join-Path $Root 'app\node_modules\.bin\electron.cmd' }
@@ -21,8 +22,8 @@ $Mp4 = Join-Path $VideoDir 'terminal-talk-local-command-center-ad.mp4'
 
 if (!(Test-Path $Renderer)) { throw "Missing renderer: $Renderer" }
 if (!(Test-Path $Electron)) { throw "Electron not found at $Electron. Run npm install in app/ first." }
-if (!(Test-Path $Manifest)) {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\build-ai-video-upload-bundle.ps1')
+if (!(Test-Path $Manifest) -or ((Get-Item -LiteralPath $BundleScript).LastWriteTimeUtc -gt (Get-Item -LiteralPath $Manifest).LastWriteTimeUtc)) {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $BundleScript
 }
 if (!(Test-Path $Manifest)) { throw "Missing dialogue manifest: $Manifest" }
 

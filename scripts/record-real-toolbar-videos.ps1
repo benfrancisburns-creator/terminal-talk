@@ -234,11 +234,13 @@ function New-DemoHome([int]$ToolbarX, [int]$ToolbarY) {
     }
     playback = [ordered]@{
       speed                     = 1.05
+      collapse_delay_sec        = 3
       auto_prune                = $false
       auto_prune_sec            = 28
       auto_continue_after_click = $true
       palette_variant           = 'default'
       tts_provider              = 'edge'
+      tts_fallback_provider     = 'edge'
       master_volume             = 1
     }
     speech_includes = [ordered]@{
@@ -265,15 +267,18 @@ function New-DemoHome([int]$ToolbarX, [int]$ToolbarY) {
       c0dec0de = [ordered]@{
         index = 0; label = 'Codex demo'; session_id = 'c0dec0de-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $true; last_seen = $now
+        voice = 'en-AU-NatashaNeural'; voice_auto = $true
         speech_includes = [ordered]@{ tool_calls = $true }
       }
       deadbeef = [ordered]@{
         index = 4; label = 'Claude docs'; session_id = 'deadbeef-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $false; last_seen = $now
+        voice = 'en-GB-SoniaNeural'; voice_auto = $true
       }
       feedc0de = [ordered]@{
         index = 16; label = 'Audit run'; session_id = 'feedc0de-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $false; last_seen = $now
+        voice = 'en-GB-RyanNeural'; voice_auto = $true; heartbeat_enabled = $false
       }
     }
   }
@@ -571,6 +576,56 @@ function Get-FfmpegPath {
   return $null
 }
 
+function Write-Utf8NoBom([string]$Path, [string]$Value) {
+  $encoding = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $Value, $encoding)
+}
+
+function New-LocalNarrationWav([string]$Text, [string]$Path) {
+  Add-Type -AssemblyName System.Speech
+  $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+  $voice = $synth.GetInstalledVoices() |
+    Where-Object { $_.VoiceInfo.Culture.Name -eq 'en-GB' } |
+    Select-Object -First 1
+  if ($voice) { $synth.SelectVoice($voice.VoiceInfo.Name) }
+  $synth.Rate = 0
+  $synth.Volume = 100
+  $synth.SetOutputToWaveFile($Path)
+  $synth.Speak($Text)
+  $synth.Dispose()
+}
+
+function Ensure-DemoAudio([string]$Name, [string]$Text) {
+  New-Item -ItemType Directory -Path $AudioDir -Force | Out-Null
+  $safe = $Name -replace '[^A-Za-z0-9_-]', '-'
+  $out = Join-Path $AudioDir "generated-$safe.mp3"
+  if ((Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -gt 1000) {
+    return $out
+  }
+  $edgeScript = Join-Path $Root 'app\edge_tts_speak.py'
+  $edgeOk = $false
+  if (Test-Path -LiteralPath $edgeScript) {
+    try {
+      $Text | python $edgeScript 'en-GB-RyanNeural' $out 2>$null
+      $edgeOk = ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -gt 1000)
+    } catch {
+      $edgeOk = $false
+    }
+  }
+  if ($edgeOk) { return $out }
+
+  $ffmpeg = Get-FfmpegPath
+  if (!$ffmpeg) { throw "ffmpeg not found; cannot encode fallback narration for $Name." }
+  $wav = Join-Path $AudioDir "generated-$safe.wav"
+  Remove-Item -LiteralPath $wav, $out -Force -ErrorAction SilentlyContinue
+  New-LocalNarrationWav $Text $wav
+  & $ffmpeg -y -hide_banner -loglevel error -i $wav -codec:a libmp3lame -b:a 128k $out
+  if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)) {
+    throw "fallback narration encode failed for $Name"
+  }
+  return $out
+}
+
 function Polish-Video([string]$Path, [int]$DurationMs) {
   $ffmpeg = Get-FfmpegPath
   if (!$ffmpeg) {
@@ -597,19 +652,43 @@ function Build-SettingsNarrationTrack([int]$DurationMs) {
   $ffmpeg = Get-FfmpegPath
   if (!$ffmpeg) { throw "ffmpeg not found; cannot build settings narration track." }
   $sources = @(
-    @{ File = 'settings-open.mp3'; Delay = 0 },
-    @{ File = 'settings-2.mp3'; Delay = 11000 },
-    @{ File = 'settings-3.mp3'; Delay = 26000 },
-    @{ File = 'settings-4.mp3'; Delay = 38000 },
-    @{ File = 'settings-5-short.mp3'; Delay = 50000 }
+    @{
+      Name = 'settings-refresh-1'
+      Delay = 0
+      Text = 'The settings panel is the global control surface: playback speed, master volume, auto collapse, auto prune, heartbeat, tool narration, OpenAI routing, shortcuts, and per-session behavior.'
+    },
+    @{
+      Name = 'settings-refresh-2'
+      Delay = 10000
+      Text = 'Playback now includes a three second auto collapse delay by default. Auto prune applies to body clips after playback, while tool narration and heartbeat clips stay ambient and disappear quickly.'
+    },
+    @{
+      Name = 'settings-refresh-3'
+      Delay = 23500
+      Text = 'OpenAI is still paid and opt in. You can use it as the primary voice, or separately enable it only as a paid fallback when the free Edge route fails.'
+    },
+    @{
+      Name = 'settings-refresh-4'
+      Delay = 36500
+      Text = 'Global shortcuts are editable here too. Click a shortcut field, press the replacement accelerator, and reset everything to defaults if you need a clean recovery path.'
+    },
+    @{
+      Name = 'settings-refresh-5'
+      Delay = 50000
+      Text = 'Sessions keep the real workflow tidy: rename terminals, change colors, focus or mute one session, pick a voice, override heartbeat, and decide what markdown is spoken.'
+    },
+    @{
+      Name = 'settings-refresh-6'
+      Delay = 64500
+      Text = 'That is the current settings surface: global controls at the top, session-specific behavior below, and all of it using the real toolbar UI.'
+    }
   )
   $out = Join-Path $TmpRoot 'settings-narration.wav'
   Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
 
-  $ffmpegArgs = @('-y', '-hide_banner', '-loglevel', 'error')
+  $ffmpegArgs = @('-y', '-nostdin', '-hide_banner', '-loglevel', 'error')
   foreach ($src in $sources) {
-    $path = Join-Path $AudioDir $src.File
-    if (!(Test-Path -LiteralPath $path)) { throw "Missing narration source: $path" }
+    $path = Ensure-DemoAudio $src.Name $src.Text
     $ffmpegArgs += @('-i', $path)
   }
 
@@ -621,9 +700,9 @@ function Build-SettingsNarrationTrack([int]$DurationMs) {
     $mixInputs += "[a$i]"
   }
   $durationSec = ([double]($DurationMs / 1000.0)).ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture)
-  $filter = ($filters -join ';') + ";${mixInputs}amix=inputs=$($sources.Count):duration=longest:normalize=0,apad,atrim=duration=$durationSec,volume=6dB,alimiter=limit=0.95,asetpts=N/SR/TB[a]"
+  $filter = ($filters -join ';') + ";${mixInputs}amix=inputs=$($sources.Count):duration=longest:normalize=0,atrim=duration=$durationSec,volume=6dB,alimiter=limit=0.95,asetpts=N/SR/TB[a]"
 
-  & $ffmpeg @ffmpegArgs -filter_complex $filter -map '[a]' -ar 48000 -ac 2 $out
+  & $ffmpeg @ffmpegArgs -filter_complex $filter -map '[a]' -ar 48000 -ac 2 -t $durationSec $out
   if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)) {
     throw "ffmpeg narration build failed"
   }
@@ -669,18 +748,21 @@ function Record-Assistant {
   try {
     Move-CursorSmooth ($ctx.TerminalX + 260) ($ctx.TerminalY + 110) 800
     Start-Sleep -Milliseconds 1500
-    Drop-BodyClip $ctx.DemoHome (Join-Path $AudioDir 'overview-1.mp3') 'c0dec0de' 1 'Terminal Talk watches assistant output and turns it into a spoken queue.'
+    Drop-BodyClip $ctx.DemoHome (Ensure-DemoAudio 'overview-refresh-1' 'Claude Code and Codex both feed Terminal Talk. Native hooks identify sessions, and rollout logs keep assistant replies flowing into the same spoken queue.') 'c0dec0de' 1 'Claude Code and Codex both feed Terminal Talk. Native hooks identify sessions, and rollout logs keep assistant replies flowing into the same spoken queue.'
     Start-Sleep -Milliseconds 6500
     Move-CursorSmooth $dotStrip.X $dotStrip.Y 900
-    Drop-BodyClip $ctx.DemoHome (Join-Path $AudioDir 'overview-2.mp3') 'deadbeef' 2 'Each terminal keeps its own colour, tab, transcript, and optional voice.'
+    Drop-BodyClip $ctx.DemoHome (Ensure-DemoAudio 'overview-refresh-2' 'Each terminal keeps its own color, label, tab, transcript, and auto-assigned voice, so you can tell sessions apart by sight and by ear.') 'deadbeef' 2 'Each terminal keeps its own colour, label, tab, transcript, and auto-assigned voice, so you can tell sessions apart by sight and by ear.'
     Start-Sleep -Milliseconds 7000
     Move-CursorSmooth $tabs.X $tabs.Y 800
-    Drop-BodyClip $ctx.DemoHome (Join-Path $AudioDir 'overview-3.mp3') 'c0dec0de' 3 'The toolbar stays out of your way while the audio keeps you in the loop.'
+    Drop-BodyClip $ctx.DemoHome (Ensure-DemoAudio 'overview-refresh-3' 'When the toolbar is collapsed, new audio flashes the slim letterbox in the speaking session color instead of expanding over your work.') 'c0dec0de' 3 'When the toolbar is collapsed, new audio flashes the slim letterbox in the speaking session colour instead of expanding over your work.'
     Start-Sleep -Milliseconds 7600
     Click-At $transcript.X $transcript.Y
     Start-Sleep -Milliseconds 9000
     Move-CursorSmooth $dotStrip.X $dotStrip.Y 700
     Finish-Run $ctx 70
+    $mp4Out = Join-Path $VideoDir 'terminal-talk-overview.mp4'
+    Write-Mp4CompatibilityCopy $ctx.Out $mp4Out
+    Write-Host "OK - wrote $mp4Out"
   } finally {
     if ($ctx.TerminalProc -and $ctx.TerminalProc.OwnsProcess) {
       try { Stop-Process -Id $ctx.TerminalProc.Id -Force -ErrorAction SilentlyContinue } catch {}
@@ -714,6 +796,9 @@ function Record-HeyJarvis {
     Start-Sleep -Milliseconds 6200
     Drop-BodyClip $ctx.DemoHome (Join-Path $ClaudeClipDir 'hj-07-end.mp3') 'c0dec0de' 5 'Hands-free reading, anywhere on Windows.'
     Finish-Run $ctx 65
+    $mp4Out = Join-Path $VideoDir 'terminal-talk-queue-jarvis.mp4'
+    Write-Mp4CompatibilityCopy $ctx.Out $mp4Out
+    Write-Host "OK - wrote $mp4Out"
   } finally {
     if ($ctx.TerminalProc -and $ctx.TerminalProc.OwnsProcess) {
       try { Stop-Process -Id $ctx.TerminalProc.Id -Force -ErrorAction SilentlyContinue } catch {}
@@ -724,7 +809,7 @@ function Record-HeyJarvis {
 }
 
 function Record-Settings {
-  $durationMs = 66000
+  $durationMs = 78000
   $narration = Build-SettingsNarrationTrack $durationMs
   $ctx = Common-Setup 'settings' $durationMs
   try {

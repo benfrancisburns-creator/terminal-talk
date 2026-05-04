@@ -27,21 +27,21 @@ foreach ($asset in $assetMap) {
 }
 
 $lines = @(
-  @{ Id = '001'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:00.7'; End = '00:04.3'; Text = 'Terminal Talk online. Bring every session into view.' },
-  @{ Id = '002'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:05.2'; End = '00:07.0'; Text = 'Frontend, report.' },
-  @{ Id = '003'; Role = 'Frontend'; Voice = 'en-GB-SoniaNeural'; Start = '00:07.2'; End = '00:10.3'; Text = 'Settings panel is clean. Voice controls are ready.' },
+  @{ Id = '001'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:00.7'; End = '00:04.3'; Text = 'Terminal Talk online. Claude and Codex sessions are in view.' },
+  @{ Id = '002'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:05.2'; End = '00:07.0'; Text = 'Frontend, settings status.' },
+  @{ Id = '003'; Role = 'Frontend'; Voice = 'en-GB-SoniaNeural'; Start = '00:07.2'; End = '00:10.3'; Text = 'Auto collapse, shortcuts, and voice controls are ready.' },
   @{ Id = '004'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:11.0'; End = '00:12.3'; Text = 'Backend?' },
-  @{ Id = '005'; Role = 'Backend'; Voice = 'en-GB-ThomasNeural'; Start = '00:12.7'; End = '00:15.4'; Text = 'Hooks are live. Queue handling is stable.' },
+  @{ Id = '005'; Role = 'Backend'; Voice = 'en-GB-ThomasNeural'; Start = '00:12.7'; End = '00:15.4'; Text = 'Native hooks are live. Queue handling and auto prune are stable.' },
   @{ Id = '006'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:16.1'; End = '00:18.0'; Text = 'Tests and docs, status.' },
-  @{ Id = '007'; Role = 'Tests'; Voice = 'en-US-GuyNeural'; Start = '00:18.2'; End = '00:20.2'; Text = 'Checks green. No blockers.' },
-  @{ Id = '008'; Role = 'Docs'; Voice = 'en-US-JennyNeural'; Start = '00:20.5'; End = '00:22.7'; Text = 'Landing page assets updated.' },
-  @{ Id = '009'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:23.5'; End = '00:25.8'; Text = 'Codex, give me the review queue.' },
-  @{ Id = '010'; Role = 'Codex'; Voice = 'en-US-DavisNeural'; Start = '00:26.0'; End = '00:28.0'; Text = 'Review queue clear.' },
-  @{ Id = '011'; Role = 'Claude'; Voice = 'en-GB-LibbyNeural'; Start = '00:28.6'; End = '00:30.9'; Text = 'Implementation notes captured.' },
-  @{ Id = '012'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:31.4'; End = '00:35.2'; Text = 'Decision point: merge after review, then deploy.' },
+  @{ Id = '007'; Role = 'Tests'; Voice = 'en-US-GuyNeural'; Start = '00:18.2'; End = '00:20.2'; Text = 'Checks green. Capture scripts verified.' },
+  @{ Id = '008'; Role = 'Docs'; Voice = 'en-US-JennyNeural'; Start = '00:20.5'; End = '00:22.7'; Text = 'Video feature list updated.' },
+  @{ Id = '009'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:23.5'; End = '00:25.8'; Text = 'Codex, give me heartbeat state.' },
+  @{ Id = '010'; Role = 'Codex'; Voice = 'en-US-DavisNeural'; Start = '00:26.0'; End = '00:28.0'; Text = 'Working state mapped. Terminal title synced.' },
+  @{ Id = '011'; Role = 'Claude'; Voice = 'en-GB-LibbyNeural'; Start = '00:28.6'; End = '00:30.9'; Text = 'Plugin session cleanup is complete.' },
+  @{ Id = '012'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:31.4'; End = '00:35.2'; Text = 'Decision point: OpenAI fallback stays opt in.' },
   @{ Id = '013'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:36.0'; End = '00:39.0'; Text = 'Hey Jarvis clip received. Priority audio goes first.' },
-  @{ Id = '014'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:40.0'; End = '00:45.4'; Text = 'Every terminal has a voice now. Keep building. I will keep watch.' },
-  @{ Id = '015'; Role = 'Narrator'; Voice = 'en-GB-SoniaNeural'; Start = '00:46.2'; End = '00:51.0'; Text = 'Terminal Talk gives Claude Code and Codex a voice, so you can keep building while the work speaks back.' }
+  @{ Id = '014'; Role = 'Mascot'; Voice = 'en-GB-RyanNeural'; Start = '00:40.0'; End = '00:45.4'; Text = 'Each session has a label, colour, voice, and transcript. Keep building.' },
+  @{ Id = '015'; Role = 'Narrator'; Voice = 'en-GB-SoniaNeural'; Start = '00:46.2'; End = '00:51.0'; Text = 'Terminal Talk gives Claude Code and Codex one spoken queue, with identity, shortcuts, and voice fallback.' }
 )
 
 function New-LocalVoiceFile([string]$Text, [string]$OutWav, [string]$Role) {

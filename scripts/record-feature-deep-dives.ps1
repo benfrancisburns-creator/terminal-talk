@@ -157,7 +157,7 @@ function Get-FeatureSpec([string]$Name) {
         Basename = "terminal-talk-openai-api-key$OutputSuffix"
         Title = 'OpenAI API key and provider routing'
         Narration = @'
-Terminal Talk is free by default through Microsoft Edge text to speech, but the OpenAI section lets you add premium voices when you want them. The key is not shown again after saving. It is stored outside config dot json, with Electron safe storage and a same user sidecar for the speech helpers. The status row tells you whether a key is saved. Use OpenAI as primary flips the routing for response bodies, tool narration, and heartbeat clips. Edge stays wired as the fallback; when the toggle is off, Edge is primary and OpenAI becomes the fallback. The Test button drops a short voice sample into the normal queue, so you can confirm the provider and voice without waiting for a real assistant reply.
+Terminal Talk is free by default through Microsoft Edge text to speech, but the OpenAI section lets you add premium voices when you want them. The key is not shown again after saving. It is stored outside config dot json, with Electron safe storage and a same user sidecar for the speech helpers. The status row tells you whether a key is saved. Use OpenAI as primary flips the routing for response bodies, tool narration, and heartbeat clips. Use OpenAI as fallback is separate and paid opt-in; when it is off, fallback stays on the free Edge route. The Test button drops a short voice sample into the normal queue, so you can confirm the provider and voice without waiting for a real assistant reply.
 '@
       }
     }
@@ -167,7 +167,7 @@ Terminal Talk is free by default through Microsoft Edge text to speech, but the 
         Basename = "terminal-talk-session-sync-controls$OutputSuffix"
         Title = 'Session sync and per-session controls'
         Narration = @'
-Terminal Talk keeps Claude Code and Codex sessions in one colour registry. Tabs and dots show which session produced each clip, while labels make real project names readable instead of raw ids. The same identity is reused by Claude statusline data and by Terminal Talk Codex, where the Windows Terminal tab can carry the matching title and colour. In the Sessions panel you can rename a session, change its palette slot, focus it so its clips play first, or mute it so no audio is synthesized for that terminal. Expanding a session adds a dedicated voice override and speech include controls, so one terminal can read code blocks or tool calls differently from another.
+Terminal Talk keeps Claude Code and Codex sessions in one colour registry. Tabs and dots show which session produced each clip, while labels make real project names readable instead of raw ids. The same identity is reused by Claude statusline data and by Codex terminal title and PID mapping when Codex runs normally from a project terminal. Fresh sessions get distinct automatic voices, and manual choices are preserved. In the Sessions panel you can rename a session, change its palette slot, focus it so its clips play first, or mute it so no audio is synthesized for that terminal. Expanding a session adds a dedicated voice override, a heartbeat override, and speech include controls, so one terminal can read code blocks or tool calls differently from another.
 '@
       }
     }
@@ -212,11 +212,13 @@ function New-DemoHome([string]$Name, [int]$ToolbarX, [int]$ToolbarY) {
     }
     playback = [ordered]@{
       speed                     = 1.05
+      collapse_delay_sec        = 3
       auto_prune                = $false
       auto_prune_sec            = 28
       auto_continue_after_click = $true
       palette_variant           = 'default'
       tts_provider              = $provider
+      tts_fallback_provider     = 'edge'
       master_volume             = 1
     }
     speech_includes = [ordered]@{
@@ -249,17 +251,19 @@ function New-DemoHome([string]$Name, [int]$ToolbarX, [int]$ToolbarY) {
       aa11bb22 = [ordered]@{
         index = 0; label = 'Claude frontend'; session_id = 'aa11bb22-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $true; last_seen = $now
-        voice = 'en-GB-RyanNeural'
+        voice = 'en-GB-RyanNeural'; voice_auto = $true
         speech_includes = [ordered]@{ tool_calls = $true; code_blocks = $false }
       }
       cc33dd44 = [ordered]@{
         index = 9; label = 'Codex review'; session_id = 'cc33dd44-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $false; last_seen = $now - 8
+        voice = 'en-AU-NatashaNeural'; voice_auto = $true
         speech_includes = [ordered]@{ urls = $false; headings = $true }
       }
       ee55ff66 = [ordered]@{
         index = 18; label = 'Docs audit'; session_id = 'ee55ff66-session'; claude_pid = 0
         pinned = $true; muted = $false; focus = $false; last_seen = $now - 16
+        voice = 'en-GB-SoniaNeural'; voice_auto = $true; heartbeat_enabled = $false
       }
     }
   }

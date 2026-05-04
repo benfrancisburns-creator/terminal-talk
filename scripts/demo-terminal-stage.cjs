@@ -122,10 +122,11 @@ function terminalHtml() {
 
   function runAssistant() {
     line('<span class="assistant">Claude Code</span>', 900);
-    line('Hooks send replies, tool calls, and heartbeat clips to Terminal Talk.', 2100);
+    line('Hooks send replies, tool calls, heartbeat clips, and session identity to Terminal Talk.', 2100);
     line('<span class="assistant">Codex CLI</span>', 8400);
-    line('Session logs feed the same spoken queue and transcript.', 9600);
-    line('Shared controls: colour, voice, mute, focus, and transcript history.', 15600);
+    line('Native hooks bind identity; rollout logs feed the same spoken queue and transcript.', 9600);
+    line('Collapsed toolbar: new audio flashes the speaker colour without stealing focus.', 15600);
+    line('Shared controls: colour, voice, mute, focus, heartbeat, and transcript history.', 22400);
   }
 
   function runHeyJarvis() {
@@ -139,22 +140,24 @@ function terminalHtml() {
 
   function runSettings() {
     line('Settings walkthrough', 900);
-    line('The cursor on the right follows the feature being explained.', 1900);
-    line('Codex and Claude integration is covered in a separate video.', 7800);
+    line('Playback, OpenAI routing, global shortcuts, sessions, and speech rules.', 1900);
+    line('The cursor on the right follows the current feature before narration explains it.', 7800);
+    line('Auto-prune is for body clips; tool narration and heartbeat stay ambient.', 15000);
   }
 
   function runOpenAi() {
     line('<span class="assistant">OpenAI premium voices</span>', 900);
     line('Keys are saved outside config.json and hidden after save.', 2100);
     line('Edge remains the free default; OpenAI can become the primary provider.', 9400);
-    line('The other provider stays wired as the fallback.', 16000);
+    line('OpenAI fallback is separate, paid opt-in, and off by default.', 16000);
   }
 
   function runSessions() {
     line('<span class="assistant">Session identity sync</span>', 900);
     line('Claude Code and Codex share the same toolbar queue and colour registry.', 2300);
-    line('Labels, colours, mute, focus and voices are remembered per session.', 10400);
-    line('Terminal Talk Codex can mirror the slot into the Windows Terminal tab.', 17600);
+    line('Labels, colours, mute, focus, heartbeat and voices are remembered per session.', 10400);
+    line('Codex keeps the same colour and label when run from any project terminal.', 17600);
+    line('Claude-launched Codex plugin sessions get a labelled row and clean up after completion.', 25000);
   }
 
   function runTranscript() {
