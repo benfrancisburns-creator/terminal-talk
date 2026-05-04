@@ -299,7 +299,7 @@ try {
             }
         }
 
-        if (-not $boundShort -and -not $launchMarker) {
+        if (-not $boundShort) {
             $candidate = Get-CodexRolloutCandidateForLaunch -CodexPid $proc.Id
             if ($candidate) {
                 $boundShort = [string]$candidate.short

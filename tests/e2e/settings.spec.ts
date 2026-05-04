@@ -107,10 +107,12 @@ test.describe('Settings panel', () => {
     await expect(readout).toContainText('1.25');
   });
 
-  test('S6: About Terminal Talk section renders with ASCII banner + shortcuts table', async ({ window }) => {
+  test('S6: About Terminal Talk section renders with hero artwork + shortcuts table', async ({ window }) => {
     await openSettings(window, 'about');
-    // ASCII banner is wrapped in <pre class="ascii-banner"> per index.html.
-    await expect(window.locator('pre.ascii-banner')).toBeVisible();
+    // Hero artwork: the About panel was refactored away from the ASCII
+    // banner to an SVG hero; the wallpaper card wraps an <img> sourced
+    // from app/assets/about-terminal-talk-hero.svg.
+    await expect(window.locator('figure.about-wallpaper-card img')).toBeVisible();
     // Shortcuts table — now wrapped in <thead>/<tbody> for a11y (v0.3.8 N5-N9 fixes).
     // Row count (5 shortcuts + 1 "hey jarvis" row = 6 kbd rows).
     const rows = window.locator('table.shortcuts tbody tr');

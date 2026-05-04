@@ -10092,6 +10092,17 @@ describe('S1 — renderer-error dedupe', () => {
     if (d._lastSeen.size > 3) throw new Error(`expected size ≤ 3, got ${d._lastSeen.size}`);
     assertEqual(d.accept('a', 5), true);
   });
+
+  it('falsy stackOrMessage normalises to empty key', () => {
+    // Covers the `String(stackOrMessage || '')` fallback branch on
+    // line 18 — without this the c8 floor flagged renderer-error-dedupe
+    // branches at 90.9 %.
+    const d = createDedupe();
+    assertEqual(d.accept(null, 1000), true);
+    assertEqual(d.accept(undefined, 1500), false);   // same '' key, within window
+    assertEqual(d.accept('', 1600), false);          // same '' key still
+    assertEqual(d.accept(0, 1700), false);           // 0 is falsy → same '' key
+  });
 });
 
 // =============================================================================
@@ -16295,6 +16306,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
   const modPath = path.join(__dirname, '..', 'app', 'codex-terminal.psm1').replace(/'/g, "''");
   const launchPath = path.join(__dirname, '..', 'app', 'codex-launch.ps1');
   const wtLaunchPath = path.join(__dirname, '..', 'app', 'codex-wt-launch.ps1');
+  const assistantWtLaunchPath = path.join(__dirname, '..', 'app', 'assistant-wt-launch.ps1');
   const identifyPath = path.join(__dirname, '..', 'app', 'codex-identify-live.ps1');
   const hookCommonPath = path.join(__dirname, '..', 'app', 'codex-hook-common.psm1');
   const identitySyncPath = path.join(__dirname, '..', 'app', 'lib', 'codex-identity-sync.js');
@@ -16859,8 +16871,8 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/Test-CodexCandidateOwnedByOtherLiveProcess/.test(src) || !/already owned by live pid/.test(src)) {
       throw new Error('codex-launch.ps1 must not bind a toolbar-launched terminal to another live Codex rollout');
     }
-    if (!/Get-RegistryEntryForLaunchMarker/.test(src) || !/-not\s+\$launchMarker/.test(src)) {
-      throw new Error('codex-launch.ps1 must let token-launched sessions bind by hook token instead of rollout guessing');
+    if (!/Get-RegistryEntryForLaunchMarker/.test(src) || !/if\s*\(-not\s+\$boundShort\)\s*\{\s*\$candidate\s*=\s*Get-CodexRolloutCandidateForLaunch/.test(src)) {
+      throw new Error('codex-launch.ps1 must prefer hook-token binding but still fall back to rollout binding');
     }
     if (/tui\.status_line/.test(src) || /tui\.terminal_title/.test(src)) {
       throw new Error('codex-launch.ps1 must not inject Codex TUI config into the launch path');
@@ -16895,6 +16907,19 @@ describe('CODEX TERMINAL IDENTITY', () => {
     }
     if (!/PreassignedShort/.test(src)) {
       throw new Error('codex-wt-launch.ps1 must hand the reserved short to codex-launch.ps1');
+    }
+  });
+
+  it('assistant-wt-launch.ps1 invokes Windows Terminal with the built argument array', () => {
+    const src = fs.readFileSync(assistantWtLaunchPath, 'utf8');
+    if (!/\$wtArgs\s*=\s*@\('-w',\s*'new'\)/.test(src) || !/--tabColor/.test(src) || !/\$LauncherScript/.test(src)) {
+      throw new Error('assistant-wt-launch.ps1 must build the Windows Terminal launch argument array');
+    }
+    if (!/&\s+\$wt\s+@wtArgs/.test(src)) {
+      throw new Error('assistant-wt-launch.ps1 must invoke wt.exe with @wtArgs');
+    }
+    if (/&\s+\$wt\s+@args/.test(src)) {
+      throw new Error('assistant-wt-launch.ps1 must not use PowerShell automatic $args for real launches');
     }
   });
 

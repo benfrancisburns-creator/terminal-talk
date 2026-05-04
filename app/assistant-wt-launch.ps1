@@ -202,7 +202,7 @@ if ($DryRun) {
     return
 }
 
-& $wt @args | Out-Null
+& $wt @wtArgs | Out-Null
 if ($WindowBounds) {
     [void](Move-LaunchedTerminalWindow -Title $safeTitle -Bounds $WindowBounds)
 }

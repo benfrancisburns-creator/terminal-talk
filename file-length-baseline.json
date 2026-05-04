@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 17957,
+    "scripts/run-tests.cjs": 17982,
     "app/main.js": 2642,
     "app/renderer.js": 2583,
     "app/synth_turn.py": 1960,
@@ -69,8 +69,8 @@
     "scripts/fetch-sonar-findings.cjs": 163,
     "scripts/terminal-talk-video-state.ps1": 162,
     "hooks/speak-on-tool.ps1": 162,
+    "tests/e2e/settings.spec.ts": 157,
     "tests/e2e/sessions.spec.ts": 155,
-    "tests/e2e/settings.spec.ts": 155,
     "scripts/build-marketing-ad.ps1": 147,
     "scripts/palette-pixel-diff.cjs": 147,
     "scripts/render-mocks.cjs": 137,
