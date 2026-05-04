@@ -109,6 +109,7 @@
     playback: {
       speed: 1.25,
       master_volume: 1.0,
+      collapse_delay_sec: 3,
       auto_prune: true,
       auto_prune_sec: 20,
       auto_continue_after_click: true,

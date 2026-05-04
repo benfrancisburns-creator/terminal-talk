@@ -1,17 +1,18 @@
 // EX7d-2 — global settings form extracted from app/renderer.js.
 //
 // Owns the controls on the left side of the settings panel: playback
-// speed slider, auto-prune on/off + seconds, auto-continue-after-
-// click, reload-toolbar button, palette-variant (default / CB),
-// global voice <select>s (edge response + clip, openai response +
-// clip), and the speech-includes checkboxes row.
+// speed slider, auto-collapse delay, auto-prune on/off + seconds,
+// auto-continue-after-click, reload-toolbar button, palette-variant
+// (default / CB), global voice <select>s (edge response + clip,
+// openai response + clip), and the speech-includes checkboxes row.
 //
 // The component doesn't BUILD any of the settings-panel DOM — those
 // elements live in index.html. It queries them by id on mount(),
 // wires every change listener once, and then populates every form
 // field's value in update({ cfg }). Values that renderer.js consumes
-// elsewhere (currentPlaybackSpeed, autoPruneSec, autoContinueAfterClick)
-// propagate back via deps callbacks, so the component is fully
+// elsewhere (currentPlaybackSpeed, collapseDelaySec, autoPruneSec,
+// autoContinueAfterClick) propagate back via deps callbacks, so the
+// component is fully
 // decoupled from renderer module globals.
 //
 // Why separate from SessionsTable: different lifecycle cadence. The
@@ -36,6 +37,21 @@
   'use strict';
 
   const { Component } = componentModule;
+  const HOTKEY_DEFAULTS = Object.freeze({
+    toggle_window: 'Control+Shift+A',
+    speak_clipboard: 'Control+Shift+S',
+    toggle_listening: 'Control+Shift+J',
+    pause_resume: 'Control+Shift+P',
+    pause_only: 'Control+Shift+O',
+  });
+  const HOTKEY_FIELDS = Object.freeze([
+    { key: 'toggle_window', id: 'hotkeyToggleWindow', label: 'show / hide toolbar' },
+    { key: 'speak_clipboard', id: 'hotkeySpeakClipboard', label: 'read selected text' },
+    { key: 'toggle_listening', id: 'hotkeyToggleListening', label: 'mic listener' },
+    { key: 'pause_resume', id: 'hotkeyPauseResume', label: 'pause / resume' },
+    { key: 'pause_only', id: 'hotkeyPauseOnly', label: 'pause only' },
+  ]);
+  const MODIFIER_KEYS = new Set(['Control', 'Ctrl', 'Shift', 'Alt', 'Meta', 'Command', 'Cmd', 'Option']);
 
   class SettingsForm extends Component {
     constructor(deps = {}) {
@@ -47,6 +63,7 @@
         // Callbacks that update renderer module state when the form changes.
         onPlaybackSpeedChange = () => {},
         onMasterVolumeChange = () => {},
+        onCollapseDelaySecChange = () => {},
         onAutoPruneEnabledChange = () => {},
         onAutoPruneSecChange = () => {},
         onAutoContinueChange = () => {},
@@ -62,6 +79,7 @@
       this._openaiVoices = openaiVoices;
       this._onPlaybackSpeedChange = onPlaybackSpeedChange;
       this._onMasterVolumeChange = onMasterVolumeChange;
+      this._onCollapseDelaySecChange = onCollapseDelaySecChange;
       this._onAutoPruneEnabledChange = onAutoPruneEnabledChange;
       this._onAutoPruneSecChange = onAutoPruneSecChange;
       this._onAutoContinueChange = onAutoContinueChange;
@@ -78,6 +96,7 @@
         speedValue:       document.getElementById('speedValue'),
         volumeSlider:     document.getElementById('volumeSlider'),
         volumeValue:      document.getElementById('volumeValue'),
+        collapseDelayInput: document.getElementById('collapseDelaySec'),
         pruneToggle:      document.getElementById('autoPruneToggle'),
         pruneSecInput:    document.getElementById('autoPruneSec'),
         continueToggle:   document.getElementById('autoContinueToggle'),
@@ -99,13 +118,15 @@
         openaiKeyChangeRow: document.getElementById('openaiKeyChangeRow'),
         openaiKeyChange:    document.getElementById('openaiKeyChange'),
         openaiKeyClear2:    document.getElementById('openaiKeyClear2'),
-        // Section-collapse refs.
-        openaiSection:      document.getElementById('openaiSection'),
-        openaiSectionToggle: document.getElementById('openaiSectionToggle'),
         openaiPreferToggle: document.getElementById('openaiPreferToggle'),
         openaiPreferPillBox: document.getElementById('openaiPreferPillBox'),
+        openaiFallbackToggle: document.getElementById('openaiFallbackToggle'),
+        openaiFallbackPillBox: document.getElementById('openaiFallbackPillBox'),
         openaiTestBtn:    document.getElementById('openaiTestBtn'),
         openaiTestResult: document.getElementById('openaiTestResult'),
+        hotkeyInputs: {},
+        hotkeyStatus: document.getElementById('hotkeyStatus'),
+        hotkeyResetDefaults: document.getElementById('hotkeyResetDefaults'),
         // Speech-includes checkboxes follow a consistent naming scheme.
         // tool_calls (#24 / Ben B-2) — global on/off for tool-call
         // narration. Default true (matches DEFAULTS.speech_includes).
@@ -123,35 +144,23 @@
           tool_calls:     document.getElementById('incToolCalls'),
         },
       };
+      for (const field of HOTKEY_FIELDS) {
+        this._el.hotkeyInputs[field.key] = document.getElementById(field.id);
+      }
       this._wirePillToggles();
       this._wireSpeedSlider();
       this._wireVolumeSlider();
+      this._wireCollapseDelay();
       this._wireAutoPrune();
       this._wireAutoContinue();
       this._wireReloadButton();
       this._wirePaletteVariant();
       this._wireHeartbeatToggle();
+      this._wireHotkeys();
       this._wireVoiceSelects();
       this._wireIncludeBoxes();
       this._wireOpenAiSection();
       this._loadVersion();
-    }
-
-    // #25 — panel-open lifecycle hook. Renderer calls this when the
-    // user opens the settings panel (settingsBtn click → settings-open
-    // class added). Resets per-instance flags that should re-decide on
-    // every panel open rather than only on first mount. Specifically:
-    // the OpenAI auto-collapse decision is a per-panel-open default;
-    // a user who expanded the section, closed the panel, and re-opened
-    // it should see the section collapsed again (assuming key saved +
-    // last test passed). Without this reset, `_openaiCollapseDecided`
-    // sticks for the lifetime of the renderer process.
-    onPanelOpen() {
-      this._openaiCollapseDecided = false;
-      // Re-run populate so the now-undecided state actually triggers
-      // the auto-collapse branch in _populateOpenAi on the next tick.
-      const cfg = this.state && this.state.cfg;
-      if (cfg) this._populateOpenAi(cfg);
     }
 
     // Populate from config. Safe to call multiple times — values
@@ -161,10 +170,12 @@
       if (!cfg) return;
       this._populateSpeed(cfg);
       this._populateVolume(cfg);
+      this._populateCollapseDelay(cfg);
       this._populateAutoPrune(cfg);
       this._populateAutoContinue(cfg);
       this._populatePaletteVariant(cfg);
       this._populateHeartbeat(cfg);
+      this._populateHotkeys(cfg);
       this._populateVoiceSelects(cfg);
       this._populateIncludeBoxes(cfg);
       this._populateOpenAi(cfg);
@@ -197,6 +208,7 @@
         this._el.paletteToggle,
         this._el.heartbeatToggle,
         this._el.openaiPreferToggle,
+        this._el.openaiFallbackToggle,
         // #24 — tool_calls global checkbox uses the same pill UI.
         this._el.incBoxes && this._el.incBoxes.tool_calls,
       ];
@@ -265,6 +277,17 @@
         const pct = Math.max(0, Math.min(100, Number(volumeSlider.value) || 0));
         const v = pct / 100;
         await this._api.updateConfig({ playback: { master_volume: v } });
+      });
+    }
+
+    _wireCollapseDelay() {
+      const { collapseDelayInput } = this._el;
+      if (!collapseDelayInput) return;
+      this._on(collapseDelayInput, 'change', async () => {
+        const n = Math.max(1, Math.min(120, Math.floor(Number.isFinite(Number(collapseDelayInput.value)) ? Number(collapseDelayInput.value) : 3)));
+        collapseDelayInput.value = String(n);
+        this._onCollapseDelaySecChange(n);
+        await this._api.updateConfig({ playback: { collapse_delay_sec: n } });
       });
     }
 
@@ -337,6 +360,187 @@
       });
     }
 
+    _wireHotkeys() {
+      const inputs = (this._el && this._el.hotkeyInputs) || {};
+      for (const field of HOTKEY_FIELDS) {
+        const input = inputs[field.key];
+        if (!input) continue;
+        this._on(input, 'focus', () => {
+          this._setHotkeyStatus(`Press shortcut for ${field.label}.`, 'busy');
+          try { if (typeof input.select === 'function') input.select(); } catch {}
+        });
+        this._on(input, 'click', () => {
+          this._setHotkeyStatus(`Press shortcut for ${field.label}.`, 'busy');
+          try { if (typeof input.select === 'function') input.select(); } catch {}
+        });
+        this._on(input, 'paste', (ev) => {
+          if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+        });
+        this._on(input, 'keydown', async (ev) => {
+          await this._captureHotkey(field, ev || {});
+        });
+      }
+      const reset = this._el.hotkeyResetDefaults;
+      if (reset) {
+        this._on(reset, 'click', async () => {
+          this._setHotkeyStatus('Resetting shortcuts...', 'busy');
+          const merged = await this._api.updateConfig({ hotkeys: { ...HOTKEY_DEFAULTS } });
+          if (merged) {
+            if (typeof window !== 'undefined') window.TT_CONFIG_SNAPSHOT = merged;
+            this.update({ cfg: merged });
+          }
+          await this._refreshHotkeyStatus('Default shortcuts restored.');
+        });
+      }
+    }
+
+    _eventToAccelerator(ev) {
+      const rawKey = String(ev.key || '');
+      if (!rawKey || MODIFIER_KEYS.has(rawKey)) return { pending: true };
+      if (rawKey === 'Escape') return { cancel: true };
+      const key = this._normaliseMainKey(rawKey, ev.code);
+      if (!key) return { error: 'That key is not supported as a global shortcut.' };
+
+      const mods = [];
+      if (ev.ctrlKey) mods.push('Control');
+      if (ev.altKey) mods.push('Alt');
+      if (ev.shiftKey) mods.push('Shift');
+      if (ev.metaKey) mods.push('Meta');
+      const isFunctionKey = /^F(?:[1-9]|1\d|2[0-4])$/.test(key);
+      if (mods.length === 0 && !isFunctionKey) {
+        return { error: 'Use Control, Alt, Shift, or a function key.' };
+      }
+      return { accelerator: [...mods, key].join('+') };
+    }
+
+    _normaliseMainKey(rawKey, code) {
+      const key = String(rawKey || '');
+      const codeText = String(code || '');
+      if (key.length === 1) {
+        if (key === ' ') return 'Space';
+        if (key === '+') return 'Plus';
+        if (key === '-') return 'Minus';
+        return key.toUpperCase();
+      }
+      const named = {
+        ' ': 'Space',
+        Spacebar: 'Space',
+        Escape: 'Esc',
+        Esc: 'Esc',
+        ArrowUp: 'Up',
+        ArrowDown: 'Down',
+        ArrowLeft: 'Left',
+        ArrowRight: 'Right',
+        Delete: 'Delete',
+        Backspace: 'Backspace',
+        Enter: 'Enter',
+        Return: 'Enter',
+        Tab: 'Tab',
+        Home: 'Home',
+        End: 'End',
+        PageUp: 'PageUp',
+        PageDown: 'PageDown',
+        Insert: 'Insert',
+      };
+      if (named[key]) return named[key];
+      if (/^F(?:[1-9]|1\d|2[0-4])$/.test(key)) return key;
+      if (/^Digit\d$/.test(codeText)) return codeText.slice(-1);
+      if (/^Key[A-Z]$/.test(codeText)) return codeText.slice(-1);
+      return '';
+    }
+
+    async _captureHotkey(field, ev) {
+      if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+      if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+      const input = this._el.hotkeyInputs[field.key];
+      const parsed = this._eventToAccelerator(ev);
+      if (parsed.pending) return;
+      if (parsed.cancel) {
+        this._populateHotkeys((this.state && this.state.cfg) || {});
+        this._setHotkeyStatus('Shortcut change cancelled.', 'ok');
+        return;
+      }
+      if (parsed.error) {
+        this._setHotkeyStatus(parsed.error, 'err');
+        return;
+      }
+      const accelerator = parsed.accelerator;
+      const conflict = this._hotkeyConflict(field.key, accelerator);
+      if (conflict) {
+        this._setHotkeyStatus(`Already used by ${conflict}.`, 'err');
+        return;
+      }
+      if (input) input.value = this._displayAccelerator(accelerator);
+      this._setHotkeyStatus('Saving shortcut...', 'busy');
+      const merged = await this._api.updateConfig({ hotkeys: { [field.key]: accelerator } });
+      if (merged) {
+        if (typeof window !== 'undefined') window.TT_CONFIG_SNAPSHOT = merged;
+        this.update({ cfg: merged });
+      }
+      await this._refreshHotkeyStatus('Shortcut saved.');
+    }
+
+    _hotkeyConflict(changedKey, accelerator) {
+      const cfg = (this.state && this.state.cfg) || {};
+      const hotkeys = { ...HOTKEY_DEFAULTS, ...(cfg.hotkeys || {}) };
+      const next = this._canonicalAccelerator(accelerator);
+      for (const field of HOTKEY_FIELDS) {
+        if (field.key === changedKey) continue;
+        if (this._canonicalAccelerator(hotkeys[field.key]) === next) return field.label;
+      }
+      return '';
+    }
+
+    _canonicalAccelerator(value) {
+      const parts = String(value || '').split('+').map((p) => p.trim()).filter(Boolean);
+      const mods = [];
+      let key = '';
+      for (const part of parts) {
+        const low = part.toLowerCase();
+        if (low === 'ctrl' || low === 'control') mods.push('Control');
+        else if (low === 'alt' || low === 'option') mods.push('Alt');
+        else if (low === 'shift') mods.push('Shift');
+        else if (low === 'cmd' || low === 'command' || low === 'meta' || low === 'super') mods.push('Meta');
+        else key = part.length === 1 ? part.toUpperCase() : part;
+      }
+      return [...new Set(mods), key].filter(Boolean).join('+');
+    }
+
+    _displayAccelerator(value) {
+      return this._canonicalAccelerator(value)
+        .replace(/\bControl\b/g, 'Ctrl')
+        .replace(/\bMeta\b/g, 'Win');
+    }
+
+    _setHotkeyStatus(text, state) {
+      const el = this._el && this._el.hotkeyStatus;
+      if (!el) return;
+      el.textContent = text || '';
+      if (state) el.setAttribute('data-state', state);
+      else el.removeAttribute('data-state');
+    }
+
+    async _refreshHotkeyStatus(prefix = '') {
+      if (!this._api || typeof this._api.getHotkeyStatus !== 'function') {
+        if (prefix) this._setHotkeyStatus(prefix, 'ok');
+        return;
+      }
+      try {
+        const status = await this._api.getHotkeyStatus();
+        const values = status && typeof status === 'object' ? Object.values(status) : [];
+        const failed = values.filter((s) => s && s.accelerator && s.registered === false);
+        if (failed.length > 0) {
+          const first = failed[0];
+          this._setHotkeyStatus(`${prefix ? `${prefix} ` : ''}${this._displayAccelerator(first.accelerator)} could not be registered.`, 'err');
+          return;
+        }
+        const active = values.filter((s) => s && s.accelerator && s.registered === true).length;
+        this._setHotkeyStatus(prefix || `${active} shortcuts active.`, 'ok');
+      } catch {
+        if (prefix) this._setHotkeyStatus(prefix, 'ok');
+      }
+    }
+
     async _loadVersion() {
       const { versionLabel } = this._el;
       if (!versionLabel || !this._api || !this._api.getVersion) return;
@@ -370,55 +574,43 @@
       }
     }
 
-    // OpenAI (premium) — save/clear key + prefer toggle + test button.
+    // OpenAI (premium) — save/clear key, primary/fallback toggles, test button.
     // Key input is password-typed so it never renders plaintext on screen.
     // Save → update-config IPC routes openai_api_key through apiKeyStore
     // (encrypts + sidecar). Clear sends empty string which the store
-    // reads as "wipe both files". Prefer toggle sets playback.tts_provider.
+    // reads as "wipe both files". Prefer toggle sets playback.tts_provider;
+    // fallback toggle sets playback.tts_fallback_provider. OpenAI fallback
+    // is never inferred just because a key exists.
     // Test button invokes a one-shot synth through the active provider.
     _wireOpenAiSection() {
       const {
         openaiKeyInput, openaiKeySave, openaiKeyClear,
-        openaiPreferToggle, openaiTestBtn,
-        openaiSection, openaiSectionToggle,
+        openaiPreferToggle, openaiFallbackToggle, openaiTestBtn,
         openaiKeyChange, openaiKeyClear2,
       } = this._el;
 
       // In-memory flag: user explicitly clicked "Change key" to rotate
-      // a previously-saved key. Overrides the auto-collapse for this
-      // panel session so the input stays visible until they Save / Clear.
+      // a previously-saved key. Keeps the input visible until they
+      // Save / Clear.
       this._openaiUserWantsInput = false;
       // Same pattern for last-test-failed: once the Test button comes
-      // back !ok, we keep the input visible + the section expanded so
-      // the user can rotate the key without hunting for a toggle.
+      // back !ok, we keep the input visible so the user can rotate the
+      // key without hunting for another control.
       this._openaiLastTestFailed = false;
 
       // Runtime 401 auto-unset listener. main.js watches a flag file
       // synth_turn.py drops when openai_tts.py returns HTTP 401 during
       // a real (non-test) synth. By the time we get this event main
-      // has already cleared the encrypted key + flipped tts_provider
-      // back to 'edge'. We just need to make the UI reflect it:
-      // expand the section, reveal the input row, and show a red
-      // "key rejected" message so the user knows to re-enter.
+      // has already cleared the encrypted key and reset both OpenAI
+      // routes back to 'edge'. We just need to make the UI reflect it:
+      // reveal the input row and show a red "key rejected" message so
+      // the user knows to re-enter.
       if (this._api && typeof this._api.onOpenaiKeyInvalid === 'function') {
         this._api.onOpenaiKeyInvalid(() => {
           this._openaiLastTestFailed = true;
           this._openaiUserWantsInput = true;
-          if (openaiSection && openaiSection.classList.contains('collapsed')) {
-            openaiSection.classList.remove('collapsed');
-            if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'true');
-          }
           this._setTestResult('OpenAI rejected your key during a synth (HTTP 401). Provider reset to Edge; re-enter a valid key to re-enable OpenAI.', 'err');
           this._refreshOpenAiStatus();
-        });
-      }
-
-      // Section-collapse toggle on the OpenAI header.
-      if (openaiSectionToggle && openaiSection) {
-        this._on(openaiSectionToggle, 'click', () => {
-          const willCollapse = !openaiSection.classList.contains('collapsed');
-          openaiSection.classList.toggle('collapsed', willCollapse);
-          openaiSectionToggle.setAttribute('aria-expanded', willCollapse ? 'false' : 'true');
         });
       }
 
@@ -437,8 +629,8 @@
           this._setTestResult('Clearing…', 'busy');
           await this._api.updateConfig({ openai_api_key: '' });
           if (openaiKeyInput) openaiKeyInput.value = '';
-          await this._api.updateConfig({ playback: { tts_provider: 'edge' } });
-          this._setTestResult('Key cleared. Provider reset to Edge.', 'ok');
+          await this._api.updateConfig({ playback: { tts_provider: 'edge', tts_fallback_provider: 'edge' } });
+          this._setTestResult('Key cleared. Provider and fallback reset to Edge.', 'ok');
           this._openaiUserWantsInput = false;
           this._openaiLastTestFailed = false;
           await this._refreshOpenAiStatus();
@@ -457,8 +649,8 @@
           this._setTestResult('Saving…', 'busy');
           await this._api.updateConfig({ openai_api_key: key });
           openaiKeyInput.value = '';
-          // Fresh save — reset the UX override flags so the input row
-          // collapses back down as "saved / hidden".
+          // Fresh save - reset the UX override flags so the input row
+          // swaps back to "saved / hidden".
           this._openaiUserWantsInput = false;
           this._openaiLastTestFailed = false;
           this._setTestResult('Key saved.', 'ok');
@@ -474,8 +666,8 @@
           // If Prefer OpenAI was on, flip it off — it would otherwise
           // route the next turn to the now-missing key and fall back
           // silently. Better to make the demotion explicit.
-          await this._api.updateConfig({ playback: { tts_provider: 'edge' } });
-          this._setTestResult('Key cleared. Provider reset to Edge.', 'ok');
+          await this._api.updateConfig({ playback: { tts_provider: 'edge', tts_fallback_provider: 'edge' } });
+          this._setTestResult('Key cleared. Provider and fallback reset to Edge.', 'ok');
           this._openaiUserWantsInput = false;
           this._openaiLastTestFailed = false;
           await this._refreshOpenAiStatus();
@@ -500,8 +692,20 @@
             if (typeof this._onAfterMutation === 'function') this._onAfterMutation();
           }
           this._setTestResult(prefer
-            ? 'Now using OpenAI — response body, tool narrations + heartbeat all run through OpenAI first.'
-            : 'Back to Edge (free) as primary. OpenAI stays wired as the fallback.', 'ok');
+            ? 'Now using OpenAI first. Edge remains the free fallback unless you change the fallback setting.'
+            : 'Back to Edge (free) as primary. OpenAI fallback stays off unless you enable it below.', 'ok');
+        });
+      }
+
+      if (openaiFallbackToggle) {
+        this._on(openaiFallbackToggle, 'change', async () => {
+          const enabled = !!openaiFallbackToggle.checked;
+          const fallback = enabled ? 'openai' : 'edge';
+          const merged = await this._api.updateConfig({ playback: { tts_fallback_provider: fallback } });
+          if (merged) window.TT_CONFIG_SNAPSHOT = merged;
+          this._setTestResult(enabled
+            ? 'OpenAI fallback enabled. This can spend credits when the primary provider fails; monitor balance or use billing auto top-up.'
+            : 'OpenAI fallback off. Fallback stays on the free Edge route.', 'ok');
         });
       }
 
@@ -518,14 +722,9 @@
               await this._refreshOpenAiStatus();
             } else {
               this._setTestResult(`Failed — ${r.error || 'unknown error'}`, 'err');
-              // Test failed → the user needs to re-check / re-save the
-              // key. Auto-reveal the input row + ensure the section is
-              // expanded so they don't have to hunt.
+              // Test failed -> the user needs to re-check / re-save
+              // the key. Auto-reveal the input row.
               this._openaiLastTestFailed = true;
-              if (openaiSection && openaiSection.classList.contains('collapsed')) {
-                openaiSection.classList.remove('collapsed');
-                if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'true');
-              }
               await this._refreshOpenAiStatus();
             }
           } catch (e) {
@@ -548,8 +747,8 @@
     async _refreshOpenAiStatus() {
       const {
         openaiKeyStatus, openaiPreferToggle, openaiPreferPillBox,
+        openaiFallbackToggle, openaiFallbackPillBox,
         openaiKeyInputRow, openaiKeyChangeRow,
-        openaiSection, openaiSectionToggle,
       } = this._el;
       if (!openaiKeyStatus && !openaiPreferToggle) return;
       let saved = false;
@@ -566,9 +765,16 @@
       if (openaiPreferPillBox) {
         openaiPreferPillBox.classList.toggle('disabled', !saved);
       }
+      if (openaiFallbackPillBox) {
+        openaiFallbackPillBox.classList.toggle('disabled', !saved);
+      }
       if (!saved && openaiPreferToggle && openaiPreferToggle.checked) {
         openaiPreferToggle.checked = false;
         this._syncPill(openaiPreferToggle);
+      }
+      if (!saved && openaiFallbackToggle && openaiFallbackToggle.checked) {
+        openaiFallbackToggle.checked = false;
+        this._syncPill(openaiFallbackToggle);
       }
 
       // Row-swap: key-saved state shows the compact "Change key" row
@@ -581,19 +787,6 @@
       if (openaiKeyInputRow)  openaiKeyInputRow .classList.toggle('hidden', hideInputRow);
       if (openaiKeyChangeRow) openaiKeyChangeRow.classList.toggle('hidden', !hideInputRow);
 
-      // Auto-collapse the whole section once the key is saved AND the
-      // last test (if any) passed. First-time / failing states stay
-      // expanded so the controls are visible. This is a one-shot on
-      // the first refresh after panel mount — a user who manually
-      // expands the section later shouldn't have it snap closed on
-      // the next queue-updated tick.
-      if (openaiSection && !this._openaiCollapseDecided) {
-        this._openaiCollapseDecided = true;
-        if (saved && !this._openaiLastTestFailed) {
-          openaiSection.classList.add('collapsed');
-          if (openaiSectionToggle) openaiSectionToggle.setAttribute('aria-expanded', 'false');
-        }
-      }
     }
 
     // ---- Populate (update-time; listeners already wired) -----------
@@ -607,13 +800,20 @@
     }
 
     _populateOpenAi(cfg) {
-      const { openaiPreferToggle } = this._el;
+      const { openaiPreferToggle, openaiFallbackToggle } = this._el;
       const provider = String(
         (cfg.playback && cfg.playback.tts_provider) || 'edge'
+      ).toLowerCase();
+      const fallbackProvider = String(
+        (cfg.playback && cfg.playback.tts_fallback_provider) || 'edge'
       ).toLowerCase();
       if (openaiPreferToggle) {
         openaiPreferToggle.checked = (provider === 'openai');
         this._syncPill(openaiPreferToggle);
+      }
+      if (openaiFallbackToggle) {
+        openaiFallbackToggle.checked = (fallbackProvider === 'openai');
+        this._syncPill(openaiFallbackToggle);
       }
       // Async status probe doesn't await — populate is called from
       // _onUpdate (sync) and the key-status IPC is ~1 ms anyway. This
@@ -635,6 +835,13 @@
       if (volumeSlider) volumeSlider.value = pct;
       if (volumeValue) volumeValue.textContent = `${pct}%`;
       this._onMasterVolumeChange(v);
+    }
+
+    _populateCollapseDelay(cfg) {
+      const { collapseDelayInput } = this._el;
+      const secs = Math.max(1, Math.min(120, Math.floor(Number.isFinite(Number(cfg.playback && cfg.playback.collapse_delay_sec)) ? Number(cfg.playback && cfg.playback.collapse_delay_sec) : 3)));
+      this._onCollapseDelaySecChange(secs);
+      if (collapseDelayInput) collapseDelayInput.value = String(secs);
     }
 
     _populateAutoPrune(cfg) {
@@ -680,6 +887,16 @@
       const on = cfg.heartbeat_enabled !== false;
       heartbeatToggle.checked = on;
       this._syncPill(heartbeatToggle);
+    }
+
+    _populateHotkeys(cfg) {
+      const hotkeys = { ...HOTKEY_DEFAULTS, ...((cfg && cfg.hotkeys) || {}) };
+      const inputs = (this._el && this._el.hotkeyInputs) || {};
+      for (const field of HOTKEY_FIELDS) {
+        const display = this._displayAccelerator(hotkeys[field.key] || HOTKEY_DEFAULTS[field.key]);
+        if (inputs[field.key]) inputs[field.key].value = display;
+      }
+      this._refreshHotkeyStatus();
     }
 
     _populateVoiceSelects(cfg) {

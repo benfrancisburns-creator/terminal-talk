@@ -14,6 +14,7 @@ html, body {
 }
 
 .bar {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -31,7 +32,7 @@ html, body {
 
 /* Collapsed: bar shrinks to a slim hover-target. Content hidden but the
    strip stays visible enough to find — the old 35% opacity was too faint,
-   users couldn't see where to hover. Window stays the same size (144 px)
+   users couldn't see where to hover. Window stays the same size (192 px)
    but becomes click-through via setIgnoreMouseEvents so the area below
    the strip doesn't block interaction with other apps. */
 .bar.collapsed {
@@ -50,20 +51,68 @@ html, body {
   opacity: 1;
 }
 
+.collapsed-signal {
+  display: none;
+  pointer-events: none;
+}
+
+.bar.collapsed .collapsed-signal {
+  position: absolute;
+  display: block;
+  inset: 3px 12px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: scaleX(0.985);
+  transform-origin: center;
+}
+
+.bar.collapsed.collapsed-signal-active {
+  border-color: rgba(255, 255, 255, 0.36);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 0 16px rgba(255, 255, 255, 0.22);
+}
+
+.bar.collapsed.collapsed-signal-active .collapsed-signal {
+  opacity: 0.95;
+  animation: collapsedSignalPulse 1.15s ease-in-out infinite;
+  filter: saturate(1.2) brightness(1.08) drop-shadow(0 0 8px rgba(255, 255, 255, 0.34));
+}
+
+@keyframes collapsedSignalPulse {
+  0%, 100% { opacity: 0.72; transform: scaleX(0.985); }
+  50%      { opacity: 1;    transform: scaleX(1); }
+}
+
 body.window-mode .bar {
   margin: 10px;
+  width: calc(100vw - 20px);
+  max-width: none;
   background: rgba(24, 26, 32, 0.82);
   border-color: rgba(255, 255, 255, 0.12);
   border-radius: 14px;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  box-shadow: none;
+}
+
+body.settings-open {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body.settings-open .bar {
+  flex: 0 0 auto;
 }
 
 body.window-mode .panel {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0 10px 10px;
+  width: calc(100vw - 20px);
+  height: auto;
   background: rgba(24, 26, 32, 0.84);
   border-color: rgba(255, 255, 255, 0.12);
   border-radius: 14px;
-  max-height: calc(100vh - 164px);
+  box-shadow: none;
+  max-height: none;
 }
 
 body.demo-settings-mode,
@@ -489,7 +538,7 @@ body.demo-settings-mode * {
   50%      { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55), 0 0 8px rgba(255, 255, 255, 0.4); }
 }
 
-/* Heard: user has manually played -> fades to white, then auto-deletes */
+/* Heard: played by either autoplay or user click -> fades to white, then auto-deletes */
 .dot.heard {
   background: rgba(255, 255, 255, 0.9) !important;
   box-shadow: none;
@@ -849,6 +898,8 @@ body.demo-settings-mode * {
 
 /* --- Settings panel (expandable) --- */
 .panel {
+  flex: 1 1 auto;
+  min-height: 0;
   display: none;
   margin: 0 6px 6px;
   padding: 0 0 12px;
@@ -857,17 +908,99 @@ body.demo-settings-mode * {
   border-radius: 16px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(24px) saturate(140%);
+  background-clip: padding-box;
   /* Bar chrome above the panel measures ~140 px in expanded mode with
      the tabs row visible: margin 6 + padding 6 + bar-top 36 + gap 4 +
      tabs-row 30 + gap 4 + dots-row 44 + padding 8 + margin 6. Previous
      values were 72 (undersized by 38) → 120 (pre-tabs) → 150 (post-
      tabs, leaves 10 px of sub-pixel-rounding safety). */
   max-height: calc(100vh - 150px);
-  overflow-y: auto;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 body.settings-open .panel { display: block; }
+body.settings-open .panel { max-height: none; }
 
-.panel-inner { padding: 14px 16px; }
+.panel-inner {
+  height: calc(100% - 16px);
+  margin: 8px 4px 8px 0;
+  padding: 6px 12px 14px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 12px;
+  scrollbar-color: rgba(255, 255, 255, 0.34) rgba(255, 255, 255, 0.07);
+  scrollbar-width: thin;
+}
+
+.panel-inner::-webkit-scrollbar {
+  width: 10px;
+}
+
+.panel-inner::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+}
+
+.panel-inner::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.26);
+  border: 2px solid rgba(24, 26, 32, 0.9);
+  border-radius: 999px;
+}
+
+.panel-inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.settings-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin: -6px 0 12px;
+  padding: 12px 0 10px;
+  background: rgba(24, 26, 32, 0.96);
+  backdrop-filter: blur(18px) saturate(140%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-tab {
+  -webkit-app-region: no-drag;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.68);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-tab.active {
+  border-color: rgba(96, 165, 250, 0.62);
+  background: rgba(96, 165, 250, 0.18);
+  color: #fff;
+}
+
+.panel-section.settings-page {
+  display: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.panel-section.settings-page.active {
+  display: block;
+}
 
 .panel-section {
   margin-bottom: 14px;
@@ -884,31 +1017,6 @@ body.settings-open .panel { display: block; }
   color: rgba(255, 255, 255, 0.55);
   margin-bottom: 8px;
 }
-
-/* Collapsible section header. Click to toggle visibility of the
- * section-body beneath. Used in the OpenAI (premium) section — once
- * a user has saved a working key they don't need to see the settings
- * every time, so we collapse by default in that state. Chevron
- * rotates to indicate expand/collapse. */
-.section-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-.section-toggle:hover { color: rgba(255, 255, 255, 0.85); }
-.section-toggle .chevron { transition: transform .15s ease; }
-.section-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
-.panel-section.collapsed .section-body { display: none; }
 
 /* Inline hint shown where the password input used to sit, when the
  * key is saved but we're hiding its value. */
@@ -1052,6 +1160,40 @@ body.settings-open .panel { display: block; }
   background: rgba(226, 107, 107, 0.12);
 }
 
+/* Global shortcut editor. The inputs are read-only capture targets:
+   focus one, press the replacement shortcut, and Settings writes the
+   Electron accelerator string back to config. */
+.hotkey-row label {
+  min-width: 180px;
+}
+.hotkey-input {
+  flex: 1 1 auto;
+  min-width: 150px;
+  height: 24px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.hotkey-input:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.16);
+}
+.hotkey-status {
+  flex: 1 1 auto;
+  min-height: 16px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.hotkey-status[data-state="ok"] { color: #5bd16a; }
+.hotkey-status[data-state="err"] { color: #e26b6b; }
+.hotkey-status[data-state="busy"] { color: rgba(255, 255, 255, 0.82); }
+
 /* On/Off pill toggle — matches the Session-settings speech-includes
  * style (.tri-ctrl + .tri-btn). The underlying <input type=checkbox>
  * stays the source of truth; the two pill buttons just drive its
@@ -1183,6 +1325,78 @@ select option:checked, .panel .row select option:checked {
 }
 
 /* Sessions table */
+.session-create {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+.session-create-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 600;
+}
+.session-create-status {
+  min-height: 14px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: right;
+}
+.session-create-status[data-tone="ok"] { color: #7ddf9a; }
+.session-create-status[data-tone="error"] { color: #ff8585; }
+.session-create-grid {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 7px 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.session-create-grid label {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.62);
+}
+.session-create-grid input[type="text"],
+.session-create-grid select {
+  min-width: 0;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+  color-scheme: dark;
+}
+#createSessionIndex option[data-palette] {
+  color: #12151b;
+}
+#createSessionIndex option.create-session-colour-used {
+  font-weight: 700;
+}
+.session-create-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-create-project input { flex: 1; }
+.session-create-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.session-create button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 .sessions-table { display: flex; flex-direction: column; gap: 4px; }
 .session-block {
   background: rgba(255, 255, 255, 0.02);
@@ -1197,6 +1411,91 @@ select option:checked, .panel .row select option:checked {
   align-items: center;
   padding: 4px 0;
   font-size: 12px;
+}
+.session-source-status {
+  margin: 2px 0 1px 52px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.session-source-status[data-source="codex-desktop"]::before {
+  content: 'Codex';
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  color: rgba(191, 219, 254, 0.95);
+  font-size: 10px;
+  font-weight: 700;
+}
+.session-source-status[data-source="claude-desktop"]::before {
+  content: 'Claude';
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: rgba(125, 223, 154, 0.12);
+  border: 1px solid rgba(125, 223, 154, 0.28);
+  color: rgba(187, 247, 208, 0.95);
+  font-size: 10px;
+  font-weight: 700;
+}
+.session-source-status[data-tone="ok"] {
+  color: #bdf7cc;
+}
+.session-source-status[data-tone="ok"]::before {
+  background: rgba(74, 222, 128, 0.16);
+  border-color: rgba(74, 222, 128, 0.42);
+  color: #bbf7d0;
+}
+.session-source-status[data-tone="error"] {
+  color: #ff9b9b;
+}
+.session-source-status[data-tone="error"]::before {
+  background: rgba(255, 94, 94, 0.14);
+  border-color: rgba(255, 94, 94, 0.34);
+  color: #ffb4b4;
+}
+.session-title-sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: rgba(96, 165, 250, 0.1);
+  color: rgba(191, 219, 254, 0.95);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: -3px;
+}
+.session-title-sync:hover {
+  background: rgba(96, 165, 250, 0.2);
+  color: #fff;
+}
+.session-title-sync:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.session-title-sync[data-state="ok"] {
+  border-color: rgba(74, 222, 128, 0.42);
+  background: rgba(74, 222, 128, 0.16);
+  color: #bbf7d0;
+}
+.session-title-sync[data-state="error"] {
+  border-color: rgba(255, 94, 94, 0.42);
+  background: rgba(255, 94, 94, 0.16);
+  color: #ffb4b4;
 }
 .chevron {
   width: 18px !important;
@@ -1315,6 +1614,10 @@ select option:checked, .panel .row select option:checked {
   font-size: 12px;
   color-scheme: dark;
 }
+.expanded-row select option.voice-option-used {
+  color: #12151b;
+  font-weight: 700;
+}
 .expanded-subheader {
   font-size: 10px;
   font-weight: 600;
@@ -1384,55 +1687,93 @@ select option:checked, .panel .row select option:checked {
 
 /* About section */
 .panel-section.about { padding-top: 4px; }
-.ascii-banner {
-  font-family: 'Cascadia Mono', 'Consolas', monospace;
-  font-size: 8px;
-  line-height: 1.05;
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.55);
-  overflow-x: auto;
-  white-space: pre;
+.about-lockup {
+  margin-bottom: 10px;
 }
-.shortcuts-title {
-  margin-top: 10px !important;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55) !important;
-}
-.shortcuts {
-  width: 100%;
-  font-size: 12px;
-  border-collapse: collapse;
-  margin-top: 4px;
-}
-.shortcuts td {
-  padding: 3px 6px;
-  color: rgba(255, 255, 255, 0.8);
-  vertical-align: top;
-}
-.shortcuts td:first-child {
-  white-space: nowrap;
-  width: 140px;
-  color: rgba(255, 255, 255, 0.6);
-}
-/* Screen-reader-only text. Accessible table headers for .shortcuts
-   stay invisible to sighted users (the table's two columns are
-   obvious — shortcut + action — so a visible header row would just
-   waste vertical space) but remain announced by assistive tech.
-   Classic `clip` pattern works with our strict CSP. */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
+.about-wallpaper-card {
+  margin: 0;
+  height: 160px;
+  min-width: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  background: #0a0f19;
+  border: 1px solid rgba(255, 167, 38, 0.18);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+.about-wallpaper-card img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  image-rendering: auto;
+}
+.about-intro {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.about-intro p {
+  margin: 0;
+  padding: 9px 10px;
+  border-left: 3px solid rgba(255, 167, 38, 0.5);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.62);
+}
+.about-guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.about-card {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.about-card h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.82);
+}
+.about-card p {
+  margin: 0 0 7px;
+  font-size: 11px;
+  line-height: 1.38;
+  color: rgba(255, 255, 255, 0.62);
+}
+.about-card ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.about-card li {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.58);
+}
+.about-card li:last-child { margin-bottom: 0; }
+.about-card-wide {
+  grid-column: 1 / -1;
+  background: rgba(255, 167, 38, 0.045);
+  border-color: rgba(255, 167, 38, 0.14);
+}
+.about-footer-note {
+  margin-top: 10px;
+}
+
+@media (max-width: 760px) {
+  .about-intro,
+  .about-guide {
+    grid-template-columns: 1fr;
+  }
 }
 /* EX4 — transient toast for the undo-clear flow. Fixed position,
    dark background, auto-hides via a JS timer. The `.tt-toast-undo`
@@ -1542,6 +1883,7 @@ input[type="range"]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .dot.active { animation: none; }
   .dot:hover { filter: none; transform: none; }
+  .bar.collapsed.collapsed-signal-active .collapsed-signal { animation: none; opacity: 0.95; }
   .scrubber-mascot,
   .scrubber-mascot .leg { animation: none !important; }
   .bar, .bar.collapsed, .panel {

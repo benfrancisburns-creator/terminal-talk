@@ -70,9 +70,13 @@ const timeEl = document.getElementById('time');
 const closeBtn = document.getElementById('close');
 const clearPlayedBtn = document.getElementById('clearPlayed');
 const barEl = document.getElementById('bar');
+const collapsedSignalEl = document.getElementById('collapsedSignal');
 const urlParams = new URLSearchParams(window.location.search);
 const isWindowMode = urlParams.get('windowMode') === '1';
+const isCaptureMode = urlParams.get('captureMode') === '1';
+const collapseDisabledForWindowMode = isWindowMode && !isCaptureMode;
 const autoOpenSettingsMs = Number(urlParams.get('autoOpenSettingsMs') || 0);
+const settingsScrollTarget = (urlParams.get('settingsScrollTarget') || '').toLowerCase();
 const isSettingsDemoMode = isWindowMode && urlParams.get('demoSettings') === '1';
 const settingsDemoVariant = (urlParams.get('demoSettingsVariant') || 'settings').toLowerCase();
 function shouldAutoplayQueue() {
@@ -93,27 +97,63 @@ if (isSettingsDemoMode) document.body.classList.add('demo-settings-mode');
 // stuck in "mouse is over bar" state in that case.
 //
 // Design:
-//   - lastActivityTs tracks the last time something interesting happened
-//     (mousemove over bar, click, keydown, new clip arrival).
+//   - lastActivityTs tracks the last user-facing activity
+//     (mousemove over bar, click, force-expand, or fresh clips while open).
 //   - A 1 s poll decides whether to collapse. Rules:
 //       * Settings panel open → never collapse.
-//       * Audio still playing or unplayed clips waiting → never collapse.
 //       * Cursor currently over the bar → treat as ongoing activity.
-//       * Otherwise collapse once COLLAPSE_DELAY_MS has elapsed since
+//       * Otherwise collapse once the configured delay has elapsed since
 //         the last activity.
-//   - Any of { new clip, click, keydown, mousemove over bar, force-expand }
-//     calls bumpActivity() which resets the timer and re-expands.
-const COLLAPSE_DELAY_MS = 15000;
+//     Playback does NOT keep the full toolbar open. If audio starts while
+//     the user is not hovering, the toolbar collapses to the session-colour
+//     strip so the speaker remains glanceable without covering the terminal.
+//     Fresh unplayed clips still keep heartbeat quiet, but they do NOT
+//     keep the full toolbar open for the old 60 s freshness window.
+//   - User interaction expands. New clips that arrive while already
+//     collapsed keep the letterbox collapsed and flash its session colour.
+const DEFAULT_COLLAPSE_DELAY_SEC = 3;
+const MIN_COLLAPSE_DELAY_SEC = 1;
+const MAX_COLLAPSE_DELAY_SEC = 120;
+const COLLAPSED_ARRIVAL_SIGNAL_MS = 4200;
 const POLL_INTERVAL_MS = 1000;
+let collapseDelayMs = DEFAULT_COLLAPSE_DELAY_SEC * 1000;
 let isCollapsed = false;
 let settingsOpen = false;
 let lastActivityTs = Date.now();
 let cursorX = -1, cursorY = -1;
+let mainCursorOverInteractive = null;
+let collapsedSignalTimer = null;
+let collapsedSignalPlaybackPath = null;
 let settingsDemoStarted = false;
 let resolveSettingsDemoStart = null;
 const settingsDemoStartPromise = isSettingsDemoMode
   ? new Promise((resolve) => { resolveSettingsDemoStart = resolve; })
   : null;
+
+function scrollSettingsTargetIntoView() {
+  if (!settingsScrollTarget) return;
+  const tab = settingsTabForTarget(settingsScrollTarget);
+  if (tab) {
+    setSettingsTab(tab);
+    return;
+  }
+  const panel = document.getElementById('panel');
+  const panelInner = document.querySelector('.panel-inner');
+  const target = settingsScrollTarget === 'sessions'
+    ? document.getElementById('sessionsSection')
+    : null;
+  if (!panel || !target) return;
+  setTimeout(() => {
+    try {
+      target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } catch {
+      const scrollHost = panelInner || panel;
+      const panelTop = scrollHost.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top;
+      scrollHost.scrollTop += targetTop - panelTop;
+    }
+  }, 250);
+}
 
 function triggerSettingsDemoTimeline() {
   if (!isSettingsDemoMode || settingsDemoStarted) return;
@@ -121,19 +161,120 @@ function triggerSettingsDemoTimeline() {
   if (typeof resolveSettingsDemoStart === 'function') resolveSettingsDemoStart();
 }
 
+function interactiveRegion() {
+  // Settings is a scrollable tool surface. Treat the whole toolbar
+  // viewport as interactive while it is open so lower scrolled controls
+  // cannot fall into the transparent click-through area.
+  if (settingsOpen) {
+    return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+  }
+  const rects = [];
+  const bar = barEl.getBoundingClientRect();
+  if (bar.width > 0 && bar.height > 0) rects.push(bar);
+  if (rects.length === 0) return null;
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.right));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function publishInteractiveRegion() {
+  try {
+    if (window.api && window.api.setInteractiveRegion) {
+      window.api.setInteractiveRegion(interactiveRegion()).catch(() => {});
+    }
+  } catch {}
+}
+
+function publishInteractiveRegionSoon() {
+  requestAnimationFrame(publishInteractiveRegion);
+}
+
+function paletteKeyForPath(p) {
+  if (!p) return 'neutral';
+  const filename = p.split(/[\\/]/).pop();
+  if (!filename) return 'neutral';
+  const shortId = window.TT_CLIP_PATHS.extractSessionShort(filename);
+  return window.TT_CLIP_PATHS.paletteKeyForShort(shortId, sessionAssignments, PALETTE_SIZE);
+}
+
+function clearCollapsedSignal() {
+  if (collapsedSignalTimer) {
+    clearTimeout(collapsedSignalTimer);
+    collapsedSignalTimer = null;
+  }
+  collapsedSignalPlaybackPath = null;
+  if (barEl) barEl.classList.remove('collapsed-signal-active');
+  if (collapsedSignalEl) delete collapsedSignalEl.dataset.palette;
+}
+
+function clearCollapsedPlaybackSignal(path) {
+  if (!collapsedSignalPlaybackPath) return;
+  if (path && collapsedSignalPlaybackPath !== path) return;
+  clearCollapsedSignal();
+}
+
+function signalCollapsedClip(path, opts = {}) {
+  if (!isCollapsed || !collapsedSignalEl) return;
+  const holdForPlayback = !!opts.holdForPlayback;
+  // Playback owns the collapsed letterbox colour. New arrivals may queue
+  // behind it, but they must not repaint the flash while another clip is
+  // audibly speaking; otherwise the colour implies the wrong session.
+  if (!holdForPlayback && collapsedSignalPlaybackPath) return;
+  if (holdForPlayback) collapsedSignalPlaybackPath = path || collapsedSignalPlaybackPath;
+  collapsedSignalEl.dataset.palette = paletteKeyForPath(path);
+  barEl.classList.remove('collapsed-signal-active');
+  // Force a reflow so repeated clips from the same session restart the pulse.
+  barEl.getBoundingClientRect();
+  barEl.classList.add('collapsed-signal-active');
+  if (holdForPlayback) {
+    if (collapsedSignalTimer) {
+      clearTimeout(collapsedSignalTimer);
+      collapsedSignalTimer = null;
+    }
+    return;
+  }
+  if (collapsedSignalPlaybackPath) return;
+  if (collapsedSignalTimer) clearTimeout(collapsedSignalTimer);
+  collapsedSignalTimer = setTimeout(() => {
+    collapsedSignalTimer = null;
+    clearCollapsedSignal();
+  }, COLLAPSED_ARRIVAL_SIGNAL_MS);
+}
+
+function collapseForBackgroundPlayback(path) {
+  if (settingsOpen || collapseDisabledForWindowMode || isMouseOverBar()) return;
+  applyCollapsed(true);
+  signalCollapsedClip(path, { holdForPlayback: true });
+}
+
+function signalCollapsedCurrentPlayback() {
+  const currentPath = audioPlayer && typeof audioPlayer.getCurrentPath === 'function'
+    ? audioPlayer.getCurrentPath()
+    : null;
+  if (!currentPath || !isPlaybackActive()) return;
+  signalCollapsedClip(currentPath, { holdForPlayback: true });
+}
+
 async function applyCollapsed(collapsed) {
-  if (isWindowMode) {
+  if (collapseDisabledForWindowMode) {
     isCollapsed = false;
     barEl.classList.remove('collapsed');
+    clearCollapsedSignal();
+    publishInteractiveRegionSoon();
     return;
   }
   if (collapsed === isCollapsed) return;
   isCollapsed = collapsed;
   if (collapsed) {
     barEl.classList.add('collapsed');
+    signalCollapsedCurrentPlayback();
   } else {
     barEl.classList.remove('collapsed');
+    clearCollapsedSignal();
   }
+  publishInteractiveRegionSoon();
   // Click-through state is decided by cursor position (see mousemove
   // handler), not by collapsed state — so clicks in the transparent
   // margin outside the visible bar pass through to the app below,
@@ -163,10 +304,17 @@ async function updateClickthrough() {
     }
     return;
   }
+  if (settingsOpen) {
+    if (clickthroughOn) {
+      clickthroughOn = false;
+      try { await window.api.setClickthrough(false); } catch {}
+    }
+    return;
+  }
   // Click-through ON (pass clicks to app below) whenever the cursor
   // is NOT over the visible bar pixels. This is what lets the user
   // interact with other apps while the toolbar is visible — the
-  // 680 × 144 window becomes effectively "only the bar rectangle
+  // 680 x 192 window becomes effectively "only the bar rectangle
   // is mine; everything else is transparent".
   const overBar = isMouseOverBar();
   const want = !overBar;
@@ -193,9 +341,21 @@ async function updateClickthrough() {
 // budget + any realistic synth-and-settle delay. A fresh clip has a
 // full minute to get played before it's considered "backlog, ignore".
 const ACTIVE_FRESH_MS = 60_000;
-function isQueueActive() {
-  const audioBusy = audio.src && !audio.paused && !audio.ended && audio.readyState >= 2;
-  if (audioBusy) return true;
+function isPlaybackActive() {
+  const hasCurrentPath = !!(
+    typeof audioPlayer !== 'undefined' &&
+    audioPlayer &&
+    audioPlayer.getCurrentPath()
+  );
+  if (!audio.src || audio.ended) return false;
+  if (!audio.paused) return true;
+  // A just-started clip can be "current" before Chromium has enough
+  // media data to flip paused=false. Treat that load gap as active,
+  // but don't let a stale currentPath keep the toolbar open forever.
+  return hasCurrentPath && audio.readyState < 2;
+}
+
+function hasFreshUnplayedClip() {
   const freshCutoff = Date.now() - ACTIVE_FRESH_MS;
   return queue.some(f =>
     (f.mtime || 0) >= freshCutoff &&
@@ -204,7 +364,17 @@ function isQueueActive() {
   );
 }
 
+function isQueueActive() {
+  return isPlaybackActive() || hasFreshUnplayedClip();
+}
+
 function isMouseOverBar() {
+  // The main process polls the real screen cursor with
+  // screen.getCursorScreenPoint(), which still works while the toolbar
+  // is click-through. Prefer that authoritative state over renderer
+  // mousemove coordinates; Electron can miss mouseleave/entry events on
+  // Windows while ignoreMouseEvents is flipping, leaving cursorX/Y stale.
+  if (mainCursorOverInteractive !== null) return mainCursorOverInteractive;
   if (cursorX < 0) return false;
   const r = barEl.getBoundingClientRect();
   const overBar = cursorX >= r.left && cursorX <= r.right &&
@@ -231,16 +401,20 @@ function bumpActivity() {
   if (isCollapsed) applyCollapsed(false);
 }
 
+function normaliseCollapseDelaySec(value) {
+  const raw = Number(value);
+  return Math.max(MIN_COLLAPSE_DELAY_SEC, Math.min(MAX_COLLAPSE_DELAY_SEC, Math.floor(Number.isFinite(raw) ? raw : DEFAULT_COLLAPSE_DELAY_SEC)));
+}
+
 setInterval(() => {
-  if (isWindowMode) return;
+  if (collapseDisabledForWindowMode) return;
   if (isCollapsed) return;
   if (settingsOpen) return;
-  if (isQueueActive()) return;
   if (isMouseOverBar()) {
     lastActivityTs = Date.now();
     return;
   }
-  if (Date.now() - lastActivityTs >= COLLAPSE_DELAY_MS) {
+  if (Date.now() - lastActivityTs >= collapseDelayMs) {
     applyCollapsed(true);
   }
 }, POLL_INTERVAL_MS);
@@ -322,6 +496,11 @@ setInterval(() => {
       heartbeatSilentSince,
       lastHeartbeatAt,
       workingSessionsCache,
+      sessionHeartbeatOverrides: Object.fromEntries(
+        Object.entries(sessionAssignments || {})
+          .filter(([, entry]) => entry && typeof entry.heartbeat_enabled === 'boolean')
+          .map(([short, entry]) => [short, entry.heartbeat_enabled])
+      ),
       initialMs: HEARTBEAT_INITIAL_MS,
       intervalMs: HEARTBEAT_INTERVAL_MS,
     });
@@ -367,6 +546,7 @@ const priorityPaths = new Set();
 const priorityQueue = [];
 let pendingQueue = [];
 const deleteTimers = new Map();
+const unplayedEphemeralTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
 // Auto-prune delay is user-configurable via the Playback settings panel.
 // The value is a single seconds count that applies to both manual and
@@ -387,6 +567,16 @@ const {
   VSPLIT_PARTNER,
   COLOUR_NAMES,
 } = window.TT_TOKENS.palette;
+
+function sessionPaletteLabel(i) {
+  if (i < 8) return `${COLOUR_NAMES[i]}`;
+  if (i < 16) {
+    const p = i - 8;
+    return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[HSPLIT_PARTNER[p]]} - top/bottom`;
+  }
+  const p = i - 16;
+  return `${COLOUR_NAMES[p]} / ${COLOUR_NAMES[VSPLIT_PARTNER[p]]} - left/right`;
+}
 
 // Assignments registry (session_short -> { index }) provided by main via IPC.
 let sessionAssignments = {};
@@ -458,6 +648,25 @@ let autoPruneEnabled = true;
 // subtle race where the delete fires before the audio element has
 // released the file handle.
 const EPHEMERAL_DELETE_DELAY_MS = 200;
+const UNPLAYED_EPHEMERAL_TTL_MS = 30000;
+
+function _removeClipFromQueuesAndState(p) {
+  playedPaths.delete(p);
+  heardPaths.delete(p);
+  priorityPaths.delete(p);
+  pendingQueue = pendingQueue.filter(x => x !== p);
+  for (let i = priorityQueue.length - 1; i >= 0; i--) {
+    if (priorityQueue[i] === p) priorityQueue.splice(i, 1);
+  }
+  queue = queue.filter(f => f.path !== p);
+}
+
+function cancelUnplayedEphemeralExpiry(p) {
+  if (unplayedEphemeralTimers.has(p)) {
+    clearTimeout(unplayedEphemeralTimers.get(p));
+    unplayedEphemeralTimers.delete(p);
+  }
+}
 
 function scheduleAutoDelete(p, _wasManual = false) {
   const ephemeral = isEphemeralClip(p);
@@ -476,6 +685,7 @@ function scheduleAutoDelete(p, _wasManual = false) {
   }
   try { console.log('[scheduleAutoDelete] schedule:', ephemeral ? 'EPHEMERAL' : 'body', 'path=' + p.split(/[\\/]/).pop(), 'autoPruneEnabled=' + autoPruneEnabled, 'autoPruneSec=' + autoPruneSec); } catch {}
   if (deleteTimers.has(p)) clearTimeout(deleteTimers.get(p));
+  cancelUnplayedEphemeralExpiry(p);
   const delay = ephemeral
     ? EPHEMERAL_DELETE_DELAY_MS
     : Math.max(3, Math.min(600, autoPruneSec)) * 1000;
@@ -504,17 +714,14 @@ async function _attemptAutoDelete(p, ephemeral, attempt) {
   try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'attempt=' + attempt, 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
   let deleted = false;
   try {
-    await window.api.deleteFile(p);
-    deleted = true;
+    deleted = await window.api.deleteFile(p) === true;
   } catch (e) {
     try { console.warn('[scheduleAutoDelete] deleteFile failed', p.split(/[\\/]/).pop(), 'attempt=' + attempt, e && e.message); } catch {}
   }
   // Re-check after the IPC returns — user may have re-played mid-await.
   if (audioPlayer.getCurrentPath() === p) return;
   if (deleted) {
-    playedPaths.delete(p);
-    heardPaths.delete(p);
-    queue = queue.filter(f => f.path !== p);
+    _removeClipFromQueuesAndState(p);
     renderDots();
     return;
   }
@@ -527,6 +734,25 @@ async function _attemptAutoDelete(p, ephemeral, attempt) {
   const nextDelay = _AUTO_DELETE_RETRY_DELAYS_MS[Math.min(attempt, _AUTO_DELETE_RETRY_DELAYS_MS.length - 1)];
   const t = setTimeout(() => _attemptAutoDelete(p, ephemeral, attempt + 1), nextDelay);
   deleteTimers.set(p, t);
+}
+
+function scheduleUnplayedEphemeralExpiry(f) {
+  const p = f && f.path;
+  if (!p || !isEphemeralClip(p)) return;
+  if (playedPaths.has(p) || audioPlayer.getCurrentPath() === p) return;
+  if (unplayedEphemeralTimers.has(p)) return;
+  const age = Date.now() - Number(f.mtime || Date.now());
+  const delay = Math.max(1000, UNPLAYED_EPHEMERAL_TTL_MS - age);
+  const t = setTimeout(() => {
+    unplayedEphemeralTimers.delete(p);
+    if (playedPaths.has(p) || audioPlayer.getCurrentPath() === p) return;
+    _attemptAutoDelete(p, true, 0);
+  }, delay);
+  unplayedEphemeralTimers.set(p, t);
+}
+
+function scheduleUnplayedEphemeralExpiryForQueue() {
+  for (const f of queue) scheduleUnplayedEphemeralExpiry(f);
 }
 
 function setAutoPruneEnabled(on) {
@@ -550,6 +776,7 @@ function cancelAutoDelete(p) {
     clearTimeout(deleteTimers.get(p));
     deleteTimers.delete(p);
   }
+  cancelUnplayedEphemeralExpiry(p);
 }
 
 function fmt(s) {
@@ -669,9 +896,18 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   setDynamicStyle,
   onPlayStart: (p) => {
     cancelAutoDelete(p);
+    if (isCollapsed) signalCollapsedClip(p, { holdForPlayback: true });
+    else collapseForBackgroundPlayback(p);
     if (isSettingsDemoMode) triggerSettingsDemoTimeline();
   },
-  onClipEnded: (p, { manual }) => scheduleAutoDelete(p, manual),
+  onClipEnded: (p, { manual }) => {
+    clearCollapsedPlaybackSignal(p);
+    lastActivityTs = Date.now();
+    scheduleAutoDelete(p, manual);
+  },
+  onPlaybackStop: (p) => {
+    clearCollapsedPlaybackSignal(p);
+  },
   onPlayNextPending: () => {
     if (shouldAutoplayQueue()) playNextPending();
   },
@@ -1019,6 +1255,7 @@ async function initialLoad() {
   for (const f of unplayed) {
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
   }
+  scheduleUnplayedEphemeralExpiryForQueue();
   renderDots();
   if (transcriptPanel) {
     fetchSidecarsForRecent();
@@ -1058,13 +1295,19 @@ window.api.onQueueUpdated((payload) => {
     // Drop muted-session arrivals outright — they never enter the queue.
     if (isClipSessionMuted(f.path.split(/[\\/]/).pop())) continue;
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
+    scheduleUnplayedEphemeralExpiry(f);
   }
-  // New unmuted clip arrived → treat as activity (expands if collapsed,
-  // resets the idle countdown).
-  const hasVisibleArrival = newArrivals.some(f =>
+  // New unmuted clip arrived. If the user has let the toolbar collapse
+  // to the letterbox, do not expand over their work; flash the source
+  // session colour instead. If the full toolbar is already open, keep
+  // the old activity behaviour so it stays open while fresh clips land.
+  const visibleArrivals = newArrivals.filter(f =>
     !priorityPaths.has(f.path) && !isClipSessionMuted(f.path.split(/[\\/]/).pop())
   );
-  if (hasVisibleArrival) bumpActivity();
+  if (visibleArrivals.length > 0) {
+    if (isCollapsed) signalCollapsedClip(visibleArrivals[0].path);
+    else bumpActivity();
+  }
   // If the user just muted the session of the currently-playing clip, stop.
   // Let the normal resume/ended flow pick up the next unmuted one.
   const cur = audioPlayer.getCurrentPath();
@@ -1146,7 +1389,20 @@ let currentPlaybackSpeed = 1.25; // updated from config on load
 const { edge: EDGE_VOICES, openai: OPENAI_VOICES } = window.TT_VOICES;
 
 const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanelEl = document.getElementById('panel');
+const settingsPanelInnerEl = document.querySelector('.panel-inner');
+const settingsTabEls = Array.from(document.querySelectorAll('[data-settings-tab]'));
+const settingsPageEls = Array.from(document.querySelectorAll('[data-settings-page]'));
 const sessionsTableEl = document.getElementById('sessionsTable');
+const createSessionKindEl = document.getElementById('createSessionKind');
+const createSessionLaunchModeEl = document.getElementById('createSessionLaunchMode');
+const createSessionProjectEl = document.getElementById('createSessionProject');
+const createSessionBrowseEl = document.getElementById('createSessionBrowse');
+const createSessionLabelEl = document.getElementById('createSessionLabel');
+const createSessionIndexEl = document.getElementById('createSessionIndex');
+const createSessionBtn = document.getElementById('createSessionBtn');
+const createSessionSaveDefaultBtn = document.getElementById('createSessionSaveDefault');
+const createSessionStatusEl = document.getElementById('createSessionStatus');
 // EX7d-2 — speedSlider, speedValueEl, voice*El, incBoxes, and
 // fillVoiceSelect all moved into SettingsForm. The SettingsForm
 // component queries these DOM refs internally on mount.
@@ -1195,14 +1451,355 @@ const sessionsTable = new window.TT_SESSIONS_TABLE({
   onSetMuted:   (shortId, muted) => window.api.setSessionMuted(shortId, muted),
   onRemove:     (shortId)        => window.api.removeSession(shortId),
   onSetVoice:   (shortId, voice) => window.api.setSessionVoice(shortId, voice),
+  onSetHeartbeat: (shortId, v)   => window.api.setSessionHeartbeat(shortId, v),
   onSetInclude: (shortId, k, v)  => window.api.setSessionInclude(shortId, k, v),
+  onSyncCodexDesktopTitle: (shortId) => window.api.syncCodexDesktopTitle(shortId),
+  onSyncClaudeDesktopTitle: (shortId) => window.api.syncClaudeDesktopTitle(shortId),
   onAfterMutation: () => renderDots(),
 });
 sessionsTable.mount(sessionsTableEl);
 
 function renderSessionsTable() {
   sessionsTable.update({ sessionAssignments });
+  refreshCreateSessionPalette();
 }
+
+const CREATE_SESSION_PERMISSION_OPTIONS = {
+  codex: [
+    ['default', 'Default'],
+    ['dangerous', 'Dangerously bypass approvals and sandbox'],
+  ],
+  claude: [
+    ['default', 'Default'],
+    ['dangerous', 'Dangerously skip permissions'],
+  ],
+  'claude-desktop': [
+    ['default', 'Default'],
+  ],
+};
+let createSessionDefaults = {
+  kind: 'codex',
+  defaults: {},
+};
+
+function setCreateSessionStatus(text, tone = '') {
+  if (!createSessionStatusEl) return;
+  createSessionStatusEl.textContent = text || '';
+  createSessionStatusEl.dataset.tone = tone || '';
+}
+
+function sessionAssignmentDisplayName(shortId, entry) {
+  const label = entry && typeof entry.label === 'string' ? entry.label.trim() : '';
+  if (label) return label;
+  const sourceLabel = entry && typeof entry.source_label === 'string' ? entry.source_label.trim() : '';
+  if (sourceLabel) return sourceLabel;
+  return shortId;
+}
+
+function createSessionPaletteUsageMap() {
+  const used = new Map();
+  for (const [shortId, entry] of Object.entries(sessionAssignments || {})) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rawIndex = Number(entry.index);
+    if (!Number.isFinite(rawIndex)) continue;
+    const index = Math.max(0, Math.min(PALETTE_SIZE - 1, Math.floor(rawIndex)));
+    const list = used.get(index) || [];
+    list.push({
+      shortId,
+      label: sessionAssignmentDisplayName(shortId, entry),
+    });
+    used.set(index, list);
+  }
+  return used;
+}
+
+function createSessionPaletteUsageLabel(usages) {
+  if (!usages || usages.length === 0) return '';
+  const names = usages.slice(0, 2).map((u) => u.label).join(', ');
+  const extra = usages.length > 2 ? ` +${usages.length - 2}` : '';
+  return ` (used by ${names}${extra})`;
+}
+
+function refreshCreateSessionPalette() {
+  if (!createSessionIndexEl) return;
+  const selected = createSessionIndexEl.value || '0';
+  createSessionIndexEl.innerHTML = '';
+  const used = createSessionPaletteUsageMap();
+  for (let i = 0; i < PALETTE_SIZE; i++) {
+    const usages = used.get(i) || [];
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${sessionPaletteLabel(i)}${createSessionPaletteUsageLabel(usages)}`;
+    opt.dataset.palette = window.TT_CLIP_PATHS.paletteKeyForIndex(i, PALETTE_SIZE);
+    if (usages.length > 0) {
+      opt.className = 'create-session-colour-used';
+      opt.dataset.used = 'true';
+      opt.title = `Used by ${usages.map((u) => u.label).join(', ')}`;
+    }
+    createSessionIndexEl.appendChild(opt);
+  }
+  createSessionIndexEl.value = selected;
+  if (!createSessionIndexEl.value) createSessionIndexEl.value = '0';
+}
+
+function populateCreateSessionLaunchModes() {
+  if (!createSessionKindEl || !createSessionLaunchModeEl) return;
+  const kind = normaliseCreateSessionKind(createSessionKindEl.value);
+  const current = createSessionLaunchModeEl.value || 'default';
+  createSessionLaunchModeEl.innerHTML = '';
+  for (const [value, label] of CREATE_SESSION_PERMISSION_OPTIONS[kind]) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    createSessionLaunchModeEl.appendChild(opt);
+  }
+  const values = new Set(CREATE_SESSION_PERMISSION_OPTIONS[kind].map(([value]) => value));
+  createSessionLaunchModeEl.value = values.has(current) ? current : 'default';
+}
+
+function updateCreateSessionPlaceholders() {
+  if (!createSessionKindEl || !createSessionLabelEl) return;
+  const kind = normaliseCreateSessionKind(createSessionKindEl.value);
+  const sample = kind === 'claude-desktop' ? 'Claude Desktop x TT'
+    : kind === 'claude' ? 'Claude x TT'
+    : 'Codex x TT';
+  createSessionLabelEl.placeholder = `e.g. ${sample}`;
+}
+
+function normaliseCreateSessionKind(value) {
+  const clean = String(value || '').toLowerCase();
+  if (clean === 'claude-desktop' || clean === 'claude-desktop-code') return 'claude-desktop';
+  return clean === 'claude' ? 'claude' : 'codex';
+}
+
+function validCreateSessionLaunchMode(kind, value) {
+  const options = CREATE_SESSION_PERMISSION_OPTIONS[normaliseCreateSessionKind(kind)] || [];
+  return options.some(([v]) => v === value) ? value : 'default';
+}
+
+function normaliseCreateSessionDefault(kind, raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const cleanKind = normaliseCreateSessionKind(kind);
+  const launchMode = validCreateSessionLaunchMode(cleanKind, String(source.launchMode || 'default').toLowerCase());
+  const indexRaw = Number(source.index);
+  return {
+    projectDir: typeof source.projectDir === 'string' ? source.projectDir.slice(0, 4096) : '',
+    label: typeof source.label === 'string' ? source.label.replace(/[\r\n\t]/g, ' ').slice(0, 60).trim() : '',
+    index: Number.isFinite(indexRaw) ? Math.max(0, Math.min(23, Math.floor(indexRaw))) : 0,
+    launchMode,
+  };
+}
+
+function readCreateSessionDefaults(cfg) {
+  const panels = cfg && cfg.panels && typeof cfg.panels === 'object' ? cfg.panels : {};
+  const rawDefaults = panels.create_session_defaults && typeof panels.create_session_defaults === 'object'
+    ? panels.create_session_defaults
+    : {};
+  createSessionDefaults = {
+    kind: normaliseCreateSessionKind(panels.create_session_default_kind),
+    defaults: {
+      codex: normaliseCreateSessionDefault('codex', rawDefaults.codex),
+      claude: normaliseCreateSessionDefault('claude', rawDefaults.claude),
+      'claude-desktop': normaliseCreateSessionDefault('claude-desktop', rawDefaults['claude-desktop']),
+    },
+  };
+}
+
+function applyCreateSessionDefault(kind, { setKind = false } = {}) {
+  if (!createSessionKindEl) return;
+  const cleanKind = normaliseCreateSessionKind(kind);
+  const saved = createSessionDefaults.defaults[cleanKind];
+  if (setKind) createSessionKindEl.value = cleanKind;
+  populateCreateSessionLaunchModes();
+  updateCreateSessionPlaceholders();
+  if (!saved) return;
+  if (createSessionLaunchModeEl) createSessionLaunchModeEl.value = validCreateSessionLaunchMode(cleanKind, saved.launchMode);
+  if (createSessionProjectEl) createSessionProjectEl.value = saved.projectDir || '';
+  if (createSessionLabelEl) createSessionLabelEl.value = saved.label || '';
+  if (createSessionIndexEl) createSessionIndexEl.value = String(saved.index || 0);
+}
+
+function captureCreateSessionDefault() {
+  const kind = normaliseCreateSessionKind(createSessionKindEl ? createSessionKindEl.value : 'codex');
+  return {
+    kind,
+    value: normaliseCreateSessionDefault(kind, {
+      projectDir: createSessionProjectEl ? createSessionProjectEl.value.trim() : '',
+      label: createSessionLabelEl ? createSessionLabelEl.value.trim() : '',
+      index: createSessionIndexEl ? Number(createSessionIndexEl.value) : 0,
+      launchMode: createSessionLaunchModeEl ? createSessionLaunchModeEl.value : 'default',
+    }),
+  };
+}
+
+function initCreateSessionForm() {
+  if (!createSessionKindEl || !createSessionBtn) return;
+  refreshCreateSessionPalette();
+  populateCreateSessionLaunchModes();
+  updateCreateSessionPlaceholders();
+
+  createSessionKindEl.addEventListener('change', () => {
+    const kind = normaliseCreateSessionKind(createSessionKindEl.value);
+    applyCreateSessionDefault(kind);
+    setCreateSessionStatus('');
+  });
+
+  if (createSessionBrowseEl && createSessionProjectEl) {
+    createSessionBrowseEl.addEventListener('click', async () => {
+      setCreateSessionStatus('Choosing...', '');
+      const result = await window.api.chooseSessionProjectDir(createSessionProjectEl.value.trim());
+      if (result && result.ok && result.path) {
+        createSessionProjectEl.value = result.path;
+        setCreateSessionStatus('');
+      } else if (result && result.ok && result.canceled) {
+        setCreateSessionStatus('');
+      } else {
+        setCreateSessionStatus((result && result.error) || 'Folder picker failed.', 'error');
+      }
+    });
+  }
+
+  if (createSessionSaveDefaultBtn) {
+    createSessionSaveDefaultBtn.addEventListener('click', async () => {
+      const { kind, value } = captureCreateSessionDefault();
+      createSessionDefaults = {
+        kind,
+        defaults: {
+          ...(createSessionDefaults.defaults || {}),
+          [kind]: value,
+        },
+      };
+      createSessionSaveDefaultBtn.disabled = true;
+      setCreateSessionStatus('Saving default...', '');
+      try {
+        const nextCfg = await window.api.updateConfig({
+          panels: {
+            create_session_default_kind: kind,
+            create_session_defaults: createSessionDefaults.defaults,
+          },
+        });
+        if (nextCfg) {
+          readCreateSessionDefaults(nextCfg);
+          setCreateSessionStatus('Default saved.', 'ok');
+        } else {
+          setCreateSessionStatus('Default was not saved.', 'error');
+        }
+      } catch (e) {
+        setCreateSessionStatus((e && e.message) || 'Default was not saved.', 'error');
+      } finally {
+        createSessionSaveDefaultBtn.disabled = false;
+      }
+    });
+  }
+
+  createSessionBtn.addEventListener('click', async () => {
+    const kind = normaliseCreateSessionKind(createSessionKindEl.value);
+    const payload = {
+      kind,
+      launchMode: createSessionLaunchModeEl ? createSessionLaunchModeEl.value : 'default',
+      projectDir: createSessionProjectEl ? createSessionProjectEl.value.trim() : '',
+      label: createSessionLabelEl ? createSessionLabelEl.value.trim() : '',
+      index: createSessionIndexEl ? Number(createSessionIndexEl.value) : 0,
+    };
+    if (!payload.projectDir) {
+      setCreateSessionStatus('Choose a project folder.', 'error');
+      return;
+    }
+
+    createSessionBtn.disabled = true;
+    if (createSessionBrowseEl) createSessionBrowseEl.disabled = true;
+    if (createSessionSaveDefaultBtn) createSessionSaveDefaultBtn.disabled = true;
+    setCreateSessionStatus('Opening...', '');
+    try {
+      const result = await window.api.launchAssistantSession(payload);
+      if (result && result.ok) {
+        const name = payload.kind === 'claude-desktop' ? 'Claude Desktop Code'
+          : payload.kind === 'claude' ? 'Claude Code'
+          : 'Codex';
+        setCreateSessionStatus(`Opening ${name}.`, 'ok');
+      } else {
+        setCreateSessionStatus((result && result.error) || 'Session launch failed.', 'error');
+      }
+    } catch (e) {
+      setCreateSessionStatus((e && e.message) || 'Session launch failed.', 'error');
+    } finally {
+      createSessionBtn.disabled = false;
+      if (createSessionBrowseEl) createSessionBrowseEl.disabled = false;
+      if (createSessionSaveDefaultBtn) createSessionSaveDefaultBtn.disabled = false;
+    }
+  });
+}
+initCreateSessionForm();
+
+function settingsTabForTarget(target) {
+  const clean = String(target || '').toLowerCase();
+  if (clean === 'create' || clean === 'create-session' || clean === 'new-session') return 'create-session';
+  if (clean === 'session' || clean === 'sessions' || clean === 'active-sessions') return 'sessions';
+  if (clean === 'openai' || clean === 'openai-section') return 'openai';
+  if (clean === 'shortcut' || clean === 'shortcuts') return 'shortcuts';
+  if (clean === 'about') return 'about';
+  if (clean === 'playback') return 'playback';
+  return '';
+}
+
+function settingsTabForElement(el) {
+  if (!el || typeof el.closest !== 'function') return '';
+  const page = el.closest('[data-settings-page]');
+  return page && page.dataset ? String(page.dataset.settingsPage || '') : '';
+}
+
+function setSettingsTab(tab, { preserveScroll = false } = {}) {
+  const clean = settingsTabForTarget(tab) || 'playback';
+  let found = false;
+  for (const page of settingsPageEls) {
+    const active = page.dataset.settingsPage === clean;
+    page.classList.toggle('active', active);
+    page.hidden = !active;
+    found = found || active;
+  }
+  for (const btn of settingsTabEls) {
+    const active = btn.dataset.settingsTab === clean;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
+  }
+  if (!found) return;
+  if (!preserveScroll) {
+    if (settingsPanelInnerEl) settingsPanelInnerEl.scrollTop = 0;
+    if (settingsPanelEl) settingsPanelEl.scrollTop = 0;
+  }
+  if (clean === 'sessions') renderSessionsTable();
+  if (clean === 'create-session') refreshCreateSessionPalette();
+}
+
+function ensureSettingsTabForElement(el) {
+  const tab = settingsTabForElement(el);
+  if (tab) setSettingsTab(tab, { preserveScroll: true });
+}
+
+function initSettingsTabs() {
+  if (!settingsTabEls.length) return;
+  for (const btn of settingsTabEls) {
+    btn.addEventListener('click', () => setSettingsTab(btn.dataset.settingsTab || 'playback'));
+    btn.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      const current = settingsTabEls.indexOf(btn);
+      let next = current;
+      if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = settingsTabEls.length - 1;
+      else if (e.key === 'ArrowRight') next = (current + 1) % settingsTabEls.length;
+      else if (e.key === 'ArrowLeft') next = (current - 1 + settingsTabEls.length) % settingsTabEls.length;
+      const nextBtn = settingsTabEls[next];
+      if (nextBtn) {
+        setSettingsTab(nextBtn.dataset.settingsTab || 'playback');
+        nextBtn.focus();
+      }
+    });
+  }
+  setSettingsTab(settingsTabForTarget(settingsScrollTarget) || 'playback');
+}
+initSettingsTabs();
 
 
 // EX7d-2 — global settings form (speed slider / auto-prune / auto-
@@ -1211,8 +1808,9 @@ function renderSessionsTable() {
 // The component owns all listener wiring (done once at mount) and
 // form population (done whenever cfg changes). Renderer module state
 // that callers consume elsewhere (currentPlaybackSpeed for <audio>,
-// autoPruneSec for the clip delete timer, autoContinueAfterClick for
-// the ended handler) propagates back via the onChange callbacks.
+// autoPruneSec for the clip delete timer, collapseDelayMs for idle
+// collapse, autoContinueAfterClick for the ended handler) propagates
+// back via the onChange callbacks.
 const settingsForm = new window.TT_SETTINGS_FORM({
   api: window.api,
   edgeVoices: EDGE_VOICES,
@@ -1226,12 +1824,13 @@ const settingsForm = new window.TT_SETTINGS_FORM({
       audioPlayer.setMasterVolume(v);
     }
   },
+  onCollapseDelaySecChange: (n) => { collapseDelayMs = normaliseCollapseDelaySec(n) * 1000; },
   onAutoPruneEnabledChange: (on) => setAutoPruneEnabled(on),
   onAutoPruneSecChange: (n) => { autoPruneSec = n; },
   onAutoContinueChange: (on) => { autoContinueAfterClick = on; },
   // Fired after "Use OpenAI as primary" flips so the sessions-table's
   // per-session voice dropdown repaints with the right catalogue.
-  onAfterMutation: () => { renderSessionsTable(); },
+  onAfterMutation: () => { renderSessionsTable(); refreshCreateSessionPalette(); },
 });
 settingsForm.mount();
 
@@ -1245,6 +1844,8 @@ async function loadSettings() {
   // the settingsForm change callbacks below.
   window.TT_CONFIG_SNAPSHOT = cfg;
   settingsForm.update({ cfg });
+  readCreateSessionDefaults(cfg);
+  applyCreateSessionDefault(createSessionDefaults.kind, { setKind: true });
   restoreTabsState(cfg);
   // Transcript panel: restore expand/view state from config. Stored
   // under cfg.panels.{transcript_expanded, transcript_view}.
@@ -1266,17 +1867,15 @@ async function setSettingsOpen(open) {
   settingsOpen = open;
   settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   await window.api.setPanelOpen(open);
+  publishInteractiveRegionSoon();
   if (open) {
     applyCollapsed(false);
     renderSessionsTable();
-    // #25 — re-evaluate per-panel-open lifecycle decisions (OpenAI
-    // section auto-collapse defaults, etc.).
-    if (settingsForm && typeof settingsForm.onPanelOpen === 'function') {
-      settingsForm.onPanelOpen();
-    }
+    scrollSettingsTargetIntoView();
   }
   // settingsOpen flag (set above) keeps the poll from collapsing while
   // the panel is up. When closed, the poll picks up normally.
+  publishInteractiveRegionSoon();
 }
 
 settingsBtn.addEventListener('click', async () => {
@@ -1360,6 +1959,7 @@ if (isSettingsDemoMode) {
 
   async function pointDemoCursorAt(selectorOrFn, duration = 700) {
     const el = demoElement(selectorOrFn);
+    ensureSettingsTabForElement(el);
     await moveDemoCursorTo(elementCenter(el), duration);
     return el;
   }
@@ -1367,6 +1967,7 @@ if (isSettingsDemoMode) {
   async function pointDemoCursorAtPart(selectorOrFn, xRatio = 0.5, yRatio = 0.5, duration = 700) {
     const el = demoElement(selectorOrFn);
     if (!el) return null;
+    ensureSettingsTabForElement(el);
     const rect = el.getBoundingClientRect();
     await moveDemoCursorTo({
       x: rect.left + (rect.width * xRatio),
@@ -1519,6 +2120,7 @@ if (isSettingsDemoMode) {
     const panel = document.getElementById('panel');
     const el = demoElement(selectorOrFn);
     if (!panel || !el) return;
+    ensureSettingsTabForElement(el);
     const panelRect = panel.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     const top = panel.scrollTop + (elRect.top - panelRect.top) - topPadding;
@@ -1585,14 +2187,11 @@ if (isSettingsDemoMode) {
     return el ? el.closest('.row') || el : null;
   }
 
-  async function ensureOpenAiSectionExpandedForDemo() {
+  async function ensureOpenAiSectionReadyForDemo() {
     const section = document.getElementById('openaiSection');
-    const toggle = document.getElementById('openaiSectionToggle');
-    if (section && toggle && section.classList.contains('collapsed')) {
-      await clickDemoElement('#openaiSectionToggle', () => {
-        section.classList.remove('collapsed');
-        toggle.setAttribute('aria-expanded', 'true');
-      });
+    if (section && typeof section.scrollIntoView === 'function') {
+      section.scrollIntoView({ block: 'start' });
+      await demoWait(80);
     }
   }
 
@@ -1609,27 +2208,33 @@ if (isSettingsDemoMode) {
     await waitUntil(250);
     await clickDemoElement('#settingsBtn', () => setSettingsOpen(true).catch(() => {}));
     await waitUntil(1500);
-    scrollSettingsPanelForDemo(0);
+    await clickDemoElement('[data-settings-tab="openai"]');
     await waitUntil(2400);
-    await pointDemoCursorAt('#openaiSectionToggle', 700);
+    await pointDemoCursorAt('#openaiSection header', 700);
     await waitUntil(4200);
-    await ensureOpenAiSectionExpandedForDemo();
+    await ensureOpenAiSectionReadyForDemo();
     await waitUntil(6500);
-    await pointDemoCursorAt('#openaiBody .panel-hint', 820);
+    await pointDemoCursorAt('#openaiSection .panel-hint', 820);
     await waitUntil(11800);
     await pointDemoCursorAt(() => openAiSectionRow('#openaiKeyInput') || openAiSectionRow('#openaiKeyChange'), 760);
     await waitUntil(17800);
     await pointDemoCursorAt(() => openAiSectionRow('#openaiKeyStatus'), 720);
     await waitUntil(23000);
     await pointDemoCursorAt(() => openAiSectionRow('#openaiPreferToggle'), 720);
-    await waitUntil(28500);
+    await waitUntil(27200);
+    await pointDemoCursorAt(() => openAiSectionRow('#openaiFallbackToggle'), 720);
+    await waitUntil(31500);
     await clickDemoElement(() => openAiSectionRow('#openaiPreferToggle')?.querySelector('.tri-btn.on'));
-    await waitUntil(34200);
+    await waitUntil(36500);
+    await clickDemoElement(() => openAiSectionRow('#openaiFallbackToggle')?.querySelector('.tri-btn.on'));
+    await waitUntil(40500);
     await pointDemoCursorAt(() => openAiSectionRow('#openaiTestBtn'), 760);
-    await waitUntil(40400);
+    await waitUntil(45200);
+    await clickDemoElement(() => openAiSectionRow('#openaiFallbackToggle')?.querySelector('.tri-btn.off'));
+    await waitUntil(49200);
     await clickDemoElement(() => openAiSectionRow('#openaiPreferToggle')?.querySelector('.tri-btn.off'));
-    await waitUntil(46200);
-    await pointDemoCursorAt('#openaiSectionToggle', 700);
+    await waitUntil(51200);
+    await pointDemoCursorAt('#openaiSection header', 700);
   }
 
   async function runSessionsSyncDemoTimeline() {
@@ -1649,7 +2254,7 @@ if (isSettingsDemoMode) {
     await waitUntil(6000);
     await clickDemoElement('#settingsBtn', () => setSettingsOpen(true).catch(() => {}));
     await waitUntil(7800);
-    scrollSettingsPanelForDemo(285);
+    await clickDemoElement('[data-settings-tab="sessions"]');
     await waitUntil(9300);
     await pointDemoCursorAt(() => sessionsTableEl, 700);
     await waitUntil(13200);
@@ -1675,14 +2280,16 @@ if (isSettingsDemoMode) {
       afterPickHold: 900,
       placement: 'inline',
     });
-    await waitUntil(46200);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid'), 740);
-    await waitUntil(51500);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-cell:nth-child(1) .tri-btn.off'));
-    await waitUntil(56000);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-cell:nth-child(7) .tri-btn.on'));
+    await waitUntil(45200);
+    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type'), 740);
+    await waitUntil(49200);
+    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type .tri-btn.off'));
+    await waitUntil(53200);
+    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type'), 740);
+    await waitUntil(57000);
+    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type .tri-cell:nth-child(7) .tri-btn.on'));
     await waitUntil(61000);
-    scrollDemoElementIntoView('.panel-section.about', 74);
+    await clickDemoElement('[data-settings-tab="about"]');
     await waitUntil(62600);
     await pointDemoCursorAt('.panel-section.about .panel-hint:last-of-type', 760);
   }
@@ -1742,41 +2349,65 @@ if (isSettingsDemoMode) {
     await waitUntil(3300);
     await pointDemoCursorAt('#volumeSlider', 720);
     await waitUntil(4700);
+    await pointDemoCursorAt('#collapseDelaySec', 720);
+    await waitUntil(6200);
     await pointDemoCursorAtPart(() => document.querySelector('label[for="autoPruneToggle"]')?.closest('.row'), 0.36, 0.5, 800);
-    await waitUntil(7600);
+    await waitUntil(8300);
+    await pointDemoCursorAt('#autoPruneSec', 720);
+    await waitUntil(10100);
     await pointDemoCursorAt(() => document.querySelector('#heartbeatToggle')?.closest('.row'), 700);
-    await waitUntil(9000);
+    await waitUntil(11800);
     await pointDemoCursorAt(() => document.querySelector('#incToolCalls')?.closest('.row'), 700);
 
-    await waitUntil(10800);
+    await waitUntil(14000);
     await pointDemoCursorAtPart(() => document.querySelector('label[for="autoPruneToggle"]')?.closest('.row'), 0.36, 0.5, 450);
-    await waitUntil(16000);
+    await waitUntil(19000);
     await pointDemoCursorAt(() => document.querySelector('#heartbeatToggle')?.closest('.row'), 650);
-    await waitUntil(20500);
+    await waitUntil(22500);
     await pointDemoCursorAt(() => document.querySelector('#incToolCalls')?.closest('.row'), 650);
 
-    await waitUntil(24500);
-    scrollSettingsPanelForDemo(275);
+    await waitUntil(25000);
+    await clickDemoElement('[data-settings-tab="openai"]');
     await waitUntil(26000);
-    await pointDemoCursorAt(() => sessionsTableEl, 650);
-    await waitUntil(27500);
-    await pointDemoCursorAt(() => firstSessionRowControl('input[type="text"]'), 740);
+    await ensureOpenAiSectionReadyForDemo();
+    await waitUntil(27000);
+    await pointDemoCursorAt(() => openAiSectionRow('#openaiPreferToggle'), 680);
     await waitUntil(30000);
+    await pointDemoCursorAt(() => openAiSectionRow('#openaiFallbackToggle'), 680);
+    await waitUntil(33500);
+    await pointDemoCursorAt(() => openAiSectionRow('#openaiTestBtn'), 680);
+
+    await waitUntil(36500);
+    await clickDemoElement('[data-settings-tab="shortcuts"]');
+    await waitUntil(38200);
+    await pointDemoCursorAt('#hotkeyToggleWindow', 700);
+    await waitUntil(41000);
+    await clickDemoElement('#hotkeyToggleWindow');
+    await waitUntil(43800);
+    await pointDemoCursorAt('#hotkeyResetDefaults', 650);
+
+    await waitUntil(47000);
+    await clickDemoElement('[data-settings-tab="sessions"]');
+    await waitUntil(48800);
+    await pointDemoCursorAt(() => sessionsTableEl, 650);
+    await waitUntil(50600);
+    await pointDemoCursorAt(() => firstSessionRowControl('input[type="text"]'), 740);
+    await waitUntil(52600);
     await pointDemoCursorAt(() => firstSessionRowControl('.focus-btn'), 620);
-    await waitUntil(32000);
+    await waitUntil(54400);
     await pointDemoCursorAt(() => firstSessionRowControl('.mute-btn'), 620);
-    await waitUntil(33800);
+    await waitUntil(56200);
     await chooseDemoSelectOption(() => firstSessionRowControl('.session-row select'), '1', {
       maxRows: 6,
       openHold: 1500,
       afterPickHold: 900,
     });
 
-    await waitUntil(38000);
+    await waitUntil(60000);
     await clickDemoElement(() => firstSessionRowControl('.chevron'), expandFirstSessionForDemo);
-    await waitUntil(39200);
+    await waitUntil(61200);
     scrollSettingsPanelForDemo(300);
-    await waitUntil(40500);
+    await waitUntil(62500);
     await chooseDemoSelectOption(() => firstSessionRowControl('.session-expanded select'), 'en-GB-RyanNeural', {
       maxRows: 5,
       openHold: 2300,
@@ -1784,21 +2415,19 @@ if (isSettingsDemoMode) {
       placement: 'inline',
     });
 
-    await waitUntil(49000);
+    await waitUntil(67500);
     scrollSettingsPanelForDemo(350);
-    await waitUntil(50000);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid'), 720);
-    await waitUntil(53500);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-cell:nth-child(4) .tri-btn.on'));
-    await waitUntil(56500);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-cell:nth-child(7) .tri-btn.off'));
-    await waitUntil(58500);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid'), 620);
+    await waitUntil(68600);
+    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type'), 720);
+    await waitUntil(70400);
+    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type .tri-btn.off'));
+    await waitUntil(72400);
+    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type'), 620);
 
-    await waitUntil(60000);
-    scrollDemoElementIntoView('.panel-section.about', 74);
-    await waitUntil(61500);
-    await pointDemoCursorAt('.ascii-banner', 900);
+    await waitUntil(74200);
+    await clickDemoElement('[data-settings-tab="about"]');
+    await waitUntil(75800);
+    await pointDemoCursorAt('.about-wallpaper-card', 900);
   }
 
   const timeline = settingsDemoVariant === 'openai'
@@ -1824,6 +2453,11 @@ document.addEventListener('mousemove', (e) => {
   updateClickthrough();
   if (isMouseOverBar()) bumpActivity();
 });
+document.addEventListener('mouseleave', () => {
+  cursorX = -1;
+  cursorY = -1;
+  updateClickthrough();
+});
 // Click on the toolbar = user actively engaging → reset inactivity timer.
 // NB: we deliberately do NOT listen for keydown at the window level.
 // The toolbar is a floating widget; when it gets focus, any window-level
@@ -1836,6 +2470,16 @@ barEl.addEventListener('click', bumpActivity);
 // expanded so the user can actually see and interact with the bar.
 if (window.api.onForceExpand) {
   window.api.onForceExpand(() => { bumpActivity(); });
+}
+if (window.api.onCursorInteractiveState) {
+  window.api.onCursorInteractiveState((state) => {
+    mainCursorOverInteractive = !!(state && state.overInteractive);
+    if (!mainCursorOverInteractive) {
+      cursorX = -1;
+      cursorY = -1;
+    }
+    if (mainCursorOverInteractive) bumpActivity();
+  });
 }
 // Ctrl+Shift+P — toggle pause/resume (manual control).
 if (window.api.onTogglePausePlayback) {
@@ -1896,5 +2540,10 @@ if (window.api.onSetOrientation) {
 // Don't auto-collapse on startup — user needs to see the toolbar first.
 // The collapse cycle starts on the first mouseleave or new-clip arrival.
 loadSettings();
+publishInteractiveRegionSoon();
 
-initialLoad();
+// Republish once initialLoad's renderDots populates the tabs row. tabs.update
+// renders on a RAF, so the first publish above measures a toolbar that's still
+// missing the [All] tab — main keeps that shorter region and the transcript
+// header area stays click-through until a later transition republishes.
+initialLoad().then(() => publishInteractiveRegionSoon());

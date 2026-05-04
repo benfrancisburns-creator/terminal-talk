@@ -101,7 +101,10 @@
   //
   // `state` fields (all required unless defaulted):
   //   now                    ms timestamp (Date.now() on real ticks)
-  //   heartbeatEnabled       config toggle (true means we're allowed to emit)
+  //   heartbeatEnabled       global config toggle
+  //   sessionHeartbeatOverrides  short -> true/false/null. true forces
+  //                          heartbeat on for that session, false forces
+  //                          it off, null/missing follows global.
   //   isQueueActive          renderer's isQueueActive() snapshot —
   //                          if true, reset the silent timer
   //   heartbeatSilentSince   ms timestamp of when silence began
@@ -123,6 +126,7 @@
     const {
       now,
       heartbeatEnabled,
+      sessionHeartbeatOverrides = {},
       isQueueActive,
       // HB4 — external app (Wispr Flow / Voice Access / VoIP) is using
       // the mic. User is dictating or on a call; suppress heartbeat
@@ -136,7 +140,6 @@
       intervalMs = HEARTBEAT_INTERVAL_MS,
     } = state || {};
 
-    if (!heartbeatEnabled) return { type: 'skip' };
     if (isSystemAutoPaused) return { type: 'skip' };
     if (isQueueActive) return { type: 'reset-silent', newSilentSince: now };
 
@@ -145,11 +148,17 @@
     if (now - lastHeartbeatAt < intervalMs) return { type: 'skip' };
 
     const list = Array.isArray(workingSessionsCache) ? workingSessionsCache : [];
-    if (list.length === 0) return { type: 'skip' };
+    const enabledShort = list.find((short) => {
+      const override = sessionHeartbeatOverrides && sessionHeartbeatOverrides[short];
+      if (override === true) return true;
+      if (override === false) return false;
+      return heartbeatEnabled !== false;
+    });
+    if (!enabledShort) return { type: 'skip' };
 
     return {
       type: 'emit',
-      sessionShort: list[0],
+      sessionShort: enabledShort,
       newLastHeartbeatAt: now,
     };
   }
