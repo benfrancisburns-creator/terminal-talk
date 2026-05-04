@@ -11,9 +11,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$sender = Join-Path $PSScriptRoot 'send-video-terminal-prompt.ps1'
-if (-not (Test-Path -LiteralPath $sender)) {
-  throw "Prompt sender not found: $sender"
+$senderScript = Join-Path $PSScriptRoot 'send-video-terminal-prompt.ps1'
+if (-not (Test-Path -LiteralPath $senderScript)) {
+  throw "Prompt sender not found: $senderScript"
 }
 
 function Build-NarrationPrompt([string]$RelativePath) {
@@ -65,7 +65,7 @@ foreach ($key in $targets) {
   $argsList = @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
-    '-File', $sender,
+    '-File', $senderScript,
     '-Title', [string]$target.Title,
     '-Prompt', [string]$target.Prompt,
     '-DelayAfterFocusMs', [string]$DelayAfterFocusMs

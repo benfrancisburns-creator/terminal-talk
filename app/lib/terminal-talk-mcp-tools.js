@@ -367,12 +367,8 @@ function listSessions(_args = {}, deps = {}) {
 }
 
 module.exports = {
-  chunkText,
-  defaultTtHome,
-  formatQueueTimestamp,
   listSessions,
   markWorking,
-  queueStem,
   registerSession,
   sessionKeyFromArgs,
   speak,

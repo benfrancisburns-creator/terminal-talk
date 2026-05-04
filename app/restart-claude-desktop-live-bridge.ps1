@@ -21,9 +21,9 @@ function Find-ClaudeDesktopExe {
   if ($running -and $running.ExecutablePath -and (Test-Path -LiteralPath $running.ExecutablePath)) {
     return $running.ExecutablePath
   }
-  $matches = Get-ChildItem -LiteralPath "$env:ProgramFiles\WindowsApps" -Directory -Filter 'Claude_*__pzs8sxrjxfjjc' -ErrorAction SilentlyContinue |
+  $appDirs = Get-ChildItem -LiteralPath "$env:ProgramFiles\WindowsApps" -Directory -Filter 'Claude_*__pzs8sxrjxfjjc' -ErrorAction SilentlyContinue |
     Sort-Object Name -Descending
-  foreach ($dir in $matches) {
+  foreach ($dir in $appDirs) {
     $candidate = Join-Path $dir.FullName 'app\claude.exe'
     if (Test-Path -LiteralPath $candidate) { return $candidate }
   }

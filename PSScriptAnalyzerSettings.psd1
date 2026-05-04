@@ -39,6 +39,14 @@
         # to `Invoke-EdgeSpeech` etc. would ripple through every hook
         # and module that imports them. Industry-standard cmdlet names
         # like `ConvertTo-Json` accept the same pattern.
-        'PSUseSingularNouns'
+        'PSUseSingularNouns',
+
+        # Reports any param declared but not referenced in the
+        # function/script body. Misses params used inside `if (...)`
+        # branches, params splatted via @PSBoundParameters, and
+        # params held for forward-compat across hook variants. Too
+        # many false positives across our hook + video-launcher
+        # scripts; rely on code review instead.
+        'PSReviewUnusedParameter'
     )
 }

@@ -112,4 +112,4 @@ function allocatePaletteIndex(newShort, assignments, paletteSize = 24) {
   };
 }
 
-module.exports = { allocatePaletteIndex, PALETTE_AUTO_ORDER, paletteAutoOrder };
+module.exports = { allocatePaletteIndex };

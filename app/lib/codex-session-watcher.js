@@ -865,7 +865,6 @@ module.exports = {
   extractCodexToolCallEvent,
   extractCodexToolOutputEvent,
   isCodexTerminalSource,
-  isCodexDesktopSource,
   leadingToolVerb,
   narrateCodexToolCallPayload,
   naturalisePath,

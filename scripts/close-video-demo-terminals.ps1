@@ -32,24 +32,24 @@ public static class TTCloseDemoWindows {
 }
 '@
 
-$matches = New-Object System.Collections.Generic.List[object]
+$windowMatches = New-Object System.Collections.Generic.List[object]
 [TTCloseDemoWindows]::EnumWindows({
   param($hWnd, $lParam)
   if (-not [TTCloseDemoWindows]::IsWindowVisible($hWnd)) { return $true }
   $title = [TTCloseDemoWindows]::Title($hWnd)
   foreach ($needle in $Titles) {
     if (-not [string]::IsNullOrWhiteSpace($needle) -and $title -like "*$needle*") {
-      $matches.Add([pscustomobject]@{ Handle = $hWnd; Title = $title }) | Out-Null
+      $windowMatches.Add([pscustomobject]@{ Handle = $hWnd; Title = $title }) | Out-Null
       break
     }
   }
   return $true
 }, [IntPtr]::Zero) | Out-Null
 
-foreach ($match in $matches) {
+foreach ($match in $windowMatches) {
   if (-not $DryRun) {
     [TTCloseDemoWindows]::PostMessage($match.Handle, [TTCloseDemoWindows]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
   }
 }
 
-$matches | Select-Object Title
+$windowMatches | Select-Object Title

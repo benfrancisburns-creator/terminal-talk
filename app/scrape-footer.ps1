@@ -90,10 +90,10 @@ foreach ($w in $windows) {
             $text = $tp.DocumentRange.GetText(-1)
         } catch { continue }
         if (-not $text -or -not $text.Contains($signature)) { continue }
-        $matches = $footerRegex.Matches($text)
-        if ($matches.Count -eq 0) { continue }
+        $footerMatches = $footerRegex.Matches($text)
+        if ($footerMatches.Count -eq 0) { continue }
         # Last match in the buffer = most recent footer = THIS turn.
-        $last = $matches[$matches.Count - 1].Groups['phrase'].Value
+        $last = $footerMatches[$footerMatches.Count - 1].Groups['phrase'].Value
         Write-Output $last
         exit 0
     }

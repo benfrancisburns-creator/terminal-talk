@@ -29,8 +29,5 @@ function providerOrder(playback = {}) {
 }
 
 module.exports = {
-  normaliseTtsProvider,
-  normaliseFallbackProvider,
-  resolveTtsRouting,
   providerOrder,
 };

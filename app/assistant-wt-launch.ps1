@@ -167,14 +167,14 @@ if ($WindowBounds -and $WindowBounds -notmatch '^-?\d+,-?\d+,\d+,\d+$') {
 
 $wt = Resolve-WindowsTerminal
 $pwsh = Resolve-InnerPowerShell
-$args = @('-w', 'new')
+$wtArgs = @('-w', 'new')
 if ($WindowPosition) {
-    $args += @('--pos', $WindowPosition)
+    $wtArgs += @('--pos', $WindowPosition)
 }
 if ($WindowSize) {
-    $args += @('--size', $WindowSize)
+    $wtArgs += @('--size', $WindowSize)
 }
-$args += @(
+$wtArgs += @(
     'nt',
     '--title', $safeTitle,
     '--tabColor', $TabColor,
@@ -184,8 +184,8 @@ $args += @(
     '-File', $LauncherScript
 )
 
-Write-BridgeLog ("wt.exe {0}" -f (Format-Args $args))
-Write-Output ("assistant-wt-launch wt.exe {0}" -f (Format-Args $args))
+Write-BridgeLog ("wt.exe {0}" -f (Format-Args $wtArgs))
+Write-Output ("assistant-wt-launch wt.exe {0}" -f (Format-Args $wtArgs))
 if ($DryRun) {
     [pscustomobject]@{
         wt = $wt
@@ -197,7 +197,7 @@ if ($DryRun) {
         position = $WindowPosition
         size = $WindowSize
         bounds = $WindowBounds
-        args = $args
+        args = $wtArgs
     } | ConvertTo-Json -Compress
     return
 }

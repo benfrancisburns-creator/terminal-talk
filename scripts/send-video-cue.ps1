@@ -14,9 +14,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$sender = Join-Path $PSScriptRoot 'send-video-terminal-prompt.ps1'
-if (-not (Test-Path -LiteralPath $sender)) {
-  throw "Prompt sender not found: $sender"
+$senderScript = Join-Path $PSScriptRoot 'send-video-terminal-prompt.ps1'
+if (-not (Test-Path -LiteralPath $senderScript)) {
+  throw "Prompt sender not found: $senderScript"
 }
 
 $cueClean = $Cue.Trim().ToUpperInvariant()
@@ -48,7 +48,7 @@ $useClickTarget = $ClickX -ne [int]::MinValue -and $ClickY -ne [int]::MinValue
 $argsList = @(
   '-NoProfile',
   '-ExecutionPolicy', 'Bypass',
-  '-File', $sender,
+  '-File', $senderScript,
   '-Title', $targetTitle,
   '-Prompt', $prompt,
   '-DelayAfterFocusMs', [string]$DelayAfterFocusMs

@@ -6,7 +6,6 @@
     "app/renderer.js",
     "app/terminal-talk-mcp-server.js",
     "scripts/archive-docs.sh",
-    "scripts/run-tests.cjs",
     "scripts/spike-codex-app-server-watch.cjs",
     "scripts/generate-tokens-css.cjs",
     "scripts/render-mocks.cjs",
@@ -54,5 +53,8 @@
   ],
   "ignoreDependencies": [
     "electron"
-  ]
+  ],
+  "rules": {
+    "exports": "warn"
+  }
 }

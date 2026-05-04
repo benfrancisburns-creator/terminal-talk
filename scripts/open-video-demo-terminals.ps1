@@ -94,7 +94,7 @@ $SessionLauncher = Join-Path $PSScriptRoot 'start-video-terminal-session.ps1'
 if (!(Test-Path $SessionLauncher)) { throw "Session launcher not found: $SessionLauncher" }
 
 function Open-WtTab([string]$Title, [ValidateSet('Codex', 'Claude')] [string]$Kind) {
-  $args = @(
+  $wtArgs = @(
     '-w', 'new',
     'nt',
     '--title', $Title,
@@ -110,9 +110,9 @@ function Open-WtTab([string]$Title, [ValidateSet('Codex', 'Claude')] [string]$Ki
     '-Title', $Title
   )
 
-  Write-Host "wt.exe $(Format-Args $args)"
+  Write-Host "wt.exe $(Format-Args $wtArgs)"
   if (!$DryRun) {
-    & $Wt @args | Out-Null
+    & $Wt @wtArgs | Out-Null
   }
 }
 

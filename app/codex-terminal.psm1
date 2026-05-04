@@ -27,16 +27,39 @@ function _To-UtcDateTime {
     }
 }
 
-$script:TerminalTalkPaletteHex = @(
-    'ff5e5e',
-    'ffa726',
-    'ffd93d',
-    '4ade80',
-    '60a5fa',
-    'ee2bbd',
-    'c97b50',
-    'e0e0e0'
-)
+function Read-TerminalTalkPaletteTokens {
+    $fallback = @{
+        PaletteSize   = 24
+        BaseColours   = @('ff5e5e', 'ffa726', 'ffd93d', '4ade80', '60a5fa', 'ee2bbd', 'c97b50', 'e0e0e0')
+        HsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
+        VsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
+    }
+    try {
+        $tokensPath = Join-Path $PSScriptRoot 'lib\tokens.json'
+        if (-not (Test-Path $tokensPath)) { return $fallback }
+        $tokens = Get-Content -Path $tokensPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $palette = $tokens.palette
+        $base = @($palette.BASE_COLOURS | ForEach-Object { ([string]$_).Trim().TrimStart('#') })
+        $hsplit = @($palette.HSPLIT_PARTNER | ForEach-Object { [int]$_ })
+        $vsplit = @($palette.VSPLIT_PARTNER | ForEach-Object { [int]$_ })
+        $size = [int]$palette.PALETTE_SIZE
+        if ($base.Count -lt 8 -or $hsplit.Count -lt 8 -or $vsplit.Count -lt 8 -or $size -lt 24) {
+            return $fallback
+        }
+        return @{
+            PaletteSize   = $size
+            BaseColours   = $base
+            HsplitPartner = $hsplit
+            VsplitPartner = $vsplit
+        }
+    } catch {
+        return $fallback
+    }
+}
+
+$script:TerminalTalkPaletteTokens = Read-TerminalTalkPaletteTokens
+$script:TerminalTalkPaletteSize = [int]$script:TerminalTalkPaletteTokens.PaletteSize
+$script:TerminalTalkPaletteHex = @($script:TerminalTalkPaletteTokens.BaseColours)
 
 $script:TerminalTalkPaletteEmojiCodepoints = @(
     0x1F534,
@@ -49,8 +72,8 @@ $script:TerminalTalkPaletteEmojiCodepoints = @(
     0x26AA
 )
 
-$script:TerminalTalkHsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
-$script:TerminalTalkVsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
+$script:TerminalTalkHsplitPartner = @($script:TerminalTalkPaletteTokens.HsplitPartner)
+$script:TerminalTalkVsplitPartner = @($script:TerminalTalkPaletteTokens.VsplitPartner)
 
 function _HexToRgbText {
     param([string]$Hex)
@@ -61,8 +84,9 @@ function _HexToRgbText {
 
 function _Normalise-PaletteIndex {
     param([int]$Index = 0)
-    $i = $Index % 24
-    if ($i -lt 0) { $i += 24 }
+    $size = if ($script:TerminalTalkPaletteSize -gt 0) { $script:TerminalTalkPaletteSize } else { 24 }
+    $i = $Index % $size
+    if ($i -lt 0) { $i += $size }
     return $i
 }
 

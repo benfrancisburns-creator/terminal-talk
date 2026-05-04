@@ -90,7 +90,4 @@ function colourPrimaryMarkerForIndex(index) {
 module.exports = {
   colourMarkerForIndex,
   colourNameForIndex,
-  colourPrimaryMarkerForIndex,
-  colourPrimaryNameForIndex,
-  pairForIndex,
 };

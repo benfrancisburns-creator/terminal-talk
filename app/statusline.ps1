@@ -86,34 +86,63 @@ try {
 $sum = 0
 foreach ($ch in $short.ToCharArray()) { $sum += [int]$ch }
 
-# Palette hex (matches BASE_COLOURS in app/lib/tokens.json exactly —
-# red / orange / yellow / green / blue / magenta / brown / white).
-# Output uses ANSI 24-bit colour for exact parity with the toolbar
-# dots (`palette-classes.css`), so a session's statusline glyph looks
-# the same colour as its dot instead of drifting via emoji-font variance.
-$paletteHex = @('ff5e5e', 'ffa726', 'ffd93d', '4ade80', '60a5fa', 'ee2bbd', 'c97b50', 'e0e0e0')
+# Palette source of truth is app/lib/tokens.json. The renderer, generated
+# palette CSS, settings swatches, and this Claude Code statusline all read the
+# same BASE_COLOURS + split partner tables so statusline identity cannot drift
+# from the toolbar.
+function Read-PaletteTokens {
+    $fallback = @{
+        PaletteSize   = 24
+        BaseColours   = @('ff5e5e', 'ffa726', 'ffd93d', '4ade80', '60a5fa', 'ee2bbd', 'c97b50', 'e0e0e0')
+        HsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
+        VsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
+    }
+    try {
+        $tokensPath = Join-Path $PSScriptRoot 'lib\tokens.json'
+        if (-not (Test-Path $tokensPath)) { return $fallback }
+        $tokens = Get-Content -Path $tokensPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $palette = $tokens.palette
+        $base = @($palette.BASE_COLOURS | ForEach-Object { ([string]$_).Trim().TrimStart('#') })
+        $hsplit = @($palette.HSPLIT_PARTNER | ForEach-Object { [int]$_ })
+        $vsplit = @($palette.VSPLIT_PARTNER | ForEach-Object { [int]$_ })
+        $size = [int]$palette.PALETTE_SIZE
+        if ($base.Count -lt 8 -or $hsplit.Count -lt 8 -or $vsplit.Count -lt 8 -or $size -lt 24) {
+            return $fallback
+        }
+        return @{
+            PaletteSize   = $size
+            BaseColours   = $base
+            HsplitPartner = $hsplit
+            VsplitPartner = $vsplit
+        }
+    } catch {
+        return $fallback
+    }
+}
 
-# 24 arrangement slots: 0-7 solid / 8-15 hsplit / 16-23 vsplit.
-# Must stay in lock-step with arrangementForIndex() in app/renderer.js.
-# Same partner tables as renderer.js -- complementary pairings for splits.
-$hsplitPartner = @(3, 4, 5, 0, 1, 2, 7, 6)
-$vsplitPartner = @(4, 5, 6, 7, 0, 1, 2, 3)
+$paletteTokens = Read-PaletteTokens
+$paletteSize = [int]$paletteTokens.PaletteSize
+$paletteHex = @($paletteTokens.BaseColours)
+$hsplitPartner = @($paletteTokens.HsplitPartner)
+$vsplitPartner = @($paletteTokens.VsplitPartner)
 
 function _HexToRgb([string]$hex) {
-    "$([Convert]::ToInt32($hex.Substring(0,2),16));$([Convert]::ToInt32($hex.Substring(2,2),16));$([Convert]::ToInt32($hex.Substring(4,2),16))"
+    $h = ([string]$hex).Trim().TrimStart('#')
+    if ($h -notmatch '^[a-fA-F0-9]{6}$') { $h = '8a8a8a' }
+    "$([Convert]::ToInt32($h.Substring(0,2),16));$([Convert]::ToInt32($h.Substring(2,2),16));$([Convert]::ToInt32($h.Substring(4,2),16))"
 }
 
 # Emit an ANSI-coloured glyph for the palette slot. Post-v0.5 (option C):
 #   - Solid (0-7):   ● with 24-bit fg = palette[idx]
-#   - Hsplit (8-15): ▌ with fg = primary, bg = secondary (left-half primary,
-#                    right-half secondary — one char wide, zero rendering gap)
-#   - Vsplit (16-23): ▀ with fg = primary, bg = secondary (upper half primary,
-#                     lower half secondary — also one char wide)
+#   - Hsplit (8-15): ▀ with fg = primary, bg = secondary (upper half primary,
+#                    lower half secondary — top/bottom, matching CSS)
+#   - Vsplit (16-23): ▌ with fg = primary, bg = secondary (left-half primary,
+#                     right-half secondary — left/right, matching CSS)
 # Replaces the legacy two-emoji concat for splits which rendered as two
 # glyphs in the terminal and couldn't convey the pairing visually.
 function Get-StatuslineGlyph($idx) {
-    $i = $idx % 24
-    if ($i -lt 0) { $i += 24 }
+    $i = $idx % $paletteSize
+    if ($i -lt 0) { $i += $paletteSize }
     $ESC = [char]27
     if ($i -lt 8) {
         $rgb = _HexToRgb $paletteHex[$i]
@@ -123,13 +152,13 @@ function Get-StatuslineGlyph($idx) {
         $s = $hsplitPartner[$p]
         $fg = _HexToRgb $paletteHex[$p]
         $bg = _HexToRgb $paletteHex[$s]
-        return "${ESC}[38;2;${fg};48;2;${bg}m▌${ESC}[0m"
+        return "${ESC}[38;2;${fg};48;2;${bg}m▀${ESC}[0m"
     } else {
         $p = $i - 16
         $s = $vsplitPartner[$p]
         $fg = _HexToRgb $paletteHex[$p]
         $bg = _HexToRgb $paletteHex[$s]
-        return "${ESC}[38;2;${fg};48;2;${bg}m▀${ESC}[0m"
+        return "${ESC}[38;2;${fg};48;2;${bg}m▌${ESC}[0m"
     }
 }
 

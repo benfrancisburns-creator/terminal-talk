@@ -368,10 +368,6 @@ module.exports = {
   cleanExistingThreadName,
   colourMarkerForIndex,
   colourNameForIndex,
-  discoverCodexDesktopRollouts,
-  findCodexBinary,
   isCodexDesktopEntry,
-  isCodexDesktopMeta,
-  parseRolloutMeta,
   syncCodexDesktopThreadNames,
 };

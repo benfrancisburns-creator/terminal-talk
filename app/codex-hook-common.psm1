@@ -197,9 +197,9 @@ function Resolve-CodexHookRolloutMeta {
     if (-not (Test-Path $root)) { return $null }
 
     try {
-        $matches = Get-ChildItem -LiteralPath $root -Recurse -File -Filter "*$sid.jsonl" -ErrorAction SilentlyContinue |
+        $rolloutMatches = Get-ChildItem -LiteralPath $root -Recurse -File -Filter "*$sid.jsonl" -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTimeUtc -Descending
-        foreach ($file in $matches) {
+        foreach ($file in $rolloutMatches) {
             $meta = Get-CodexRolloutSessionMeta -Path $file.FullName
             if ($meta -and ([string]$meta.session_id).ToLowerInvariant() -eq $sid) { return $meta }
         }
@@ -342,14 +342,14 @@ function Start-CodexPluginStartAnnouncement {
             caller     = $Caller
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $jobPath -Encoding utf8
     } catch {}
-    $args = @(
+    $argList = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-File', $scriptPath,
         '-JobPath', $jobPath
     )
 
     try {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList $args -WindowStyle Hidden -WorkingDirectory $script:TtHome
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -WindowStyle Hidden -WorkingDirectory $script:TtHome
         Write-CodexHookLog -Caller $Caller -Message "queued codex-plugin start announcement short=$short label='$label'"
         return $true
     } catch {
@@ -386,7 +386,7 @@ function Start-CodexPluginSessionCleanup {
     if ($DelaySeconds -lt 0) { $DelaySeconds = 0 }
 
     $scriptPath = Get-CodexPluginHookScript -Name 'codex-plugin-cleanup.ps1'
-    $args = @(
+    $argList = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-File', $scriptPath,
         '-Short', $short,
@@ -395,7 +395,7 @@ function Start-CodexPluginSessionCleanup {
         '-PurgeQueue'
     )
     try {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList $args -WindowStyle Hidden -WorkingDirectory $script:TtHome
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -WindowStyle Hidden -WorkingDirectory $script:TtHome
         Write-CodexHookLog -Caller $Caller -Message "scheduled codex-plugin cleanup short=$short delay=${DelaySeconds}s"
         return $true
     } catch {

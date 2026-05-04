@@ -612,6 +612,7 @@ body.demo-settings-mode * {
 .hidden { display: none !important; }
 
 .dot {
+  position: relative;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -645,6 +646,20 @@ body.demo-settings-mode * {
   background: rgba(255, 255, 255, 0.9) !important;
   box-shadow: none;
   animation: none;
+}
+
+.dot.heard::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  padding: 2px;
+  pointer-events: none;
+  background: var(--dot-ring-bg, var(--tt-palette-bg, #8a8a8a));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
 /* R6.3: placeholder dot while speakClipboard is synthesising -- tells

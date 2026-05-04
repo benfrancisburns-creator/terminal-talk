@@ -94,14 +94,12 @@ if (css.includes(BEGIN) && css.includes(END)) {
 fs.writeFileSync(OUT_CSS, css);
 
 // --- output 4: palette-index classes for the renderer (D2-9).
-// Two rule families:
+// Rule families:
 //   [data-palette="NN"]            background: <arrangement>
-//   .dot.heard[data-palette="NN"]  border-color + box-shadow use primary
-// The primary colour for solids is the solid itself. For splits it's
-// the first colour (same as app/renderer.js:primaryColourForArrangement).
-// EX5 — primary colour used for heard-clip border + box-shadow. Takes
-// which palette set (default or CB) to pull from as a parameter so the
-// CB rules can reuse this for their own heard-rings.
+//   .collapsed-signal[...]         same arrangement as a CSS variable
+//   .dot.heard[...]                same arrangement for the heard-dot ring
+// Full split arrangements are preserved for dot rings. A red/green
+// top-bottom session must not degrade to a single red ring once heard.
 function primaryForArrangement(i, baseColours) {
   if (i < 8)  return baseColours[i];
   if (i < 16) return baseColours[i - 8];
@@ -138,9 +136,9 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     const k = String(i).padStart(2, '0');
     const bg = arrangementBgFor(i, baseColours);
     const primary = primaryForArrangement(i, baseColours);
-    lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; }`);
+    lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; --tt-palette-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.collapsed-signal[data-palette="${k}"] { --collapsed-signal-bg: ${bg}; }`);
-    lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { border-color: ${primary}; box-shadow: 0 0 0 2px ${primary}; }`);
+    lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { --dot-ring-bg: ${bg}; }`);
     // Mascot: SVG upper body/ears use fill: currentColor (primary); lower
     // body + legs use fill: var(--mascot-secondary, currentColor). Split
     // arrangements set --mascot-secondary to the partner colour so the
@@ -151,9 +149,9 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     const secondary = secondaryForArrangement(i, baseColours);
     lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; --mascot-secondary: ${secondary}; }`);
   }
-  lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; --tt-palette-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: ${palette.NEUTRAL_COLOUR}; }`);
-  lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { border-color: ${palette.NEUTRAL_COLOUR}; box-shadow: 0 0 0 2px ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { --dot-ring-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; --mascot-secondary: ${palette.NEUTRAL_COLOUR}; }`);
   return lines;
 }

@@ -145,7 +145,7 @@ function Format-ClaudeLaunchTitle([int]$ClaudePid, [string]$FallbackShort, [stri
         Import-Module (Join-Path $PSScriptRoot 'codex-terminal.psm1') -Force -DisableNameChecking -ErrorAction SilentlyContinue
         $identity = Get-TerminalTalkIdentityText -Entry $entry -FallbackLabel $(if ($FallbackLabel) { $FallbackLabel } else { 'Claude Code' })
         $idx = $FallbackIndex
-        if ($entry -and $entry.index -ne $null) { $idx = [int]$entry.index }
+        if ($entry -and $null -ne $entry.index) { $idx = [int]$entry.index }
         $marker = Get-TerminalTalkTitleMarker -Index $idx
         return (($marker, $identity) | Where-Object { $_ }) -join ' '
     } catch {
@@ -207,7 +207,7 @@ if ($Kind -eq 'Codex') {
     $powerShellExe = Join-Path $PSHOME 'powershell.exe'
     if (-not (Test-Path -LiteralPath $powerShellExe)) { $powerShellExe = 'powershell.exe' }
 
-    $args = @(
+    $launchArgs = @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', $codexLaunch,
@@ -215,7 +215,7 @@ if ($Kind -eq 'Codex') {
         '-InitialIndex', [string]$index,
         '-LaunchToken', $token
     ) + $assistantArgs
-    & $powerShellExe @args
+    & $powerShellExe @launchArgs
     return
 }
 

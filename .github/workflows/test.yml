@@ -206,7 +206,14 @@ jobs:
             # signal module-private and aren't exported. PowerShell's
             # approved-verb list is for EXPORTED cmdlets; rejecting _Get /
             # _Try / _Parse here provides no real invariant.
-            'PSUseApprovedVerbs'
+            'PSUseApprovedVerbs',
+            # Reports any param declared but not referenced in the
+            # function/script body. Misses params used inside
+            # `if (...)` branches, params splatted via @PSBoundParameters,
+            # and params held for forward-compat across hook variants.
+            # Too many false positives across our hook + video-launcher
+            # scripts; rely on code review instead.
+            'PSReviewUnusedParameter'
           )
           $files = @()
           Get-ChildItem -Path hooks,app,scripts -Include *.ps1,*.psm1 -Recurse | ForEach-Object { $files += $_.FullName }

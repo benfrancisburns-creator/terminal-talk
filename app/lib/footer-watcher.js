@@ -264,4 +264,4 @@ function createFooterWatcher(opts = {}) {
   return { start, stop, _scrape, _generate, _onFlagDeleted };
 }
 
-module.exports = { createFooterWatcher, humaniseFooterPhrase };
+module.exports = { createFooterWatcher };

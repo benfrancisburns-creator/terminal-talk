@@ -374,8 +374,8 @@ describe('STATUSLINE ASSIGNMENT', () => {
       // codepoints for arrangements — it emits ANSI 24-bit fg (+ bg for
       // splits) wrapping one of three block chars. Output shape:
       //   \x1b[38;2;R;G;Bm●\x1b[0m           (solid, idx 0-7)
-      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▌\x1b[0m (hsplit, idx 8-15)
-      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▀\x1b[0m (vsplit, idx 16-23)
+      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▀\x1b[0m (hsplit, idx 8-15: top/bottom)
+      //   \x1b[38;2;R;G;B;48;2;R;G;Bm▌\x1b[0m (vsplit, idx 16-23: left/right)
       clearRegistry();
       const r = runStatusline('eeeeeeee-1111-2222-3333-444444444444');
       const out = r.stdout || '';
@@ -1215,6 +1215,8 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
   // the generated tokens-window.js / tokens.mjs going out of sync with
   // tokens.json. Everything else is structurally impossible.
   const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+  const statuslineSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'statusline.ps1'), 'utf8');
+  const codexTerminalSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'codex-terminal.psm1'), 'utf8');
   const kitHtmlSrc  = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ui-kit', 'index.html'), 'utf8');
   // D2-3b — script chain moved out of index.html into kit-bootstrap.js, which
   // fetch+splices app/index.html body at runtime. The drift-detection asserts
@@ -1233,6 +1235,34 @@ describe('PALETTE PARITY — kit ↔ product (R1.7 + D2-3)', () => {
     }
     if (/const\s+HSPLIT_PARTNER\s*=\s*\[\s*3\s*,\s*4\s*,\s*5/.test(rendererSrc)) {
       throw new Error('renderer.js still contains an inline HSPLIT_PARTNER array — regression');
+    }
+  });
+
+  it('statusline.ps1 reads palette from app/lib/tokens.json (not hand-coded)', () => {
+    if (!/Join-Path\s+\$PSScriptRoot\s+'lib\\tokens\.json'/.test(statuslineSrc)) {
+      throw new Error('statusline.ps1 must read the canonical app/lib/tokens.json palette');
+    }
+    if (/\$paletteHex\s*=\s*@\(\s*'ff5e5e'/.test(statuslineSrc)) {
+      throw new Error('statusline.ps1 still contains an inline BASE_COLOURS hex literal — regression');
+    }
+    if (/\$hsplitPartner\s*=\s*@\(\s*3\s*,\s*4\s*,\s*5/.test(statuslineSrc)) {
+      throw new Error('statusline.ps1 still contains an inline HSPLIT_PARTNER array — regression');
+    }
+    if (!/Hsplit[\s\S]*?return "\$\{ESC\}\[38;2;\$\{fg\};48;2;\$\{bg\}m▀/.test(statuslineSrc) ||
+        !/Vsplit[\s\S]*?return "\$\{ESC\}\[38;2;\$\{fg\};48;2;\$\{bg\}m▌/.test(statuslineSrc)) {
+      throw new Error('statusline.ps1 must render hsplit as top/bottom ▀ and vsplit as left/right ▌');
+    }
+  });
+
+  it('codex-terminal.psm1 reads palette from app/lib/tokens.json (not hand-coded)', () => {
+    if (!/Join-Path\s+\$PSScriptRoot\s+'lib\\tokens\.json'/.test(codexTerminalSrc)) {
+      throw new Error('codex-terminal.psm1 must read the canonical app/lib/tokens.json palette');
+    }
+    if (/\$script:TerminalTalkPaletteHex\s*=\s*@\(\s*'ff5e5e'/.test(codexTerminalSrc)) {
+      throw new Error('codex-terminal.psm1 still contains an inline BASE_COLOURS hex literal — regression');
+    }
+    if (/\$script:TerminalTalkHsplitPartner\s*=\s*@\(\s*3\s*,\s*4\s*,\s*5/.test(codexTerminalSrc)) {
+      throw new Error('codex-terminal.psm1 still contains an inline HSPLIT_PARTNER array — regression');
     }
   });
 
@@ -1558,6 +1588,50 @@ describe('STATUSLINE OUTPUT', () => {
     fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
     const r = runStatusline('feedface-1111-2222-3333-444444444444');
     if (!r.stdout.includes('Frontend')) throw new Error(`label missing from output: "${r.stdout}"`);
+  });
+
+  it('renders hsplit palette slots as top/bottom ANSI glyphs', () => {
+    clearRegistry();
+    const seed = {
+      assignments: {
+        face0008: {
+          index: 8, session_id: 'face0008-x', claude_pid: 0,
+          label: 'Split H', pinned: true,
+          last_seen: Math.floor(Date.now()/1000)
+        }
+      }
+    };
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
+    const r = runStatusline('face0008-1111-2222-3333-444444444444');
+    const out = r.stdout || '';
+    if (!out.includes('▀') || out.includes('▌')) {
+      throw new Error(`hsplit index 8 should render top/bottom ▀ only, got ${JSON.stringify(out)}`);
+    }
+    if (!out.includes('\u001b[38;2;255;94;94;48;2;74;222;128m')) {
+      throw new Error(`hsplit index 8 should be red over green from tokens.json, got ${JSON.stringify(out)}`);
+    }
+  });
+
+  it('renders vsplit palette slots as left/right ANSI glyphs', () => {
+    clearRegistry();
+    const seed = {
+      assignments: {
+        face0016: {
+          index: 16, session_id: 'face0016-x', claude_pid: 0,
+          label: 'Split V', pinned: true,
+          last_seen: Math.floor(Date.now()/1000)
+        }
+      }
+    };
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(seed, null, 2), 'utf8');
+    const r = runStatusline('face0016-1111-2222-3333-444444444444');
+    const out = r.stdout || '';
+    if (!out.includes('▌') || out.includes('▀')) {
+      throw new Error(`vsplit index 16 should render left/right ▌ only, got ${JSON.stringify(out)}`);
+    }
+    if (!out.includes('\u001b[38;2;255;94;94;48;2;96;165;250m')) {
+      throw new Error(`vsplit index 16 should be red beside blue from tokens.json, got ${JSON.stringify(out)}`);
+    }
   });
   clearRegistry();
 });
@@ -9192,6 +9266,18 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     }
     if (!/\.collapsed-signal\[data-palette="16"\]\s*\{\s*--collapsed-signal-bg:\s*linear-gradient\(to right/.test(paletteCss)) {
       throw new Error('collapsed border must expose vertical split palette orientation');
+    }
+    if (!/\.dot\.heard\[data-palette="08"\]\s*\{\s*--dot-ring-bg:\s*linear-gradient\(to bottom/.test(paletteCss)) {
+      throw new Error('heard clip rings must expose horizontal split palette orientation');
+    }
+    if (!/\.dot\.heard\[data-palette="16"\]\s*\{\s*--dot-ring-bg:\s*linear-gradient\(to right/.test(paletteCss)) {
+      throw new Error('heard clip rings must expose vertical split palette orientation');
+    }
+    if (/\.dot\.heard\[data-palette="08"\]\s*\{[^}]*box-shadow:\s*0\s+0\s+0\s+2px\s+#ff5e5e/.test(paletteCss)) {
+      throw new Error('heard split clip rings must not collapse to the primary colour');
+    }
+    if (!/\.dot\.heard::before\s*\{[\s\S]*?background:\s*var\(--dot-ring-bg/.test(stylesSrc)) {
+      throw new Error('heard clip dots must paint their palette ring through --dot-ring-bg');
     }
   });
 
