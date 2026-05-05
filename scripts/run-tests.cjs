@@ -16193,6 +16193,13 @@ describe('CODEX SESSION WATCHER', () => {
     if (!/allocatePaletteIndex\(shortId,\s*assignments,\s*24\)/.test(watcherSrc)) {
       throw new Error('Codex watcher must allocate a registry row for launcher-free sessions');
     }
+    if (!/_findToolbarLaunchClaim/.test(watcherSrc)
+      || !/entry\.source_kind !== 'toolbar-launch'/.test(watcherSrc)
+      || !/entry\.source_label !== 'Codex'/.test(watcherSrc)
+      || !/codex-provisional-/.test(watcherSrc)
+      || !/delete assignments\[claim\.shortId\]/.test(watcherSrc)) {
+      throw new Error('Codex watcher must claim toolbar-launch provisional rows before allocating a fresh session');
+    }
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
     if (!/createCodexSessionWatcher\(\{[\s\S]*?saveAssignments,/.test(mainSrc)) {
       throw new Error('main.js must inject saveAssignments into createCodexSessionWatcher');
@@ -16961,6 +16968,12 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/old default banner wrote visible lines/.test(src) || !/\$needsBanner = \[bool\]\$ForceBanner/.test(src)) {
       throw new Error('codex-identify-live.ps1 must not print identity banners during normal live sync');
     }
+    if (!/Test-TerminalTalkManagedCodexProcess/.test(src)
+      || !/codex-launch\.ps1/.test(src)
+      || !/assistant-session-launch\.ps1/.test(src)
+      || !/reason=launcher-managed/.test(src)) {
+      throw new Error('codex-identify-live.ps1 must not duplicate toolbar-launched Codex sessions owned by the launcher');
+    }
   });
 
   it('main.js runs and stops the live Codex identity sync outside TT_TEST_MODE', () => {
@@ -17101,7 +17114,13 @@ describe('CODEX TERMINAL IDENTITY', () => {
         '',
       ].join('\n'), 'utf8');
       watcher.start();
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      // Poll deterministically — the watcher's file-watch event arrives
+      // within ~5 ms locally but slow CI runners (D:\a\... drive) can
+      // take 200-400 ms. A fixed 80 ms sleep was flaky on Windows CI.
+      const deadline = Date.now() + 2000;
+      while (!assignments['019def5c'] && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       watcher.stop();
 
       assertTruthy(assignments['019def5c'], 'Desktop user prompt should allocate a registry row before final response');

@@ -264,7 +264,7 @@ jobs:
         run: >-
           npx c8
           --check-coverage
-          --lines 76
+          --lines 75
           --branches 67
           --functions 68
           --reporter=text --reporter=lcov

@@ -144,6 +144,42 @@ function Get-LiveCodexProcesses {
         Sort-Object created_utc, pid
 }
 
+function Get-ProcessInfoById([int]$ProcessId) {
+    if ($ProcessId -le 0) { return $null }
+    try {
+        return Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    } catch {
+        return $null
+    }
+}
+
+function Test-TerminalTalkManagedCodexProcess($Process) {
+    if (-not $Process) { return $false }
+    $parentPid = 0
+    try { $parentPid = [int]$Process.parent_pid } catch { $parentPid = 0 }
+    if ($parentPid -le 0) { return $false }
+
+    $seen = @{}
+    $cur = $parentPid
+    for ($hop = 0; $hop -lt 10 -and $cur -gt 0; $hop++) {
+        if ($seen.ContainsKey($cur)) { break }
+        $seen[$cur] = $true
+        $ancestor = Get-ProcessInfoById -ProcessId $cur
+        if (-not $ancestor) { break }
+
+        $cmd = [string]$ancestor.CommandLine
+        if ($cmd -match '(?i)(^|[\\/])codex-launch\.ps1(\s|$)' -or
+            $cmd -match '(?i)(^|[\\/])assistant-session-launch\.ps1(\s|$)') {
+            return $true
+        }
+
+        try { $cur = [int]$ancestor.ParentProcessId } catch { break }
+    }
+
+    return $false
+}
+
 function Get-RecentCodexRollouts {
     if (-not (Test-Path $codexSessionsDir)) { return @() }
     $cutoff = [datetime]::UtcNow.AddHours(-1 * [Math]::Max(1, $MaxAgeHours))
@@ -411,6 +447,11 @@ $usedPaths = @{}
 $mapped = 0
 
 foreach ($proc in $processes) {
+    if (Test-TerminalTalkManagedCodexProcess -Process $proc) {
+        Log "skip pid=$($proc.pid) reason=launcher-managed"
+        continue
+    }
+
     $rollout = Select-RolloutForProcess -Process $proc -Rollouts $rollouts -UsedPaths $usedPaths
     if (-not $rollout) {
         Log "unmapped pid=$($proc.pid) created=$($proc.created_utc.ToString('o'))"

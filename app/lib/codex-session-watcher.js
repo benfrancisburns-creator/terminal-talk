@@ -324,6 +324,39 @@ function createCodexSessionWatcher(opts = {}) {
     return changed;
   }
 
+  function _isLivePid(pid) {
+    const n = Number(pid);
+    if (!Number.isInteger(n) || n <= 0) return false;
+    try {
+      process.kill(n, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function _findToolbarLaunchClaim(assignments, nowSec, sourceMeta = null) {
+    if (!assignments || isCodexDesktopSource(sourceMeta)) return null;
+    const maxAgeSec = 10 * 60;
+    const candidates = [];
+    for (const [candidateShort, entry] of Object.entries(assignments)) {
+      if (!SHORT_RE.test(candidateShort || '') || !entry || typeof entry !== 'object') continue;
+      if (entry.source_kind !== 'toolbar-launch' || entry.source_label !== 'Codex') continue;
+      if (!String(entry.session_id || '').startsWith('codex-provisional-')) continue;
+      const lastSeen = Number(entry.last_seen) || 0;
+      if (nowSec - lastSeen > maxAgeSec) continue;
+      if (!_isLivePid(entry.claude_pid)) continue;
+      candidates.push({ shortId: candidateShort, entry, lastSeen });
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.lastSeen - a.lastSeen);
+    if (candidates.length > 1 && candidates[0].lastSeen === candidates[1].lastSeen) {
+      diag(`codex-session-watcher: ambiguous toolbar-launch claim for ${candidates.map((c) => c.shortId).join(',')}`);
+      return null;
+    }
+    return candidates[0];
+  }
+
   function _touchAssignment(shortId, sessionId, sourceMeta = null) {
     if (!SHORT_RE.test(shortId || '') || typeof saveAssignments !== 'function') return;
     if (_isRecentlyCleanedPluginShort(shortId)) {
@@ -343,22 +376,34 @@ function createCodexSessionWatcher(opts = {}) {
         if (voiceAlloc) diag(`codex-session-watcher: auto voice ${shortId} -> ${voiceAlloc.voice} (${voiceAlloc.reason})`);
       }
     } else {
-      const alloc = allocatePaletteIndex(shortId, assignments, 24);
-      if (alloc.evicted) delete assignments[alloc.evicted];
-      const entry = {
-        index: alloc.index,
-        session_id: fullSessionId,
-        claude_pid: 0,
-        label: '',
-        pinned: false,
-        muted: false,
-        focus: false,
-        last_seen: nowSec,
-      };
-      _applySourceMeta(entry, sourceMeta);
-      const voiceAlloc = ensureAutoVoice(entry, assignments);
-      assignments[shortId] = entry;
-      diag(`codex-session-watcher: registered ${shortId} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
+      const claim = _findToolbarLaunchClaim(assignments, nowSec, sourceMeta);
+      if (claim) {
+        const entry = {
+          ...claim.entry,
+          session_id: fullSessionId,
+          last_seen: nowSec,
+        };
+        delete assignments[claim.shortId];
+        assignments[shortId] = entry;
+        diag(`codex-session-watcher: claimed toolbar launch ${claim.shortId} -> ${shortId}`);
+      } else {
+        const alloc = allocatePaletteIndex(shortId, assignments, 24);
+        if (alloc.evicted) delete assignments[alloc.evicted];
+        const entry = {
+          index: alloc.index,
+          session_id: fullSessionId,
+          claude_pid: 0,
+          label: '',
+          pinned: false,
+          muted: false,
+          focus: false,
+          last_seen: nowSec,
+        };
+        _applySourceMeta(entry, sourceMeta);
+        const voiceAlloc = ensureAutoVoice(entry, assignments);
+        assignments[shortId] = entry;
+        diag(`codex-session-watcher: registered ${shortId} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
+      }
     }
     try {
       const saved = saveAssignments(assignments, 'codex-session-watcher');
