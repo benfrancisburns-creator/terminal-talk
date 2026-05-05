@@ -107,16 +107,23 @@ test.describe('Settings panel', () => {
     await expect(readout).toContainText('1.25');
   });
 
-  test('S6: About Terminal Talk section renders with hero artwork + shortcuts table', async ({ window }) => {
+  test('S6: About panel renders hero artwork', async ({ window }) => {
     await openSettings(window, 'about');
-    // Hero artwork: the About panel was refactored away from the ASCII
-    // banner to an SVG hero; the wallpaper card wraps an <img> sourced
-    // from app/assets/about-terminal-talk-hero.svg.
+    // The About panel was refactored away from the ASCII banner to an
+    // SVG hero (commit 203190f); the wallpaper card wraps an <img>
+    // sourced from app/assets/about-terminal-talk-hero.svg.
     await expect(window.locator('figure.about-wallpaper-card img')).toBeVisible();
-    // Shortcuts table — now wrapped in <thead>/<tbody> for a11y (v0.3.8 N5-N9 fixes).
-    // Row count (5 shortcuts + 1 "hey jarvis" row = 6 kbd rows).
-    const rows = window.locator('table.shortcuts tbody tr');
+  });
+
+  test('S6b: Shortcuts panel renders 5 hotkey rows + 1 status row', async ({ window }) => {
+    await openSettings(window, 'shortcuts');
+    // Shortcuts moved to their own tab (`shortcutsSection`) and are now
+    // hotkey-input rows instead of a <table>: 5 hotkey rows + 1 status
+    // row (= 6).
+    const rows = window.locator('[data-settings-page="shortcuts"] .row');
     await expect(rows).toHaveCount(6);
+    const hotkeyRows = window.locator('[data-settings-page="shortcuts"] .hotkey-row');
+    await expect(hotkeyRows).toHaveCount(5);
   });
 
   test('EX5: palette-variant toggle off by default; body attr = "default"', async ({ window }) => {
