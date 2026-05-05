@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.6 beta · solo-maintained.** Works well on my machine, covered by a large unit harness plus 35 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.6 beta · solo-maintained.** Works well on my machine, covered by a large unit harness plus 39 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can all speak through one local toolbar, and _"hey jarvis"_ reads any highlighted text.**
 
@@ -228,7 +228,7 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
 - **Session tabs row** (above the dots) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the dot strip and transcript; click "All" to re-show everything. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
 - **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
 - Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken assistant responses.
-- Up to ~30 dots visible; beyond that the oldest drop off.
+- Up to ~40 dots visible; beyond that the oldest drop off.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 - **Collapsed mode** is a short waveform letterbox. It flashes and animates only for the session whose clip is actually playing, so queued or muted arrivals do not steal the colour while another session is speaking.
 - **🗑 Clear played** — one-click removal of every heard clip (currently-playing clip is kept). A toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive. The `X` on the toast dismisses without restoring.
@@ -456,7 +456,7 @@ If anything ever feels "stuck", the watchdog log is the first place to look — 
 
 ## Tests
 
-A large unit/integration harness plus 35 Playwright E2E tests exercise the actual installed components:
+A large unit/integration harness plus 39 Playwright E2E tests exercise the actual installed components:
 
 ```powershell
 node terminal-talk/scripts/run-tests.cjs --verbose

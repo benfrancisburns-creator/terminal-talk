@@ -430,7 +430,7 @@ body.demo-settings-mode * {
   outline-offset: 1px;
 }
 
-/* Full-width dot strip on the bottom row. Up to ~30 standard dots; if
+/* Full-width dot strip on the bottom row. Up to ~40 standard dots; if
    more arrive the row clips at the right edge (auto-prune usually keeps
    count well under that). Oldest left, newest right — matches playback
    order so the row reads naturally.
