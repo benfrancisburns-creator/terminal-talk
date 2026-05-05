@@ -17090,7 +17090,12 @@ describe('CODEX TERMINAL IDENTITY', () => {
         },
         callEdgeTTS: async () => {},
         onAssignmentTouched: (shortId) => touched.push(shortId),
-        pollIntervalMs: 100000,
+        // Retry every 100 ms — the initial _tick can miss the rollout
+        // file on slow Windows CI runners (D:\a\... drive) when the
+        // fs.statSync race makes the file briefly unreadable. Local
+        // runs hit it on the first tick but CI flaked several times
+        // until this poll cadence was lowered.
+        pollIntervalMs: 100,
         diag: () => {},
       });
       const longInstructions = 'x'.repeat(50000);
