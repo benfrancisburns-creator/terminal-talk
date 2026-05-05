@@ -52,6 +52,10 @@
   // if we appended them. Inline <svg> (the scrubber mascot) and <style>
   // blocks stay — they're declarative DOM.
   realBody.querySelectorAll('script, link[rel="stylesheet"]').forEach(n => n.remove());
+  realBody.querySelectorAll('[src^="assets/"]').forEach((n) => {
+    const src = n.getAttribute('src');
+    if (src) n.setAttribute('src', `../app-mirror/${src}`);
+  });
 
   // Move the cleaned body content into our document.
   while (realBody.firstChild) document.body.appendChild(realBody.firstChild);

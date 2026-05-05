@@ -23,8 +23,8 @@ Both used by `docs/design-system/mocks-annotated.html` and `docs/design-system/c
   | `settings-panel` | 3 sessions, panel open — good for Playback-section shots |
   | `snapped-top` | two sessions, visually docked to the top edge |
   | `tabs-active` | 3 labelled sessions — the tabs row pops with unread badges |
-  | `settings-panel-openai-unset` | panel open, OpenAI section expanded, password input visible |
-  | `settings-panel-openai-saved` | panel open, OpenAI auto-collapsed (click chevron to screenshot expanded-saved state) |
+  | `settings-panel-openai-unset` | panel open, OpenAI tab, password input visible |
+  | `settings-panel-openai-saved` | panel open, OpenAI tab, compact saved-key row visible |
   | `settings-panel-sessions-expanded` | panel open, first session row auto-expanded — voice dropdown + 7 tri-state toggles visible |
   | `heartbeat` | queue mixing body + `H-` prefix ephemeral clips |
 
@@ -45,10 +45,15 @@ product change automatically updates the kit on next sync.
 | `toolbar-settings-panel.png` | `settings-panel` |
 | `toolbar-snapped-top.png` | `snapped-top` |
 | `toolbar-tabs-with-sessions.png` | `tabs-active` |
-| `toolbar-openai-section-saved.png` | `settings-panel-openai-saved` (click chevron to expand the auto-collapsed section) |
+| `toolbar-openai-section-saved.png` | `settings-panel-openai-saved&settingsScrollTarget=openai` |
 | `toolbar-openai-section-unset.png` | `settings-panel-openai-unset` |
 | `toolbar-sessions-panel-expanded.png` | `settings-panel-sessions-expanded` |
 | `toolbar-heartbeat.png` | `heartbeat` |
+| `toolbar-create-session-tab.png` | `settings-panel&settingsScrollTarget=create-session` |
+| `toolbar-shortcuts-tab.png` | `settings-panel&settingsScrollTarget=shortcuts` |
+| `toolbar-about-tab.png` | `settings-panel&settingsScrollTarget=about` |
+| `toolbar-collapsed-signal-horizontal.png` | synthetic collapsed state using product `.collapsed-signal` CSS, palette 20 |
+| `toolbar-collapsed-signal-vertical.png` | synthetic collapsed state using product `.collapsed-signal` CSS, palette 11 |
 
 ## What works / what doesn't
 

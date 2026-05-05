@@ -34,13 +34,26 @@ const SHOTS = [
   { seed: 'idle',                             file: 'toolbar-idle.png' },
   { seed: 'three-sessions',                   file: 'toolbar-three-sessions.png' },
   { seed: 'mixed-states',                     file: 'toolbar-mixed-states.png' },
-  { seed: 'settings-panel',                   file: 'toolbar-settings-panel.png' },
+  { seed: 'settings-panel',                   file: 'toolbar-settings-panel.png', params: { settingsScrollTarget: 'playback' } },
   { seed: 'snapped-top',                      file: 'toolbar-snapped-top.png' },
   { seed: 'tabs-active',                      file: 'toolbar-tabs-with-sessions.png' },
-  { seed: 'settings-panel-openai-unset',      file: 'toolbar-openai-section-unset.png' },
-  { seed: 'settings-panel-openai-saved',      file: 'toolbar-openai-section-saved.png' },
-  { seed: 'settings-panel-sessions-expanded', file: 'toolbar-sessions-panel-expanded.png' },
+  { seed: 'settings-panel-openai-unset',      file: 'toolbar-openai-section-unset.png', params: { settingsScrollTarget: 'openai' } },
+  { seed: 'settings-panel-openai-saved',      file: 'toolbar-openai-section-saved.png', params: { settingsScrollTarget: 'openai' } },
+  { seed: 'settings-panel-sessions-expanded', file: 'toolbar-sessions-panel-expanded.png', params: { settingsScrollTarget: 'sessions' } },
+  { seed: 'settings-panel',                   file: 'toolbar-create-session-tab.png', params: { settingsScrollTarget: 'create-session' } },
+  { seed: 'settings-panel',                   file: 'toolbar-shortcuts-tab.png', params: { settingsScrollTarget: 'shortcuts' } },
+  { seed: 'settings-panel',                   file: 'toolbar-about-tab.png', params: { settingsScrollTarget: 'about' } },
   { seed: 'heartbeat',                        file: 'toolbar-heartbeat.png' },
+  {
+    seed: 'idle',
+    file: 'toolbar-collapsed-signal-horizontal.png',
+    collapsedPalette: '20',
+  },
+  {
+    seed: 'idle',
+    file: 'toolbar-collapsed-signal-vertical.png',
+    collapsedPalette: '11',
+  },
 ];
 
 // Minimal static-file server over docs/. Stays in-process; we start
@@ -115,8 +128,11 @@ async function capture() {
   });
 
   let ok = 0, fail = 0;
-  for (const { seed, file } of SHOTS) {
-    const url = `http://127.0.0.1:${port}/ui-kit/?seed=${seed}&chrome=0`;
+  for (const shot of SHOTS) {
+    const { seed, file } = shot;
+    const params = new URLSearchParams({ seed, chrome: '0' });
+    for (const [key, value] of Object.entries(shot.params || {})) params.set(key, value);
+    const url = `http://127.0.0.1:${port}/ui-kit/?${params.toString()}`;
     try {
       await page.goto(url, { waitUntil: 'networkidle' });
       // The kit bootstrap fetches + mounts the renderer in an async
@@ -125,6 +141,42 @@ async function capture() {
       // mascot rAF).
       await page.waitForSelector('#bar', { state: 'visible', timeout: 5000 });
       await page.waitForTimeout(800);
+      const targetTab = shot.params && shot.params.settingsScrollTarget;
+      if (targetTab || String(seed).startsWith('settings-panel')) {
+        await page.evaluate((tab) => {
+          const body = document.body;
+          if (!body.classList.contains('settings-open')) {
+            const btn = document.getElementById('settingsBtn');
+            if (btn) btn.click();
+          }
+          if (tab) {
+            const tabBtn = document.querySelector(`[data-settings-tab="${tab}"]`);
+            if (tabBtn) tabBtn.click();
+          }
+        }, targetTab || '');
+        await page.waitForTimeout(600);
+        if (seed === 'settings-panel-sessions-expanded') {
+          await page.evaluate(() => {
+            const chevron = document.querySelector('.session-row .row-chevron, .session-row .chevron');
+            if (chevron && chevron.getAttribute('aria-expanded') !== 'true') chevron.click();
+          });
+          await page.waitForTimeout(300);
+        }
+      }
+      if (shot.collapsedPalette) {
+        await page.evaluate((paletteKey) => {
+          const bar = document.getElementById('bar');
+          const signal = document.getElementById('collapsedSignal');
+          const panel = document.getElementById('panel');
+          if (panel) panel.style.display = 'none';
+          if (signal) signal.dataset.palette = paletteKey;
+          if (bar) {
+            bar.classList.add('collapsed', 'collapsed-signal-active');
+            bar.style.marginTop = '18px';
+          }
+        }, shot.collapsedPalette);
+        await page.waitForTimeout(300);
+      }
       // Screenshot #bar + #panel as a single region. The settings panel
       // is a SIBLING of #bar (not a child — see app/index.html), so
       // clipping to #bar alone silently drops the whole panel whenever
@@ -134,12 +186,17 @@ async function capture() {
       const barBox   = await page.locator('#bar').boundingBox();
       if (!barBox) throw new Error('#bar has no bounding box');
       const panelBox = await page.locator('#panel').boundingBox();
+      const activePageBox = panelBox
+        ? await page.locator('[data-settings-page].active').boundingBox().catch(() => null)
+        : null;
       const x1 = Math.min(barBox.x, panelBox ? panelBox.x : barBox.x);
       const y1 = Math.min(barBox.y, panelBox ? panelBox.y : barBox.y);
       const x2 = Math.max(barBox.x + barBox.width,
                           panelBox ? panelBox.x + panelBox.width : barBox.x + barBox.width);
-      const y2 = Math.max(barBox.y + barBox.height,
-                          panelBox ? panelBox.y + panelBox.height : barBox.y + barBox.height);
+      const panelBottom = activePageBox
+        ? activePageBox.y + activePageBox.height + 34
+        : (panelBox ? panelBox.y + panelBox.height : barBox.y + barBox.height);
+      const y2 = Math.max(barBox.y + barBox.height, panelBottom);
       // Pad 10px around so the bar's glow shadow isn't clipped.
       await page.screenshot({
         path: path.join(OUT_DIR, file),

@@ -23,6 +23,7 @@ const FILES = [
   'index.html',
   'renderer.js',
   'styles.css',
+  'assets/about-terminal-talk-hero.svg',
   'lib/tokens-window.js',
   'lib/voices-window.js',
   'lib/palette-classes.css',
@@ -39,6 +40,7 @@ const FILES = [
   'lib/sessions-table.js',
   'lib/settings-form.js',
   'lib/audio-player.js',
+  'lib/transcript-panel.js',
 ];
 
 const check = process.argv.includes('--check');

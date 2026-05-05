@@ -17,8 +17,8 @@
 //   settings-panel                    3 sessions, panel open
 //   snapped-top                       same as three-sessions, visually docked top
 //   tabs-active                       3 sessions with labels for the tabs row
-//   settings-panel-openai-unset       panel open, OpenAI section expanded, no key
-//   settings-panel-openai-saved       panel open, OpenAI auto-collapsed (saved key)
+//   settings-panel-openai-unset       panel open, OpenAI tab, no key
+//   settings-panel-openai-saved       panel open, OpenAI tab, saved key
 //   settings-panel-sessions-expanded  panel open, one session row auto-expanded
 //   heartbeat                         queue mixing body + H- prefix ephemeral clips
 //
@@ -133,7 +133,7 @@
   let openaiKeySaved = false;
 
   // App version string surfaced in the About section.
-  const KIT_VERSION = '0.4.0-kit';
+  const KIT_VERSION = '0.6.0-kit';
 
   // Sessions currently marked "working" (UserPromptSubmit fired, Stop
   // hasn't). Drives heartbeat gating. Seeds set this on first render;
@@ -227,9 +227,9 @@
     if (name === 'settings-panel') {
       const A = 'abcd1234', B = 'a08f2b71', C = '7e5c9a04';
       const s = {};
-      s[A] = { index: 3,  label: 'Frontend', session_id: A, pinned: true,  last_seen: t / 1000 };
-      s[B] = { index: 12, label: 'Auth API', session_id: B, pinned: false, last_seen: t / 1000 };
-      s[C] = { index: 18, label: '',         session_id: C, pinned: false, last_seen: t / 1000, voice: 'en-US-AriaNeural' };
+      s[A] = { index: 3,  label: 'TerminalTalk', session_id: A, pinned: true,  last_seen: t / 1000 };
+      s[B] = { index: 12, label: 'CodexVideos',  session_id: B, pinned: false, last_seen: t / 1000, source_label: 'Codex' };
+      s[C] = { index: 18, label: 'Claude TT A',  session_id: C, pinned: false, last_seen: t / 1000, voice: 'en-US-AriaNeural', source_label: 'Claude Code' };
       return {
         sessions: s, staleShorts: [], panelOpen: true,
         queueFiles: [
@@ -287,12 +287,9 @@
       return seed;
     }
     if (name === 'settings-panel-openai-saved') {
-      // Settings panel open with a saved key. The renderer's
-      // _populateOpenAi will auto-collapse the OpenAI section on
-      // first mount. Screenshots can be taken either collapsed
-      // (just the header visible) or post-click-to-expand (the
-      // compact "Saved (hidden for security) / Change key / Clear"
-      // row + Prefer toggle + Test button).
+      // Settings panel open with a saved key: the compact "Saved
+      // (hidden for security) / Change key / Clear" row + provider
+      // routing toggles.
       const seed = buildSeed('settings-panel');
       openaiKeySaved = true;
       return seed;

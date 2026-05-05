@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Terminal Talk — Hands-free voice workflow for Claude Code and Codex CLI</title>
-<meta name="description" content="Claude Code and Codex CLI replies are read aloud. Say 'hey jarvis' to read any highlighted text. Free, offline wake-word, no signup. Windows.">
-<meta property="og:title" content="Terminal Talk — voice workflow for Claude Code and Codex CLI">
-<meta property="og:description" content="Auto-speaks Claude Code and Codex CLI replies. 'Hey jarvis' reads any highlighted text. Free, offline wake-word, MIT.">
+<title>Terminal Talk — Hands-free voice workflow for Claude Code, Codex, and desktop coding agents</title>
+<meta name="description" content="Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can speak through one colour-coded toolbar. Say 'hey jarvis' to read highlighted text. Windows.">
+<meta property="og:title" content="Terminal Talk — voice workflow for Claude Code, Codex, and desktop coding agents">
+<meta property="og:description" content="Auto-speaks Claude Code and Codex, syncs session identity into desktop coding apps, and reads highlighted text with 'hey jarvis'. Free, offline wake-word, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
@@ -217,6 +217,50 @@ section { padding: 80px 24px; }
 .feature h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
 .feature p { margin: 0; color: var(--text-dim); font-size: 14px; }
 
+/* Current UI screenshots */
+.product-ui { background: linear-gradient(to bottom, rgba(96,165,250,0.04), transparent 70%); }
+.shot-grid {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
+}
+.shot-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+.shot-card.wide { grid-column: 1 / -1; }
+.shot-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: #10131c;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.shot-pair {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+.shot-pair img {
+  width: min(46%, 320px);
+}
+.shot-card h3 {
+  margin: 14px 4px 6px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.shot-card p {
+  margin: 0 4px 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* Demo slot */
 .demo { text-align: center; }
 .demo-frame {
@@ -422,6 +466,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#ui">UI</a>
       <a href="#install">Install</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
@@ -469,8 +514,8 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 
-  <p class="lede">Claude and Codex replies are read aloud. Highlight any text, say <em>"hey jarvis"</em>, hear it.</p>
-  <p class="sub">Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
+  <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can all speak through one colour-coded toolbar.</p>
+  <p class="sub">Highlight any text, say <em>"hey jarvis"</em>, hear it. Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
       ⬇ Download for Windows
@@ -491,14 +536,14 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">What you get</div>
-      <h2 class="sec-title">Six things that make terminal coding agents hands-free</h2>
+      <h2 class="sec-title">A session-aware audio layer for terminal and desktop coding agents</h2>
       <p class="sec-intro">Every feature is opt-in at install. No telemetry anywhere.</p>
     </div>
     <div class="feature-grid">
       <div class="feature">
         <div class="icon">🔊</div>
         <h3>Streaming auto-speak</h3>
-        <p>Claude streams through hooks and the transcript watcher; Codex is tailed from local rollout logs. Both become spoken clips in the same queue, with Claude starting ~2-3 s after text begins.</p>
+        <p>Claude Code streams through hooks and transcript watching. Codex CLI uses native hooks plus rollout logs. Both become spoken clips in the same queue, with tool narration and heartbeat clips handled separately from body audio.</p>
       </div>
       <div class="feature">
         <div class="icon">👂</div>
@@ -507,24 +552,64 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </div>
       <div class="feature">
         <div class="icon">🎨</div>
-        <h3>Per-terminal identity + mute</h3>
-        <p>Each Claude Code or Codex session gets a unique colour dot and optional voice. Claude uses a statusline glyph; Codex gets a Terminal Talk title/PID mapping when you run Codex normally from a project terminal. Mute any session with one click.</p>
+        <h3>24-palette session identity</h3>
+        <p>Each session gets a solid or split colour identity, editable label, optional voice, focus priority, mute state, heartbeat override, and speech-includes policy. The same registry drives the toolbar, terminals, and desktop sync metadata.</p>
       </div>
       <div class="feature">
-        <div class="icon">📌</div>
-        <h3>Dockable toolbar</h3>
-        <p>Drag near the top or bottom edge and it snaps flush (horizontal-only — no vertical dock). Press <kbd>Ctrl+Shift+A</kbd> to toggle display on/off; if it ever goes off-screen, that hotkey recovers it. The configured idle delay shrinks it to a slim click-through strip; new audio flashes the strip in the session colour without expanding it. Per-session colour assignments persist until you remove them.</p>
+        <div class="icon">🖥️</div>
+        <h3>Desktop app identity sync</h3>
+        <p>Claude Desktop Code and Codex Desktop sessions can be matched to Terminal Talk's registry so their persistent chats keep a visible TT label/colour in the local title surface, with sync controls in Settings.</p>
       </div>
       <div class="feature">
-        <div class="icon">🧹</div>
-        <h3>Self-managing queue</h3>
-        <p>Played clips auto-prune 20 s after they finish (configurable 3-600 s). Walking away? Toggle off and clips stack up for review on return. No manual housekeeping.</p>
+        <div class="icon">📡</div>
+        <h3>Collapsed waveform signal</h3>
+        <p>The toolbar shrinks to a short click-through waveform. When audio plays, the line animation and pulsing border use the speaking session's solid, top/bottom, or left/right palette, so it stays readable even when collapsed.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🧭</div>
+        <h3>Tabbed control panel</h3>
+        <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About are separate pages. Launch new assistant sessions, mark used colours, manage desktop sync, and tune per-session speech without one long settings scrollbar.</p>
       </div>
       <div class="feature">
         <div class="icon">🔒</div>
         <h3>Free + private by default</h3>
-        <p>Uses Microsoft Edge's neural voices (no API key needed). Offline wake word. Optional OpenAI TTS fallback if you want it. Zero accounts required.</p>
+        <p>Uses Microsoft Edge's neural voices with no API key. Wake-word detection runs offline on CPU. Optional OpenAI TTS fallback is explicit, encrypted, and off unless you choose it.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="ui" class="product-ui">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Current UI</div>
+      <h2 class="sec-title">The toolbar now carries identity even when it is tiny</h2>
+      <p class="sec-intro">These screenshots are generated from the live Electron toolbar mirror, so the docs show the current tabbed settings and collapsed signal states.</p>
+    </div>
+    <div class="shot-grid">
+      <article class="shot-card wide">
+        <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
+        <h3>Tabbed settings instead of one long scrollbar</h3>
+        <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get their own page. The top toolbar strip stays focused on active sessions and sessions with clips waiting.</p>
+      </article>
+      <article class="shot-card">
+        <div class="shot-pair">
+          <img src="screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed waveform letterbox using a horizontal split session palette">
+          <img src="screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed waveform letterbox using a vertical split session palette">
+        </div>
+        <h3>Collapsed waveform identity</h3>
+        <p>The collapsed strip stays small, pulses only for the clip that is actually speaking, and preserves split palette orientation on the waveform and border.</p>
+      </article>
+      <article class="shot-card">
+        <img src="screenshots/toolbar-sessions-panel-expanded.png" alt="Sessions tab with one row expanded to show voice, heartbeat, and speech include overrides">
+        <h3>Per-session control</h3>
+        <p>Each session can have its own label, palette, focus, mute, voice, heartbeat override, and speech-includes policy. Desktop sessions expose sync status where supported.</p>
+      </article>
+      <article class="shot-card">
+        <img src="screenshots/toolbar-create-session-tab.png" alt="Create tab with assistant picker, permissions, project folder, label, colour, save default, and create buttons">
+        <h3>Create sessions from the toolbar</h3>
+        <p>Start Codex, Claude Code, or Claude Desktop Code with the project folder, label, colour, and permissions mode already selected before the assistant begins talking.</p>
+      </article>
     </div>
   </div>
 </section>
@@ -534,6 +619,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     <div class="sec-head">
       <div class="sec-kicker">See it in action</div>
       <h2 class="sec-title">Terminal Talk in motion</h2>
+      <p class="sec-intro">The videos show the existing workflow cuts. The screenshots above are the current UI reference; updated videos are next.</p>
     </div>
     <article class="demo-feature">
       <div class="demo-frame">
@@ -658,7 +744,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <ol class="install-steps">
         <li>Install Python 3.10+ and Node.js 18+ if you don't already have them.</li>
         <li>Clone the repo and run <span class="mono">install.ps1</span> — installs deps, pre-downloads the wake-word model, adds Desktop/Start Menu shortcuts, and asks which hooks you want registered.</li>
-        <li>Open Claude Code or Codex CLI. Assistant replies speak aloud. Say <em>"hey jarvis"</em> over highlighted text to read it.</li>
+        <li>Open Claude Code, Codex CLI, Claude Desktop Code, or Codex Desktop. Assistant replies feed the same Terminal Talk queue where supported. Say <em>"hey jarvis"</em> over highlighted text to read it from any app.</li>
       </ol>
       <div>
         <div class="code-block">
@@ -722,7 +808,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </details>
       <details>
         <summary>Which coding agents does it support?</summary>
-        <p>Claude Code and OpenAI Codex CLI are built in. Claude uses hooks for streaming, smart tool-call narration and permission alerts. Codex uses the local <span class="mono">~/.codex/sessions</span> rollout logs for commentary/final messages, rollout-derived shell and patch progress clips, and heartbeat working-state detection where available. The "hey jarvis / highlight and speak" path works with any app.</p>
+        <p>Claude Code and OpenAI Codex CLI are built in. Claude uses hooks for streaming, smart tool-call narration and permission alerts. Codex uses native hooks plus local <span class="mono">~/.codex/sessions</span> rollout logs for commentary/final messages, shell and patch progress clips, and heartbeat working-state detection. Claude Desktop Code and Codex Desktop can also be matched into the same Terminal Talk registry where their local session metadata is exposed. The "hey jarvis / highlight and speak" path works with any app.</p>
       </details>
       <details>
         <summary>How do I uninstall?</summary>
@@ -734,7 +820,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </details>
       <details>
         <summary>What's with the coloured dots?</summary>
-        <p>Each Claude Code or Codex session gets a unique dot colour on the toolbar. Claude can show a matching statusline glyph; Codex can show a matching Terminal Talk terminal title when hooks are enabled. You can also give each session its own voice and heartbeat override.</p>
+        <p>Each tracked assistant session gets a unique solid or split palette marker on the toolbar. Claude Code can show a matching statusline glyph; Codex CLI can show a matching Terminal Talk terminal title; desktop sessions can sync local chat titles where the desktop app exposes enough metadata. You can also give each session its own voice, focus priority, mute state, heartbeat override, and speech rules.</p>
       </details>
     </div>
   </div>
