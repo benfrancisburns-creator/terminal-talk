@@ -243,12 +243,14 @@ section { padding: 80px 24px; }
 .shot-pair {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   min-height: 160px;
 }
 .shot-pair img {
-  width: min(46%, 320px);
+  width: min(30%, 220px);
+  min-width: 150px;
 }
 .shot-card h3 {
   margin: 14px 4px 6px;
@@ -588,12 +590,18 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
     <div class="shot-grid">
       <article class="shot-card wide">
-        <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
-        <h3>Tabbed settings instead of one long scrollbar</h3>
-        <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get their own page. The top toolbar strip stays focused on active sessions and sessions with clips waiting.</p>
+        <img src="screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with active session tabs, clip dots, and transcript header">
+        <h3>Resting toolbar with active conversations</h3>
+        <p>The top strip shows active sessions and sessions with clips waiting, while the dot row keeps each conversation grouped by palette identity.</p>
+      </article>
+      <article class="shot-card wide">
+        <img src="screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken rows, and copy buttons">
+        <h3>Transcript expanded</h3>
+        <p>Recent clips stay readable next to playback. Copy a spoken row, flip to Original when available, and keep the transcript filtered to the selected session tab.</p>
       </article>
       <article class="shot-card">
         <div class="shot-pair">
+          <img src="screenshots/toolbar-collapsed-resting.png" alt="Collapsed resting letterbox strip">
           <img src="screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed waveform letterbox using a horizontal split session palette">
           <img src="screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed waveform letterbox using a vertical split session palette">
         </div>
@@ -609,6 +617,11 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <img src="screenshots/toolbar-create-session-tab.png" alt="Create tab with assistant picker, permissions, project folder, label, colour, save default, and create buttons">
         <h3>Create sessions from the toolbar</h3>
         <p>Start Codex, Claude Code, or Claude Desktop Code with the project folder, label, colour, and permissions mode already selected before the assistant begins talking.</p>
+      </article>
+      <article class="shot-card wide">
+        <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
+        <h3>Tabbed settings instead of one long scrollbar</h3>
+        <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get their own page, so the controls are separated by job instead of buried in one long panel.</p>
       </article>
     </div>
   </div>

@@ -45,6 +45,8 @@ product change automatically updates the kit on next sync.
 | `toolbar-settings-panel.png` | `settings-panel` |
 | `toolbar-snapped-top.png` | `snapped-top` |
 | `toolbar-tabs-with-sessions.png` | `tabs-active` |
+| `toolbar-resting-with-tabs.png` | `tabs-active` |
+| `toolbar-transcript-expanded.png` | `tabs-active` + transcript expanded |
 | `toolbar-openai-section-saved.png` | `settings-panel-openai-saved&settingsScrollTarget=openai` |
 | `toolbar-openai-section-unset.png` | `settings-panel-openai-unset` |
 | `toolbar-sessions-panel-expanded.png` | `settings-panel-sessions-expanded` |
@@ -52,6 +54,7 @@ product change automatically updates the kit on next sync.
 | `toolbar-create-session-tab.png` | `settings-panel&settingsScrollTarget=create-session` |
 | `toolbar-shortcuts-tab.png` | `settings-panel&settingsScrollTarget=shortcuts` |
 | `toolbar-about-tab.png` | `settings-panel&settingsScrollTarget=about` |
+| `toolbar-collapsed-resting.png` | synthetic collapsed resting strip |
 | `toolbar-collapsed-signal-horizontal.png` | synthetic collapsed state using product `.collapsed-signal` CSS, palette 20 |
 | `toolbar-collapsed-signal-vertical.png` | synthetic collapsed state using product `.collapsed-signal` CSS, palette 11 |
 

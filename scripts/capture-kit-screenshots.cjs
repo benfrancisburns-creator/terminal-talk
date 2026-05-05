@@ -37,6 +37,8 @@ const SHOTS = [
   { seed: 'settings-panel',                   file: 'toolbar-settings-panel.png', params: { settingsScrollTarget: 'playback' } },
   { seed: 'snapped-top',                      file: 'toolbar-snapped-top.png' },
   { seed: 'tabs-active',                      file: 'toolbar-tabs-with-sessions.png' },
+  { seed: 'tabs-active',                      file: 'toolbar-resting-with-tabs.png' },
+  { seed: 'tabs-active',                      file: 'toolbar-transcript-expanded.png', transcriptExpanded: true },
   { seed: 'settings-panel-openai-unset',      file: 'toolbar-openai-section-unset.png', params: { settingsScrollTarget: 'openai' } },
   { seed: 'settings-panel-openai-saved',      file: 'toolbar-openai-section-saved.png', params: { settingsScrollTarget: 'openai' } },
   { seed: 'settings-panel-sessions-expanded', file: 'toolbar-sessions-panel-expanded.png', params: { settingsScrollTarget: 'sessions' } },
@@ -44,6 +46,11 @@ const SHOTS = [
   { seed: 'settings-panel',                   file: 'toolbar-shortcuts-tab.png', params: { settingsScrollTarget: 'shortcuts' } },
   { seed: 'settings-panel',                   file: 'toolbar-about-tab.png', params: { settingsScrollTarget: 'about' } },
   { seed: 'heartbeat',                        file: 'toolbar-heartbeat.png' },
+  {
+    seed: 'idle',
+    file: 'toolbar-collapsed-resting.png',
+    collapsedResting: true,
+  },
   {
     seed: 'idle',
     file: 'toolbar-collapsed-signal-horizontal.png',
@@ -179,6 +186,38 @@ async function capture() {
           }
         }, shot.collapsedPalette);
         await page.waitForTimeout(300);
+      }
+      if (shot.collapsedResting) {
+        await page.evaluate(() => {
+          /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
+          const bar = document.getElementById('bar');
+          const panel = document.getElementById('panel');
+          if (panel) panel.style.display = 'none';
+          if (bar) {
+            bar.classList.add('collapsed');
+            bar.style.marginTop = '18px';
+          }
+        });
+        await page.waitForTimeout(300);
+      }
+      if (shot.transcriptExpanded) {
+        await page.evaluate(() => {
+          /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
+          const panel = document.getElementById('transcriptPanel');
+          const toggle = document.getElementById('transcriptToggle');
+          if (panel && toggle && panel.getAttribute('aria-expanded') !== 'true') toggle.click();
+        });
+        await page.waitForTimeout(700);
+      }
+      if (!shot.collapsedPalette && !shot.collapsedResting) {
+        await page.evaluate(() => {
+          /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
+          const bar = document.getElementById('bar');
+          const signal = document.getElementById('collapsedSignal');
+          if (bar) bar.classList.remove('collapsed', 'collapsed-signal-active');
+          if (signal) delete signal.dataset.palette;
+        });
+        await page.waitForTimeout(100);
       }
       // Screenshot #bar + #panel as a single region. The settings panel
       // is a SIBLING of #bar (not a child — see app/index.html), so

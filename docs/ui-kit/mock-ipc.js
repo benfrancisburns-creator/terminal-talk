@@ -173,6 +173,24 @@
     }
   }
 
+  function sessionShortFromPath(audioPath) {
+    const fname = String(audioPath || '').split(/[\\/]/).pop() || '';
+    const clip = fname.match(/-clip-([a-f0-9]{8})-\d+\.(?:mp3|wav)$/i);
+    if (clip) return clip[1].toLowerCase();
+    const normal = fname.match(/-([a-f0-9]{8})\.(?:mp3|wav)$/i);
+    return normal ? normal[1].toLowerCase() : '';
+  }
+
+  function sidecarForClip(audioPath) {
+    const short = sessionShortFromPath(audioPath);
+    const entry = short && sessions[short] ? sessions[short] : null;
+    const label = (entry && entry.label) || (short ? `Session ${short}` : 'Highlight');
+    return {
+      spoken: `${label} finished a turn and Terminal Talk kept the clip in the transcript with the spoken wording ready to copy.`,
+      original: `### ${label}\n\nThis is the original assistant text before speech cleanup. It can include **markdown**, inline code, and links while the Spoken view stays clean for audio.`,
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Seeds — each returns { queueFiles, sessions, staleShorts?, panelOpen? }
   // ═══════════════════════════════════════════════════════════════════════
@@ -380,6 +398,7 @@
     getQueue:          () => Promise.resolve({ files: sortedFiles(), assignments: { ...sessions } }),
     getConfig:         () => Promise.resolve({ ...config }),
     getStaleSessions:  () => Promise.resolve(staleShorts.slice()),
+    readClipSidecar:   (audioPath) => Promise.resolve(sidecarForClip(audioPath)),
 
     // --- mutations ----------------------------------------------------
     updateConfig: (partial) => {

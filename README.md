@@ -35,6 +35,18 @@ Hands-free voice output for terminal coding agents on Windows. Free, MIT license
 | 🔐 **Encrypted API keys** — OpenAI premium via safeStorage (DPAPI / Keychain) | ⏱️ **Claude end-of-reply verb** — scrapes the terminal footer and speaks _"Brewed for 8m 49s"_ |
 | 💬 **Per-session voice + heartbeat + speech-includes** — 45 Edge voices + 6 OpenAI, tri-state session controls | 📡 **Collapsed waveform strip** — 1-inch letterbox pulses with the speaking session's solid/split palette |
 
+### Current toolbar states
+
+These are fresh captures from the live Electron toolbar mirror, not hand-built mockups.
+
+| Resting toolbar with active conversations | Transcript panel expanded |
+|---|---|
+| <img src="docs/screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with top session tabs, colour badges, clip dots, and transcript header" width="520"> | <img src="docs/screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken text rows, and copy buttons" width="520"> |
+
+| Collapsed at rest | Collapsed while a split-palette session is speaking |
+|---|---|
+| <img src="docs/screenshots/toolbar-collapsed-resting.png" alt="Terminal Talk collapsed resting letterbox strip" width="260"> | <img src="docs/screenshots/toolbar-collapsed-signal-horizontal.png" alt="Terminal Talk collapsed waveform strip pulsing with a split session palette" width="260"> |
+
 ---
 
 ## Install (Windows)
@@ -92,10 +104,10 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 Current screenshots are rendered from the same Electron DOM/CSS that ships in the app via the UI kit mirror, so they track the real toolbar rather than hand-built mockups.
 
-### 01 · Idle
+### 01 · Resting with active conversations
 
 <p align="center">
-  <img src="docs/screenshots/toolbar-idle.png" alt="Idle toolbar: empty two-row letterbox with controls on top and an empty dot strip below" width="900">
+  <img src="docs/screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with top session tabs, colour badges, clip dots, and transcript header" width="900">
 </p>
 
 The baseline expanded toolbar. It is frameless, always-on-top, draggable, and uses the top tab strip only for active sessions or sessions that still have clips in the queue. Registry-only sessions stay out of this top strip and live in Settings › Sessions, so the day-to-day playback surface does not get cluttered.
@@ -106,7 +118,7 @@ The baseline expanded toolbar. It is frameless, always-on-top, draggable, and us
   <img src="docs/screenshots/toolbar-three-sessions.png" alt="Dot strip clusters by session: 3 red dots (Terminal A, first one playing), gap, 3 yellow dots (Terminal B), gap, 2 green dots (Terminal C)" width="900">
 </p>
 
-Three terminals queued in arrival order: **3 red** from Terminal A (first one playing, 2 queued behind), **3 yellow** from Terminal B, **2 green** from Terminal C. The 12 px gap between runs marks a change of speaker so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. If Terminal C has the important message you'd wait through 5 clips first — that's the story shot 04's focus-star solves.
+Three terminals queued in arrival order: **3 red** from Terminal A (first one playing, 2 queued behind), **3 yellow** from Terminal B, **2 green** from Terminal C. The 12 px gap between runs marks a change of speaker so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. If Terminal C has the important message you'd wait through 5 clips first — that's what the Sessions focus star solves.
 
 ### 03 · Mixed states in one queue
 
@@ -119,13 +131,22 @@ A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips —
 ### 04 · Collapsed waveform signal
 
 <p align="center">
+  <img src="docs/screenshots/toolbar-collapsed-resting.png" alt="Collapsed Terminal Talk resting letterbox strip" width="260">
   <img src="docs/screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed Terminal Talk letterbox: short waveform strip pulsing with a horizontal split palette border" width="320">
   <img src="docs/screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed Terminal Talk letterbox: short waveform strip pulsing with a vertical split palette border" width="320">
 </p>
 
-The collapsed state is a compact click-through waveform, roughly an inch wide. It does not reopen over your work when audio arrives. Instead the waveform and border pulse in the currently speaking session's palette. Split colours are preserved: left/right palettes render as horizontal border splits, and top/bottom palettes render as vertical border splits, so rare two-colour identities remain distinguishable at a glance.
+The collapsed state is a compact click-through letterbox, roughly an inch wide. At rest it stays quiet and unobtrusive. When audio plays, the waveform and border pulse in the currently speaking session's palette. Split colours are preserved: left/right palettes render as horizontal border splits, and top/bottom palettes render as vertical border splits, so rare two-colour identities remain distinguishable at a glance.
 
-### 05 · Tabbed Settings panel
+### 05 · Transcript panel expanded
+
+<p align="center">
+  <img src="docs/screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken text rows, and copy buttons" width="900">
+</p>
+
+The transcript panel opens below the dot strip. It keeps recent spoken clips visible, lets you copy a row without searching the terminal, and follows the same session tab filter as the dot strip.
+
+### 06 · Tabbed Settings panel
 
 <p align="center">
   <img src="docs/screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel with tabs for Playback, Sessions, Create, OpenAI, Shortcuts, and About" width="900">
@@ -135,7 +156,7 @@ The gear opens a tabbed settings panel instead of one long scrollbar. **Playback
 
 **Playback precedence** — (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
 
-### 06 · Sessions and per-session overrides
+### 07 · Sessions and per-session overrides
 
 <p align="center">
   <img src="docs/screenshots/toolbar-sessions-panel-expanded.png" alt="Settings Sessions tab with one session expanded to show voice, heartbeat, and speech-include overrides" width="900">
@@ -143,7 +164,7 @@ The gear opens a tabbed settings panel instead of one long scrollbar. **Playback
 
 Each row is backed by `~/.terminal-talk/session-colours.json`. The 24-arrangement palette includes 8 solid colours, 8 top/bottom splits, and 8 left/right splits. The dropdown labels show when a colour is already used, and the expanded row gives that session its own voice, heartbeat override, and tri-state speech-includes.
 
-### 07 · Create a session
+### 08 · Create a session
 
 <p align="center">
   <img src="docs/screenshots/toolbar-create-session-tab.png" alt="Settings Create tab with assistant picker, permissions, project folder, label, colour, save default, and create controls" width="900">
@@ -151,7 +172,7 @@ Each row is backed by `~/.terminal-talk/session-colours.json`. The 24-arrangemen
 
 The Create tab starts a new assistant session from Terminal Talk. It can launch Codex, Claude Code, or Claude Desktop Code, seed the label/colour before the assistant speaks, and mark used colours in the picker so you do not accidentally collide with an active session. For Codex CLI, the launcher keeps the provisional terminal tab and the real rollout session bound together once Codex emits its true session id.
 
-### 08 · Snapped to the top edge
+### 09 · Snapped to the top edge
 
 <p align="center">
   <img src="docs/screenshots/toolbar-snapped-top.png" alt="Toolbar flush against the top edge of a screen, flat-topped, with dots showing two heard reds plus three blues (one playing)" width="900">
