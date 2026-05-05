@@ -17127,8 +17127,10 @@ describe('CODEX TERMINAL IDENTITY', () => {
       watcher.start();
       // Poll deterministically — the watcher's file-watch event arrives
       // within ~5 ms locally but slow CI runners (D:\a\... drive) can
-      // take 200-400 ms. A fixed 80 ms sleep was flaky on Windows CI.
-      const deadline = Date.now() + 2000;
+      // take 200-400 ms (sometimes more under contention). 80 ms / 2 s
+      // were flaky; 5 s gives ~50 watcher ticks (pollIntervalMs=100) to
+      // land before the test gives up.
+      const deadline = Date.now() + 5000;
       while (!assignments['019def5c'] && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }

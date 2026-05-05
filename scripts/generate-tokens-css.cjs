@@ -196,7 +196,6 @@ function emitPaletteRules(baseColours, selectorPrefix) {
   for (let i = 0; i < palette.PALETTE_SIZE; i++) {
     const k = String(i).padStart(2, '0');
     const bg = arrangementBgFor(i, baseColours);
-    const primary = primaryForArrangement(i, baseColours);
     lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; --tt-palette-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.collapsed-signal[data-palette="${k}"] { --collapsed-signal-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { --dot-ring-bg: ${bg}; }`);
