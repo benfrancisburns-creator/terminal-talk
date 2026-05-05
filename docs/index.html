@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Terminal Talk — Hands-free voice workflow for Claude Code, Codex, and desktop coding agents</title>
-<meta name="description" content="Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can speak through one colour-coded toolbar. Say 'hey jarvis' to read highlighted text. Windows.">
-<meta property="og:title" content="Terminal Talk — voice workflow for Claude Code, Codex, and desktop coding agents">
-<meta property="og:description" content="Auto-speaks Claude Code and Codex, syncs session identity into desktop coding apps, and reads highlighted text with 'hey jarvis'. Free, offline wake-word, MIT.">
+<title>Terminal Talk — Your coding agents speak back through one toolbar</title>
+<meta name="description" content="Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop speak back through one colour-coded toolbar, with session identity, transcripts, focus, and optional highlight-to-speak. Windows.">
+<meta property="og:title" content="Terminal Talk — your coding agents speak back through one toolbar">
+<meta property="og:description" content="Auto-speaks Claude Code and Codex, keeps each session colour-coded, syncs identity into desktop coding apps, and lets highlighted text speak on demand. Free, offline wake-word, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
@@ -216,51 +216,381 @@ section { padding: 80px 24px; }
 .feature:nth-child(4) .icon { background: rgba(201,123,80,0.16); color: var(--copper); }
 .feature h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
 .feature p { margin: 0; color: var(--text-dim); font-size: 14px; }
-
-/* Current UI screenshots */
-.product-ui { background: linear-gradient(to bottom, rgba(96,165,250,0.04), transparent 70%); }
-.shot-grid {
+.voice-loop {
   display: grid;
-  gap: 22px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  margin: -14px auto 28px;
+  max-width: 920px;
 }
-.shot-card {
-  background: rgba(255,255,255,0.03);
+.voice-step {
+  background: rgba(255,255,255,0.035);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px;
+  padding: 18px 20px;
 }
-.shot-card.wide { grid-column: 1 / -1; }
-.shot-card img {
+.voice-step.active {
+  border-color: rgba(96,165,250,0.28);
+  box-shadow: 0 18px 50px rgba(96,165,250,0.08);
+}
+.voice-step span {
   display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  background: #10131c;
-  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--copper);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
 }
-.shot-pair {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  min-height: 160px;
+.voice-step strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.25;
 }
-.shot-pair img {
-  width: min(30%, 220px);
-  min-width: 150px;
-}
-.shot-card h3 {
-  margin: 14px 4px 6px;
-  font-size: 16px;
-  font-weight: 650;
-}
-.shot-card p {
-  margin: 0 4px 4px;
+.voice-step p {
+  margin: 8px 0 0;
   color: var(--text-dim);
   font-size: 13px;
+}
+.voice-arrow {
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 24px;
+}
+@media (max-width: 760px) {
+  .voice-loop { grid-template-columns: 1fr; }
+  .voice-arrow { transform: rotate(90deg); justify-self: center; }
+}
+
+/* Current UI carousel */
+.product-ui { background: linear-gradient(to bottom, rgba(96,165,250,0.04), transparent 70%); }
+.ui-carousel {
+  --ui-index: 0;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.ui-carousel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.ui-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.34);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+.ui-carousel-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ui-arrow {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s ease, border-color .15s ease, transform .08s ease;
+}
+.ui-arrow:hover,
+.ui-arrow:focus-visible {
+  background: rgba(96,165,250,0.16);
+  border-color: rgba(96,165,250,0.45);
+  outline: none;
+}
+.ui-arrow:active { transform: translateY(1px); }
+.ui-carousel-shell {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.22);
+}
+.ui-slides {
+  display: flex;
+  transform: translateX(calc(var(--ui-index) * -100%));
+  transition: transform .48s cubic-bezier(.2,.8,.2,1);
+}
+.ui-slide {
+  flex: 0 0 100%;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(260px, .75fr);
+  align-items: center;
+  padding: 18px;
+}
+.ui-slide-media {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #10131c;
+  border: 1px solid rgba(255,255,255,0.07);
+  min-height: 0;
+  aspect-ratio: 16 / 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ui-slide-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ui-slide-media.is-pair {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+  gap: 16px;
+  padding: 28px;
+}
+.ui-slide-media.is-pair img {
+  width: auto;
+  max-width: 100%;
+  max-height: 74%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #10131c;
+}
+.ui-motion {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ui-cursor {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 5px rgba(96,165,250,0.24), 0 10px 24px rgba(0,0,0,0.35);
+  opacity: 0;
+}
+.ui-pulse {
+  position: absolute;
+  border-radius: 999px;
+  border: 2px solid rgba(96,165,250,0.78);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 0 24px rgba(96,165,250,0.35);
+  opacity: 0;
+}
+.ui-scan {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  height: 22px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, transparent, rgba(96,165,250,0.18), transparent);
+  opacity: 0;
+}
+.ui-wave {
+  position: absolute;
+  inset: 29% 9%;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent),
+    repeating-linear-gradient(90deg, #ffa726 0 5px, #ee2bbd 5px 10px, transparent 10px 17px);
+  clip-path: polygon(0 50%,5% 34%,10% 58%,15% 24%,20% 70%,25% 30%,30% 62%,35% 40%,40% 56%,45% 25%,50% 72%,55% 30%,60% 60%,65% 36%,70% 66%,75% 28%,80% 58%,85% 38%,90% 62%,95% 32%,100% 50%,100% 100%,0 100%);
+  opacity: 0;
+}
+.ui-sync-ring {
+  position: absolute;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  border: 2px solid rgba(74,222,128,0.85);
+  box-shadow: 0 0 30px rgba(74,222,128,0.25);
+  opacity: 0;
+}
+.ui-launch-line {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--green), var(--blue), var(--orange));
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.ui-tab-switch {
+  position: absolute;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(96,165,250,0.2);
+  border: 1px solid rgba(96,165,250,0.55);
+  box-shadow: 0 0 28px rgba(96,165,250,0.25);
+  opacity: 0;
+}
+.ui-slide.active .queue-cursor { animation: queueCursor 5s ease-in-out infinite; }
+.ui-slide.active .queue-tab { animation: tabPulse 5s ease-in-out infinite; }
+.ui-slide.active .queue-dot-1,
+.ui-slide.active .queue-dot-2,
+.ui-slide.active .queue-dot-3 { animation: dotPulse 1.5s ease-in-out infinite; }
+.ui-slide.active .queue-dot-2 { animation-delay: .18s; }
+.ui-slide.active .queue-dot-3 { animation-delay: .36s; }
+.ui-slide.active .transcript-scan { animation: transcriptScan 4.8s ease-in-out infinite; }
+.ui-slide.active .copy-pulse { animation: copyPulse 4.8s ease-in-out infinite; }
+.ui-slide.active .wave-demo { animation: waveBars 2.1s ease-in-out infinite; }
+.ui-slide.active .wave-pulse { animation: wavePulse 2.1s ease-in-out infinite; }
+.ui-slide.active .sync-ring { animation: syncRing 4.8s ease-in-out infinite; }
+.ui-slide.active .focus-pulse { animation: focusPulse 4.8s ease-in-out infinite; }
+.ui-slide.active .launch-line { animation: launchLine 4.8s ease-in-out infinite; }
+.ui-slide.active .launch-cursor { animation: launchCursor 4.8s ease-in-out infinite; }
+.ui-slide.active .settings-switch { animation: settingsSwitch 5.2s ease-in-out infinite; }
+.ui-slide-copy h3 {
+  margin: 0 0 9px;
+  font-size: clamp(21px, 2.3vw, 30px);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.ui-slide-copy p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.ui-slide-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--copper);
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.ui-slide-kicker::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 18px rgba(74,222,128,0.42);
+}
+.ui-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+}
+.ui-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: rgba(255,255,255,0.22);
+  cursor: pointer;
+}
+.ui-dot.active {
+  background: var(--copper);
+  box-shadow: 0 0 0 5px rgba(201,123,80,0.14);
+}
+@keyframes queueCursor {
+  0%, 100% { left: 14%; top: 43%; opacity: 0; }
+  12%, 42% { opacity: 1; }
+  28% { left: 24%; top: 38%; opacity: 1; }
+  54% { left: 35%; top: 63%; opacity: 1; }
+  70% { opacity: 0; }
+}
+@keyframes tabPulse {
+  0%, 18%, 70%, 100% { opacity: 0; transform: scale(.94); }
+  28%, 54% { opacity: 1; transform: scale(1); }
+}
+@keyframes dotPulse {
+  0%, 100% { opacity: 0; transform: scale(.75); }
+  45% { opacity: 1; transform: scale(1.12); }
+}
+@keyframes transcriptScan {
+  0%, 100% { top: 28%; opacity: 0; }
+  15%, 80% { opacity: 1; }
+  45% { top: 54%; }
+  72% { top: 72%; }
+}
+@keyframes copyPulse {
+  0%, 55%, 100% { opacity: 0; transform: scale(.95); }
+  68%, 84% { opacity: 1; transform: scale(1); }
+}
+@keyframes waveBars {
+  0%, 100% { opacity: .2; transform: scaleY(.55); }
+  45% { opacity: .9; transform: scaleY(1); }
+}
+@keyframes wavePulse {
+  0%, 100% { opacity: 0; transform: scale(.9); }
+  44% { opacity: 1; transform: scale(1); }
+}
+@keyframes syncRing {
+  0%, 42%, 100% { opacity: 0; transform: scale(.55); }
+  52% { opacity: 1; transform: scale(1); }
+  72% { opacity: 0; transform: scale(1.35); }
+}
+@keyframes focusPulse {
+  0%, 100% { opacity: 0; transform: scale(.9); }
+  22%, 58% { opacity: 1; transform: scale(1); }
+}
+@keyframes launchLine {
+  0%, 16%, 100% { transform: scaleX(0); opacity: 0; }
+  34%, 74% { transform: scaleX(1); opacity: 1; }
+  86% { transform: scaleX(.15); opacity: 0; }
+}
+@keyframes launchCursor {
+  0%, 100% { left: 32%; top: 56%; opacity: 0; }
+  22% { left: 41%; top: 49%; opacity: 1; }
+  58% { left: 72%; top: 49%; opacity: 1; }
+  74% { left: 77%; top: 49%; opacity: 0; }
+}
+@keyframes settingsSwitch {
+  0%, 100% { left: 6%; width: 13%; opacity: .35; }
+  24% { left: 18%; width: 15%; opacity: 1; }
+  48% { left: 35%; width: 13%; opacity: 1; }
+  72% { left: 51%; width: 14%; opacity: 1; }
+}
+@media (max-width: 860px) {
+  .ui-slide { grid-template-columns: 1fr; }
+  .ui-slide-copy { order: -1; }
+  .ui-carousel-head { align-items: flex-start; }
+}
+@media (max-width: 560px) {
+  .ui-carousel-controls { gap: 7px; }
+  .ui-arrow { width: 36px; height: 36px; }
+  .ui-slide { padding: 12px; }
+  .ui-slide-media.is-pair { grid-template-columns: 1fr; padding: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-slides,
+  .ui-arrow { transition: none; }
+  .ui-slide.active .queue-cursor,
+  .ui-slide.active .queue-tab,
+  .ui-slide.active .queue-dot-1,
+  .ui-slide.active .queue-dot-2,
+  .ui-slide.active .queue-dot-3,
+  .ui-slide.active .transcript-scan,
+  .ui-slide.active .copy-pulse,
+  .ui-slide.active .wave-demo,
+  .ui-slide.active .wave-pulse,
+  .ui-slide.active .sync-ring,
+  .ui-slide.active .focus-pulse,
+  .ui-slide.active .launch-line,
+  .ui-slide.active .launch-cursor,
+  .ui-slide.active .settings-switch {
+    animation: none;
+  }
 }
 
 /* Demo slot */
@@ -516,8 +846,9 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 
-  <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop speak automatically through one colour-coded toolbar.</p>
-  <p class="sub">Replies, tool progress, transcripts, focus, and session identity are built in. <em>"Hey jarvis"</em> is there too for selected text. Free by default. Offline wake-word detection. MIT licensed.</p>
+  <h1>Your coding agents speak back, in order, through one toolbar.</h1>
+  <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop become a colour-coded audio workstream you can follow without reading every terminal.</p>
+  <p class="sub">Replies, tool progress, transcripts, focus, and session identity are built in. Optional highlight-to-speak is there when you want any selected text read aloud. Free by default. Offline wake-word detection. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
       ⬇ Download for Windows
@@ -539,7 +870,20 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     <div class="sec-head">
       <div class="sec-kicker">What you get</div>
       <h2 class="sec-title">A session-aware audio layer for terminal and desktop coding agents</h2>
-      <p class="sec-intro">Every feature is opt-in at install. No telemetry anywhere.</p>
+      <p class="sec-intro">Voice input tools remove typing. Terminal Talk removes the other drag: watching every assistant window just to know what happened next.</p>
+    </div>
+    <div class="voice-loop">
+      <div class="voice-step">
+        <span>Voice input</span>
+        <strong>Your speech becomes text in any app</strong>
+        <p>Dictation keeps your hands moving by getting prompts, notes, and replies onto the screen faster.</p>
+      </div>
+      <div class="voice-arrow" aria-hidden="true">+</div>
+      <div class="voice-step active">
+        <span>Terminal Talk</span>
+        <strong>Agent text becomes a tracked spoken workflow</strong>
+        <p>Claude and Codex responses, tool narration, and session updates come back as colour-coded clips with focus, transcripts, and queue control.</p>
+      </div>
     </div>
     <div class="feature-grid">
       <div class="feature">
@@ -588,41 +932,114 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <h2 class="sec-title">The toolbar now carries identity even when it is tiny</h2>
       <p class="sec-intro">These screenshots are generated from the live Electron toolbar mirror, so the docs show the current tabbed settings and collapsed signal states.</p>
     </div>
-    <div class="shot-grid">
-      <article class="shot-card wide">
-        <img src="screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with active session tabs, clip dots, and transcript header">
-        <h3>Resting toolbar with active conversations</h3>
-        <p>The top strip shows active sessions and sessions with clips waiting, while the dot row keeps each conversation grouped by palette identity.</p>
-      </article>
-      <article class="shot-card wide">
-        <img src="screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken rows, and copy buttons">
-        <h3>Transcript expanded</h3>
-        <p>Recent clips stay readable next to playback. Copy a spoken row, flip to Original when available, and keep the transcript filtered to the selected session tab.</p>
-      </article>
-      <article class="shot-card">
-        <div class="shot-pair">
-          <img src="screenshots/toolbar-collapsed-resting.png" alt="Collapsed resting letterbox strip">
-          <img src="screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed waveform letterbox using a horizontal split session palette">
-          <img src="screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed waveform letterbox using a vertical split session palette">
+    <div class="ui-carousel" data-ui-carousel aria-label="Terminal Talk UI states">
+      <div class="ui-carousel-head">
+        <span class="ui-counter"><span data-ui-current>1</span> / <span data-ui-total>6</span></span>
+        <div class="ui-carousel-controls">
+          <button class="ui-arrow" type="button" data-ui-prev aria-label="Previous UI state">&#8249;</button>
+          <button class="ui-arrow" type="button" data-ui-next aria-label="Next UI state">&#8250;</button>
         </div>
-        <h3>Collapsed waveform identity</h3>
-        <p>The collapsed strip stays small, pulses only for the clip that is actually speaking, and preserves split palette orientation on the waveform and border.</p>
-      </article>
-      <article class="shot-card">
-        <img src="screenshots/toolbar-sessions-panel-expanded.png" alt="Sessions tab with one row expanded to show voice, heartbeat, and speech include overrides">
-        <h3>Per-session control</h3>
-        <p>Each session can have its own label, palette, focus, mute, voice, heartbeat override, and speech-includes policy. Desktop sessions expose sync status where supported.</p>
-      </article>
-      <article class="shot-card">
-        <img src="screenshots/toolbar-create-session-tab.png" alt="Create tab with assistant picker, permissions, project folder, label, colour, save default, and create buttons">
-        <h3>Create sessions from the toolbar</h3>
-        <p>Start Codex, Claude Code, or Claude Desktop Code with the project folder, label, colour, and permissions mode already selected before the assistant begins talking.</p>
-      </article>
-      <article class="shot-card wide">
-        <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
-        <h3>Tabbed settings instead of one long scrollbar</h3>
-        <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get their own page, so the controls are separated by job instead of buried in one long panel.</p>
-      </article>
+      </div>
+      <div class="ui-carousel-shell">
+        <div class="ui-slides" data-ui-slides>
+          <article class="ui-slide active" data-ui-slide aria-hidden="false">
+            <div class="ui-slide-media">
+              <img src="screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with active session tabs, clip dots, and transcript header">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-cursor queue-cursor"></span>
+                <span class="ui-pulse queue-tab" style="left: 8.5%; top: 31%; width: 15%; height: 13%;"></span>
+                <span class="ui-pulse queue-dot-1" style="left: 2.7%; top: 60%; width: 5%; height: 17%;"></span>
+                <span class="ui-pulse queue-dot-2" style="left: 5.4%; top: 60%; width: 5%; height: 17%;"></span>
+                <span class="ui-pulse queue-dot-3" style="left: 8.1%; top: 60%; width: 5%; height: 17%;"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Queue identity</span>
+              <h3>Active conversations stay visible without clutter</h3>
+              <p>The top strip is only for sessions that are active or still have clips waiting. Grouped dots show queued, heard, and speaking clips with the same palette identity used everywhere else.</p>
+            </div>
+          </article>
+          <article class="ui-slide" data-ui-slide aria-hidden="true">
+            <div class="ui-slide-media">
+              <img src="screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken rows, and copy buttons">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-scan transcript-scan"></span>
+                <span class="ui-pulse copy-pulse" style="right: 6.5%; top: 37%; width: 9%; height: 10%;"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Transcript</span>
+              <h3>Inspect what was actually spoken</h3>
+              <p>Open the transcript, filter by session, copy a spoken row, or flip back to the original text. The toolbar keeps audio review close without dragging you out of the terminal.</p>
+            </div>
+          </article>
+          <article class="ui-slide" data-ui-slide aria-hidden="true">
+            <div class="ui-slide-media is-pair">
+              <img src="screenshots/toolbar-collapsed-resting.png" alt="Collapsed resting letterbox strip">
+              <img src="screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed waveform letterbox using a left and right split session palette">
+              <img src="screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed waveform letterbox using a top and bottom split session palette">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-wave wave-demo"></span>
+                <span class="ui-pulse wave-pulse" style="left: 15%; top: 36%; width: 70%; height: 28%;"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Collapsed signal</span>
+              <h3>The tiny state still tells you who is speaking</h3>
+              <p>The letterbox stays short and click-through. When audio plays, the waveform grows while the border breathes back, preserving solid, left/right, and top/bottom palette splits.</p>
+            </div>
+          </article>
+          <article class="ui-slide" data-ui-slide aria-hidden="true">
+            <div class="ui-slide-media">
+              <img src="screenshots/toolbar-sessions-panel-expanded.png" alt="Sessions tab with one row expanded to show voice, heartbeat, and speech include overrides">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-pulse focus-pulse" style="right: 12.2%; top: 48%; width: 5.5%; height: 11%;"></span>
+                <span class="ui-sync-ring sync-ring" style="right: 5.5%; top: 44%;"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Session controls</span>
+              <h3>One row controls identity, focus, voice, and sync</h3>
+              <p>Give each assistant a label, palette, voice, mute state, focus priority, heartbeat override, and speech-includes rule. Desktop sync status lives next to the session it belongs to.</p>
+            </div>
+          </article>
+          <article class="ui-slide" data-ui-slide aria-hidden="true">
+            <div class="ui-slide-media">
+              <img src="screenshots/toolbar-create-session-tab.png" alt="Create tab with assistant picker, permissions, project folder, label, colour, save default, and create buttons">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-launch-line launch-line" style="left: 29%; top: 58%; width: 45%;"></span>
+                <span class="ui-cursor launch-cursor"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Create</span>
+              <h3>Launch assistants with identity already chosen</h3>
+              <p>Pick Codex, Claude Code, or Claude Desktop Code, choose the project folder, label, palette, and permissions mode, then create a session that Terminal Talk can recognise.</p>
+            </div>
+          </article>
+          <article class="ui-slide" data-ui-slide aria-hidden="true">
+            <div class="ui-slide-media">
+              <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
+              <div class="ui-motion" aria-hidden="true">
+                <span class="ui-tab-switch settings-switch" style="top: 6%;"></span>
+              </div>
+            </div>
+            <div class="ui-slide-copy">
+              <span class="ui-slide-kicker">Tabbed settings</span>
+              <h3>The settings panel is split by job, not one long scroll</h3>
+              <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get a focused page. The controls are still deep, but the navigation stays compact.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="ui-carousel-dots" role="tablist" aria-label="Choose UI slide">
+        <button class="ui-dot active" type="button" data-ui-dot aria-label="Show queue identity slide" aria-selected="true"></button>
+        <button class="ui-dot" type="button" data-ui-dot aria-label="Show transcript slide" aria-selected="false"></button>
+        <button class="ui-dot" type="button" data-ui-dot aria-label="Show collapsed signal slide" aria-selected="false"></button>
+        <button class="ui-dot" type="button" data-ui-dot aria-label="Show session controls slide" aria-selected="false"></button>
+        <button class="ui-dot" type="button" data-ui-dot aria-label="Show create session slide" aria-selected="false"></button>
+        <button class="ui-dot" type="button" data-ui-dot aria-label="Show settings tabs slide" aria-selected="false"></button>
+      </div>
     </div>
   </div>
 </section>
@@ -858,6 +1275,59 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   </div>
   <div style="margin-top: 16px;">Terminal Talk is open source. Built by <a href="https://github.com/benfrancisburns-creator">Ben Burns</a>.</div>
 </footer>
+
+<script>
+(() => {
+  const carousels = document.querySelectorAll('[data-ui-carousel]');
+  for (const carousel of carousels) {
+    const slides = Array.from(carousel.querySelectorAll('[data-ui-slide]'));
+    const dots = Array.from(carousel.querySelectorAll('[data-ui-dot]'));
+    const current = carousel.querySelector('[data-ui-current]');
+    const total = carousel.querySelector('[data-ui-total]');
+    const prev = carousel.querySelector('[data-ui-prev]');
+    const next = carousel.querySelector('[data-ui-next]');
+    if (!slides.length) continue;
+
+    let index = 0;
+    let paused = false;
+
+    if (total) total.textContent = String(slides.length);
+
+    function show(nextIndex) {
+      index = (nextIndex + slides.length) % slides.length;
+      carousel.style.setProperty('--ui-index', index);
+      slides.forEach((slide, slideIndex) => {
+        const active = slideIndex === index;
+        slide.classList.toggle('active', active);
+        slide.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+      dots.forEach((dot, dotIndex) => {
+        const active = dotIndex === index;
+        dot.classList.toggle('active', active);
+        dot.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      if (current) current.textContent = String(index + 1);
+    }
+
+    if (prev) prev.addEventListener('click', () => show(index - 1));
+    if (next) next.addEventListener('click', () => show(index + 1));
+    dots.forEach((dot, dotIndex) => {
+      dot.addEventListener('click', () => show(dotIndex));
+    });
+
+    carousel.addEventListener('mouseenter', () => { paused = true; });
+    carousel.addEventListener('mouseleave', () => { paused = false; });
+    carousel.addEventListener('focusin', () => { paused = true; });
+    carousel.addEventListener('focusout', () => { paused = false; });
+
+    window.setInterval(() => {
+      if (!paused && document.visibilityState === 'visible') show(index + 1);
+    }, 6500);
+
+    show(0);
+  }
+})();
+</script>
 
 </body>
 </html>
