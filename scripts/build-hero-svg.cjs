@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /*
- * Generates docs/assets/terminal-talk-hero.svg — the single composite
- * hero image used in README.md.
+ * Generates the Terminal Talk hero SVG assets:
+ *   - docs/assets/terminal-talk-hero.svg
+ *   - docs/assets/mascot-animated.svg
+ *   - app/assets/about-terminal-talk-hero.svg
  *
  * Structure:
  *   1. <image> element embedding terminal-talk-wallpaper-bg.jpg as a
@@ -12,13 +14,13 @@
  *      animated versions on top at the exact same coords).
  *
  *   2. Animated mascot group, translated to the mascot's bounding box
- *      saved in scripts/hero-bounds.json. Same CSS colour-cycle as
- *      docs/assets/mascot-animated.svg — 8 palette colours, 10s loop,
- *      synced drop-shadow colour variable.
+ *      saved in scripts/hero-bounds.json. The mascot cycles through all
+ *      24 Terminal Talk palette arrangements: 8 solid, 8 top/bottom
+ *      splits, and 8 left/right splits.
  *
  *   3. Pixelated cloud speech bubble (matching the wallpaper hero's
  *      30×11 pixel-grid cloud, scaled 10× to the original cloud's
- *      300×110 display size) with seven crossfading phrases.
+ *      300×110 display size) with crossfading Terminal Talk phrases.
  *
  * Re-run this script whenever the background changes (e.g. after
  * scripts/render-hero-background.cjs is regenerated at a different
@@ -36,11 +38,208 @@ const ROOT      = path.join(__dirname, '..');
 const BG_JPG    = path.join(ROOT, 'docs', 'assets', 'wallpaper',
                             'terminal-talk-wallpaper-bg.jpg');
 const BOUNDS_JS = path.join(__dirname, 'hero-bounds.json');
-const OUT_SVG   = path.join(ROOT, 'docs', 'assets', 'terminal-talk-hero.svg');
+const OUT_COMPOSITE_SVG = path.join(ROOT, 'docs', 'assets', 'terminal-talk-hero.svg');
+const OUT_MASCOT_SVG    = path.join(ROOT, 'docs', 'assets', 'mascot-animated.svg');
+const OUT_ABOUT_SVG     = path.join(ROOT, 'app', 'assets', 'about-terminal-talk-hero.svg');
+const { palette } = JSON.parse(fs.readFileSync(path.join(ROOT, 'app', 'lib', 'tokens.json'), 'utf8'));
+
+const CYCLE_SECONDS = 16.8;
+const SHADOW_COLOURS = [
+  '#9c2020',
+  '#a85e00',
+  '#8c6f00',
+  '#166534',
+  '#1e40af',
+  '#86188f',
+  '#5d2f14',
+  '#6b7280',
+];
+const PHRASES = [
+  ['Claude replies', 'speak automatically'],
+  ['Codex updates', 'join the queue'],
+  ['Focus one session', 'hear it first'],
+  ['Desktop apps keep', 'their TT identity'],
+  ['Tool calls narrate', 'while they run'],
+  ['Transcripts keep', 'spoken + original'],
+  ['Hey Jarvis reads', 'selected text'],
+  ['Auto-prune clears', 'played clips'],
+  ['Muted sessions', 'stay quiet'],
+  ['Footer closer', 'Brewed for 8m 4s'],
+  ['Split colours', 'match everywhere'],
+  ['Hands-free coding', 'without babysitting'],
+];
 
 function readBase64(filePath) {
   const bytes = fs.readFileSync(filePath);
   return bytes.toString('base64');
+}
+
+function formatPct(n) {
+  return n.toFixed(4).replace(/\.?0+$/, '');
+}
+
+function arrangementVars(i, colours) {
+  const { HSPLIT_PARTNER, VSPLIT_PARTNER } = palette;
+  const primaryIndex = i < 8 ? i : (i < 16 ? i - 8 : i - 16);
+  const secondaryIndex = i < 8
+    ? primaryIndex
+    : (i < 16 ? HSPLIT_PARTNER[primaryIndex] : VSPLIT_PARTNER[primaryIndex]);
+  const primary = colours[primaryIndex];
+  const secondary = colours[secondaryIndex];
+  if (i < 8) {
+    return {
+      bodyTopLeft: primary,
+      bodyTopRight: primary,
+      bodyBottomLeft: primary,
+      bodyBottomRight: primary,
+      earLeftTop: primary,
+      earLeftBottom: primary,
+      earRightTop: primary,
+      earRightBottom: primary,
+      legLeft: primary,
+      legRight: primary,
+    };
+  }
+  if (i < 16) {
+    return {
+      bodyTopLeft: primary,
+      bodyTopRight: primary,
+      bodyBottomLeft: secondary,
+      bodyBottomRight: secondary,
+      earLeftTop: primary,
+      earLeftBottom: secondary,
+      earRightTop: primary,
+      earRightBottom: secondary,
+      legLeft: secondary,
+      legRight: secondary,
+    };
+  }
+  return {
+    bodyTopLeft: primary,
+    bodyTopRight: secondary,
+    bodyBottomLeft: primary,
+    bodyBottomRight: secondary,
+    earLeftTop: primary,
+    earLeftBottom: primary,
+    earRightTop: secondary,
+    earRightBottom: secondary,
+    legLeft: primary,
+    legRight: secondary,
+  };
+}
+
+function mascotDeclarations(vars, prefix) {
+  return [
+    `--${prefix}-body-tl: ${vars.bodyTopLeft}`,
+    `--${prefix}-body-tr: ${vars.bodyTopRight}`,
+    `--${prefix}-body-bl: ${vars.bodyBottomLeft}`,
+    `--${prefix}-body-br: ${vars.bodyBottomRight}`,
+    `--${prefix}-ear-lt: ${vars.earLeftTop}`,
+    `--${prefix}-ear-lb: ${vars.earLeftBottom}`,
+    `--${prefix}-ear-rt: ${vars.earRightTop}`,
+    `--${prefix}-ear-rb: ${vars.earRightBottom}`,
+    `--${prefix}-leg-l: ${vars.legLeft}`,
+    `--${prefix}-leg-r: ${vars.legRight}`,
+  ].join('; ');
+}
+
+function mascotDefaults() {
+  return `${mascotDeclarations(arrangementVars(1, palette.BASE_COLOURS), 'm')}; ${mascotDeclarations(arrangementVars(1, SHADOW_COLOURS), 'ms')};`;
+}
+
+function mascotKeyframes(name, colours, prefix) {
+  const lines = [`    @keyframes ${name} {`];
+  for (let i = 0; i < palette.PALETTE_SIZE; i++) {
+    const start = formatPct((i / palette.PALETTE_SIZE) * 100);
+    const end = formatPct(((i + 1) / palette.PALETTE_SIZE) * 100);
+    lines.push(`      ${start}%, ${end}% { ${mascotDeclarations(arrangementVars(i, colours), prefix)}; }`);
+  }
+  lines.push('    }');
+  return lines.join('\n');
+}
+
+function phraseDelayRules() {
+  const secondsPerPhrase = CYCLE_SECONDS / PHRASES.length;
+  return PHRASES.map((_, i) =>
+    `    .phrase.p${i + 1} { animation-delay: ${formatPct(i * secondsPerPhrase)}s; }`
+  ).join('\n');
+}
+
+function phraseKeyframes() {
+  const slice = 100 / PHRASES.length;
+  const fadeIn = Math.min(2.5, slice * 0.3);
+  const visible = Math.max(fadeIn + 1, slice - 1.1);
+  return `    @keyframes phraseFade {
+      0%    { opacity: 0; }
+      ${formatPct(fadeIn)}% { opacity: 1; }
+      ${formatPct(visible)}% { opacity: 1; }
+      ${formatPct(slice)}% { opacity: 0; }
+      100%  { opacity: 0; }
+    }`;
+}
+
+function phraseText(x, y, size, lineHeight) {
+  return PHRASES.map(([line1, line2], i) => {
+    const cls = `phrase p${i + 1}`;
+    const dy = lineHeight;
+    return `    <text class="${cls}" x="${x}" y="${y}" font-size="${size}">
+      <tspan x="${x}" dy="0">${line1}</tspan>
+      <tspan x="${x}" dy="${dy}">${line2}</tspan>
+    </text>`;
+  }).join('\n');
+}
+
+function mascotSvgParts() {
+  return `
+    <g transform="translate(4, 4)">
+      <rect x="13" y="0"  width="57" height="44" fill="var(--ms-body-tl)"/>
+      <rect x="70" y="0"  width="57" height="44" fill="var(--ms-body-tr)"/>
+      <rect x="13" y="44" width="57" height="44" fill="var(--ms-body-bl)"/>
+      <rect x="70" y="44" width="57" height="44" fill="var(--ms-body-br)"/>
+      <rect x="0"   y="36" width="13" height="8"  fill="var(--ms-ear-lt)"/>
+      <rect x="0"   y="44" width="13" height="18" fill="var(--ms-ear-lb)"/>
+      <rect x="127" y="36" width="13" height="8"  fill="var(--ms-ear-rt)"/>
+      <rect x="127" y="44" width="13" height="18" fill="var(--ms-ear-rb)"/>
+      <rect x="19"  y="88" width="16" height="32" fill="var(--ms-leg-l)"/>
+      <rect x="46"  y="88" width="16" height="32" fill="var(--ms-leg-l)"/>
+      <rect x="79"  y="88" width="16" height="32" fill="var(--ms-leg-r)"/>
+      <rect x="106" y="88" width="16" height="32" fill="var(--ms-leg-r)"/>
+    </g>
+    <rect x="13" y="0"  width="57" height="44" fill="var(--m-body-tl)"/>
+    <rect x="70" y="0"  width="57" height="44" fill="var(--m-body-tr)"/>
+    <rect x="13" y="44" width="57" height="44" fill="var(--m-body-bl)"/>
+    <rect x="70" y="44" width="57" height="44" fill="var(--m-body-br)"/>
+    <rect x="0"   y="36" width="13" height="8"  fill="var(--m-ear-lt)"/>
+    <rect x="0"   y="44" width="13" height="18" fill="var(--m-ear-lb)"/>
+    <rect x="127" y="36" width="13" height="8"  fill="var(--m-ear-rt)"/>
+    <rect x="127" y="44" width="13" height="18" fill="var(--m-ear-rb)"/>
+    <rect x="19"  y="88" width="16" height="32" fill="var(--m-leg-l)"/>
+    <rect x="46"  y="88" width="16" height="32" fill="var(--m-leg-l)"/>
+    <rect x="79"  y="88" width="16" height="32" fill="var(--m-leg-r)"/>
+    <rect x="106" y="88" width="16" height="32" fill="var(--m-leg-r)"/>
+    <rect x="36"  y="26" width="16" height="16" fill="#1a1a1a"/>
+    <rect x="88"  y="26" width="16" height="16" fill="#1a1a1a"/>
+    <rect x="44"  y="58" width="8"  height="6" fill="#1a1a1a"/>
+    <rect x="88"  y="58" width="8"  height="6" fill="#1a1a1a"/>
+    <rect x="44"  y="64" width="52" height="6" fill="#1a1a1a"/>`;
+}
+
+function sharedStyle() {
+  return `    svg {
+      ${mascotDefaults()}
+      animation: cycleMascot ${CYCLE_SECONDS}s steps(1, end) infinite,
+                 cycleMascotShadow ${CYCLE_SECONDS}s steps(1, end) infinite;
+    }
+${mascotKeyframes('cycleMascot', palette.BASE_COLOURS, 'm')}
+${mascotKeyframes('cycleMascotShadow', SHADOW_COLOURS, 'ms')}
+    .phrase { opacity: 0; animation: phraseFade ${CYCLE_SECONDS}s linear infinite; }
+${phraseDelayRules()}
+${phraseKeyframes()}
+    @media (prefers-reduced-motion: reduce) {
+      svg { animation: none; ${mascotDefaults()} }
+      .phrase { animation: none; }
+      .phrase.p1 { opacity: 1; }
+    }`;
 }
 
 function buildSvg({ bgB64, mascot, cloud }) {
@@ -77,54 +276,9 @@ function buildSvg({ bgB64, mascot, cloud }) {
      the generator after changing scripts/wallpaper-bg.html or
      scripts/render-hero-background.cjs).
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with an animated pixel mascot cycling through session colours and a pixelated cloud speech bubble crossfading through assistant phrases">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with a pixel mascot cycling through all 24 solid and split session palette arrangements while the speech bubble crossfades through assistant workflow phrases">
   <style><![CDATA[
-    svg {
-      color: #ffa726;
-      --mascot-shadow: #a85e00;
-      animation: cycleBody 10s steps(1, end) infinite,
-                 cycleShadow 10s steps(1, end) infinite;
-    }
-    @keyframes cycleBody {
-      0%,   12.5% { color: #ff5e5e; }
-      12.5%, 25%  { color: #ffa726; }
-      25%,   37.5% { color: #ffd93d; }
-      37.5%, 50%  { color: #4ade80; }
-      50%,   62.5% { color: #60a5fa; }
-      62.5%, 75%  { color: #ee2bbd; }
-      75%,   87.5% { color: #c97b50; }
-      87.5%, 100% { color: #e0e0e0; }
-    }
-    @keyframes cycleShadow {
-      0%,   12.5% { --mascot-shadow: #9c2020; }
-      12.5%, 25%  { --mascot-shadow: #a85e00; }
-      25%,   37.5% { --mascot-shadow: #8c6f00; }
-      37.5%, 50%  { --mascot-shadow: #166534; }
-      50%,   62.5% { --mascot-shadow: #1e40af; }
-      62.5%, 75%  { --mascot-shadow: #86188f; }
-      75%,   87.5% { --mascot-shadow: #5d2f14; }
-      87.5%, 100% { --mascot-shadow: #6b7280; }
-    }
-    .phrase { opacity: 0; animation: phraseFade 10s linear infinite; }
-    .phrase.p1 { animation-delay:  0s; }
-    .phrase.p2 { animation-delay:  1.43s; }
-    .phrase.p3 { animation-delay:  2.86s; }
-    .phrase.p4 { animation-delay:  4.29s; }
-    .phrase.p5 { animation-delay:  5.72s; }
-    .phrase.p6 { animation-delay:  7.15s; }
-    .phrase.p7 { animation-delay:  8.58s; }
-    @keyframes phraseFade {
-      0%    { opacity: 0; }
-      2%    { opacity: 1; }
-      12.5% { opacity: 1; }
-      14.5% { opacity: 0; }
-      100%  { opacity: 0; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      svg { animation: none; color: #ffa726; --mascot-shadow: #a85e00; }
-      .phrase { animation: none; }
-      .phrase.p1 { opacity: 1; }
-    }
+${sharedStyle()}
   ]]></style>
 
   <defs>
@@ -139,27 +293,7 @@ function buildSvg({ bgB64, mascot, cloud }) {
 
   <!-- 2. Animated mascot at the original mascot's bounding box. -->
   <g transform="translate(${mx}, ${my}) scale(${mascotScale.toFixed(4)})">
-    <g transform="translate(4, 4)">
-      <rect x="13"  y="0"  width="114" height="88" fill="var(--mascot-shadow)"/>
-      <rect x="0"   y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
-      <rect x="127" y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
-      <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-    </g>
-    <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
-    <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
-    <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
-    <rect x="19"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="46"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="79"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="106" y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="36"  y="26" width="16"  height="16" fill="#1a1a1a"/>
-    <rect x="88"  y="26" width="16"  height="16" fill="#1a1a1a"/>
-    <rect x="44"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
-    <rect x="88"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
-    <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
+${mascotSvgParts()}
   </g>
 
   <!-- 3. Animated cloud speech bubble. Pixel-grid at scale 10 matches
@@ -183,13 +317,55 @@ function buildSvg({ bgB64, mascot, cloud }) {
        outside the shadow filter so the text stays crisp (filter is on
        the cloud-white group only). -->
   <g font-family="'Cascadia Code','Cascadia Mono',Consolas,monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
-    <text class="phrase p1" x="${textX}" y="${textY}" font-size="26" letter-spacing="1.5">HEY JARVIS</text>
-    <text class="phrase p2" x="${textX}" y="${textY}" font-size="20">Codex commentary</text>
-    <text class="phrase p3" x="${textX}" y="${textY}" font-size="22">Reading foo.py</text>
-    <text class="phrase p4" x="${textX}" y="${textY}" font-size="24">Moonwalking</text>
-    <text class="phrase p5" x="${textX}" y="${textY}" font-size="20">Running npm test</text>
-    <text class="phrase p6" x="${textX}" y="${textY}" font-size="21">Brewed for 8m 4s</text>
-    <text class="phrase p7" x="${textX}" y="${textY}" font-size="20">Sautéed for 1m 0s</text>
+${phraseText(textX, textY - 10, 17, 21)}
+  </g>
+</svg>
+`;
+}
+
+function buildMascotSvg() {
+  const textX = 280;
+  const textY = 84;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Terminal Talk animated mascot.
+
+     Generated by scripts/build-hero-svg.cjs. The character cycles through
+     all 24 Terminal Talk palette arrangements and the cloud rotates
+     through concise workflow phrases. Do not hand-edit this file.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk mascot cycling through all 24 solid and split session palette arrangements with assistant workflow phrases in the speech bubble">
+  <style><![CDATA[
+${sharedStyle()}
+  ]]></style>
+
+  <defs>
+    <filter id="cloud-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="4" dy="4" stdDeviation="0" flood-color="#0a0f19" flood-opacity="0.85"/>
+      <feDropShadow dx="8" dy="8" stdDeviation="0" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g transform="translate(30, 28)">
+${mascotSvgParts()}
+  </g>
+
+  <g transform="translate(190, 52)" filter="url(#cloud-shadow)">
+    <g transform="scale(6)">
+      <rect x="4"  y="0"  width="4"  height="1" fill="#ffffff"/>
+      <rect x="11" y="0"  width="5"  height="1" fill="#ffffff"/>
+      <rect x="19" y="0"  width="4"  height="1" fill="#ffffff"/>
+      <rect x="2"  y="1"  width="26" height="1" fill="#ffffff"/>
+      <rect x="1"  y="2"  width="28" height="7" fill="#ffffff"/>
+      <rect x="2"  y="9"  width="26" height="1" fill="#ffffff"/>
+      <rect x="4"  y="10" width="4"  height="1" fill="#ffffff"/>
+      <rect x="12" y="10" width="5"  height="1" fill="#ffffff"/>
+      <rect x="0"  y="7"  width="1"  height="1" fill="#ffffff"/>
+      <rect x="0"  y="8"  width="1"  height="1" fill="#ffffff"/>
+    </g>
+  </g>
+
+  <g font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
+${phraseText(textX, textY, 11, 14)}
   </g>
 </svg>
 `;
@@ -208,10 +384,17 @@ function main() {
   const bgB64  = readBase64(BG_JPG);
   const bounds = JSON.parse(fs.readFileSync(BOUNDS_JS, 'utf8'));
 
-  const svg = buildSvg({ bgB64, mascot: bounds.mascot, cloud: bounds.cloud });
-  fs.writeFileSync(OUT_SVG, svg);
-  const sizeKb = (Buffer.byteLength(svg, 'utf8') / 1024).toFixed(1);
-  console.log(`[hero] wrote ${OUT_SVG} (${sizeKb} KB)`);
+  const composite = buildSvg({ bgB64, mascot: bounds.mascot, cloud: bounds.cloud });
+  const mascotSvg = buildMascotSvg();
+  for (const out of [OUT_COMPOSITE_SVG, OUT_ABOUT_SVG]) {
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, composite);
+    const sizeKb = (Buffer.byteLength(composite, 'utf8') / 1024).toFixed(1);
+    console.log(`[hero] wrote ${out} (${sizeKb} KB)`);
+  }
+  fs.writeFileSync(OUT_MASCOT_SVG, mascotSvg);
+  const mascotKb = (Buffer.byteLength(mascotSvg, 'utf8') / 1024).toFixed(1);
+  console.log(`[hero] wrote ${OUT_MASCOT_SVG} (${mascotKb} KB)`);
 }
 
 main();

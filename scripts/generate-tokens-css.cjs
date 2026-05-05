@@ -106,15 +106,76 @@ function primaryForArrangement(i, baseColours) {
   return baseColours[i - 16];
 }
 
-// Mascot-pair: secondary colour is the partner in split arrangements,
-// same as primary for solids (so one variable covers both cases from
-// the SVG's point of view). Drives the bottom half of the mascot body
-// and the legs via var(--mascot-secondary, currentColor).
 function secondaryForArrangement(i, baseColours) {
   const { HSPLIT_PARTNER, VSPLIT_PARTNER } = palette;
   if (i < 8)  return baseColours[i];
   if (i < 16) return baseColours[HSPLIT_PARTNER[i - 8]];
   return baseColours[VSPLIT_PARTNER[i - 16]];
+}
+
+function mascotVarsForArrangement(i, baseColours) {
+  const primary = primaryForArrangement(i, baseColours);
+  const secondary = secondaryForArrangement(i, baseColours);
+  if (i < 8) {
+    return {
+      topLeft: primary,
+      topRight: primary,
+      bottomLeft: primary,
+      bottomRight: primary,
+      leftEarTop: primary,
+      leftEarBottom: primary,
+      rightEarTop: primary,
+      rightEarBottom: primary,
+      leftLeg: primary,
+      rightLeg: primary,
+      secondary,
+    };
+  }
+  if (i < 16) {
+    return {
+      topLeft: primary,
+      topRight: primary,
+      bottomLeft: secondary,
+      bottomRight: secondary,
+      leftEarTop: primary,
+      leftEarBottom: secondary,
+      rightEarTop: primary,
+      rightEarBottom: secondary,
+      leftLeg: secondary,
+      rightLeg: secondary,
+      secondary,
+    };
+  }
+  return {
+    topLeft: primary,
+    topRight: secondary,
+    bottomLeft: primary,
+    bottomRight: secondary,
+    leftEarTop: primary,
+    leftEarBottom: primary,
+    rightEarTop: secondary,
+    rightEarBottom: secondary,
+    leftLeg: primary,
+    rightLeg: secondary,
+    secondary,
+  };
+}
+
+function mascotVarDeclarations(vars) {
+  return [
+    `color: ${vars.topLeft}`,
+    `--mascot-secondary: ${vars.secondary}`,
+    `--mascot-body-top-left: ${vars.topLeft}`,
+    `--mascot-body-top-right: ${vars.topRight}`,
+    `--mascot-body-bottom-left: ${vars.bottomLeft}`,
+    `--mascot-body-bottom-right: ${vars.bottomRight}`,
+    `--mascot-ear-left-top: ${vars.leftEarTop}`,
+    `--mascot-ear-left-bottom: ${vars.leftEarBottom}`,
+    `--mascot-ear-right-top: ${vars.rightEarTop}`,
+    `--mascot-ear-right-bottom: ${vars.rightEarBottom}`,
+    `--mascot-leg-left: ${vars.leftLeg}`,
+    `--mascot-leg-right: ${vars.rightLeg}`,
+  ].join('; ');
 }
 
 // EX5 — arrangementBg now takes the colour set as a param so we can
@@ -139,20 +200,28 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     lines.push(`${selectorPrefix}[data-palette="${k}"] { background: ${bg}; --tt-palette-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.collapsed-signal[data-palette="${k}"] { --collapsed-signal-bg: ${bg}; }`);
     lines.push(`${selectorPrefix}.dot.heard[data-palette="${k}"] { --dot-ring-bg: ${bg}; }`);
-    // Mascot: SVG upper body/ears use fill: currentColor (primary); lower
-    // body + legs use fill: var(--mascot-secondary, currentColor). Split
-    // arrangements set --mascot-secondary to the partner colour so the
-    // mascot splits top/bottom matching the session palette. Solid
-    // arrangements set secondary = primary, so the mascot renders as one
-    // colour (var falls through cleanly). Keeps one SVG for all 24
-    // arrangements; colours stay clipped to the body rects (no bleed).
-    const secondary = secondaryForArrangement(i, baseColours);
-    lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { color: ${primary}; --mascot-secondary: ${secondary}; }`);
+    // Mascot: the SVG has named body/ear/leg regions. These variables
+    // preserve the same orientation as the session marker: solid,
+    // top/bottom, or left/right. This keeps the scrubber character from
+    // implying the wrong split direction for mixed-palette sessions.
+    lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { ${mascotVarDeclarations(mascotVarsForArrangement(i, baseColours))}; }`);
   }
   lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; --tt-palette-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { --dot-ring-bg: ${palette.NEUTRAL_COLOUR}; }`);
-  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { color: ${palette.NEUTRAL_COLOUR}; --mascot-secondary: ${palette.NEUTRAL_COLOUR}; }`);
+  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { ${mascotVarDeclarations({
+    topLeft: palette.NEUTRAL_COLOUR,
+    topRight: palette.NEUTRAL_COLOUR,
+    bottomLeft: palette.NEUTRAL_COLOUR,
+    bottomRight: palette.NEUTRAL_COLOUR,
+    leftEarTop: palette.NEUTRAL_COLOUR,
+    leftEarBottom: palette.NEUTRAL_COLOUR,
+    rightEarTop: palette.NEUTRAL_COLOUR,
+    rightEarBottom: palette.NEUTRAL_COLOUR,
+    leftLeg: palette.NEUTRAL_COLOUR,
+    rightLeg: palette.NEUTRAL_COLOUR,
+    secondary: palette.NEUTRAL_COLOUR,
+  })}; }`);
   return lines;
 }
 

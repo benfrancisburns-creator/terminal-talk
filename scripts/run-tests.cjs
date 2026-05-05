@@ -9319,6 +9319,12 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     if (!/\.dot\.heard\[data-palette="16"\]\s*\{\s*--dot-ring-bg:\s*linear-gradient\(to right/.test(paletteCss)) {
       throw new Error('heard clip rings must expose vertical split palette orientation');
     }
+    if (!/\.scrubber-mascot\[data-palette="08"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-top-right:\s*#ff5e5e;[^}]*--mascot-body-bottom-left:\s*#4ade80;[^}]*--mascot-body-bottom-right:\s*#4ade80;[^}]*--mascot-leg-left:\s*#4ade80;[^}]*--mascot-leg-right:\s*#4ade80;/.test(paletteCss)) {
+      throw new Error('scrubber mascot must preserve top/bottom split palette orientation');
+    }
+    if (!/\.scrubber-mascot\[data-palette="16"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-top-right:\s*#60a5fa;[^}]*--mascot-body-bottom-left:\s*#ff5e5e;[^}]*--mascot-body-bottom-right:\s*#60a5fa;[^}]*--mascot-leg-left:\s*#ff5e5e;[^}]*--mascot-leg-right:\s*#60a5fa;/.test(paletteCss)) {
+      throw new Error('scrubber mascot must preserve left/right split palette orientation');
+    }
     if (/\.dot\.heard\[data-palette="08"\]\s*\{[^}]*box-shadow:\s*0\s+0\s+0\s+2px\s+#ff5e5e/.test(paletteCss)) {
       throw new Error('heard split clip rings must not collapse to the primary colour');
     }

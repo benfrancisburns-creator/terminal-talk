@@ -11,51 +11,87 @@
      the generator after changing scripts/wallpaper-bg.html or
      scripts/render-hero-background.cjs).
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with an animated pixel mascot cycling through session colours and a pixelated cloud speech bubble crossfading through assistant phrases">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" shape-rendering="crispEdges" role="img" aria-label="Terminal Talk — coloured ASCII wordmark with a pixel mascot cycling through all 24 solid and split session palette arrangements while the speech bubble crossfades through assistant workflow phrases">
   <style><![CDATA[
     svg {
-      color: #ffa726;
-      --mascot-shadow: #a85e00;
-      animation: cycleBody 10s steps(1, end) infinite,
-                 cycleShadow 10s steps(1, end) infinite;
+      --m-body-tl: #ffa726; --m-body-tr: #ffa726; --m-body-bl: #ffa726; --m-body-br: #ffa726; --m-ear-lt: #ffa726; --m-ear-lb: #ffa726; --m-ear-rt: #ffa726; --m-ear-rb: #ffa726; --m-leg-l: #ffa726; --m-leg-r: #ffa726; --ms-body-tl: #a85e00; --ms-body-tr: #a85e00; --ms-body-bl: #a85e00; --ms-body-br: #a85e00; --ms-ear-lt: #a85e00; --ms-ear-lb: #a85e00; --ms-ear-rt: #a85e00; --ms-ear-rb: #a85e00; --ms-leg-l: #a85e00; --ms-leg-r: #a85e00;
+      animation: cycleMascot 16.8s steps(1, end) infinite,
+                 cycleMascotShadow 16.8s steps(1, end) infinite;
     }
-    @keyframes cycleBody {
-      0%,   12.5% { color: #ff5e5e; }
-      12.5%, 25%  { color: #ffa726; }
-      25%,   37.5% { color: #ffd93d; }
-      37.5%, 50%  { color: #4ade80; }
-      50%,   62.5% { color: #60a5fa; }
-      62.5%, 75%  { color: #ee2bbd; }
-      75%,   87.5% { color: #c97b50; }
-      87.5%, 100% { color: #e0e0e0; }
+    @keyframes cycleMascot {
+      0%, 4.1667% { --m-body-tl: #ff5e5e; --m-body-tr: #ff5e5e; --m-body-bl: #ff5e5e; --m-body-br: #ff5e5e; --m-ear-lt: #ff5e5e; --m-ear-lb: #ff5e5e; --m-ear-rt: #ff5e5e; --m-ear-rb: #ff5e5e; --m-leg-l: #ff5e5e; --m-leg-r: #ff5e5e; }
+      4.1667%, 8.3333% { --m-body-tl: #ffa726; --m-body-tr: #ffa726; --m-body-bl: #ffa726; --m-body-br: #ffa726; --m-ear-lt: #ffa726; --m-ear-lb: #ffa726; --m-ear-rt: #ffa726; --m-ear-rb: #ffa726; --m-leg-l: #ffa726; --m-leg-r: #ffa726; }
+      8.3333%, 12.5% { --m-body-tl: #ffd93d; --m-body-tr: #ffd93d; --m-body-bl: #ffd93d; --m-body-br: #ffd93d; --m-ear-lt: #ffd93d; --m-ear-lb: #ffd93d; --m-ear-rt: #ffd93d; --m-ear-rb: #ffd93d; --m-leg-l: #ffd93d; --m-leg-r: #ffd93d; }
+      12.5%, 16.6667% { --m-body-tl: #4ade80; --m-body-tr: #4ade80; --m-body-bl: #4ade80; --m-body-br: #4ade80; --m-ear-lt: #4ade80; --m-ear-lb: #4ade80; --m-ear-rt: #4ade80; --m-ear-rb: #4ade80; --m-leg-l: #4ade80; --m-leg-r: #4ade80; }
+      16.6667%, 20.8333% { --m-body-tl: #60a5fa; --m-body-tr: #60a5fa; --m-body-bl: #60a5fa; --m-body-br: #60a5fa; --m-ear-lt: #60a5fa; --m-ear-lb: #60a5fa; --m-ear-rt: #60a5fa; --m-ear-rb: #60a5fa; --m-leg-l: #60a5fa; --m-leg-r: #60a5fa; }
+      20.8333%, 25% { --m-body-tl: #ee2bbd; --m-body-tr: #ee2bbd; --m-body-bl: #ee2bbd; --m-body-br: #ee2bbd; --m-ear-lt: #ee2bbd; --m-ear-lb: #ee2bbd; --m-ear-rt: #ee2bbd; --m-ear-rb: #ee2bbd; --m-leg-l: #ee2bbd; --m-leg-r: #ee2bbd; }
+      25%, 29.1667% { --m-body-tl: #c97b50; --m-body-tr: #c97b50; --m-body-bl: #c97b50; --m-body-br: #c97b50; --m-ear-lt: #c97b50; --m-ear-lb: #c97b50; --m-ear-rt: #c97b50; --m-ear-rb: #c97b50; --m-leg-l: #c97b50; --m-leg-r: #c97b50; }
+      29.1667%, 33.3333% { --m-body-tl: #e0e0e0; --m-body-tr: #e0e0e0; --m-body-bl: #e0e0e0; --m-body-br: #e0e0e0; --m-ear-lt: #e0e0e0; --m-ear-lb: #e0e0e0; --m-ear-rt: #e0e0e0; --m-ear-rb: #e0e0e0; --m-leg-l: #e0e0e0; --m-leg-r: #e0e0e0; }
+      33.3333%, 37.5% { --m-body-tl: #ff5e5e; --m-body-tr: #ff5e5e; --m-body-bl: #4ade80; --m-body-br: #4ade80; --m-ear-lt: #ff5e5e; --m-ear-lb: #4ade80; --m-ear-rt: #ff5e5e; --m-ear-rb: #4ade80; --m-leg-l: #4ade80; --m-leg-r: #4ade80; }
+      37.5%, 41.6667% { --m-body-tl: #ffa726; --m-body-tr: #ffa726; --m-body-bl: #60a5fa; --m-body-br: #60a5fa; --m-ear-lt: #ffa726; --m-ear-lb: #60a5fa; --m-ear-rt: #ffa726; --m-ear-rb: #60a5fa; --m-leg-l: #60a5fa; --m-leg-r: #60a5fa; }
+      41.6667%, 45.8333% { --m-body-tl: #ffd93d; --m-body-tr: #ffd93d; --m-body-bl: #ee2bbd; --m-body-br: #ee2bbd; --m-ear-lt: #ffd93d; --m-ear-lb: #ee2bbd; --m-ear-rt: #ffd93d; --m-ear-rb: #ee2bbd; --m-leg-l: #ee2bbd; --m-leg-r: #ee2bbd; }
+      45.8333%, 50% { --m-body-tl: #4ade80; --m-body-tr: #4ade80; --m-body-bl: #ff5e5e; --m-body-br: #ff5e5e; --m-ear-lt: #4ade80; --m-ear-lb: #ff5e5e; --m-ear-rt: #4ade80; --m-ear-rb: #ff5e5e; --m-leg-l: #ff5e5e; --m-leg-r: #ff5e5e; }
+      50%, 54.1667% { --m-body-tl: #60a5fa; --m-body-tr: #60a5fa; --m-body-bl: #ffa726; --m-body-br: #ffa726; --m-ear-lt: #60a5fa; --m-ear-lb: #ffa726; --m-ear-rt: #60a5fa; --m-ear-rb: #ffa726; --m-leg-l: #ffa726; --m-leg-r: #ffa726; }
+      54.1667%, 58.3333% { --m-body-tl: #ee2bbd; --m-body-tr: #ee2bbd; --m-body-bl: #ffd93d; --m-body-br: #ffd93d; --m-ear-lt: #ee2bbd; --m-ear-lb: #ffd93d; --m-ear-rt: #ee2bbd; --m-ear-rb: #ffd93d; --m-leg-l: #ffd93d; --m-leg-r: #ffd93d; }
+      58.3333%, 62.5% { --m-body-tl: #c97b50; --m-body-tr: #c97b50; --m-body-bl: #e0e0e0; --m-body-br: #e0e0e0; --m-ear-lt: #c97b50; --m-ear-lb: #e0e0e0; --m-ear-rt: #c97b50; --m-ear-rb: #e0e0e0; --m-leg-l: #e0e0e0; --m-leg-r: #e0e0e0; }
+      62.5%, 66.6667% { --m-body-tl: #e0e0e0; --m-body-tr: #e0e0e0; --m-body-bl: #c97b50; --m-body-br: #c97b50; --m-ear-lt: #e0e0e0; --m-ear-lb: #c97b50; --m-ear-rt: #e0e0e0; --m-ear-rb: #c97b50; --m-leg-l: #c97b50; --m-leg-r: #c97b50; }
+      66.6667%, 70.8333% { --m-body-tl: #ff5e5e; --m-body-tr: #60a5fa; --m-body-bl: #ff5e5e; --m-body-br: #60a5fa; --m-ear-lt: #ff5e5e; --m-ear-lb: #ff5e5e; --m-ear-rt: #60a5fa; --m-ear-rb: #60a5fa; --m-leg-l: #ff5e5e; --m-leg-r: #60a5fa; }
+      70.8333%, 75% { --m-body-tl: #ffa726; --m-body-tr: #ee2bbd; --m-body-bl: #ffa726; --m-body-br: #ee2bbd; --m-ear-lt: #ffa726; --m-ear-lb: #ffa726; --m-ear-rt: #ee2bbd; --m-ear-rb: #ee2bbd; --m-leg-l: #ffa726; --m-leg-r: #ee2bbd; }
+      75%, 79.1667% { --m-body-tl: #ffd93d; --m-body-tr: #c97b50; --m-body-bl: #ffd93d; --m-body-br: #c97b50; --m-ear-lt: #ffd93d; --m-ear-lb: #ffd93d; --m-ear-rt: #c97b50; --m-ear-rb: #c97b50; --m-leg-l: #ffd93d; --m-leg-r: #c97b50; }
+      79.1667%, 83.3333% { --m-body-tl: #4ade80; --m-body-tr: #e0e0e0; --m-body-bl: #4ade80; --m-body-br: #e0e0e0; --m-ear-lt: #4ade80; --m-ear-lb: #4ade80; --m-ear-rt: #e0e0e0; --m-ear-rb: #e0e0e0; --m-leg-l: #4ade80; --m-leg-r: #e0e0e0; }
+      83.3333%, 87.5% { --m-body-tl: #60a5fa; --m-body-tr: #ff5e5e; --m-body-bl: #60a5fa; --m-body-br: #ff5e5e; --m-ear-lt: #60a5fa; --m-ear-lb: #60a5fa; --m-ear-rt: #ff5e5e; --m-ear-rb: #ff5e5e; --m-leg-l: #60a5fa; --m-leg-r: #ff5e5e; }
+      87.5%, 91.6667% { --m-body-tl: #ee2bbd; --m-body-tr: #ffa726; --m-body-bl: #ee2bbd; --m-body-br: #ffa726; --m-ear-lt: #ee2bbd; --m-ear-lb: #ee2bbd; --m-ear-rt: #ffa726; --m-ear-rb: #ffa726; --m-leg-l: #ee2bbd; --m-leg-r: #ffa726; }
+      91.6667%, 95.8333% { --m-body-tl: #c97b50; --m-body-tr: #ffd93d; --m-body-bl: #c97b50; --m-body-br: #ffd93d; --m-ear-lt: #c97b50; --m-ear-lb: #c97b50; --m-ear-rt: #ffd93d; --m-ear-rb: #ffd93d; --m-leg-l: #c97b50; --m-leg-r: #ffd93d; }
+      95.8333%, 100% { --m-body-tl: #e0e0e0; --m-body-tr: #4ade80; --m-body-bl: #e0e0e0; --m-body-br: #4ade80; --m-ear-lt: #e0e0e0; --m-ear-lb: #e0e0e0; --m-ear-rt: #4ade80; --m-ear-rb: #4ade80; --m-leg-l: #e0e0e0; --m-leg-r: #4ade80; }
     }
-    @keyframes cycleShadow {
-      0%,   12.5% { --mascot-shadow: #9c2020; }
-      12.5%, 25%  { --mascot-shadow: #a85e00; }
-      25%,   37.5% { --mascot-shadow: #8c6f00; }
-      37.5%, 50%  { --mascot-shadow: #166534; }
-      50%,   62.5% { --mascot-shadow: #1e40af; }
-      62.5%, 75%  { --mascot-shadow: #86188f; }
-      75%,   87.5% { --mascot-shadow: #5d2f14; }
-      87.5%, 100% { --mascot-shadow: #6b7280; }
+    @keyframes cycleMascotShadow {
+      0%, 4.1667% { --ms-body-tl: #9c2020; --ms-body-tr: #9c2020; --ms-body-bl: #9c2020; --ms-body-br: #9c2020; --ms-ear-lt: #9c2020; --ms-ear-lb: #9c2020; --ms-ear-rt: #9c2020; --ms-ear-rb: #9c2020; --ms-leg-l: #9c2020; --ms-leg-r: #9c2020; }
+      4.1667%, 8.3333% { --ms-body-tl: #a85e00; --ms-body-tr: #a85e00; --ms-body-bl: #a85e00; --ms-body-br: #a85e00; --ms-ear-lt: #a85e00; --ms-ear-lb: #a85e00; --ms-ear-rt: #a85e00; --ms-ear-rb: #a85e00; --ms-leg-l: #a85e00; --ms-leg-r: #a85e00; }
+      8.3333%, 12.5% { --ms-body-tl: #8c6f00; --ms-body-tr: #8c6f00; --ms-body-bl: #8c6f00; --ms-body-br: #8c6f00; --ms-ear-lt: #8c6f00; --ms-ear-lb: #8c6f00; --ms-ear-rt: #8c6f00; --ms-ear-rb: #8c6f00; --ms-leg-l: #8c6f00; --ms-leg-r: #8c6f00; }
+      12.5%, 16.6667% { --ms-body-tl: #166534; --ms-body-tr: #166534; --ms-body-bl: #166534; --ms-body-br: #166534; --ms-ear-lt: #166534; --ms-ear-lb: #166534; --ms-ear-rt: #166534; --ms-ear-rb: #166534; --ms-leg-l: #166534; --ms-leg-r: #166534; }
+      16.6667%, 20.8333% { --ms-body-tl: #1e40af; --ms-body-tr: #1e40af; --ms-body-bl: #1e40af; --ms-body-br: #1e40af; --ms-ear-lt: #1e40af; --ms-ear-lb: #1e40af; --ms-ear-rt: #1e40af; --ms-ear-rb: #1e40af; --ms-leg-l: #1e40af; --ms-leg-r: #1e40af; }
+      20.8333%, 25% { --ms-body-tl: #86188f; --ms-body-tr: #86188f; --ms-body-bl: #86188f; --ms-body-br: #86188f; --ms-ear-lt: #86188f; --ms-ear-lb: #86188f; --ms-ear-rt: #86188f; --ms-ear-rb: #86188f; --ms-leg-l: #86188f; --ms-leg-r: #86188f; }
+      25%, 29.1667% { --ms-body-tl: #5d2f14; --ms-body-tr: #5d2f14; --ms-body-bl: #5d2f14; --ms-body-br: #5d2f14; --ms-ear-lt: #5d2f14; --ms-ear-lb: #5d2f14; --ms-ear-rt: #5d2f14; --ms-ear-rb: #5d2f14; --ms-leg-l: #5d2f14; --ms-leg-r: #5d2f14; }
+      29.1667%, 33.3333% { --ms-body-tl: #6b7280; --ms-body-tr: #6b7280; --ms-body-bl: #6b7280; --ms-body-br: #6b7280; --ms-ear-lt: #6b7280; --ms-ear-lb: #6b7280; --ms-ear-rt: #6b7280; --ms-ear-rb: #6b7280; --ms-leg-l: #6b7280; --ms-leg-r: #6b7280; }
+      33.3333%, 37.5% { --ms-body-tl: #9c2020; --ms-body-tr: #9c2020; --ms-body-bl: #166534; --ms-body-br: #166534; --ms-ear-lt: #9c2020; --ms-ear-lb: #166534; --ms-ear-rt: #9c2020; --ms-ear-rb: #166534; --ms-leg-l: #166534; --ms-leg-r: #166534; }
+      37.5%, 41.6667% { --ms-body-tl: #a85e00; --ms-body-tr: #a85e00; --ms-body-bl: #1e40af; --ms-body-br: #1e40af; --ms-ear-lt: #a85e00; --ms-ear-lb: #1e40af; --ms-ear-rt: #a85e00; --ms-ear-rb: #1e40af; --ms-leg-l: #1e40af; --ms-leg-r: #1e40af; }
+      41.6667%, 45.8333% { --ms-body-tl: #8c6f00; --ms-body-tr: #8c6f00; --ms-body-bl: #86188f; --ms-body-br: #86188f; --ms-ear-lt: #8c6f00; --ms-ear-lb: #86188f; --ms-ear-rt: #8c6f00; --ms-ear-rb: #86188f; --ms-leg-l: #86188f; --ms-leg-r: #86188f; }
+      45.8333%, 50% { --ms-body-tl: #166534; --ms-body-tr: #166534; --ms-body-bl: #9c2020; --ms-body-br: #9c2020; --ms-ear-lt: #166534; --ms-ear-lb: #9c2020; --ms-ear-rt: #166534; --ms-ear-rb: #9c2020; --ms-leg-l: #9c2020; --ms-leg-r: #9c2020; }
+      50%, 54.1667% { --ms-body-tl: #1e40af; --ms-body-tr: #1e40af; --ms-body-bl: #a85e00; --ms-body-br: #a85e00; --ms-ear-lt: #1e40af; --ms-ear-lb: #a85e00; --ms-ear-rt: #1e40af; --ms-ear-rb: #a85e00; --ms-leg-l: #a85e00; --ms-leg-r: #a85e00; }
+      54.1667%, 58.3333% { --ms-body-tl: #86188f; --ms-body-tr: #86188f; --ms-body-bl: #8c6f00; --ms-body-br: #8c6f00; --ms-ear-lt: #86188f; --ms-ear-lb: #8c6f00; --ms-ear-rt: #86188f; --ms-ear-rb: #8c6f00; --ms-leg-l: #8c6f00; --ms-leg-r: #8c6f00; }
+      58.3333%, 62.5% { --ms-body-tl: #5d2f14; --ms-body-tr: #5d2f14; --ms-body-bl: #6b7280; --ms-body-br: #6b7280; --ms-ear-lt: #5d2f14; --ms-ear-lb: #6b7280; --ms-ear-rt: #5d2f14; --ms-ear-rb: #6b7280; --ms-leg-l: #6b7280; --ms-leg-r: #6b7280; }
+      62.5%, 66.6667% { --ms-body-tl: #6b7280; --ms-body-tr: #6b7280; --ms-body-bl: #5d2f14; --ms-body-br: #5d2f14; --ms-ear-lt: #6b7280; --ms-ear-lb: #5d2f14; --ms-ear-rt: #6b7280; --ms-ear-rb: #5d2f14; --ms-leg-l: #5d2f14; --ms-leg-r: #5d2f14; }
+      66.6667%, 70.8333% { --ms-body-tl: #9c2020; --ms-body-tr: #1e40af; --ms-body-bl: #9c2020; --ms-body-br: #1e40af; --ms-ear-lt: #9c2020; --ms-ear-lb: #9c2020; --ms-ear-rt: #1e40af; --ms-ear-rb: #1e40af; --ms-leg-l: #9c2020; --ms-leg-r: #1e40af; }
+      70.8333%, 75% { --ms-body-tl: #a85e00; --ms-body-tr: #86188f; --ms-body-bl: #a85e00; --ms-body-br: #86188f; --ms-ear-lt: #a85e00; --ms-ear-lb: #a85e00; --ms-ear-rt: #86188f; --ms-ear-rb: #86188f; --ms-leg-l: #a85e00; --ms-leg-r: #86188f; }
+      75%, 79.1667% { --ms-body-tl: #8c6f00; --ms-body-tr: #5d2f14; --ms-body-bl: #8c6f00; --ms-body-br: #5d2f14; --ms-ear-lt: #8c6f00; --ms-ear-lb: #8c6f00; --ms-ear-rt: #5d2f14; --ms-ear-rb: #5d2f14; --ms-leg-l: #8c6f00; --ms-leg-r: #5d2f14; }
+      79.1667%, 83.3333% { --ms-body-tl: #166534; --ms-body-tr: #6b7280; --ms-body-bl: #166534; --ms-body-br: #6b7280; --ms-ear-lt: #166534; --ms-ear-lb: #166534; --ms-ear-rt: #6b7280; --ms-ear-rb: #6b7280; --ms-leg-l: #166534; --ms-leg-r: #6b7280; }
+      83.3333%, 87.5% { --ms-body-tl: #1e40af; --ms-body-tr: #9c2020; --ms-body-bl: #1e40af; --ms-body-br: #9c2020; --ms-ear-lt: #1e40af; --ms-ear-lb: #1e40af; --ms-ear-rt: #9c2020; --ms-ear-rb: #9c2020; --ms-leg-l: #1e40af; --ms-leg-r: #9c2020; }
+      87.5%, 91.6667% { --ms-body-tl: #86188f; --ms-body-tr: #a85e00; --ms-body-bl: #86188f; --ms-body-br: #a85e00; --ms-ear-lt: #86188f; --ms-ear-lb: #86188f; --ms-ear-rt: #a85e00; --ms-ear-rb: #a85e00; --ms-leg-l: #86188f; --ms-leg-r: #a85e00; }
+      91.6667%, 95.8333% { --ms-body-tl: #5d2f14; --ms-body-tr: #8c6f00; --ms-body-bl: #5d2f14; --ms-body-br: #8c6f00; --ms-ear-lt: #5d2f14; --ms-ear-lb: #5d2f14; --ms-ear-rt: #8c6f00; --ms-ear-rb: #8c6f00; --ms-leg-l: #5d2f14; --ms-leg-r: #8c6f00; }
+      95.8333%, 100% { --ms-body-tl: #6b7280; --ms-body-tr: #166534; --ms-body-bl: #6b7280; --ms-body-br: #166534; --ms-ear-lt: #6b7280; --ms-ear-lb: #6b7280; --ms-ear-rt: #166534; --ms-ear-rb: #166534; --ms-leg-l: #6b7280; --ms-leg-r: #166534; }
     }
-    .phrase { opacity: 0; animation: phraseFade 10s linear infinite; }
-    .phrase.p1 { animation-delay:  0s; }
-    .phrase.p2 { animation-delay:  1.43s; }
-    .phrase.p3 { animation-delay:  2.86s; }
-    .phrase.p4 { animation-delay:  4.29s; }
-    .phrase.p5 { animation-delay:  5.72s; }
-    .phrase.p6 { animation-delay:  7.15s; }
-    .phrase.p7 { animation-delay:  8.58s; }
+    .phrase { opacity: 0; animation: phraseFade 16.8s linear infinite; }
+    .phrase.p1 { animation-delay: 0s; }
+    .phrase.p2 { animation-delay: 1.4s; }
+    .phrase.p3 { animation-delay: 2.8s; }
+    .phrase.p4 { animation-delay: 4.2s; }
+    .phrase.p5 { animation-delay: 5.6s; }
+    .phrase.p6 { animation-delay: 7s; }
+    .phrase.p7 { animation-delay: 8.4s; }
+    .phrase.p8 { animation-delay: 9.8s; }
+    .phrase.p9 { animation-delay: 11.2s; }
+    .phrase.p10 { animation-delay: 12.6s; }
+    .phrase.p11 { animation-delay: 14s; }
+    .phrase.p12 { animation-delay: 15.4s; }
     @keyframes phraseFade {
       0%    { opacity: 0; }
-      2%    { opacity: 1; }
-      12.5% { opacity: 1; }
-      14.5% { opacity: 0; }
+      2.5% { opacity: 1; }
+      7.2333% { opacity: 1; }
+      8.3333% { opacity: 0; }
       100%  { opacity: 0; }
     }
     @media (prefers-reduced-motion: reduce) {
-      svg { animation: none; color: #ffa726; --mascot-shadow: #a85e00; }
+      svg { animation: none; --m-body-tl: #ffa726; --m-body-tr: #ffa726; --m-body-bl: #ffa726; --m-body-br: #ffa726; --m-ear-lt: #ffa726; --m-ear-lb: #ffa726; --m-ear-rt: #ffa726; --m-ear-rb: #ffa726; --m-leg-l: #ffa726; --m-leg-r: #ffa726; --ms-body-tl: #a85e00; --ms-body-tr: #a85e00; --ms-body-bl: #a85e00; --ms-body-br: #a85e00; --ms-ear-lt: #a85e00; --ms-ear-lb: #a85e00; --ms-ear-rt: #a85e00; --ms-ear-rb: #a85e00; --ms-leg-l: #a85e00; --ms-leg-r: #a85e00; }
       .phrase { animation: none; }
       .phrase.p1 { opacity: 1; }
     }
@@ -73,27 +109,38 @@
 
   <!-- 2. Animated mascot at the original mascot's bounding box. -->
   <g transform="translate(630, 370) scale(0.9571)">
+
     <g transform="translate(4, 4)">
-      <rect x="13"  y="0"  width="114" height="88" fill="var(--mascot-shadow)"/>
-      <rect x="0"   y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
-      <rect x="127" y="36" width="13"  height="26" fill="var(--mascot-shadow)"/>
-      <rect x="19"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="46"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="79"  y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
-      <rect x="106" y="88" width="16"  height="32" fill="var(--mascot-shadow)"/>
+      <rect x="13" y="0"  width="57" height="44" fill="var(--ms-body-tl)"/>
+      <rect x="70" y="0"  width="57" height="44" fill="var(--ms-body-tr)"/>
+      <rect x="13" y="44" width="57" height="44" fill="var(--ms-body-bl)"/>
+      <rect x="70" y="44" width="57" height="44" fill="var(--ms-body-br)"/>
+      <rect x="0"   y="36" width="13" height="8"  fill="var(--ms-ear-lt)"/>
+      <rect x="0"   y="44" width="13" height="18" fill="var(--ms-ear-lb)"/>
+      <rect x="127" y="36" width="13" height="8"  fill="var(--ms-ear-rt)"/>
+      <rect x="127" y="44" width="13" height="18" fill="var(--ms-ear-rb)"/>
+      <rect x="19"  y="88" width="16" height="32" fill="var(--ms-leg-l)"/>
+      <rect x="46"  y="88" width="16" height="32" fill="var(--ms-leg-l)"/>
+      <rect x="79"  y="88" width="16" height="32" fill="var(--ms-leg-r)"/>
+      <rect x="106" y="88" width="16" height="32" fill="var(--ms-leg-r)"/>
     </g>
-    <rect x="13"  y="0"  width="114" height="88" fill="currentColor"/>
-    <rect x="0"   y="36" width="13"  height="26" fill="currentColor"/>
-    <rect x="127" y="36" width="13"  height="26" fill="currentColor"/>
-    <rect x="19"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="46"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="79"  y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="106" y="88" width="16"  height="32" fill="currentColor"/>
-    <rect x="36"  y="26" width="16"  height="16" fill="#1a1a1a"/>
-    <rect x="88"  y="26" width="16"  height="16" fill="#1a1a1a"/>
-    <rect x="44"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
-    <rect x="88"  y="58" width="8"   height="6"  fill="#1a1a1a"/>
-    <rect x="44"  y="64" width="52"  height="6"  fill="#1a1a1a"/>
+    <rect x="13" y="0"  width="57" height="44" fill="var(--m-body-tl)"/>
+    <rect x="70" y="0"  width="57" height="44" fill="var(--m-body-tr)"/>
+    <rect x="13" y="44" width="57" height="44" fill="var(--m-body-bl)"/>
+    <rect x="70" y="44" width="57" height="44" fill="var(--m-body-br)"/>
+    <rect x="0"   y="36" width="13" height="8"  fill="var(--m-ear-lt)"/>
+    <rect x="0"   y="44" width="13" height="18" fill="var(--m-ear-lb)"/>
+    <rect x="127" y="36" width="13" height="8"  fill="var(--m-ear-rt)"/>
+    <rect x="127" y="44" width="13" height="18" fill="var(--m-ear-rb)"/>
+    <rect x="19"  y="88" width="16" height="32" fill="var(--m-leg-l)"/>
+    <rect x="46"  y="88" width="16" height="32" fill="var(--m-leg-l)"/>
+    <rect x="79"  y="88" width="16" height="32" fill="var(--m-leg-r)"/>
+    <rect x="106" y="88" width="16" height="32" fill="var(--m-leg-r)"/>
+    <rect x="36"  y="26" width="16" height="16" fill="#1a1a1a"/>
+    <rect x="88"  y="26" width="16" height="16" fill="#1a1a1a"/>
+    <rect x="44"  y="58" width="8"  height="6" fill="#1a1a1a"/>
+    <rect x="88"  y="58" width="8"  height="6" fill="#1a1a1a"/>
+    <rect x="44"  y="64" width="52" height="6" fill="#1a1a1a"/>
   </g>
 
   <!-- 3. Animated cloud speech bubble. Pixel-grid at scale 10 matches
@@ -117,12 +164,53 @@
        outside the shadow filter so the text stays crisp (filter is on
        the cloud-white group only). -->
   <g font-family="'Cascadia Code','Cascadia Mono',Consolas,monospace" font-weight="700" fill="#0e0f13" text-anchor="middle">
-    <text class="phrase p1" x="942" y="441" font-size="26" letter-spacing="1.5">HEY JARVIS</text>
-    <text class="phrase p2" x="942" y="441" font-size="20">Codex commentary</text>
-    <text class="phrase p3" x="942" y="441" font-size="22">Reading foo.py</text>
-    <text class="phrase p4" x="942" y="441" font-size="24">Moonwalking</text>
-    <text class="phrase p5" x="942" y="441" font-size="20">Running npm test</text>
-    <text class="phrase p6" x="942" y="441" font-size="21">Brewed for 8m 4s</text>
-    <text class="phrase p7" x="942" y="441" font-size="20">Sautéed for 1m 0s</text>
+    <text class="phrase p1" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Claude replies</tspan>
+      <tspan x="942" dy="21">speak automatically</tspan>
+    </text>
+    <text class="phrase p2" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Codex updates</tspan>
+      <tspan x="942" dy="21">join the queue</tspan>
+    </text>
+    <text class="phrase p3" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Focus one session</tspan>
+      <tspan x="942" dy="21">hear it first</tspan>
+    </text>
+    <text class="phrase p4" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Desktop apps keep</tspan>
+      <tspan x="942" dy="21">their TT identity</tspan>
+    </text>
+    <text class="phrase p5" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Tool calls narrate</tspan>
+      <tspan x="942" dy="21">while they run</tspan>
+    </text>
+    <text class="phrase p6" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Transcripts keep</tspan>
+      <tspan x="942" dy="21">spoken + original</tspan>
+    </text>
+    <text class="phrase p7" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Hey Jarvis reads</tspan>
+      <tspan x="942" dy="21">selected text</tspan>
+    </text>
+    <text class="phrase p8" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Auto-prune clears</tspan>
+      <tspan x="942" dy="21">played clips</tspan>
+    </text>
+    <text class="phrase p9" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Muted sessions</tspan>
+      <tspan x="942" dy="21">stay quiet</tspan>
+    </text>
+    <text class="phrase p10" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Footer closer</tspan>
+      <tspan x="942" dy="21">Brewed for 8m 4s</tspan>
+    </text>
+    <text class="phrase p11" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Split colours</tspan>
+      <tspan x="942" dy="21">match everywhere</tspan>
+    </text>
+    <text class="phrase p12" x="942" y="431" font-size="17">
+      <tspan x="942" dy="0">Hands-free coding</tspan>
+      <tspan x="942" dy="21">without babysitting</tspan>
+    </text>
   </g>
 </svg>

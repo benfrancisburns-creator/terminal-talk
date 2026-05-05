@@ -8,203 +8,203 @@
 [data-palette="00"] { background: #ff5e5e; --tt-palette-bg: #ff5e5e; }
 .collapsed-signal[data-palette="00"] { --collapsed-signal-bg: #ff5e5e; }
 .dot.heard[data-palette="00"] { --dot-ring-bg: #ff5e5e; }
-.scrubber-mascot[data-palette="00"] { color: #ff5e5e; --mascot-secondary: #ff5e5e; }
+.scrubber-mascot[data-palette="00"] { color: #ff5e5e; --mascot-secondary: #ff5e5e; --mascot-body-top-left: #ff5e5e; --mascot-body-top-right: #ff5e5e; --mascot-body-bottom-left: #ff5e5e; --mascot-body-bottom-right: #ff5e5e; --mascot-ear-left-top: #ff5e5e; --mascot-ear-left-bottom: #ff5e5e; --mascot-ear-right-top: #ff5e5e; --mascot-ear-right-bottom: #ff5e5e; --mascot-leg-left: #ff5e5e; --mascot-leg-right: #ff5e5e; }
 [data-palette="01"] { background: #ffa726; --tt-palette-bg: #ffa726; }
 .collapsed-signal[data-palette="01"] { --collapsed-signal-bg: #ffa726; }
 .dot.heard[data-palette="01"] { --dot-ring-bg: #ffa726; }
-.scrubber-mascot[data-palette="01"] { color: #ffa726; --mascot-secondary: #ffa726; }
+.scrubber-mascot[data-palette="01"] { color: #ffa726; --mascot-secondary: #ffa726; --mascot-body-top-left: #ffa726; --mascot-body-top-right: #ffa726; --mascot-body-bottom-left: #ffa726; --mascot-body-bottom-right: #ffa726; --mascot-ear-left-top: #ffa726; --mascot-ear-left-bottom: #ffa726; --mascot-ear-right-top: #ffa726; --mascot-ear-right-bottom: #ffa726; --mascot-leg-left: #ffa726; --mascot-leg-right: #ffa726; }
 [data-palette="02"] { background: #ffd93d; --tt-palette-bg: #ffd93d; }
 .collapsed-signal[data-palette="02"] { --collapsed-signal-bg: #ffd93d; }
 .dot.heard[data-palette="02"] { --dot-ring-bg: #ffd93d; }
-.scrubber-mascot[data-palette="02"] { color: #ffd93d; --mascot-secondary: #ffd93d; }
+.scrubber-mascot[data-palette="02"] { color: #ffd93d; --mascot-secondary: #ffd93d; --mascot-body-top-left: #ffd93d; --mascot-body-top-right: #ffd93d; --mascot-body-bottom-left: #ffd93d; --mascot-body-bottom-right: #ffd93d; --mascot-ear-left-top: #ffd93d; --mascot-ear-left-bottom: #ffd93d; --mascot-ear-right-top: #ffd93d; --mascot-ear-right-bottom: #ffd93d; --mascot-leg-left: #ffd93d; --mascot-leg-right: #ffd93d; }
 [data-palette="03"] { background: #4ade80; --tt-palette-bg: #4ade80; }
 .collapsed-signal[data-palette="03"] { --collapsed-signal-bg: #4ade80; }
 .dot.heard[data-palette="03"] { --dot-ring-bg: #4ade80; }
-.scrubber-mascot[data-palette="03"] { color: #4ade80; --mascot-secondary: #4ade80; }
+.scrubber-mascot[data-palette="03"] { color: #4ade80; --mascot-secondary: #4ade80; --mascot-body-top-left: #4ade80; --mascot-body-top-right: #4ade80; --mascot-body-bottom-left: #4ade80; --mascot-body-bottom-right: #4ade80; --mascot-ear-left-top: #4ade80; --mascot-ear-left-bottom: #4ade80; --mascot-ear-right-top: #4ade80; --mascot-ear-right-bottom: #4ade80; --mascot-leg-left: #4ade80; --mascot-leg-right: #4ade80; }
 [data-palette="04"] { background: #60a5fa; --tt-palette-bg: #60a5fa; }
 .collapsed-signal[data-palette="04"] { --collapsed-signal-bg: #60a5fa; }
 .dot.heard[data-palette="04"] { --dot-ring-bg: #60a5fa; }
-.scrubber-mascot[data-palette="04"] { color: #60a5fa; --mascot-secondary: #60a5fa; }
+.scrubber-mascot[data-palette="04"] { color: #60a5fa; --mascot-secondary: #60a5fa; --mascot-body-top-left: #60a5fa; --mascot-body-top-right: #60a5fa; --mascot-body-bottom-left: #60a5fa; --mascot-body-bottom-right: #60a5fa; --mascot-ear-left-top: #60a5fa; --mascot-ear-left-bottom: #60a5fa; --mascot-ear-right-top: #60a5fa; --mascot-ear-right-bottom: #60a5fa; --mascot-leg-left: #60a5fa; --mascot-leg-right: #60a5fa; }
 [data-palette="05"] { background: #ee2bbd; --tt-palette-bg: #ee2bbd; }
 .collapsed-signal[data-palette="05"] { --collapsed-signal-bg: #ee2bbd; }
 .dot.heard[data-palette="05"] { --dot-ring-bg: #ee2bbd; }
-.scrubber-mascot[data-palette="05"] { color: #ee2bbd; --mascot-secondary: #ee2bbd; }
+.scrubber-mascot[data-palette="05"] { color: #ee2bbd; --mascot-secondary: #ee2bbd; --mascot-body-top-left: #ee2bbd; --mascot-body-top-right: #ee2bbd; --mascot-body-bottom-left: #ee2bbd; --mascot-body-bottom-right: #ee2bbd; --mascot-ear-left-top: #ee2bbd; --mascot-ear-left-bottom: #ee2bbd; --mascot-ear-right-top: #ee2bbd; --mascot-ear-right-bottom: #ee2bbd; --mascot-leg-left: #ee2bbd; --mascot-leg-right: #ee2bbd; }
 [data-palette="06"] { background: #c97b50; --tt-palette-bg: #c97b50; }
 .collapsed-signal[data-palette="06"] { --collapsed-signal-bg: #c97b50; }
 .dot.heard[data-palette="06"] { --dot-ring-bg: #c97b50; }
-.scrubber-mascot[data-palette="06"] { color: #c97b50; --mascot-secondary: #c97b50; }
+.scrubber-mascot[data-palette="06"] { color: #c97b50; --mascot-secondary: #c97b50; --mascot-body-top-left: #c97b50; --mascot-body-top-right: #c97b50; --mascot-body-bottom-left: #c97b50; --mascot-body-bottom-right: #c97b50; --mascot-ear-left-top: #c97b50; --mascot-ear-left-bottom: #c97b50; --mascot-ear-right-top: #c97b50; --mascot-ear-right-bottom: #c97b50; --mascot-leg-left: #c97b50; --mascot-leg-right: #c97b50; }
 [data-palette="07"] { background: #e0e0e0; --tt-palette-bg: #e0e0e0; }
 .collapsed-signal[data-palette="07"] { --collapsed-signal-bg: #e0e0e0; }
 .dot.heard[data-palette="07"] { --dot-ring-bg: #e0e0e0; }
-.scrubber-mascot[data-palette="07"] { color: #e0e0e0; --mascot-secondary: #e0e0e0; }
+.scrubber-mascot[data-palette="07"] { color: #e0e0e0; --mascot-secondary: #e0e0e0; --mascot-body-top-left: #e0e0e0; --mascot-body-top-right: #e0e0e0; --mascot-body-bottom-left: #e0e0e0; --mascot-body-bottom-right: #e0e0e0; --mascot-ear-left-top: #e0e0e0; --mascot-ear-left-bottom: #e0e0e0; --mascot-ear-right-top: #e0e0e0; --mascot-ear-right-bottom: #e0e0e0; --mascot-leg-left: #e0e0e0; --mascot-leg-right: #e0e0e0; }
 [data-palette="08"] { background: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%); --tt-palette-bg: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%); }
 .collapsed-signal[data-palette="08"] { --collapsed-signal-bg: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%); }
 .dot.heard[data-palette="08"] { --dot-ring-bg: linear-gradient(to bottom, #ff5e5e 50%, #4ade80 50%); }
-.scrubber-mascot[data-palette="08"] { color: #ff5e5e; --mascot-secondary: #4ade80; }
+.scrubber-mascot[data-palette="08"] { color: #ff5e5e; --mascot-secondary: #4ade80; --mascot-body-top-left: #ff5e5e; --mascot-body-top-right: #ff5e5e; --mascot-body-bottom-left: #4ade80; --mascot-body-bottom-right: #4ade80; --mascot-ear-left-top: #ff5e5e; --mascot-ear-left-bottom: #4ade80; --mascot-ear-right-top: #ff5e5e; --mascot-ear-right-bottom: #4ade80; --mascot-leg-left: #4ade80; --mascot-leg-right: #4ade80; }
 [data-palette="09"] { background: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%); --tt-palette-bg: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%); }
 .collapsed-signal[data-palette="09"] { --collapsed-signal-bg: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%); }
 .dot.heard[data-palette="09"] { --dot-ring-bg: linear-gradient(to bottom, #ffa726 50%, #60a5fa 50%); }
-.scrubber-mascot[data-palette="09"] { color: #ffa726; --mascot-secondary: #60a5fa; }
+.scrubber-mascot[data-palette="09"] { color: #ffa726; --mascot-secondary: #60a5fa; --mascot-body-top-left: #ffa726; --mascot-body-top-right: #ffa726; --mascot-body-bottom-left: #60a5fa; --mascot-body-bottom-right: #60a5fa; --mascot-ear-left-top: #ffa726; --mascot-ear-left-bottom: #60a5fa; --mascot-ear-right-top: #ffa726; --mascot-ear-right-bottom: #60a5fa; --mascot-leg-left: #60a5fa; --mascot-leg-right: #60a5fa; }
 [data-palette="10"] { background: linear-gradient(to bottom, #ffd93d 50%, #ee2bbd 50%); --tt-palette-bg: linear-gradient(to bottom, #ffd93d 50%, #ee2bbd 50%); }
 .collapsed-signal[data-palette="10"] { --collapsed-signal-bg: linear-gradient(to bottom, #ffd93d 50%, #ee2bbd 50%); }
 .dot.heard[data-palette="10"] { --dot-ring-bg: linear-gradient(to bottom, #ffd93d 50%, #ee2bbd 50%); }
-.scrubber-mascot[data-palette="10"] { color: #ffd93d; --mascot-secondary: #ee2bbd; }
+.scrubber-mascot[data-palette="10"] { color: #ffd93d; --mascot-secondary: #ee2bbd; --mascot-body-top-left: #ffd93d; --mascot-body-top-right: #ffd93d; --mascot-body-bottom-left: #ee2bbd; --mascot-body-bottom-right: #ee2bbd; --mascot-ear-left-top: #ffd93d; --mascot-ear-left-bottom: #ee2bbd; --mascot-ear-right-top: #ffd93d; --mascot-ear-right-bottom: #ee2bbd; --mascot-leg-left: #ee2bbd; --mascot-leg-right: #ee2bbd; }
 [data-palette="11"] { background: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%); --tt-palette-bg: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%); }
 .collapsed-signal[data-palette="11"] { --collapsed-signal-bg: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%); }
 .dot.heard[data-palette="11"] { --dot-ring-bg: linear-gradient(to bottom, #4ade80 50%, #ff5e5e 50%); }
-.scrubber-mascot[data-palette="11"] { color: #4ade80; --mascot-secondary: #ff5e5e; }
+.scrubber-mascot[data-palette="11"] { color: #4ade80; --mascot-secondary: #ff5e5e; --mascot-body-top-left: #4ade80; --mascot-body-top-right: #4ade80; --mascot-body-bottom-left: #ff5e5e; --mascot-body-bottom-right: #ff5e5e; --mascot-ear-left-top: #4ade80; --mascot-ear-left-bottom: #ff5e5e; --mascot-ear-right-top: #4ade80; --mascot-ear-right-bottom: #ff5e5e; --mascot-leg-left: #ff5e5e; --mascot-leg-right: #ff5e5e; }
 [data-palette="12"] { background: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%); --tt-palette-bg: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%); }
 .collapsed-signal[data-palette="12"] { --collapsed-signal-bg: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%); }
 .dot.heard[data-palette="12"] { --dot-ring-bg: linear-gradient(to bottom, #60a5fa 50%, #ffa726 50%); }
-.scrubber-mascot[data-palette="12"] { color: #60a5fa; --mascot-secondary: #ffa726; }
+.scrubber-mascot[data-palette="12"] { color: #60a5fa; --mascot-secondary: #ffa726; --mascot-body-top-left: #60a5fa; --mascot-body-top-right: #60a5fa; --mascot-body-bottom-left: #ffa726; --mascot-body-bottom-right: #ffa726; --mascot-ear-left-top: #60a5fa; --mascot-ear-left-bottom: #ffa726; --mascot-ear-right-top: #60a5fa; --mascot-ear-right-bottom: #ffa726; --mascot-leg-left: #ffa726; --mascot-leg-right: #ffa726; }
 [data-palette="13"] { background: linear-gradient(to bottom, #ee2bbd 50%, #ffd93d 50%); --tt-palette-bg: linear-gradient(to bottom, #ee2bbd 50%, #ffd93d 50%); }
 .collapsed-signal[data-palette="13"] { --collapsed-signal-bg: linear-gradient(to bottom, #ee2bbd 50%, #ffd93d 50%); }
 .dot.heard[data-palette="13"] { --dot-ring-bg: linear-gradient(to bottom, #ee2bbd 50%, #ffd93d 50%); }
-.scrubber-mascot[data-palette="13"] { color: #ee2bbd; --mascot-secondary: #ffd93d; }
+.scrubber-mascot[data-palette="13"] { color: #ee2bbd; --mascot-secondary: #ffd93d; --mascot-body-top-left: #ee2bbd; --mascot-body-top-right: #ee2bbd; --mascot-body-bottom-left: #ffd93d; --mascot-body-bottom-right: #ffd93d; --mascot-ear-left-top: #ee2bbd; --mascot-ear-left-bottom: #ffd93d; --mascot-ear-right-top: #ee2bbd; --mascot-ear-right-bottom: #ffd93d; --mascot-leg-left: #ffd93d; --mascot-leg-right: #ffd93d; }
 [data-palette="14"] { background: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%); --tt-palette-bg: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%); }
 .collapsed-signal[data-palette="14"] { --collapsed-signal-bg: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%); }
 .dot.heard[data-palette="14"] { --dot-ring-bg: linear-gradient(to bottom, #c97b50 50%, #e0e0e0 50%); }
-.scrubber-mascot[data-palette="14"] { color: #c97b50; --mascot-secondary: #e0e0e0; }
+.scrubber-mascot[data-palette="14"] { color: #c97b50; --mascot-secondary: #e0e0e0; --mascot-body-top-left: #c97b50; --mascot-body-top-right: #c97b50; --mascot-body-bottom-left: #e0e0e0; --mascot-body-bottom-right: #e0e0e0; --mascot-ear-left-top: #c97b50; --mascot-ear-left-bottom: #e0e0e0; --mascot-ear-right-top: #c97b50; --mascot-ear-right-bottom: #e0e0e0; --mascot-leg-left: #e0e0e0; --mascot-leg-right: #e0e0e0; }
 [data-palette="15"] { background: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%); --tt-palette-bg: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%); }
 .collapsed-signal[data-palette="15"] { --collapsed-signal-bg: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%); }
 .dot.heard[data-palette="15"] { --dot-ring-bg: linear-gradient(to bottom, #e0e0e0 50%, #c97b50 50%); }
-.scrubber-mascot[data-palette="15"] { color: #e0e0e0; --mascot-secondary: #c97b50; }
+.scrubber-mascot[data-palette="15"] { color: #e0e0e0; --mascot-secondary: #c97b50; --mascot-body-top-left: #e0e0e0; --mascot-body-top-right: #e0e0e0; --mascot-body-bottom-left: #c97b50; --mascot-body-bottom-right: #c97b50; --mascot-ear-left-top: #e0e0e0; --mascot-ear-left-bottom: #c97b50; --mascot-ear-right-top: #e0e0e0; --mascot-ear-right-bottom: #c97b50; --mascot-leg-left: #c97b50; --mascot-leg-right: #c97b50; }
 [data-palette="16"] { background: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%); --tt-palette-bg: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%); }
 .collapsed-signal[data-palette="16"] { --collapsed-signal-bg: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%); }
 .dot.heard[data-palette="16"] { --dot-ring-bg: linear-gradient(to right, #ff5e5e 50%, #60a5fa 50%); }
-.scrubber-mascot[data-palette="16"] { color: #ff5e5e; --mascot-secondary: #60a5fa; }
+.scrubber-mascot[data-palette="16"] { color: #ff5e5e; --mascot-secondary: #60a5fa; --mascot-body-top-left: #ff5e5e; --mascot-body-top-right: #60a5fa; --mascot-body-bottom-left: #ff5e5e; --mascot-body-bottom-right: #60a5fa; --mascot-ear-left-top: #ff5e5e; --mascot-ear-left-bottom: #ff5e5e; --mascot-ear-right-top: #60a5fa; --mascot-ear-right-bottom: #60a5fa; --mascot-leg-left: #ff5e5e; --mascot-leg-right: #60a5fa; }
 [data-palette="17"] { background: linear-gradient(to right, #ffa726 50%, #ee2bbd 50%); --tt-palette-bg: linear-gradient(to right, #ffa726 50%, #ee2bbd 50%); }
 .collapsed-signal[data-palette="17"] { --collapsed-signal-bg: linear-gradient(to right, #ffa726 50%, #ee2bbd 50%); }
 .dot.heard[data-palette="17"] { --dot-ring-bg: linear-gradient(to right, #ffa726 50%, #ee2bbd 50%); }
-.scrubber-mascot[data-palette="17"] { color: #ffa726; --mascot-secondary: #ee2bbd; }
+.scrubber-mascot[data-palette="17"] { color: #ffa726; --mascot-secondary: #ee2bbd; --mascot-body-top-left: #ffa726; --mascot-body-top-right: #ee2bbd; --mascot-body-bottom-left: #ffa726; --mascot-body-bottom-right: #ee2bbd; --mascot-ear-left-top: #ffa726; --mascot-ear-left-bottom: #ffa726; --mascot-ear-right-top: #ee2bbd; --mascot-ear-right-bottom: #ee2bbd; --mascot-leg-left: #ffa726; --mascot-leg-right: #ee2bbd; }
 [data-palette="18"] { background: linear-gradient(to right, #ffd93d 50%, #c97b50 50%); --tt-palette-bg: linear-gradient(to right, #ffd93d 50%, #c97b50 50%); }
 .collapsed-signal[data-palette="18"] { --collapsed-signal-bg: linear-gradient(to right, #ffd93d 50%, #c97b50 50%); }
 .dot.heard[data-palette="18"] { --dot-ring-bg: linear-gradient(to right, #ffd93d 50%, #c97b50 50%); }
-.scrubber-mascot[data-palette="18"] { color: #ffd93d; --mascot-secondary: #c97b50; }
+.scrubber-mascot[data-palette="18"] { color: #ffd93d; --mascot-secondary: #c97b50; --mascot-body-top-left: #ffd93d; --mascot-body-top-right: #c97b50; --mascot-body-bottom-left: #ffd93d; --mascot-body-bottom-right: #c97b50; --mascot-ear-left-top: #ffd93d; --mascot-ear-left-bottom: #ffd93d; --mascot-ear-right-top: #c97b50; --mascot-ear-right-bottom: #c97b50; --mascot-leg-left: #ffd93d; --mascot-leg-right: #c97b50; }
 [data-palette="19"] { background: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%); --tt-palette-bg: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%); }
 .collapsed-signal[data-palette="19"] { --collapsed-signal-bg: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%); }
 .dot.heard[data-palette="19"] { --dot-ring-bg: linear-gradient(to right, #4ade80 50%, #e0e0e0 50%); }
-.scrubber-mascot[data-palette="19"] { color: #4ade80; --mascot-secondary: #e0e0e0; }
+.scrubber-mascot[data-palette="19"] { color: #4ade80; --mascot-secondary: #e0e0e0; --mascot-body-top-left: #4ade80; --mascot-body-top-right: #e0e0e0; --mascot-body-bottom-left: #4ade80; --mascot-body-bottom-right: #e0e0e0; --mascot-ear-left-top: #4ade80; --mascot-ear-left-bottom: #4ade80; --mascot-ear-right-top: #e0e0e0; --mascot-ear-right-bottom: #e0e0e0; --mascot-leg-left: #4ade80; --mascot-leg-right: #e0e0e0; }
 [data-palette="20"] { background: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%); --tt-palette-bg: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%); }
 .collapsed-signal[data-palette="20"] { --collapsed-signal-bg: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%); }
 .dot.heard[data-palette="20"] { --dot-ring-bg: linear-gradient(to right, #60a5fa 50%, #ff5e5e 50%); }
-.scrubber-mascot[data-palette="20"] { color: #60a5fa; --mascot-secondary: #ff5e5e; }
+.scrubber-mascot[data-palette="20"] { color: #60a5fa; --mascot-secondary: #ff5e5e; --mascot-body-top-left: #60a5fa; --mascot-body-top-right: #ff5e5e; --mascot-body-bottom-left: #60a5fa; --mascot-body-bottom-right: #ff5e5e; --mascot-ear-left-top: #60a5fa; --mascot-ear-left-bottom: #60a5fa; --mascot-ear-right-top: #ff5e5e; --mascot-ear-right-bottom: #ff5e5e; --mascot-leg-left: #60a5fa; --mascot-leg-right: #ff5e5e; }
 [data-palette="21"] { background: linear-gradient(to right, #ee2bbd 50%, #ffa726 50%); --tt-palette-bg: linear-gradient(to right, #ee2bbd 50%, #ffa726 50%); }
 .collapsed-signal[data-palette="21"] { --collapsed-signal-bg: linear-gradient(to right, #ee2bbd 50%, #ffa726 50%); }
 .dot.heard[data-palette="21"] { --dot-ring-bg: linear-gradient(to right, #ee2bbd 50%, #ffa726 50%); }
-.scrubber-mascot[data-palette="21"] { color: #ee2bbd; --mascot-secondary: #ffa726; }
+.scrubber-mascot[data-palette="21"] { color: #ee2bbd; --mascot-secondary: #ffa726; --mascot-body-top-left: #ee2bbd; --mascot-body-top-right: #ffa726; --mascot-body-bottom-left: #ee2bbd; --mascot-body-bottom-right: #ffa726; --mascot-ear-left-top: #ee2bbd; --mascot-ear-left-bottom: #ee2bbd; --mascot-ear-right-top: #ffa726; --mascot-ear-right-bottom: #ffa726; --mascot-leg-left: #ee2bbd; --mascot-leg-right: #ffa726; }
 [data-palette="22"] { background: linear-gradient(to right, #c97b50 50%, #ffd93d 50%); --tt-palette-bg: linear-gradient(to right, #c97b50 50%, #ffd93d 50%); }
 .collapsed-signal[data-palette="22"] { --collapsed-signal-bg: linear-gradient(to right, #c97b50 50%, #ffd93d 50%); }
 .dot.heard[data-palette="22"] { --dot-ring-bg: linear-gradient(to right, #c97b50 50%, #ffd93d 50%); }
-.scrubber-mascot[data-palette="22"] { color: #c97b50; --mascot-secondary: #ffd93d; }
+.scrubber-mascot[data-palette="22"] { color: #c97b50; --mascot-secondary: #ffd93d; --mascot-body-top-left: #c97b50; --mascot-body-top-right: #ffd93d; --mascot-body-bottom-left: #c97b50; --mascot-body-bottom-right: #ffd93d; --mascot-ear-left-top: #c97b50; --mascot-ear-left-bottom: #c97b50; --mascot-ear-right-top: #ffd93d; --mascot-ear-right-bottom: #ffd93d; --mascot-leg-left: #c97b50; --mascot-leg-right: #ffd93d; }
 [data-palette="23"] { background: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%); --tt-palette-bg: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%); }
 .collapsed-signal[data-palette="23"] { --collapsed-signal-bg: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%); }
 .dot.heard[data-palette="23"] { --dot-ring-bg: linear-gradient(to right, #e0e0e0 50%, #4ade80 50%); }
-.scrubber-mascot[data-palette="23"] { color: #e0e0e0; --mascot-secondary: #4ade80; }
+.scrubber-mascot[data-palette="23"] { color: #e0e0e0; --mascot-secondary: #4ade80; --mascot-body-top-left: #e0e0e0; --mascot-body-top-right: #4ade80; --mascot-body-bottom-left: #e0e0e0; --mascot-body-bottom-right: #4ade80; --mascot-ear-left-top: #e0e0e0; --mascot-ear-left-bottom: #e0e0e0; --mascot-ear-right-top: #4ade80; --mascot-ear-right-bottom: #4ade80; --mascot-leg-left: #e0e0e0; --mascot-leg-right: #4ade80; }
 [data-palette="neutral"] { background: #8a8a8a; --tt-palette-bg: #8a8a8a; }
 .collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: #8a8a8a; }
 .dot.heard[data-palette="neutral"] { --dot-ring-bg: #8a8a8a; }
-.scrubber-mascot[data-palette="neutral"] { color: #8a8a8a; --mascot-secondary: #8a8a8a; }
+.scrubber-mascot[data-palette="neutral"] { color: #8a8a8a; --mascot-secondary: #8a8a8a; --mascot-body-top-left: #8a8a8a; --mascot-body-top-right: #8a8a8a; --mascot-body-bottom-left: #8a8a8a; --mascot-body-bottom-right: #8a8a8a; --mascot-ear-left-top: #8a8a8a; --mascot-ear-left-bottom: #8a8a8a; --mascot-ear-right-top: #8a8a8a; --mascot-ear-right-bottom: #8a8a8a; --mascot-leg-left: #8a8a8a; --mascot-leg-right: #8a8a8a; }
 
 /* Colour-blind-friendly palette (Paul Tol "muted") — only applies when
    body has data-palette-variant="cb". Users opt in via Settings. */
 body[data-palette-variant="cb"] [data-palette="00"] { background: #CC6677; --tt-palette-bg: #CC6677; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="00"] { --collapsed-signal-bg: #CC6677; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="00"] { --dot-ring-bg: #CC6677; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="00"] { color: #CC6677; --mascot-secondary: #CC6677; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="00"] { color: #CC6677; --mascot-secondary: #CC6677; --mascot-body-top-left: #CC6677; --mascot-body-top-right: #CC6677; --mascot-body-bottom-left: #CC6677; --mascot-body-bottom-right: #CC6677; --mascot-ear-left-top: #CC6677; --mascot-ear-left-bottom: #CC6677; --mascot-ear-right-top: #CC6677; --mascot-ear-right-bottom: #CC6677; --mascot-leg-left: #CC6677; --mascot-leg-right: #CC6677; }
 body[data-palette-variant="cb"] [data-palette="01"] { background: #DDCC77; --tt-palette-bg: #DDCC77; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="01"] { --collapsed-signal-bg: #DDCC77; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="01"] { --dot-ring-bg: #DDCC77; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="01"] { color: #DDCC77; --mascot-secondary: #DDCC77; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="01"] { color: #DDCC77; --mascot-secondary: #DDCC77; --mascot-body-top-left: #DDCC77; --mascot-body-top-right: #DDCC77; --mascot-body-bottom-left: #DDCC77; --mascot-body-bottom-right: #DDCC77; --mascot-ear-left-top: #DDCC77; --mascot-ear-left-bottom: #DDCC77; --mascot-ear-right-top: #DDCC77; --mascot-ear-right-bottom: #DDCC77; --mascot-leg-left: #DDCC77; --mascot-leg-right: #DDCC77; }
 body[data-palette-variant="cb"] [data-palette="02"] { background: #88CCEE; --tt-palette-bg: #88CCEE; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="02"] { --collapsed-signal-bg: #88CCEE; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="02"] { --dot-ring-bg: #88CCEE; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="02"] { color: #88CCEE; --mascot-secondary: #88CCEE; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="02"] { color: #88CCEE; --mascot-secondary: #88CCEE; --mascot-body-top-left: #88CCEE; --mascot-body-top-right: #88CCEE; --mascot-body-bottom-left: #88CCEE; --mascot-body-bottom-right: #88CCEE; --mascot-ear-left-top: #88CCEE; --mascot-ear-left-bottom: #88CCEE; --mascot-ear-right-top: #88CCEE; --mascot-ear-right-bottom: #88CCEE; --mascot-leg-left: #88CCEE; --mascot-leg-right: #88CCEE; }
 body[data-palette-variant="cb"] [data-palette="03"] { background: #117733; --tt-palette-bg: #117733; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="03"] { --collapsed-signal-bg: #117733; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="03"] { --dot-ring-bg: #117733; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="03"] { color: #117733; --mascot-secondary: #117733; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="03"] { color: #117733; --mascot-secondary: #117733; --mascot-body-top-left: #117733; --mascot-body-top-right: #117733; --mascot-body-bottom-left: #117733; --mascot-body-bottom-right: #117733; --mascot-ear-left-top: #117733; --mascot-ear-left-bottom: #117733; --mascot-ear-right-top: #117733; --mascot-ear-right-bottom: #117733; --mascot-leg-left: #117733; --mascot-leg-right: #117733; }
 body[data-palette-variant="cb"] [data-palette="04"] { background: #332288; --tt-palette-bg: #332288; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="04"] { --collapsed-signal-bg: #332288; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="04"] { --dot-ring-bg: #332288; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="04"] { color: #332288; --mascot-secondary: #332288; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="04"] { color: #332288; --mascot-secondary: #332288; --mascot-body-top-left: #332288; --mascot-body-top-right: #332288; --mascot-body-bottom-left: #332288; --mascot-body-bottom-right: #332288; --mascot-ear-left-top: #332288; --mascot-ear-left-bottom: #332288; --mascot-ear-right-top: #332288; --mascot-ear-right-bottom: #332288; --mascot-leg-left: #332288; --mascot-leg-right: #332288; }
 body[data-palette-variant="cb"] [data-palette="05"] { background: #AA4499; --tt-palette-bg: #AA4499; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="05"] { --collapsed-signal-bg: #AA4499; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="05"] { --dot-ring-bg: #AA4499; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="05"] { color: #AA4499; --mascot-secondary: #AA4499; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="05"] { color: #AA4499; --mascot-secondary: #AA4499; --mascot-body-top-left: #AA4499; --mascot-body-top-right: #AA4499; --mascot-body-bottom-left: #AA4499; --mascot-body-bottom-right: #AA4499; --mascot-ear-left-top: #AA4499; --mascot-ear-left-bottom: #AA4499; --mascot-ear-right-top: #AA4499; --mascot-ear-right-bottom: #AA4499; --mascot-leg-left: #AA4499; --mascot-leg-right: #AA4499; }
 body[data-palette-variant="cb"] [data-palette="06"] { background: #999933; --tt-palette-bg: #999933; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="06"] { --collapsed-signal-bg: #999933; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="06"] { --dot-ring-bg: #999933; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="06"] { color: #999933; --mascot-secondary: #999933; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="06"] { color: #999933; --mascot-secondary: #999933; --mascot-body-top-left: #999933; --mascot-body-top-right: #999933; --mascot-body-bottom-left: #999933; --mascot-body-bottom-right: #999933; --mascot-ear-left-top: #999933; --mascot-ear-left-bottom: #999933; --mascot-ear-right-top: #999933; --mascot-ear-right-bottom: #999933; --mascot-leg-left: #999933; --mascot-leg-right: #999933; }
 body[data-palette-variant="cb"] [data-palette="07"] { background: #DDDDDD; --tt-palette-bg: #DDDDDD; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="07"] { --collapsed-signal-bg: #DDDDDD; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="07"] { --dot-ring-bg: #DDDDDD; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="07"] { color: #DDDDDD; --mascot-secondary: #DDDDDD; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="07"] { color: #DDDDDD; --mascot-secondary: #DDDDDD; --mascot-body-top-left: #DDDDDD; --mascot-body-top-right: #DDDDDD; --mascot-body-bottom-left: #DDDDDD; --mascot-body-bottom-right: #DDDDDD; --mascot-ear-left-top: #DDDDDD; --mascot-ear-left-bottom: #DDDDDD; --mascot-ear-right-top: #DDDDDD; --mascot-ear-right-bottom: #DDDDDD; --mascot-leg-left: #DDDDDD; --mascot-leg-right: #DDDDDD; }
 body[data-palette-variant="cb"] [data-palette="08"] { background: linear-gradient(to bottom, #CC6677 50%, #117733 50%); --tt-palette-bg: linear-gradient(to bottom, #CC6677 50%, #117733 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="08"] { --collapsed-signal-bg: linear-gradient(to bottom, #CC6677 50%, #117733 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="08"] { --dot-ring-bg: linear-gradient(to bottom, #CC6677 50%, #117733 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="08"] { color: #CC6677; --mascot-secondary: #117733; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="08"] { color: #CC6677; --mascot-secondary: #117733; --mascot-body-top-left: #CC6677; --mascot-body-top-right: #CC6677; --mascot-body-bottom-left: #117733; --mascot-body-bottom-right: #117733; --mascot-ear-left-top: #CC6677; --mascot-ear-left-bottom: #117733; --mascot-ear-right-top: #CC6677; --mascot-ear-right-bottom: #117733; --mascot-leg-left: #117733; --mascot-leg-right: #117733; }
 body[data-palette-variant="cb"] [data-palette="09"] { background: linear-gradient(to bottom, #DDCC77 50%, #332288 50%); --tt-palette-bg: linear-gradient(to bottom, #DDCC77 50%, #332288 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="09"] { --collapsed-signal-bg: linear-gradient(to bottom, #DDCC77 50%, #332288 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="09"] { --dot-ring-bg: linear-gradient(to bottom, #DDCC77 50%, #332288 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="09"] { color: #DDCC77; --mascot-secondary: #332288; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="09"] { color: #DDCC77; --mascot-secondary: #332288; --mascot-body-top-left: #DDCC77; --mascot-body-top-right: #DDCC77; --mascot-body-bottom-left: #332288; --mascot-body-bottom-right: #332288; --mascot-ear-left-top: #DDCC77; --mascot-ear-left-bottom: #332288; --mascot-ear-right-top: #DDCC77; --mascot-ear-right-bottom: #332288; --mascot-leg-left: #332288; --mascot-leg-right: #332288; }
 body[data-palette-variant="cb"] [data-palette="10"] { background: linear-gradient(to bottom, #88CCEE 50%, #AA4499 50%); --tt-palette-bg: linear-gradient(to bottom, #88CCEE 50%, #AA4499 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="10"] { --collapsed-signal-bg: linear-gradient(to bottom, #88CCEE 50%, #AA4499 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="10"] { --dot-ring-bg: linear-gradient(to bottom, #88CCEE 50%, #AA4499 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="10"] { color: #88CCEE; --mascot-secondary: #AA4499; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="10"] { color: #88CCEE; --mascot-secondary: #AA4499; --mascot-body-top-left: #88CCEE; --mascot-body-top-right: #88CCEE; --mascot-body-bottom-left: #AA4499; --mascot-body-bottom-right: #AA4499; --mascot-ear-left-top: #88CCEE; --mascot-ear-left-bottom: #AA4499; --mascot-ear-right-top: #88CCEE; --mascot-ear-right-bottom: #AA4499; --mascot-leg-left: #AA4499; --mascot-leg-right: #AA4499; }
 body[data-palette-variant="cb"] [data-palette="11"] { background: linear-gradient(to bottom, #117733 50%, #CC6677 50%); --tt-palette-bg: linear-gradient(to bottom, #117733 50%, #CC6677 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="11"] { --collapsed-signal-bg: linear-gradient(to bottom, #117733 50%, #CC6677 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="11"] { --dot-ring-bg: linear-gradient(to bottom, #117733 50%, #CC6677 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="11"] { color: #117733; --mascot-secondary: #CC6677; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="11"] { color: #117733; --mascot-secondary: #CC6677; --mascot-body-top-left: #117733; --mascot-body-top-right: #117733; --mascot-body-bottom-left: #CC6677; --mascot-body-bottom-right: #CC6677; --mascot-ear-left-top: #117733; --mascot-ear-left-bottom: #CC6677; --mascot-ear-right-top: #117733; --mascot-ear-right-bottom: #CC6677; --mascot-leg-left: #CC6677; --mascot-leg-right: #CC6677; }
 body[data-palette-variant="cb"] [data-palette="12"] { background: linear-gradient(to bottom, #332288 50%, #DDCC77 50%); --tt-palette-bg: linear-gradient(to bottom, #332288 50%, #DDCC77 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="12"] { --collapsed-signal-bg: linear-gradient(to bottom, #332288 50%, #DDCC77 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="12"] { --dot-ring-bg: linear-gradient(to bottom, #332288 50%, #DDCC77 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="12"] { color: #332288; --mascot-secondary: #DDCC77; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="12"] { color: #332288; --mascot-secondary: #DDCC77; --mascot-body-top-left: #332288; --mascot-body-top-right: #332288; --mascot-body-bottom-left: #DDCC77; --mascot-body-bottom-right: #DDCC77; --mascot-ear-left-top: #332288; --mascot-ear-left-bottom: #DDCC77; --mascot-ear-right-top: #332288; --mascot-ear-right-bottom: #DDCC77; --mascot-leg-left: #DDCC77; --mascot-leg-right: #DDCC77; }
 body[data-palette-variant="cb"] [data-palette="13"] { background: linear-gradient(to bottom, #AA4499 50%, #88CCEE 50%); --tt-palette-bg: linear-gradient(to bottom, #AA4499 50%, #88CCEE 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="13"] { --collapsed-signal-bg: linear-gradient(to bottom, #AA4499 50%, #88CCEE 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="13"] { --dot-ring-bg: linear-gradient(to bottom, #AA4499 50%, #88CCEE 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="13"] { color: #AA4499; --mascot-secondary: #88CCEE; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="13"] { color: #AA4499; --mascot-secondary: #88CCEE; --mascot-body-top-left: #AA4499; --mascot-body-top-right: #AA4499; --mascot-body-bottom-left: #88CCEE; --mascot-body-bottom-right: #88CCEE; --mascot-ear-left-top: #AA4499; --mascot-ear-left-bottom: #88CCEE; --mascot-ear-right-top: #AA4499; --mascot-ear-right-bottom: #88CCEE; --mascot-leg-left: #88CCEE; --mascot-leg-right: #88CCEE; }
 body[data-palette-variant="cb"] [data-palette="14"] { background: linear-gradient(to bottom, #999933 50%, #DDDDDD 50%); --tt-palette-bg: linear-gradient(to bottom, #999933 50%, #DDDDDD 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="14"] { --collapsed-signal-bg: linear-gradient(to bottom, #999933 50%, #DDDDDD 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="14"] { --dot-ring-bg: linear-gradient(to bottom, #999933 50%, #DDDDDD 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="14"] { color: #999933; --mascot-secondary: #DDDDDD; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="14"] { color: #999933; --mascot-secondary: #DDDDDD; --mascot-body-top-left: #999933; --mascot-body-top-right: #999933; --mascot-body-bottom-left: #DDDDDD; --mascot-body-bottom-right: #DDDDDD; --mascot-ear-left-top: #999933; --mascot-ear-left-bottom: #DDDDDD; --mascot-ear-right-top: #999933; --mascot-ear-right-bottom: #DDDDDD; --mascot-leg-left: #DDDDDD; --mascot-leg-right: #DDDDDD; }
 body[data-palette-variant="cb"] [data-palette="15"] { background: linear-gradient(to bottom, #DDDDDD 50%, #999933 50%); --tt-palette-bg: linear-gradient(to bottom, #DDDDDD 50%, #999933 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="15"] { --collapsed-signal-bg: linear-gradient(to bottom, #DDDDDD 50%, #999933 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="15"] { --dot-ring-bg: linear-gradient(to bottom, #DDDDDD 50%, #999933 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="15"] { color: #DDDDDD; --mascot-secondary: #999933; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="15"] { color: #DDDDDD; --mascot-secondary: #999933; --mascot-body-top-left: #DDDDDD; --mascot-body-top-right: #DDDDDD; --mascot-body-bottom-left: #999933; --mascot-body-bottom-right: #999933; --mascot-ear-left-top: #DDDDDD; --mascot-ear-left-bottom: #999933; --mascot-ear-right-top: #DDDDDD; --mascot-ear-right-bottom: #999933; --mascot-leg-left: #999933; --mascot-leg-right: #999933; }
 body[data-palette-variant="cb"] [data-palette="16"] { background: linear-gradient(to right, #CC6677 50%, #332288 50%); --tt-palette-bg: linear-gradient(to right, #CC6677 50%, #332288 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="16"] { --collapsed-signal-bg: linear-gradient(to right, #CC6677 50%, #332288 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="16"] { --dot-ring-bg: linear-gradient(to right, #CC6677 50%, #332288 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="16"] { color: #CC6677; --mascot-secondary: #332288; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="16"] { color: #CC6677; --mascot-secondary: #332288; --mascot-body-top-left: #CC6677; --mascot-body-top-right: #332288; --mascot-body-bottom-left: #CC6677; --mascot-body-bottom-right: #332288; --mascot-ear-left-top: #CC6677; --mascot-ear-left-bottom: #CC6677; --mascot-ear-right-top: #332288; --mascot-ear-right-bottom: #332288; --mascot-leg-left: #CC6677; --mascot-leg-right: #332288; }
 body[data-palette-variant="cb"] [data-palette="17"] { background: linear-gradient(to right, #DDCC77 50%, #AA4499 50%); --tt-palette-bg: linear-gradient(to right, #DDCC77 50%, #AA4499 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="17"] { --collapsed-signal-bg: linear-gradient(to right, #DDCC77 50%, #AA4499 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="17"] { --dot-ring-bg: linear-gradient(to right, #DDCC77 50%, #AA4499 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="17"] { color: #DDCC77; --mascot-secondary: #AA4499; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="17"] { color: #DDCC77; --mascot-secondary: #AA4499; --mascot-body-top-left: #DDCC77; --mascot-body-top-right: #AA4499; --mascot-body-bottom-left: #DDCC77; --mascot-body-bottom-right: #AA4499; --mascot-ear-left-top: #DDCC77; --mascot-ear-left-bottom: #DDCC77; --mascot-ear-right-top: #AA4499; --mascot-ear-right-bottom: #AA4499; --mascot-leg-left: #DDCC77; --mascot-leg-right: #AA4499; }
 body[data-palette-variant="cb"] [data-palette="18"] { background: linear-gradient(to right, #88CCEE 50%, #999933 50%); --tt-palette-bg: linear-gradient(to right, #88CCEE 50%, #999933 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="18"] { --collapsed-signal-bg: linear-gradient(to right, #88CCEE 50%, #999933 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="18"] { --dot-ring-bg: linear-gradient(to right, #88CCEE 50%, #999933 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="18"] { color: #88CCEE; --mascot-secondary: #999933; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="18"] { color: #88CCEE; --mascot-secondary: #999933; --mascot-body-top-left: #88CCEE; --mascot-body-top-right: #999933; --mascot-body-bottom-left: #88CCEE; --mascot-body-bottom-right: #999933; --mascot-ear-left-top: #88CCEE; --mascot-ear-left-bottom: #88CCEE; --mascot-ear-right-top: #999933; --mascot-ear-right-bottom: #999933; --mascot-leg-left: #88CCEE; --mascot-leg-right: #999933; }
 body[data-palette-variant="cb"] [data-palette="19"] { background: linear-gradient(to right, #117733 50%, #DDDDDD 50%); --tt-palette-bg: linear-gradient(to right, #117733 50%, #DDDDDD 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="19"] { --collapsed-signal-bg: linear-gradient(to right, #117733 50%, #DDDDDD 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="19"] { --dot-ring-bg: linear-gradient(to right, #117733 50%, #DDDDDD 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="19"] { color: #117733; --mascot-secondary: #DDDDDD; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="19"] { color: #117733; --mascot-secondary: #DDDDDD; --mascot-body-top-left: #117733; --mascot-body-top-right: #DDDDDD; --mascot-body-bottom-left: #117733; --mascot-body-bottom-right: #DDDDDD; --mascot-ear-left-top: #117733; --mascot-ear-left-bottom: #117733; --mascot-ear-right-top: #DDDDDD; --mascot-ear-right-bottom: #DDDDDD; --mascot-leg-left: #117733; --mascot-leg-right: #DDDDDD; }
 body[data-palette-variant="cb"] [data-palette="20"] { background: linear-gradient(to right, #332288 50%, #CC6677 50%); --tt-palette-bg: linear-gradient(to right, #332288 50%, #CC6677 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="20"] { --collapsed-signal-bg: linear-gradient(to right, #332288 50%, #CC6677 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="20"] { --dot-ring-bg: linear-gradient(to right, #332288 50%, #CC6677 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="20"] { color: #332288; --mascot-secondary: #CC6677; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="20"] { color: #332288; --mascot-secondary: #CC6677; --mascot-body-top-left: #332288; --mascot-body-top-right: #CC6677; --mascot-body-bottom-left: #332288; --mascot-body-bottom-right: #CC6677; --mascot-ear-left-top: #332288; --mascot-ear-left-bottom: #332288; --mascot-ear-right-top: #CC6677; --mascot-ear-right-bottom: #CC6677; --mascot-leg-left: #332288; --mascot-leg-right: #CC6677; }
 body[data-palette-variant="cb"] [data-palette="21"] { background: linear-gradient(to right, #AA4499 50%, #DDCC77 50%); --tt-palette-bg: linear-gradient(to right, #AA4499 50%, #DDCC77 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="21"] { --collapsed-signal-bg: linear-gradient(to right, #AA4499 50%, #DDCC77 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="21"] { --dot-ring-bg: linear-gradient(to right, #AA4499 50%, #DDCC77 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="21"] { color: #AA4499; --mascot-secondary: #DDCC77; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="21"] { color: #AA4499; --mascot-secondary: #DDCC77; --mascot-body-top-left: #AA4499; --mascot-body-top-right: #DDCC77; --mascot-body-bottom-left: #AA4499; --mascot-body-bottom-right: #DDCC77; --mascot-ear-left-top: #AA4499; --mascot-ear-left-bottom: #AA4499; --mascot-ear-right-top: #DDCC77; --mascot-ear-right-bottom: #DDCC77; --mascot-leg-left: #AA4499; --mascot-leg-right: #DDCC77; }
 body[data-palette-variant="cb"] [data-palette="22"] { background: linear-gradient(to right, #999933 50%, #88CCEE 50%); --tt-palette-bg: linear-gradient(to right, #999933 50%, #88CCEE 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="22"] { --collapsed-signal-bg: linear-gradient(to right, #999933 50%, #88CCEE 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="22"] { --dot-ring-bg: linear-gradient(to right, #999933 50%, #88CCEE 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="22"] { color: #999933; --mascot-secondary: #88CCEE; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="22"] { color: #999933; --mascot-secondary: #88CCEE; --mascot-body-top-left: #999933; --mascot-body-top-right: #88CCEE; --mascot-body-bottom-left: #999933; --mascot-body-bottom-right: #88CCEE; --mascot-ear-left-top: #999933; --mascot-ear-left-bottom: #999933; --mascot-ear-right-top: #88CCEE; --mascot-ear-right-bottom: #88CCEE; --mascot-leg-left: #999933; --mascot-leg-right: #88CCEE; }
 body[data-palette-variant="cb"] [data-palette="23"] { background: linear-gradient(to right, #DDDDDD 50%, #117733 50%); --tt-palette-bg: linear-gradient(to right, #DDDDDD 50%, #117733 50%); }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="23"] { --collapsed-signal-bg: linear-gradient(to right, #DDDDDD 50%, #117733 50%); }
 body[data-palette-variant="cb"] .dot.heard[data-palette="23"] { --dot-ring-bg: linear-gradient(to right, #DDDDDD 50%, #117733 50%); }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="23"] { color: #DDDDDD; --mascot-secondary: #117733; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="23"] { color: #DDDDDD; --mascot-secondary: #117733; --mascot-body-top-left: #DDDDDD; --mascot-body-top-right: #117733; --mascot-body-bottom-left: #DDDDDD; --mascot-body-bottom-right: #117733; --mascot-ear-left-top: #DDDDDD; --mascot-ear-left-bottom: #DDDDDD; --mascot-ear-right-top: #117733; --mascot-ear-right-bottom: #117733; --mascot-leg-left: #DDDDDD; --mascot-leg-right: #117733; }
 body[data-palette-variant="cb"] [data-palette="neutral"] { background: #8a8a8a; --tt-palette-bg: #8a8a8a; }
 body[data-palette-variant="cb"] .collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: #8a8a8a; }
 body[data-palette-variant="cb"] .dot.heard[data-palette="neutral"] { --dot-ring-bg: #8a8a8a; }
-body[data-palette-variant="cb"] .scrubber-mascot[data-palette="neutral"] { color: #8a8a8a; --mascot-secondary: #8a8a8a; }
+body[data-palette-variant="cb"] .scrubber-mascot[data-palette="neutral"] { color: #8a8a8a; --mascot-secondary: #8a8a8a; --mascot-body-top-left: #8a8a8a; --mascot-body-top-right: #8a8a8a; --mascot-body-bottom-left: #8a8a8a; --mascot-body-bottom-right: #8a8a8a; --mascot-ear-left-top: #8a8a8a; --mascot-ear-left-bottom: #8a8a8a; --mascot-ear-right-top: #8a8a8a; --mascot-ear-right-bottom: #8a8a8a; --mascot-leg-left: #8a8a8a; --mascot-leg-right: #8a8a8a; }

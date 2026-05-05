@@ -95,7 +95,7 @@ section { padding: 80px 24px; }
 
 /* Animated mascot + speech bubble. The SVG ships its own CSS keyframes
    (see docs/assets/mascot-animated.svg) so no JS is needed — the
-   landing page and the README render the exact same animation. Sits
+   landing page and README/about assets share the same palette cycle. Sits
    inside .mascot-pair in the TALK row; see .mascot-animated below. */
 
 /* ASCII hero — per-letter coloured block-art TERMINAL TALK, mascot, cloud.
@@ -495,7 +495,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 <span class="tlk-t">   ╚═╝   </span><span class="tlk-a">╚═╝  ╚═╝</span><span class="tlk-l">╚══════╝</span><span class="tlk-k">╚═╝  ╚═╝</span></pre>
 
       <div class="mascot-pair">
-        <img class="mascot-animated" src="assets/mascot-animated.svg" alt="Animated pixel mascot cycling through the session palette; speech bubble crossfades through assistant phrases — HEY JARVIS, Codex commentary, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s">
+        <img class="mascot-animated" src="assets/mascot-animated.svg" alt="Animated pixel mascot cycling through all 24 solid and split session palette arrangements; speech bubble crossfades through automatic Claude and Codex workflow phrases">
       </div>
     </div>
 
@@ -516,8 +516,8 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 
-  <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can all speak through one colour-coded toolbar.</p>
-  <p class="sub">Highlight any text, say <em>"hey jarvis"</em>, hear it. Free by default. Offline wake-word detection. No accounts. MIT licensed.</p>
+  <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop speak automatically through one colour-coded toolbar.</p>
+  <p class="sub">Replies, tool progress, transcripts, focus, and session identity are built in. <em>"Hey jarvis"</em> is there too for selected text. Free by default. Offline wake-word detection. MIT licensed.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
       ⬇ Download for Windows

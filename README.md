@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/terminal-talk-hero.svg" alt="Terminal Talk — coloured ASCII TERMINAL TALK wordmark with an animated pixel mascot cycling through the 8-colour session palette and a pixelated cloud speech bubble crossfading through assistant phrases — HEY JARVIS, Codex commentary, Reading foo.py, Moonwalking, Running npm test, Brewed for 8m 4s, Sautéed for 1m 0s" width="900">
+  <img src="docs/assets/terminal-talk-hero.svg" alt="Terminal Talk — coloured ASCII TERMINAL TALK wordmark with a pixel mascot cycling through all 24 solid and split session palette arrangements while a pixel speech bubble crossfades through Claude, Codex, focus, transcript, and tool-progress phrases" width="900">
 </p>
 
 <p align="center">
@@ -593,17 +593,22 @@ Not affiliated with any of these.
 
 ## About the mascot
 
-The orange four-legged character on the scrubber is a small homage to
+The four-legged character on the scrubber is the live session marker. It
+uses the same 24-slot palette as the tabs, clip dots, statusline, and
+collapsed waveform strip: 8 solid colours, 8 top/bottom splits, and 8
+left/right splits. When a session is left/right blue/orange, the mascot is
+left/right blue/orange too; it no longer implies the wrong split direction.
+
+The character is also a small homage to
 [Claude Code](https://www.claude.com/product/claude-code). When Claude is
 thinking, Claude Code shows a spinner line with a tongue-in-cheek verb —
 "Moonwalking", "Finagling", "Pontificating", "Flibbertigibbeting" and
 [~90 others](https://github.com/levindixon/tengu_spinner_words). Terminal
 Talk uses a similar whimsical vocabulary (with credit) and attaches it to
-a little character who walks along the scrubber while audio plays,
-leaving random verbs from that list floating above his head. The mouth
-is added because, unlike the Claude Code spinner, he actually speaks.
+the character while audio plays. The mouth is there because the toolbar is
+literally speaking the assistants back to you.
 
-**He appears for assistant response clips from Claude Code and Codex.** If
+**It appears for assistant response clips from Claude Code and Codex.** If
 you're playing a highlight-to-speak clip (you said "hey jarvis" or pressed
 <kbd>Ctrl+Shift+S</kbd>), the scrubber thumb is a plain **J** badge instead
 so manual read-aloud clips stay visually distinct from agent replies.
