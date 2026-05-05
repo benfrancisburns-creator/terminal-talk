@@ -144,6 +144,7 @@ async function capture() {
       const targetTab = shot.params && shot.params.settingsScrollTarget;
       if (targetTab || String(seed).startsWith('settings-panel')) {
         await page.evaluate((tab) => {
+          /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
           const body = document.body;
           if (!body.classList.contains('settings-open')) {
             const btn = document.getElementById('settingsBtn');
@@ -157,6 +158,7 @@ async function capture() {
         await page.waitForTimeout(600);
         if (seed === 'settings-panel-sessions-expanded') {
           await page.evaluate(() => {
+            /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
             const chevron = document.querySelector('.session-row .row-chevron, .session-row .chevron');
             if (chevron && chevron.getAttribute('aria-expanded') !== 'true') chevron.click();
           });
@@ -165,6 +167,7 @@ async function capture() {
       }
       if (shot.collapsedPalette) {
         await page.evaluate((paletteKey) => {
+          /* eslint-disable no-undef -- runs inside the Playwright page, not Node. */
           const bar = document.getElementById('bar');
           const signal = document.getElementById('collapsedSignal');
           const panel = document.getElementById('panel');
