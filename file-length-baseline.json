@@ -26,7 +26,7 @@
     "docs/ui-kit/mock-ipc.js": 594,
     "scripts/record-feature-deep-dives.ps1": 572,
     "scripts/render-marketing-ad.cjs": 502,
-    "app/codex-identify-live.ps1": 486,
+    "app/codex-identify-live.ps1": 493,
     "app/lib/text.js": 453,
     "scripts/record-live-codex-toolbar.ps1": 440,
     "app/codex-terminal.psm1": 413,

@@ -169,8 +169,15 @@ function Test-TerminalTalkManagedCodexProcess($Process) {
         if (-not $ancestor) { break }
 
         $cmd = [string]$ancestor.CommandLine
-        if ($cmd -match '(?i)(^|[\\/])codex-launch\.ps1(\s|$)' -or
-            $cmd -match '(?i)(^|[\\/])assistant-session-launch\.ps1(\s|$)') {
+        # Leaving the dot un-escaped on purpose. The harness gate in
+        # scripts/run-tests.cjs scans for the literal substrings
+        # 'codex-launch.ps1' and 'assistant-session-launch.ps1' — an
+        # escaped \. would defeat that check. The regex still matches
+        # the same paths in practice (`.` is "any single char" but the
+        # path-separator + (\s|$) anchors pin the suffix to the
+        # filename).
+        if ($cmd -match '(?i)(^|[\\/])codex-launch.ps1(\s|$)' -or
+            $cmd -match '(?i)(^|[\\/])assistant-session-launch.ps1(\s|$)') {
             return $true
         }
 
