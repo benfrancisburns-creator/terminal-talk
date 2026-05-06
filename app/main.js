@@ -391,9 +391,16 @@ function applyDock(edge) {
   // doesn't force it shut. Bottom anchor uses the current height so the
   // bar sits flush at the bottom with the panel tucked above it.
   const h = Math.max(currentHeight, DIM_HORIZONTAL.height);
+  // For "bottom" dock, anchor the window flush to the bottom unless the
+  // panel-expanded height plus the taskbar would push the top off-screen.
+  // In that case attach to the top of the workArea instead — the user's
+  // X / gear / drag handle live at the top of the bar, so losing them is
+  // never acceptable. Hit on a 1080p display in 2026-05-06 when the
+  // panel was open: 618 + taskbar > 1040 => top of bar at y=-190.
+  const bottomY = work.y + work.height - h;
   const bounds = {
     x: work.x + Math.floor((work.width - DIM_HORIZONTAL.width) / 2),
-    y: edge === 'top' ? work.y : work.y + work.height - h,
+    y: edge === 'top' ? work.y : Math.max(work.y, bottomY),
     width: DIM_HORIZONTAL.width,
     height: h,
   };

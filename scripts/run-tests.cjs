@@ -13305,14 +13305,37 @@ describe('EX6b — window-dock geometry', () => {
     assertEqual(r.y, 12);
   });
 
-  it('clampToVisibleDisplay tests bar centre only, not full window', () => {
-    // Expanded panel makes window 680x618 but the BAR is the top 192.
-    // If the bar centre (y=350+96=446) is on-screen, don't rescue even
-    // though the bottom of the window (968) might be.
+  it('clampToVisibleDisplay preserves position when full window may overflow but top-left is on-screen', () => {
+    // Expanded panel makes window 680x618 but the BAR (top, where the
+    // X / gear / drag-handle live) is at y=350. The top-left corner
+    // (500, 350) is on-screen so reach is preserved even if the window
+    // bottom (968) extends beyond the workArea.
     const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
     const primary = displays[0];
     const r = clampToVisibleDisplay(500, 350, 680, BAR_H, displays, primary);
     assertEqual(r, { x: 500, y: 350 });
+  });
+
+  it('clampToVisibleDisplay rescues bar whose top edge is above all displays', () => {
+    // 2026-05-06 regression: bar persisted at y=-190 with collapsed
+    // height 192. Old centre-based check considered cy=-94 "close
+    // enough" to display top; bar stuck with only 2 px visible. New
+    // top-edge check sees y=-190 is above the workArea and rescues.
+    const displays = [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
+    const primary = displays[0];
+    const r = clampToVisibleDisplay(312, -190, 680, BAR_H, displays, primary);
+    assertEqual(r.x, Math.floor((1920 - 680) / 2));
+    assertEqual(r.y, 12);
+  });
+
+  it('clampToVisibleDisplay leaves alone bars on negative-Y secondary monitors', () => {
+    // Multi-monitor case: secondary display sits above primary at
+    // workArea.y = -1080. Bar parked at y = -949 must NOT be rescued
+    // — the user explicitly placed it there.
+    const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
+    const secondary = { workArea: { x: 0, y: -1080, width: 1920, height: 1080 } };
+    const r = clampToVisibleDisplay(312, -949, 680, BAR_H, [primary, secondary], primary);
+    assertEqual(r, { x: 312, y: -949 });
   });
 });
 

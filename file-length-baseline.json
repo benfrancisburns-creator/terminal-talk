@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18014,
-    "app/main.js": 2642,
+    "scripts/run-tests.cjs": 18037,
+    "app/main.js": 2649,
     "app/renderer.js": 2583,
     "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
@@ -79,7 +79,7 @@
     "app/lib/config-validate.js": 121,
     "scripts/verify-install.ps1": 121,
     "app/lib/component.js": 119,
-    "app/lib/window-dock.js": 119,
+    "app/lib/window-dock.js": 126,
     "app/sentence_group.py": 118,
     "app/openai_tts.py": 117,
     "scripts/send-video-terminal-prompt.ps1": 117,

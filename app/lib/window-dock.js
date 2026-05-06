@@ -88,9 +88,18 @@ function displayForWindowCenter(x, y, winWidth, barHeight, displays, primary) {
 }
 
 /**
- * Rescue off-display windows. If the bar's centre is on ANY
- * connected display's workArea, leave the position alone; otherwise
- * re-centre on the nearest display near the top.
+ * Rescue off-display windows. The TOP-LEFT corner (x, y) must be
+ * inside some connected display's workArea — that's where the X /
+ * settings gear / drag handle live, so if the top edge is off, the
+ * user can't reach those controls regardless of the bar's height.
+ *
+ * Centre-based checks let `y: -190` slide through (centre at -94 was
+ * still close enough that some logic considered it "near" the
+ * primary display) while leaving the user with only the bottom 2 px
+ * of the bar visible. Top-edge check closes that hole without
+ * affecting users who legitimately park the bar on a negative-Y
+ * secondary monitor — those positions still resolve to a real
+ * display's workArea.
  *
  * @param {number} x
  * @param {number} y
@@ -100,12 +109,10 @@ function displayForWindowCenter(x, y, winWidth, barHeight, displays, primary) {
  * @param {{workArea: {x, y, width, height}}} primary
  */
 function clampToVisibleDisplay(x, y, winWidth, barHeight, displays, primary) {
-  const cx = x + winWidth / 2;
-  const cy = y + barHeight / 2;
   const onAnyDisplay = displays.some((d) => {
     const wa = d.workArea;
-    return cx >= wa.x && cx <= wa.x + wa.width &&
-           cy >= wa.y && cy <= wa.y + wa.height;
+    return x >= wa.x && x <= wa.x + wa.width - 1 &&
+           y >= wa.y && y <= wa.y + wa.height - 1;
   });
   if (onAnyDisplay) return { x, y };
   const target = displayForWindowCenter(x, y, winWidth, barHeight, displays, primary);
