@@ -60,3 +60,18 @@ coord/
 # Empty placeholder dirs that historically existed at root
 Assesments/
 IMAGES/
+
+# Internal coordination + assessment scaffolding — local-only working
+# notes that should never be public. Files listed here may have been
+# tracked previously; pair this with `git rm --cached` to untrack and
+# (separately) consider `git filter-repo` to scrub history before
+# launch.
+COORDINATION.md
+AGENTS.md
+ASSESSMENTS/
+docs/SESSION-HANDOFF-*.md
+docs/LIVE-*.log
+docs/VIDEO_*.md
+docs/COMMAND_CENTER_*.md
+docs/PAGE_HARVEST_CONCEPT.md
+docs/TERMINAL_SESSION_LAUNCHER_CONCEPT.md
