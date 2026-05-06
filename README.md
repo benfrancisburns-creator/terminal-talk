@@ -78,11 +78,36 @@ cd terminal-talk
 .\install.ps1
 ```
 
-Requires Windows 10/11, Python 3.10+, Node.js 18+, a working microphone. Takes ~3 minutes.
+**Prerequisites:** Windows 10/11, [Git](https://git-scm.com/download/win), [Python 3.10+](https://www.python.org/downloads/windows/), [Node.js 18+](https://nodejs.org/en/download), a working microphone. Allow 3–10 minutes (varies with network and disk speed; first `npm install` is the long step).
 
 The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevice`, `numpy`; pre-downloads the `hey_jarvis` wake-word model (~30 MB, one-time); runs `npm install` for Electron; copies everything to `%USERPROFILE%\.terminal-talk\`; then asks whether to register Claude Code hooks, Codex CLI hooks, the per-terminal coloured statusline, a Desktop shortcut, and auto-launch at login. It also adds a Start Menu shortcut for **Terminal Talk**.
 
 Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
+
+### First launch: SmartScreen warning
+
+Terminal Talk is not yet code-signed (an EV / Azure Trusted Signing certificate is on the roadmap once funding is in place — see [SECURITY.md](SECURITY.md#known-limitations)). On first launch Windows SmartScreen will show a blue prompt: *"Windows protected your PC."*
+
+Click **More info** → **Run anyway**. This is a one-time prompt; subsequent launches don't re-trigger it. The same is true for any open-source unsigned Electron app on Windows.
+
+### Installer flags
+
+`install.ps1` accepts the following flags so power users can predict prompts and side-effects before running:
+
+| Flag | Default | Effect when `-Unattended` |
+|---|---|---|
+| `-Unattended` | (off) | Skip all interactive prompts; use the defaults below. Required for headless/scripted installs. |
+| `-HooksYes` | `$true` | Register Claude Code hooks. |
+| `-StatuslineYes` | `$true` | Install the per-terminal coloured statusline. |
+| `-CodexHooksYes` | `$false` | Register Codex CLI hooks. |
+| `-StartupYes` | `$false` | Add the toolbar to Windows startup. |
+| `-DesktopShortcutYes` | `$true` | Create a Desktop shortcut. |
+
+Example, fully unattended install with Codex hooks and auto-startup:
+```powershell
+.\install.ps1 -Unattended -CodexHooksYes:$true -StartupYes:$true
+```
+Without `-Unattended`, the installer prompts interactively for each of the optional steps regardless of the other flag values.
 
 ---
 
