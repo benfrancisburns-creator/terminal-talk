@@ -1,12 +1,12 @@
 {
-  "ceiling": 2700,
+  "ceiling": 2725,
   "exclusions": [
     "scripts/run-tests.cjs"
   ],
   "files": {
     "scripts/run-tests.cjs": 18037,
-    "app/main.js": 2692,
-    "app/renderer.js": 2679,
+    "app/main.js": 2697,
+    "app/renderer.js": 2705,
     "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1153,

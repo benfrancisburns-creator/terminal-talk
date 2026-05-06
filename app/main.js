@@ -146,6 +146,11 @@ const DEFAULTS = {
     enabled: false,
     model: 'claude-haiku-4-5-20251001'
   },
+  // First-run tracking. False on a fresh install; renderer fires a
+  // welcome toast once on first launch with the three things a new
+  // user actually needs to know (toolbar location, speak hotkey,
+  // show/hide hotkey) and persists `true` so it never re-fires.
+  first_run_completed: false,
   openai_api_key: null
 };
 

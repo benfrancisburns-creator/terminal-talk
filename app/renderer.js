@@ -1977,6 +1977,32 @@ async function loadSettings() {
     transcriptPanel.refresh();
   }
   renderDots();
+  // First-run welcome — fires once on a fresh install. Three things a
+  // new user actually needs: where the toolbar is, the speak hotkey,
+  // the show/hide hotkey. Skipped in capture/demo modes so screenshot
+  // pipelines + the landing-page iframe don't show the welcome on
+  // every reload. Persisted as `first_run_completed: true` so it
+  // never re-fires.
+  if (cfg.first_run_completed === false && !isWindowMode && !isSettingsDemoMode) {
+    const speakKey = (cfg.hotkeys && cfg.hotkeys.speak_clipboard) || 'Ctrl+Shift+S';
+    const showHideKey = (cfg.hotkeys && cfg.hotkeys.toggle_window) || 'Ctrl+Shift+A';
+    _showStatusToast(
+      `Welcome to Terminal Talk. The toolbar is here, top of your screen — drag it anywhere. Highlight any text and press ${speakKey} to hear it read aloud. Press ${showHideKey} to show or hide the toolbar. Click the gear for Settings.`,
+      15000,
+      'info'
+    );
+    window.api.updateConfig({ first_run_completed: true }).catch((err) => {
+      try {
+        if (window.api && window.api.logRendererError) {
+          window.api.logRendererError({
+            type: 'unhandledrejection',
+            message: `failed to persist first_run_completed: ${err && err.message ? err.message : String(err)}`,
+            stack: err && err.stack ? err.stack : '',
+          });
+        }
+      } catch {}
+    });
+  }
 }
 
 async function setSettingsOpen(open) {
