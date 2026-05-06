@@ -26,6 +26,7 @@
 
 (async function bootstrap() {
   const APP_INDEX = '../app-mirror/index.html';
+  const params = new URLSearchParams(location.search);
 
   let html;
   try {

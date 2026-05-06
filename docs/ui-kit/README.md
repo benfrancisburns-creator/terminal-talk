@@ -5,7 +5,7 @@
 ## Files
 
 - `index.html` — the demo shell. Mounts the same DOM `app/index.html` has (by-id elements `bar`, `audio`, `dots`, `playPause`, `scrubber`, `scrubberMascot`, `scrubberJarvis`, `time`, `sessionsTable`, `speedSlider`, `volumeSlider`, etc.), loads `../../app/styles.css` + `../../app/lib/palette-classes.css` + local `kit-chrome.css`, then the scripts in this order: tokens-window → voices-window → clip-paths → heartbeat → component → stale-session-poller → dot-strip → tabs → sessions-table → settings-form → audio-player → `mock-ipc.js` → `../../app/renderer.js`.
-- `mock-ipc.js` — installs `window.api` with the full 22-channel IPC surface (`getQueue`, `getConfig`, `getStaleSessions`, `getOpenAiKeyStatus`, `testOpenAiVoice`, `getWorkingSessions`, `getVersion`, `updateConfig`, `setSession*`, `removeSession`, `deleteFile`, `hideWindow`, `setClickthrough`, `setPanelOpen`, `logRendererError`, `reloadRenderer`, `speakHeartbeat`) plus 10 event channels (`queue-updated`, `priority-play`, `clipboard-status`, `listening-state`, `force-expand`, `set-orientation`, `toggle-pause-playback`, `pause-playback-only`, `mic-captured-elsewhere`, `mic-released`). Adds an "Add fake clip / Clear queue / Toggle panel / Reset" control bar below the toolbar.
+- `mock-ipc.js` — installs `window.api` with the full 22-channel IPC surface (`getQueue`, `getConfig`, `getStaleSessions`, `getOpenAiKeyStatus`, `testOpenAiVoice`, `getWorkingSessions`, `getVersion`, `updateConfig`, `setSession*`, `removeSession`, `deleteFile`, `hideWindow`, `setClickthrough`, `setPanelOpen`, `logRendererError`, `reloadRenderer`, `speakHeartbeat`) plus 10 event channels (`queue-updated`, `priority-play`, `clipboard-status`, `listening-state`, `force-expand`, `set-orientation`, `toggle-pause-playback`, `pause-playback-only`, `mic-captured-elsewhere`, `mic-released`). Adds an "Add fake clip / Clear queue / Manual replay demo / Transcript / Collapsed signal / Toggle panel / Reset" control bar below the toolbar.
 - `kit-chrome.css` — purple-gradient demo backdrop + control bar styling. Overrides the two `position: fixed` rules on `.bar` / `.panel` so they flow normally in the demo page.
 - `tokens.mjs` — **generated, do not hand-edit**. ESM export of `app/lib/tokens.json` for any external hand-rolled consumer. Rebuild via `node scripts/generate-tokens-css.cjs`; a drift test in `scripts/run-tests.cjs` fails if it goes out of sync with the JSON source.
 
@@ -27,8 +27,13 @@ Both used by `docs/design-system/mocks-annotated.html` and `docs/design-system/c
   | `settings-panel-openai-saved` | panel open, OpenAI tab, compact saved-key row visible |
   | `settings-panel-sessions-expanded` | panel open, first session row auto-expanded — voice dropdown + 7 tri-state toggles visible |
   | `heartbeat` | queue mixing body + `H-` prefix ephemeral clips |
+  | `collapsed-signal` | forced collapsed letterbox signal using a split palette |
 
 - `?chrome=0` — hides the "Add fake clip" control bar so iframed contexts render cleanly.
+- `?mockAudioMs=<milliseconds>` — controls the silent mock clip duration. With visible kit chrome the default is 4500 ms so humans can see auto-played, active, and manual replay states; with `chrome=0` the default stays 200 ms for screenshot capture speed. Landing-page explainers can use a long value such as `45000` to hold the current clip while users click around.
+- `?demoHoldOpen=1` — keeps the product renderer's normal toolbar geometry but feeds it a longer mock collapse delay so landing-page demos do not shrink while someone is reading.
+- `?demoCollapsed=1&demoCollapsedPalette=16` — forces the product renderer into the animated collapsed letterbox state for inspection. Use with `seed=collapsed-signal`.
+- Visible kit chrome also defaults to `windowMode=1` and stretches the collapse delay to 60 s, so the toolbar stays inspectable while you click around. Hidden capture frames keep the product default, unless `windowMode=1` is supplied. `demoCollapsed=1` intentionally bypasses the default window mode.
 
 ### Screenshot recipes
 

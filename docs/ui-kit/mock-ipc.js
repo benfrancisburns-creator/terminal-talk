@@ -21,6 +21,7 @@
 //   settings-panel-openai-saved       panel open, OpenAI tab, saved key
 //   settings-panel-sessions-expanded  panel open, one session row auto-expanded
 //   heartbeat                         queue mixing body + H- prefix ephemeral clips
+//   collapsed-signal                  forced collapsed letterbox, split palette
 //
 // Pass ?chrome=0 to hide the demo scaffolding (purple gradient + add-fake
 // buttons). The mocks-annotated + components iframes use this.
@@ -31,6 +32,11 @@
   const URL_PARAMS  = new URLSearchParams(location.search);
   const SEED_NAME   = URL_PARAMS.get('seed') || 'three-sessions';
   const SHOW_CHROME = URL_PARAMS.get('chrome') !== '0';
+  const HOLD_OPEN   = URL_PARAMS.get('demoHoldOpen') === '1';
+  const parsedMockAudioMs = Number(URL_PARAMS.get('mockAudioMs'));
+  const MOCK_AUDIO_MS = Number.isFinite(parsedMockAudioMs) && parsedMockAudioMs > 0
+    ? Math.min(120000, Math.max(100, parsedMockAudioMs))
+    : (SHOW_CHROME ? 4500 : 200);
 
   // ═══════════════════════════════════════════════════════════════════════
   // D2-3a — silent-WAV shim
@@ -41,17 +47,22 @@
   // the <audio> element fires `error` and the renderer skips to next.
   //
   // This shim intercepts the `src` setter on HTMLMediaElement and swaps
-  // any `file://` URL for a 200 ms silent PCM WAV data URL. The <audio>
+  // any `file://` URL for a silent PCM WAV data URL. The <audio>
   // element now PLAYS (silently), `audio.ended` fires normally, the
   // renderer's `ended` handler advances `playNextPending()`, which
   // triggers `scheduleAutoDelete(path, isManual)` — so the full clip
   // lifecycle (dot pulses → dot fades to heard → auto-prune removes it
   // after 20 s) is visible in the demo.
   //
+  // Default duration is deliberately slower when the kit chrome is visible
+  // so humans can see auto-played / active / manual replay states. Screenshot
+  // capture uses ?chrome=0, which preserves the old fast 200 ms default.
+  // Override with ?mockAudioMs=45000 for explainer iframes.
+  //
   // The real Electron app never loads mock-ipc.js, so this shim only
   // exists in the kit. Product audio playback is unaffected.
   (function installSilentWavShim() {
-    const SAMPLE_RATE = 8000, DUR_MS = 200;
+    const SAMPLE_RATE = 8000, DUR_MS = MOCK_AUDIO_MS;
     const SAMPLES = SAMPLE_RATE * DUR_MS / 1000;   // 1600 samples
     const DATA_BYTES = SAMPLES * 2;                 // 16-bit PCM mono
     const buf = new ArrayBuffer(44 + DATA_BYTES);
@@ -109,7 +120,7 @@
     playback: {
       speed: 1.25,
       master_volume: 1.0,
-      collapse_delay_sec: 3,
+      collapse_delay_sec: (SHOW_CHROME || HOLD_OPEN) ? 60 : 3,
       auto_prune: true,
       auto_prune_sec: 20,
       auto_continue_after_click: true,
@@ -341,6 +352,19 @@
         ],
       };
     }
+    if (name === 'collapsed-signal') {
+      const A = 'c011a9ed';
+      const requestedIndex = Number(URL_PARAMS.get('demoCollapsedPalette'));
+      const paletteIndex = Number.isFinite(requestedIndex) ? Math.max(0, Math.min(23, Math.floor(requestedIndex))) : 16;
+      const s = {};
+      s[A] = { index: paletteIndex, label: 'Collapsed signal', session_id: A, pinned: true, last_seen: t / 1000 };
+      return {
+        sessions: s, staleShorts: [], panelOpen: false,
+        queueFiles: [
+          { path: makePath(A, 'resp'), mtime: t - 2000 },
+        ],
+      };
+    }
     // Fall-through: same as three-sessions
     return buildSeed('three-sessions');
   }
@@ -461,7 +485,14 @@
     // --- UI-only / electron-only noops -------------------------------
     hideWindow:       () => Promise.resolve(),
     setClickthrough:  () => Promise.resolve(),
-    setPanelOpen:     () => Promise.resolve(),
+    setPanelOpen:     (open) => {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'terminal-talk-panel-open', open: !!open }, '*');
+        }
+      } catch {}
+      return Promise.resolve(true);
+    },
     logRendererError: (payload) => { console.warn('[renderer-error]', payload); return Promise.resolve(); },
     reloadRenderer:   () => { location.reload(); return Promise.resolve(); },
     // HB1: main-side edge-tts spawner for heartbeat verbs. In the kit
@@ -518,6 +549,9 @@
       <button data-action="add">＋ Add fake clip</button>
       <button data-action="clear">Clear queue</button>
       <button data-action="heyj">"hey jarvis" clip</button>
+      <button data-action="manual" title="Replay the first visible dot as a manual click so the manual-played ring is visible">Manual replay demo</button>
+      <button data-action="transcript" title="Open the transcript drawer using the real toolbar button">Transcript</button>
+      <button data-action="collapsed" title="Reload into the forced collapsed-letterbox signal state">Collapsed signal</button>
       <button data-action="panel">Toggle panel</button>
       <button data-action="reset" title="Re-seed the demo to its initial ?seed=... state without a page reload">↺ Reset demo</button>
       <span class="caption">Kit demo — real app/renderer.js driven by mock IPC</span>
@@ -537,6 +571,25 @@
       } else if (action === 'heyj') {
         queueFiles.push({ path: makePath(pick, 'clip', queueFiles.length + 1), mtime: now() });
         notifyQueue();
+      } else if (action === 'manual') {
+        // A visible, intentional manual-play state: turn off "continue
+        // after click" then click the first rendered dot. This uses the
+        // product dot listener, so the ring/active/manual classes come
+        // from renderer.js + dot-strip.js rather than demo-only CSS.
+        window.api.updateConfig({ playback: { auto_continue_after_click: false } });
+        const dot = document.querySelector('.dot');
+        if (dot) dot.click();
+      } else if (action === 'transcript') {
+        const btn = document.getElementById('transcriptToggle');
+        if (btn) btn.click();
+      } else if (action === 'collapsed') {
+        const next = new URL(location.href);
+        next.searchParams.set('seed', 'collapsed-signal');
+        next.searchParams.set('demoCollapsed', '1');
+        next.searchParams.set('demoCollapsedPalette', '16');
+        next.searchParams.set('mockAudioMs', '45000');
+        next.searchParams.delete('windowMode');
+        location.href = next.toString();
       } else if (action === 'panel') {
         // Click the settings button the renderer already wired up.
         const s = document.getElementById('settingsBtn'); if (s) s.click();
