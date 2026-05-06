@@ -45,6 +45,14 @@ html, body {
   max-height: none !important;
   overflow-y: visible !important;
 }
+/* Match the bar's 18px top margin with an equivalent gap below the panel,
+   so the embedded landing-page iframe shows breathing room before the
+   parent container's rounded corner instead of the panel butting up
+   against the iframe edge. The panel still flex-grows to fill the
+   remaining body height — the margin just reserves the bottom strip. */
+body.settings-open .panel {
+  margin-bottom: 18px !important;
+}
 
 /* Demo controls strip — only shown when ?chrome=0 is NOT set.
    mock-ipc.js mounts this below the bar + panel. */

@@ -263,219 +263,129 @@ section { padding: 80px 24px; }
   .voice-arrow { transform: rotate(90deg); justify-self: center; }
 }
 
-/* Current UI carousel */
-.product-ui { background: linear-gradient(to bottom, rgba(96,165,250,0.04), transparent 70%); }
-.ui-carousel {
-  --ui-index: 0;
-  max-width: 1040px;
+/* Current UI reference */
+.product-ui {
+  background: linear-gradient(to bottom, rgba(96,165,250,0.04), transparent 70%);
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.product-ui .wrap { max-width: min(1560px, calc(100vw - 16px)); }
+.ui-gallery {
+  max-width: 1480px;
   margin: 0 auto;
-}
-.ui-carousel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-.ui-counter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.34);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 12px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
-}
-.ui-carousel-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ui-arrow {
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: rgba(255,255,255,0.06);
-  color: var(--text);
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .15s ease, border-color .15s ease, transform .08s ease;
-}
-.ui-arrow:hover,
-.ui-arrow:focus-visible {
-  background: rgba(96,165,250,0.16);
-  border-color: rgba(96,165,250,0.45);
-  outline: none;
-}
-.ui-arrow:active { transform: translateY(1px); }
-.ui-carousel-shell {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: rgba(255,255,255,0.03);
-  box-shadow: 0 24px 80px rgba(0,0,0,0.22);
-}
-.ui-slides {
-  display: flex;
-  transform: translateX(calc(var(--ui-index) * -100%));
-  transition: transform .48s cubic-bezier(.2,.8,.2,1);
-}
-.ui-slide {
-  flex: 0 0 100%;
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(0, 1.55fr) minmax(260px, .75fr);
-  align-items: center;
-  padding: 18px;
+  gap: 20px;
 }
-.ui-slide-media {
-  position: relative;
-  overflow: hidden;
-  border-radius: 12px;
-  background: #10131c;
-  border: 1px solid rgba(255,255,255,0.07);
-  min-height: 0;
-  aspect-ratio: 16 / 7;
-  display: flex;
-  align-items: center;
+.toolbar-explorer {
+  --toolbar-demo-height: 192px;
+  --toolbar-frame-width: 666px;
+  --toolbar-demo-width: 666px;
+  --toolbar-demo-scale: calc(var(--toolbar-demo-width) / 680);
+  display: grid;
+  grid-template-columns: minmax(0, var(--toolbar-frame-width)) minmax(340px, 1fr);
+  gap: 12px;
+  align-items: start;
   justify-content: center;
-}
-.ui-slide-media img {
-  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
-.ui-slide-media.is-pair {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
-  justify-items: center;
-  gap: 16px;
-  padding: 28px;
+.toolbar-demo-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
 }
-.ui-slide-media.is-pair img {
-  width: auto;
-  max-width: 100%;
-  max-height: 74%;
-  height: auto;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: #10131c;
-}
-.ui-motion {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.ui-cursor {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 5px rgba(96,165,250,0.24), 0 10px 24px rgba(0,0,0,0.35);
-  opacity: 0;
-}
-.ui-pulse {
-  position: absolute;
-  border-radius: 999px;
-  border: 2px solid rgba(96,165,250,0.78);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 0 24px rgba(96,165,250,0.35);
-  opacity: 0;
-}
-.ui-scan {
-  position: absolute;
-  left: 7%;
-  right: 7%;
-  height: 22px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, transparent, rgba(96,165,250,0.18), transparent);
-  opacity: 0;
-}
-.ui-wave {
-  position: absolute;
-  inset: 29% 9%;
-  border-radius: 999px;
-  background:
-    linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent),
-    repeating-linear-gradient(90deg, #ffa726 0 5px, #ee2bbd 5px 10px, transparent 10px 17px);
-  clip-path: polygon(0 50%,5% 34%,10% 58%,15% 24%,20% 70%,25% 30%,30% 62%,35% 40%,40% 56%,45% 25%,50% 72%,55% 30%,60% 60%,65% 36%,70% 66%,75% 28%,80% 58%,85% 38%,90% 62%,95% 32%,100% 50%,100% 100%,0 100%);
-  opacity: 0;
-}
-.ui-sync-ring {
-  position: absolute;
-  width: 78px;
-  height: 78px;
-  border-radius: 50%;
-  border: 2px solid rgba(74,222,128,0.85);
-  box-shadow: 0 0 30px rgba(74,222,128,0.25);
-  opacity: 0;
-}
-.ui-launch-line {
-  position: absolute;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--green), var(--blue), var(--orange));
-  transform-origin: left center;
-  transform: scaleX(0);
-}
-.ui-tab-switch {
-  position: absolute;
-  height: 38px;
-  border-radius: 999px;
-  background: rgba(96,165,250,0.2);
-  border: 1px solid rgba(96,165,250,0.55);
-  box-shadow: 0 0 28px rgba(96,165,250,0.25);
-  opacity: 0;
-}
-.ui-slide.active .queue-cursor { animation: queueCursor 5s ease-in-out infinite; }
-.ui-slide.active .queue-tab { animation: tabPulse 5s ease-in-out infinite; }
-.ui-slide.active .queue-dot-1,
-.ui-slide.active .queue-dot-2,
-.ui-slide.active .queue-dot-3 { animation: dotPulse 1.5s ease-in-out infinite; }
-.ui-slide.active .queue-dot-2 { animation-delay: .18s; }
-.ui-slide.active .queue-dot-3 { animation-delay: .36s; }
-.ui-slide.active .transcript-scan { animation: transcriptScan 4.8s ease-in-out infinite; }
-.ui-slide.active .copy-pulse { animation: copyPulse 4.8s ease-in-out infinite; }
-.ui-slide.active .wave-demo { animation: waveBars 2.1s ease-in-out infinite; }
-.ui-slide.active .wave-pulse { animation: wavePulse 2.1s ease-in-out infinite; }
-.ui-slide.active .sync-ring { animation: syncRing 4.8s ease-in-out infinite; }
-.ui-slide.active .focus-pulse { animation: focusPulse 4.8s ease-in-out infinite; }
-.ui-slide.active .launch-line { animation: launchLine 4.8s ease-in-out infinite; }
-.ui-slide.active .launch-cursor { animation: launchCursor 4.8s ease-in-out infinite; }
-.ui-slide.active .settings-switch { animation: settingsSwitch 5.2s ease-in-out infinite; }
-.ui-slide-copy h3 {
-  margin: 0 0 9px;
-  font-size: clamp(21px, 2.3vw, 30px);
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-}
-.ui-slide-copy p {
-  margin: 0;
+.toolbar-demo-modes button {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(255,255,255,0.055);
   color: var(--text-dim);
-  font-size: 14px;
+  border-radius: 999px;
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
 }
-.ui-slide-kicker {
+.toolbar-demo-modes button:hover,
+.toolbar-demo-modes button.active {
+  color: var(--text);
+  border-color: rgba(96,165,250,0.55);
+  background: rgba(96,165,250,0.18);
+}
+.toolbar-live-frame {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.08);
+  width: var(--toolbar-frame-width);
+  min-width: var(--toolbar-frame-width);
+  height: calc(var(--toolbar-demo-height) * var(--toolbar-demo-scale));
+}
+.toolbar-live-frame iframe {
+  display: block;
+  width: 680px;
+  height: var(--toolbar-demo-height);
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  transform: scale(var(--toolbar-demo-scale));
+  transform-origin: top left;
+}
+.toolbar-explorer[data-mode="settings"] {
+  --toolbar-demo-height: 760px;
+  --toolbar-frame-width: 666px;
+  --toolbar-demo-width: 666px;
+  --toolbar-demo-scale: calc(var(--toolbar-demo-width) / 680);
+  grid-template-columns: minmax(0, var(--toolbar-frame-width)) minmax(340px, 1fr);
+}
+.toolbar-explorer[data-mode="settings"] .toolbar-live-frame {
+  grid-column: 1;
+  min-width: 680px;
+}
+.toolbar-explorer[data-mode="transcript"] {
+  --toolbar-demo-height: 260px;
+}
+.toolbar-explorer[data-mode="collapsed"] {
+  --toolbar-demo-height: 192px;
+}
+.toolbar-detail {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 1;
+  width: 100%;
+  min-height: 0;
+  align-self: stretch;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(96,165,250,0.12), transparent 42%),
+    rgba(12,14,20,0.72);
+  padding: 12px;
+}
+.toolbar-detail::-webkit-scrollbar { width: 8px; }
+.toolbar-detail::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 999px;
+}
+.toolbar-detail::-webkit-scrollbar-track { background: transparent; }
+.toolbar-detail ul {
+  grid-template-columns: 1fr;
+}
+.toolbar-detail-kicker {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
   color: var(--copper);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: .12em;
   text-transform: uppercase;
-  font-weight: 700;
+  font-weight: 800;
 }
-.ui-slide-kicker::before {
+.toolbar-detail-kicker::before {
   content: "";
   width: 8px;
   height: 8px;
@@ -483,113 +393,138 @@ section { padding: 80px 24px; }
   background: var(--green);
   box-shadow: 0 0 18px rgba(74,222,128,0.42);
 }
-.ui-carousel-dots {
-  display: flex;
-  justify-content: center;
-  gap: 9px;
-  margin-top: 16px;
+.toolbar-detail-overview {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
 }
-.ui-dot {
-  width: 11px;
-  height: 11px;
+.toolbar-detail-overview h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.18;
+  font-weight: 750;
+}
+.toolbar-detail-overview p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.toolbar-detail-sub-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: var(--blue);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.toolbar-detail-sub-kicker::before {
+  content: "";
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  border: 0;
+  background: var(--blue);
+  box-shadow: 0 0 12px rgba(96,165,250,0.55);
+}
+.toolbar-detail-focus h5 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--text);
+}
+.toolbar-detail-focus p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.42;
+}
+.toolbar-detail h4 {
+  margin: 0 0 9px;
+  font-size: 16px;
+  line-height: 1.12;
+}
+.toolbar-detail p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.toolbar-detail ul {
+  margin: 14px 0 0;
   padding: 0;
-  background: rgba(255,255,255,0.22);
-  cursor: pointer;
+  list-style: none;
+  display: grid;
+  gap: 9px;
 }
-.ui-dot.active {
-  background: var(--copper);
-  box-shadow: 0 0 0 5px rgba(201,123,80,0.14);
+.toolbar-detail li {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-left: 18px;
+  position: relative;
 }
-@keyframes queueCursor {
-  0%, 100% { left: 14%; top: 43%; opacity: 0; }
-  12%, 42% { opacity: 1; }
-  28% { left: 24%; top: 38%; opacity: 1; }
-  54% { left: 35%; top: 63%; opacity: 1; }
-  70% { opacity: 0; }
+.toolbar-detail li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .65em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--blue);
 }
-@keyframes tabPulse {
-  0%, 18%, 70%, 100% { opacity: 0; transform: scale(.94); }
-  28%, 54% { opacity: 1; transform: scale(1); }
+.ui-card {
+  background: rgba(24,26,32,0.84);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 22px 70px rgba(0,0,0,0.2);
+  backdrop-filter: blur(12px) saturate(140%);
+  overflow-x: auto;
 }
-@keyframes dotPulse {
-  0%, 100% { opacity: 0; transform: scale(.75); }
-  45% { opacity: 1; transform: scale(1.12); }
+.ui-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
 }
-@keyframes transcriptScan {
-  0%, 100% { top: 28%; opacity: 0; }
-  15%, 80% { opacity: 1; }
-  45% { top: 54%; }
-  72% { top: 72%; }
+.ui-card h3 {
+  margin: 0 0 7px;
+  font-size: 18px;
 }
-@keyframes copyPulse {
-  0%, 55%, 100% { opacity: 0; transform: scale(.95); }
-  68%, 84% { opacity: 1; transform: scale(1); }
+.ui-card p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
 }
-@keyframes waveBars {
-  0%, 100% { opacity: .2; transform: scaleY(.55); }
-  45% { opacity: .9; transform: scaleY(1); }
+@media (max-width: 1260px) {
+  .toolbar-explorer { grid-template-columns: var(--toolbar-frame-width) minmax(250px, 1fr); }
+  .toolbar-explorer[data-mode="settings"] { grid-template-columns: var(--toolbar-frame-width) minmax(230px, 1fr); }
+  .product-ui .wrap { max-width: 100%; }
 }
-@keyframes wavePulse {
-  0%, 100% { opacity: 0; transform: scale(.9); }
-  44% { opacity: 1; transform: scale(1); }
+@media (max-width: 1160px) {
+  .toolbar-explorer {
+    grid-template-columns: var(--toolbar-frame-width) minmax(220px, 1fr);
+    gap: 8px;
+  }
+  .toolbar-explorer[data-mode="settings"] { grid-template-columns: var(--toolbar-frame-width) minmax(220px, 1fr); }
+  .toolbar-detail {
+    width: 100%;
+    padding: 12px;
+  }
+  .toolbar-detail h4 { font-size: 16px; }
+  .toolbar-detail p,
+  .toolbar-detail li { font-size: 11px; }
+  .toolbar-detail ul { gap: 9px; }
 }
-@keyframes syncRing {
-  0%, 42%, 100% { opacity: 0; transform: scale(.55); }
-  52% { opacity: 1; transform: scale(1); }
-  72% { opacity: 0; transform: scale(1.35); }
-}
-@keyframes focusPulse {
-  0%, 100% { opacity: 0; transform: scale(.9); }
-  22%, 58% { opacity: 1; transform: scale(1); }
-}
-@keyframes launchLine {
-  0%, 16%, 100% { transform: scaleX(0); opacity: 0; }
-  34%, 74% { transform: scaleX(1); opacity: 1; }
-  86% { transform: scaleX(.15); opacity: 0; }
-}
-@keyframes launchCursor {
-  0%, 100% { left: 32%; top: 56%; opacity: 0; }
-  22% { left: 41%; top: 49%; opacity: 1; }
-  58% { left: 72%; top: 49%; opacity: 1; }
-  74% { left: 77%; top: 49%; opacity: 0; }
-}
-@keyframes settingsSwitch {
-  0%, 100% { left: 6%; width: 13%; opacity: .35; }
-  24% { left: 18%; width: 15%; opacity: 1; }
-  48% { left: 35%; width: 13%; opacity: 1; }
-  72% { left: 51%; width: 14%; opacity: 1; }
-}
-@media (max-width: 860px) {
-  .ui-slide { grid-template-columns: 1fr; }
-  .ui-slide-copy { order: -1; }
-  .ui-carousel-head { align-items: flex-start; }
-}
-@media (max-width: 560px) {
-  .ui-carousel-controls { gap: 7px; }
-  .ui-arrow { width: 36px; height: 36px; }
-  .ui-slide { padding: 12px; }
-  .ui-slide-media.is-pair { grid-template-columns: 1fr; padding: 18px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ui-slides,
-  .ui-arrow { transition: none; }
-  .ui-slide.active .queue-cursor,
-  .ui-slide.active .queue-tab,
-  .ui-slide.active .queue-dot-1,
-  .ui-slide.active .queue-dot-2,
-  .ui-slide.active .queue-dot-3,
-  .ui-slide.active .transcript-scan,
-  .ui-slide.active .copy-pulse,
-  .ui-slide.active .wave-demo,
-  .ui-slide.active .wave-pulse,
-  .ui-slide.active .sync-ring,
-  .ui-slide.active .focus-pulse,
-  .ui-slide.active .launch-line,
-  .ui-slide.active .launch-cursor,
-  .ui-slide.active .settings-switch {
-    animation: none;
+@media (max-width: 960px) {
+  .toolbar-explorer { grid-template-columns: 1fr; }
+  .toolbar-live-frame {
+    justify-self: center;
+    width: min(var(--toolbar-frame-width), 100%);
+    min-width: 0;
   }
 }
 
@@ -889,7 +824,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <div class="feature">
         <div class="icon">🔊</div>
         <h3>Streaming auto-speak</h3>
-        <p>Claude Code streams through hooks and transcript watching. Codex CLI uses native hooks plus rollout logs. Both become spoken clips in the same queue, with tool narration and heartbeat clips handled separately from body audio.</p>
+        <p>Claude Code streams through hooks and transcript watching. Codex CLI uses native hooks plus rollout logs. Replies and tool progress become spoken clips in the queue; heartbeat pings stay ambient, colour the scrubber while speaking, and never add tab or transcript noise.</p>
       </div>
       <div class="feature">
         <div class="icon">👂</div>
@@ -929,117 +864,31 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">Current UI</div>
-      <h2 class="sec-title">The toolbar and settings bar carry the same session identity</h2>
-      <p class="sec-intro">These screenshots are generated from the live Electron toolbar mirror, so the docs show playback states, transcript review, tabbed settings, session controls, and collapsed signal states.</p>
+      <h2 class="sec-title">A control layer for every coding assistant you run</h2>
+      <p class="sec-intro">Terminal Talk keeps replies, tool progress, focus, transcripts, and per-session identity in one compact toolbar. The live toolbar to the left is the same renderer used by the app, driven by a safe demo queue.</p>
     </div>
-    <div class="ui-carousel" data-ui-carousel aria-label="Terminal Talk UI states">
-      <div class="ui-carousel-head">
-        <span class="ui-counter"><span data-ui-current>1</span> / <span data-ui-total>6</span></span>
-        <div class="ui-carousel-controls">
-          <button class="ui-arrow" type="button" data-ui-prev aria-label="Previous UI state">&#8249;</button>
-          <button class="ui-arrow" type="button" data-ui-next aria-label="Next UI state">&#8250;</button>
+    <div class="ui-gallery" aria-label="Terminal Talk UI screenshots">
+      <article class="ui-card">
+        <div class="toolbar-explorer">
+          <div class="toolbar-live-frame">
+            <iframe
+              title="Interactive Terminal Talk toolbar demo"
+              src="ui-kit/?seed=mixed-states&amp;chrome=0&amp;mockAudioMs=45000"
+              loading="lazy"
+              data-toolbar-demo></iframe>
+          </div>
+          <aside class="toolbar-detail" aria-live="polite">
+            <span class="toolbar-detail-kicker" data-toolbar-kicker>Live app renderer</span>
+            <h4 data-toolbar-title>Click anything to explore</h4>
+            <p data-toolbar-body>The toolbar to the left is the real app renderer running with a safe fake queue. Click any button, dot, tab, slider, or toggle to read about it. The bar auto-collapses after a few seconds of silence — hover the small pill then to read about collapsed mode. Click the gear to open the settings panel and explore each setting.</p>
+            <ul data-toolbar-points>
+              <li>Dots are queued spoken clips — click to replay.</li>
+              <li>Tabs filter the queue to one session.</li>
+              <li>Destructive demo actions are blocked on this page.</li>
+            </ul>
+          </aside>
         </div>
-      </div>
-      <div class="ui-carousel-shell">
-        <div class="ui-slides" data-ui-slides>
-          <article class="ui-slide active" data-ui-slide aria-hidden="false">
-            <div class="ui-slide-media">
-              <img src="screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with active session tabs, clip dots, and transcript header">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-cursor queue-cursor"></span>
-                <span class="ui-pulse queue-tab" style="left: 8.5%; top: 31%; width: 15%; height: 13%;"></span>
-                <span class="ui-pulse queue-dot-1" style="left: 2.7%; top: 60%; width: 5%; height: 17%;"></span>
-                <span class="ui-pulse queue-dot-2" style="left: 5.4%; top: 60%; width: 5%; height: 17%;"></span>
-                <span class="ui-pulse queue-dot-3" style="left: 8.1%; top: 60%; width: 5%; height: 17%;"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Queue identity</span>
-              <h3>Active conversations stay visible without clutter</h3>
-              <p>The top strip is only for sessions that are active or still have clips waiting. Grouped dots show queued, heard, and speaking clips with the same palette identity used everywhere else.</p>
-            </div>
-          </article>
-          <article class="ui-slide" data-ui-slide aria-hidden="true">
-            <div class="ui-slide-media">
-              <img src="screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken rows, and copy buttons">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-scan transcript-scan"></span>
-                <span class="ui-pulse copy-pulse" style="right: 6.5%; top: 37%; width: 9%; height: 10%;"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Transcript</span>
-              <h3>Inspect what was actually spoken</h3>
-              <p>Open the transcript, filter by session, copy a spoken row, or flip back to the original text. The toolbar keeps audio review close without dragging you out of the terminal.</p>
-            </div>
-          </article>
-          <article class="ui-slide" data-ui-slide aria-hidden="true">
-            <div class="ui-slide-media is-pair">
-              <img src="screenshots/toolbar-collapsed-resting.png" alt="Collapsed resting letterbox strip">
-              <img src="screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed waveform letterbox using a left and right split session palette">
-              <img src="screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed waveform letterbox using a top and bottom split session palette">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-wave wave-demo"></span>
-                <span class="ui-pulse wave-pulse" style="left: 15%; top: 36%; width: 70%; height: 28%;"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Collapsed signal</span>
-              <h3>The tiny state still tells you who is speaking</h3>
-              <p>The letterbox stays short and click-through. When audio plays, the waveform grows while the border breathes back, preserving solid, left/right, and top/bottom palette splits.</p>
-            </div>
-          </article>
-          <article class="ui-slide" data-ui-slide aria-hidden="true">
-            <div class="ui-slide-media">
-              <img src="screenshots/toolbar-sessions-panel-expanded.png" alt="Sessions tab with one row expanded to show voice, heartbeat, and speech include overrides">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-pulse focus-pulse" style="right: 12.2%; top: 48%; width: 5.5%; height: 11%;"></span>
-                <span class="ui-sync-ring sync-ring" style="right: 5.5%; top: 44%;"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Session controls</span>
-              <h3>One row controls identity, focus, voice, and sync</h3>
-              <p>Give each assistant a label, palette, voice, mute state, focus priority, heartbeat override, and speech-includes rule. Desktop sync status lives next to the session it belongs to.</p>
-            </div>
-          </article>
-          <article class="ui-slide" data-ui-slide aria-hidden="true">
-            <div class="ui-slide-media">
-              <img src="screenshots/toolbar-create-session-tab.png" alt="Create tab with assistant picker, permissions, project folder, label, colour, save default, and create buttons">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-launch-line launch-line" style="left: 29%; top: 58%; width: 45%;"></span>
-                <span class="ui-cursor launch-cursor"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Create</span>
-              <h3>Launch assistants with identity already chosen</h3>
-              <p>Pick Codex, Claude Code, or Claude Desktop Code, choose the project folder, label, palette, and permissions mode, then create a session that Terminal Talk can recognise.</p>
-            </div>
-          </article>
-          <article class="ui-slide" data-ui-slide aria-hidden="true">
-            <div class="ui-slide-media">
-              <img src="screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel showing Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs">
-              <div class="ui-motion" aria-hidden="true">
-                <span class="ui-tab-switch settings-switch" style="top: 6%;"></span>
-              </div>
-            </div>
-            <div class="ui-slide-copy">
-              <span class="ui-slide-kicker">Tabbed settings</span>
-              <h3>The settings panel is split by job, not one long scroll</h3>
-              <p>Playback, Sessions, Create, OpenAI, Shortcuts, and About each get a focused page. The controls are still deep, but the navigation stays compact.</p>
-            </div>
-          </article>
-        </div>
-      </div>
-      <div class="ui-carousel-dots" role="tablist" aria-label="Choose UI slide">
-        <button class="ui-dot active" type="button" data-ui-dot aria-label="Show queue identity slide" aria-selected="true"></button>
-        <button class="ui-dot" type="button" data-ui-dot aria-label="Show transcript slide" aria-selected="false"></button>
-        <button class="ui-dot" type="button" data-ui-dot aria-label="Show collapsed signal slide" aria-selected="false"></button>
-        <button class="ui-dot" type="button" data-ui-dot aria-label="Show session controls slide" aria-selected="false"></button>
-        <button class="ui-dot" type="button" data-ui-dot aria-label="Show create session slide" aria-selected="false"></button>
-        <button class="ui-dot" type="button" data-ui-dot aria-label="Show settings tabs slide" aria-selected="false"></button>
-      </div>
+      </article>
     </div>
   </div>
 </section>
@@ -1278,54 +1127,607 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 
 <script>
 (() => {
-  const carousels = document.querySelectorAll('[data-ui-carousel]');
-  for (const carousel of carousels) {
-    const slides = Array.from(carousel.querySelectorAll('[data-ui-slide]'));
-    const dots = Array.from(carousel.querySelectorAll('[data-ui-dot]'));
-    const current = carousel.querySelector('[data-ui-current]');
-    const total = carousel.querySelector('[data-ui-total]');
-    const prev = carousel.querySelector('[data-ui-prev]');
-    const next = carousel.querySelector('[data-ui-next]');
-    if (!slides.length) continue;
+  const explorer = document.querySelector('.toolbar-explorer');
+  if (!explorer) return;
 
-    let index = 0;
-    let paused = false;
+  const frame = explorer.querySelector('[data-toolbar-demo]');
+  const frameWrap = explorer.querySelector('.toolbar-live-frame');
+  const title = explorer.querySelector('[data-toolbar-title]');
+  const kicker = explorer.querySelector('[data-toolbar-kicker]');
+  const body = explorer.querySelector('[data-toolbar-body]');
+  const points = explorer.querySelector('[data-toolbar-points]');
+  const TOOLBAR_BASE_WIDTH = 680;
+  // Real app heights — the breathing room below the bar/panel is created
+  // by kit-chrome's `body.settings-open .panel { margin-bottom }`, so the
+  // iframe stays at the natural app dimensions.
+  const TOOLBAR_HEIGHT_DEFAULT = 192;
+  const TOOLBAR_HEIGHT_PANEL_OPEN = 618;
 
-    if (total) total.textContent = String(slides.length);
+  function updateToolbarDemoScale() {
+    if (!frameWrap) return;
+    const styles = getComputedStyle(explorer);
+    const targetWidth = parseFloat(styles.getPropertyValue('--toolbar-demo-width')) || TOOLBAR_BASE_WIDTH;
+    const frameWidth = frameWrap.clientWidth || targetWidth;
+    const targetScale = targetWidth / TOOLBAR_BASE_WIDTH;
+    const scale = Math.min(targetScale, frameWidth / TOOLBAR_BASE_WIDTH);
+    explorer.style.setProperty('--toolbar-demo-scale', String(scale));
+  }
 
-    function show(nextIndex) {
-      index = (nextIndex + slides.length) % slides.length;
-      carousel.style.setProperty('--ui-index', index);
-      slides.forEach((slide, slideIndex) => {
-        const active = slideIndex === index;
-        slide.classList.toggle('active', active);
-        slide.setAttribute('aria-hidden', active ? 'false' : 'true');
-      });
-      dots.forEach((dot, dotIndex) => {
-        const active = dotIndex === index;
-        dot.classList.toggle('active', active);
-        dot.setAttribute('aria-selected', active ? 'true' : 'false');
-      });
-      if (current) current.textContent = String(index + 1);
+  function setToolbarDemoHeight(height) {
+    explorer.style.setProperty('--toolbar-demo-height', `${height}px`);
+  }
+
+  // Welcome state shown until the user clicks or hovers something.
+  const welcomeDetail = {
+    kicker: 'Live app renderer',
+    title: 'Click anything to explore',
+    body: 'The toolbar to the left is the real app renderer running with a safe fake queue. Click any button, dot, tab, slider, or toggle to read about it. The bar auto-collapses after a few seconds of silence — hover the small pill then to read about collapsed mode. Click the gear to open the settings panel and explore each setting.',
+    points: ['Dots are queued spoken clips — click to replay.', 'Tabs filter the queue to one session.', 'Destructive demo actions are blocked on this page.'],
+  };
+
+  const details = {
+    /* ---------- toolbar overview / fallbacks ---------- */
+    playback: {
+      kicker: 'Playback',
+      title: 'Play, pause, and step through speech',
+      body: 'The left cluster controls audio without bringing the assistant terminal into focus.',
+      points: ['Pause, resume, rewind 10s, or skip 10s.', 'Mirrored by global hotkeys you can rebind.', 'Independent of which terminal currently has focus.'],
+    },
+    scrubber: {
+      kicker: 'Now speaking',
+      title: 'Scrubber, timing, and session-coloured mascot',
+      body: 'The scrubber shows progress through the current clip. The mascot and scrubber colour follow the session that is actually speaking.',
+      points: ['Assistant clips show the mascot.', 'Highlight-to-speak clips switch to the Jarvis marker.', 'Heartbeat pings colour the scrubber without adding transcript noise.'],
+    },
+    sessions: {
+      kicker: 'Session tabs',
+      title: 'Filter the live workstream',
+      body: 'The tab row shows sessions that are active or still have visible audio waiting. Click a session to filter the dots and transcript to that assistant.',
+      points: ['All returns to the combined queue.', 'Left/right arrows appear when there are too many active tabs to fit.', 'Inactive registry rows stay in Settings instead of crowding the toolbar.'],
+    },
+    dots: {
+      kicker: 'Spoken queue',
+      title: 'Every dot is one spoken clip',
+      body: 'The dot strip is the audio queue. Colour identifies the session, position shows arrival order, and played states show whether a clip autoplayed or was manually replayed.',
+      points: ['Queued clips are flat session-colour dots.', 'Autoplayed clips get the small white centre marker.', 'Click a dot to replay it manually and show the manual replay ring.'],
+    },
+    jarvis: {
+      kicker: 'Highlight-to-speak',
+      title: 'J clips jump the queue',
+      body: 'Dots marked J come from “hey jarvis” or Ctrl+Shift+S highlight-to-speak. They are treated as user-requested priority audio.',
+      points: ['They jump ahead of normal assistant replies.', 'They use the same playback and transcript surface.', 'They let selected text from any app join the same audio workflow.'],
+    },
+    transcript: {
+      kicker: 'Transcript',
+      title: 'Inspect the exact text after listening',
+      body: 'The transcript drawer keeps recent spoken body clips close, filtered to the same session tab as the dot strip.',
+      points: ['Copy a spoken row without hunting through terminals.', 'Switch between spoken cleanup and original assistant text.', 'Heartbeat pings stay out so the transcript remains readable.'],
+    },
+    settings: {
+      kicker: 'Settings',
+      title: 'One panel, focused pages',
+      body: 'The gear opens the settings bar. Playback, Sessions, Create, OpenAI, Shortcuts, and About are separate pages instead of one long scrollbar.',
+      points: ['Playback controls timing, volume, prune, collapse, and heartbeat.', 'Sessions owns identity, voice, focus, mute, and desktop sync.', 'Create launches assistants with label and colour already chosen.'],
+    },
+    collapsed: {
+      kicker: 'Collapsed mode',
+      title: 'The letterbox keeps session identity visible',
+      body: 'When the toolbar is collapsed it becomes a short click-through waveform. The moving lines and pulsing border use the speaking session palette, including horizontal and vertical split colours.',
+      points: ['The small strip stays out of the way while agents keep working.', 'The border preserves split orientation when the waveform is hard to read.', 'Playback owns the colour, so queued clips do not repaint the speaker mid-message.'],
+    },
+    sessionRow: {
+      kicker: 'Session registry',
+      title: 'The row is the session identity',
+      body: 'A session row carries the label, palette, focus, mute, desktop sync, voice, heartbeat override, and speech include policy for that assistant.',
+      points: ['Labels are user-owned.', 'The palette drives tabs, dots, footer/title markers, and collapsed flashes.', 'Expanded rows expose voice and speech rules.'],
+    },
+    focus: {
+      kicker: 'Focus priority',
+      title: 'Focus decides what speaks next',
+      body: 'The star gives one assistant priority. Its unplayed clips jump ahead of other normal clips without muting the rest of the queue.',
+      points: ['Useful when one agent is doing the main task.', 'Muted and stale sessions still obey their own rules.', 'Priority J clips still win above focus.'],
+    },
+    mute: {
+      kicker: 'Mute',
+      title: 'Silence one noisy assistant',
+      body: 'Mute stops a session from producing spoken clips while leaving the rest of Terminal Talk running.',
+      points: ['Useful for exploratory agents.', 'Other sessions continue speaking normally.', 'The registry still keeps the session identity.'],
+    },
+    blockedRemove: {
+      kicker: 'Protected demo',
+      title: 'Remove is blocked on this page',
+      body: 'The real app can remove sessions and free colour slots. The landing page blocks that destructive demo action so the explorer stays stable.',
+      points: ['Use the real app Settings panel to remove sessions.', 'The UI kit still shows where the control lives.', 'Right-click dot deletion is also blocked here.'],
+    },
+    clearPlayed: {
+      kicker: 'Protected demo',
+      title: 'Clear played removes heard clips in the real app',
+      body: 'The trash button clears heard body clips with an undo window in the product. This landing-page demo blocks it so the sample queue stays visible.',
+      points: ['Auto-prune can do this automatically.', 'Currently playing clips are kept.', 'Tool and heartbeat clips clean themselves up.'],
+    },
+
+    /* ---------- specific toolbar buttons ---------- */
+    back10: {
+      kicker: 'Back 10 seconds',
+      title: 'Rewind the current clip ten seconds',
+      body: 'Jumps the playhead ten seconds backward inside whichever clip is playing right now. It does not move to the previous queued clip.',
+      points: ['Useful when you missed a sentence at desk distance.', 'Mirrored by the rebindable rewind hotkey.', 'Stops at the start of the clip rather than crossing into the previous one.'],
+    },
+    playPause: {
+      kicker: 'Play / Pause',
+      title: 'Toggle audio playback',
+      body: 'Stops or resumes the speaking queue. New incoming clips still arrive and queue up behind the current dot — they just wait until you press play again.',
+      points: ['Pause / resume hotkey defaults to Ctrl+Shift+P.', 'A pause-only hotkey is available too, for safety in shared sessions.', 'Heartbeat pings still arrive but they hold for resume just like body clips.'],
+    },
+    fwd10: {
+      kicker: 'Forward 10 seconds',
+      title: 'Skip ten seconds inside the current clip',
+      body: 'Jumps the playhead ten seconds forward in the playing clip. If you cross the end of the clip, playback advances to the next queued clip automatically.',
+      points: ['Skip past tool-call narration without stopping the queue.', 'Mirrored by the rebindable skip-forward hotkey.', 'Combine with the scrubber when you want exact positioning.'],
+    },
+    time: {
+      kicker: 'Time readout',
+      title: 'Elapsed and total length of the current clip',
+      body: 'Shows playback position and total duration of the clip the mascot is currently riding. Updates live as the clip plays.',
+      points: ['Format is m:ss / m:ss.', 'Resets when the next clip starts.', 'Stays at 0:00 / 0:00 when the queue is empty.'],
+    },
+    settingsBtn: {
+      kicker: 'Settings gear',
+      title: 'Open or close the settings panel',
+      body: 'Expands the toolbar into the full settings panel and switches the bar into expanded mode. Click again to collapse back to the bar.',
+      points: ['The panel sticks to whichever tab you last used.', 'Expanded state is remembered between launches.', 'On the demo, the panel is pre-opened on the Settings tab.'],
+    },
+    close: {
+      kicker: 'Hide',
+      title: 'Hide the toolbar without stopping it',
+      body: 'The X hides the toolbar. Audio, wake-word listening, watchers, and tray recovery keep running in the real app.',
+      points: ['Ctrl+Shift+A is the recovery hotkey.', 'Tray and Start Menu can bring it back.', 'Quit is separate from hide.'],
+    },
+    scrubberMascot: {
+      kicker: 'Walking mascot',
+      title: 'The mascot is the playhead',
+      body: 'The mascot rides the scrubber as the clip plays. Its palette mirrors the speaking session, so you always know who is talking without looking at the dots.',
+      points: ['Walking animation runs while audio is moving.', 'It rotates to face whichever direction you scrub.', 'Heartbeat pings dim the mascot rather than redrawing it as a speaker.'],
+    },
+    jarvisMarker: {
+      kicker: 'Jarvis marker',
+      title: 'Highlight-to-speak playhead',
+      body: 'When a J clip is playing, the mascot is replaced with a Jarvis marker so you can tell at a glance that this is user-requested audio rather than an assistant reply.',
+      points: ['Triggered by Ctrl+Shift+S or the “hey jarvis” wake word.', 'Speaks selected text from any app, not just the assistant.', 'J clips outrank focus in the queue.'],
+    },
+    tabScroll: {
+      kicker: 'Tab scroll',
+      title: 'Page through extra session tabs',
+      body: 'When there are more active session tabs than fit, these arrows page the tab strip left or right without resizing the bar.',
+      points: ['Only appears when overflow is real.', 'Inactive sessions stay parked in the Settings registry.', 'The All tab is anchored to the left so it is always reachable.'],
+    },
+
+    /* ---------- transcript drawer ---------- */
+    transcriptToggle: {
+      kicker: 'Transcript drawer',
+      title: 'Open or close the recent-clips drawer',
+      body: 'Expands a scrollable list of the most recent body clips that have been spoken, filtered to the current session tab.',
+      points: ['Header chevron flips state.', 'Drawer height is bounded so the bar never grows past the screen.', 'Heartbeat pings are excluded so the list stays readable.'],
+    },
+    transcriptViewToggle: {
+      kicker: 'Spoken vs Original',
+      title: 'Switch between TTS-cleaned and raw markdown',
+      body: 'Spoken view shows the text Terminal Talk actually sent to TTS after stripping code, links, and noise. Original shows the assistant’s raw markdown for comparison.',
+      points: ['Spoken is the default.', 'Useful when copying clean text into notes.', 'Original is preserved per row so you can flip back and forth.'],
+    },
+    transcriptCopy: {
+      kicker: 'Copy clip',
+      title: 'Copy the row text to clipboard',
+      body: 'Copies the visible text for that row in whichever view (Spoken or Original) is currently active.',
+      points: ['Confirms with a brief copied state on the button.', 'No app focus change required.', 'Works across sessions, not just the active tab.'],
+    },
+    transcriptRow: {
+      kicker: 'Transcript row',
+      title: 'One spoken clip from one session',
+      body: 'Each row carries the session colour stripe, the spoken text, and a copy button. Clicking the row replays its dot.',
+      points: ['Stripe colour matches the session palette.', 'Rows scroll independently of the bar.', 'Pruned clips disappear here when auto-prune fires.'],
+    },
+
+    /* ---------- settings tabs ---------- */
+    'tab-playback': {
+      kicker: 'Settings → Playback',
+      title: 'Behaviour and timing for the speaking queue',
+      body: 'Controls everything about how clips play and how the toolbar behaves while they do — speed, volume, auto-collapse, auto-prune, heartbeat, and tool-call narration.',
+      points: ['Speed and volume are separate global controls.', 'Auto-prune deletes heard body clips after a delay.', 'Heartbeat decides whether silence triggers a ping.'],
+    },
+    'tab-sessions': {
+      kicker: 'Settings → Sessions',
+      title: 'Identity, voice, and routing per assistant',
+      body: 'The sessions registry holds every assistant Terminal Talk knows about — label, palette, focus, mute, desktop sync, voice picker, and per-session speech rules.',
+      points: ['Inactive rows live here so they don’t crowd the toolbar tabs.', 'Expanded rows reveal voice and speech-include policy.', 'Identity persists across /clear and crashes via PID-keyed re-attach.'],
+    },
+    'tab-create-session': {
+      kicker: 'Settings → Create',
+      title: 'Launch a new Claude or Codex session',
+      body: 'Pre-fills label and palette index, picks the launch terminal mode, and starts the assistant in the chosen project directory.',
+      points: ['Save default to remember preferred provider, terminal, and palette.', 'Browse opens the system folder picker.', 'Created sessions show up in the registry immediately.'],
+    },
+    'tab-openai': {
+      kicker: 'Settings → OpenAI',
+      title: 'Premium voice key, preference, and fallback',
+      body: 'Stores the OpenAI key locally, lets you prefer OpenAI voices over Edge, and keeps Edge as a fallback when OpenAI is unavailable.',
+      points: ['Key is encrypted at rest in the registry.', 'Test button synthesises a short clip through the preferred provider.', 'Fallback toggle decides what happens when premium fails.'],
+    },
+    'tab-shortcuts': {
+      kicker: 'Settings → Shortcuts',
+      title: 'Rebind every global hotkey',
+      body: 'Each hotkey input listens for a real key chord. Click the field, press the new combination, and Terminal Talk validates and registers it.',
+      points: ['Includes show/hide, speak-clipboard, wake-word toggle, pause/resume, and pause-only.', 'Conflicting binds are reported inline.', 'Reset defaults restores the shipped chords.'],
+    },
+    'tab-about': {
+      kicker: 'Settings → About',
+      title: 'Version, links, and credits',
+      body: 'Shows the installed Terminal Talk version, links to GitHub and the licence, and credits the project author.',
+      points: ['Useful when filing a bug — copy the version string here.', 'Releases page lives at the GitHub repo.', 'MIT licensed.'],
+    },
+
+    /* ---------- Playback page controls ---------- */
+    speedSlider: {
+      kicker: 'Playback speed',
+      title: 'Global TTS speed multiplier',
+      body: 'Scales every spoken clip from 0.5× to 2.5× of normal pace. Affects clips already in the queue from the next playback start.',
+      points: ['1.25× is the shipped default — most assistant replies still feel natural.', 'Speed is independent of audio volume.', 'Edge and OpenAI voices both honour the multiplier.'],
+    },
+    volumeSlider: {
+      kicker: 'Volume',
+      title: 'Master output level for spoken clips',
+      body: 'Caps the audio level applied to every clip from 0 to 100%. Useful when sharing a desk with someone who is not on Terminal Talk.',
+      points: ['Independent of system volume.', 'Heartbeat pings respect the same level.', 'Mute via system tray is separate.'],
+    },
+    collapseDelaySec: {
+      kicker: 'Auto-collapse delay',
+      title: 'How long the bar stays expanded after silence',
+      body: 'When the queue goes idle, the toolbar collapses to the letterbox after this many seconds. Set higher if you keep losing track of where it is.',
+      points: ['Range 1–120 seconds.', 'Any new clip cancels the timer.', 'Manual collapse is always immediate.'],
+    },
+    autoPruneToggle: {
+      kicker: 'Auto-prune body clips',
+      title: 'Delete heard clips after a delay',
+      body: 'When On, played body clips are removed from the dot strip and transcript after the prune delay. When Off, every spoken clip stays until you clear it manually.',
+      points: ['On keeps the dot strip readable during long sessions.', 'Off is right when you want to scroll back hours later.', 'Currently playing clips are never pruned.'],
+    },
+    autoPruneSec: {
+      kicker: 'Auto-prune delay',
+      title: 'Seconds before a heard clip disappears',
+      body: 'Time between a clip finishing playback and being removed by auto-prune. Lower values keep the strip tight; higher values give you more time to copy text.',
+      points: ['Range 3–600 seconds.', 'Only applies when auto-prune is On.', 'Pruning never touches a clip that is currently selected.'],
+    },
+    autoContinueToggle: {
+      kicker: 'Auto-continue',
+      title: 'Resume the queue automatically after pause',
+      body: 'When On, the queue resumes on its own once you stop scrubbing or after a manual pause times out. When Off, you have to press play yourself.',
+      points: ['Useful if you tend to forget to resume.', 'Off gives you full manual control during reviews.', 'Pause-only hotkey ignores this setting.'],
+    },
+    paletteVariantToggle: {
+      kicker: 'Palette variant',
+      title: 'Flip between primary and split palette colours',
+      body: 'Some palette slots have horizontal and vertical split-colour variants. Toggle this to switch the bar between the two for the current session colour.',
+      points: ['Affects the bar border and the collapsed-letterbox flashes.', 'Only some palette slots have a variant — others stay solid.', 'Each session remembers its own variant.'],
+    },
+    heartbeatToggle: {
+      kicker: 'Heartbeat pings',
+      title: 'Audible silence pings',
+      body: 'When On, Terminal Talk plays a short ping when the assistant has been silent for a configurable time, so you know the agent is still working.',
+      points: ['On reassures you that long tool calls are still alive.', 'Off keeps the queue purely speech.', 'Heartbeat audio uses a dimmer scrubber colour.'],
+    },
+    incToolCalls: {
+      kicker: 'Include tool calls',
+      title: 'Speak tool-call narration',
+      body: 'When On, brief narration is spoken when the assistant invokes a tool ("running tests", "reading file"). When Off, only the assistant’s prose is spoken.',
+      points: ['On is right while debugging or auditing.', 'Off is right for long autonomous runs.', 'Tool clips still appear in the dot strip; only audio is suppressed.'],
+    },
+    reloadToolbar: {
+      kicker: 'Reload toolbar',
+      title: 'Rebuild the renderer from disk',
+      body: 'Hard-reloads the toolbar window, equivalent to pressing Ctrl+R. Useful if the display feels stuck or stale after a long session.',
+      points: ['Audio queue, sessions, and settings are persisted before reload.', 'No data loss — sessions reattach by PID.', 'Use this before filing a UI bug.'],
+    },
+
+    /* ---------- OpenAI page controls ---------- */
+    openaiKeyInput: {
+      kicker: 'OpenAI key',
+      title: 'Paste a sk-… key for premium voices',
+      body: 'Stores the key locally so OpenAI TTS voices become available. The key is encrypted at rest and is never sent anywhere except OpenAI.',
+      points: ['Required only for premium voices — Edge stays free.', 'Saved keys show as ●●●● with a Change action.', 'Use Clear to remove the key entirely.'],
+    },
+    openaiKeySave: {
+      kicker: 'Save key',
+      title: 'Persist the entered key',
+      body: 'Validates the format and writes the key to the encrypted registry. After saving, the field flips into Change-key mode.',
+      points: ['Format must match sk- prefix.', 'Save fails loudly if the registry write is blocked.', 'Test button enables once a key is saved.'],
+    },
+    openaiKeyClear: {
+      kicker: 'Clear key',
+      title: 'Remove the stored OpenAI key',
+      body: 'Deletes the saved key from the registry and reverts voice synthesis to Edge. No request is made to OpenAI.',
+      points: ['Reversible only by re-pasting the key.', 'Demo blocks this so the example state stays visible.', 'Confirm dialog protects against fat-finger.'],
+    },
+    openaiKeyChange: {
+      kicker: 'Change key',
+      title: 'Replace the saved OpenAI key',
+      body: 'Reveals the input field again so you can paste a new key without first clearing the old one.',
+      points: ['New key replaces the old on Save.', 'Old key is overwritten in place.', 'Test button reflects the new key’s status immediately.'],
+    },
+    openaiPreferToggle: {
+      kicker: 'Prefer OpenAI voices',
+      title: 'Use OpenAI for synthesis when possible',
+      body: 'When On, Terminal Talk picks an OpenAI voice for new clips. When Off, Edge voices are used by default even with a key saved.',
+      points: ['On gives you the premium voice characters.', 'Off keeps everything local-network-free.', 'Per-session voice picks override this default.'],
+    },
+    openaiFallbackToggle: {
+      kicker: 'Edge fallback',
+      title: 'Drop to Edge when OpenAI fails',
+      body: 'When On, a failed OpenAI request silently re-synthesises through Edge so the clip still plays. When Off, the failure is surfaced and the clip is skipped.',
+      points: ['On is the safer default.', 'Off is right when you want to know the moment quota or auth fails.', 'Failures are still logged either way.'],
+    },
+    openaiTestBtn: {
+      kicker: 'Test voice',
+      title: 'Synthesise a short test phrase',
+      body: 'Sends a brief phrase through whichever provider is currently preferred and drops the result in the queue. Confirms key validity and lets you hear the voice without waiting for an assistant reply.',
+      points: ['Uses the same routing as real clips.', 'Surfaces inline pass/fail status.', 'Counts against your OpenAI quota when premium is selected.'],
+    },
+
+    /* ---------- Create-session page controls ---------- */
+    createSessionKind: {
+      kicker: 'Provider',
+      title: 'Pick Claude Code or Codex',
+      body: 'Decides which assistant binary Terminal Talk launches and which adapter handles the JSONL stream.',
+      points: ['Claude Code uses the hooks adapter.', 'Codex uses the file-watcher adapter.', 'Both end up speaking through the same queue.'],
+    },
+    createSessionLaunchMode: {
+      kicker: 'Launch mode',
+      title: 'Which terminal hosts the new session',
+      body: 'Selects PowerShell, Windows Terminal, or whatever shells are detected as available. The picked terminal is what spawns the assistant CLI.',
+      points: ['Available choices are detected at boot.', 'Save default to remember your preferred terminal.', 'Mode is reflected in the desktop sync title.'],
+    },
+    createSessionProject: {
+      kicker: 'Project path',
+      title: 'Working directory for the new session',
+      body: 'The directory the assistant CLI is launched in. Determines where Claude Code reads CLAUDE.md from and where Codex watches the working tree.',
+      points: ['Browse opens the system folder picker.', 'Path is validated when you press Create.', 'Recent paths are remembered across launches.'],
+    },
+    createSessionBrowse: {
+      kicker: 'Browse',
+      title: 'Pick the project folder visually',
+      body: 'Opens the system folder dialog and writes the chosen directory into the project field.',
+      points: ['No effect until you press Create.', 'Cancelling the dialog leaves the field unchanged.', 'On the demo, this is a placeholder that does not open a real dialog.'],
+    },
+    createSessionLabel: {
+      kicker: 'Label',
+      title: 'Friendly name for the session',
+      body: 'Shows up on the toolbar tab, in transcripts, and on the desktop sync title. Make it short — tabs truncate.',
+      points: ['Keep it under 20 characters for clean tabs.', 'You can rename later from the Sessions registry.', 'Empty labels fall back to a generated name.'],
+    },
+    createSessionIndex: {
+      kicker: 'Palette index',
+      title: 'Pick the session colour slot',
+      body: 'Each session gets a palette index that drives its tab colour, dot colour, scrubber tint, and collapsed-letterbox flashes. Free slots are listed first.',
+      points: ['Index is preserved across /clear and crashes.', 'Palette variant toggle (in Playback) flips the split colours.', 'Removing a session frees the slot.'],
+    },
+    createSessionSaveDefault: {
+      kicker: 'Save default',
+      title: 'Remember these choices for next time',
+      body: 'Persists the current provider, launch mode, palette index, and project root as the default for the next Create-session form.',
+      points: ['Useful when you launch the same kind of session repeatedly.', 'Defaults are per-machine.', 'Reset by saving a different default later.'],
+    },
+    createSessionBtn: {
+      kicker: 'Create',
+      title: 'Spawn the new assistant session',
+      body: 'Launches the chosen terminal in the chosen folder with the chosen assistant binary and registers the new session in the toolbar tabs.',
+      points: ['New tab appears immediately.', 'Failure (missing CLI, bad path) surfaces inline.', 'On the demo, Create is blocked so the queue stays stable.'],
+    },
+
+    /* ---------- Shortcuts page controls ---------- */
+    hotkeyToggleWindow: {
+      kicker: 'Show / hide hotkey',
+      title: 'Bring the toolbar back when hidden',
+      body: 'Default Ctrl+Shift+A. The single most important hotkey — recovers the toolbar after the X button hides it or after a tray crash.',
+      points: ['Captured globally so it works from any window.', 'Click the field, press the new chord to rebind.', 'Always rebindable to a non-conflicting chord.'],
+    },
+    hotkeySpeakClipboard: {
+      kicker: 'Speak selection',
+      title: 'Highlight-to-speak hotkey',
+      body: 'Default Ctrl+Shift+S. Reads the currently selected text aloud as a J (Jarvis) clip that jumps the queue.',
+      points: ['Selection is read from any app.', 'Adds a J dot to the strip with priority routing.', 'Equivalent to saying “hey jarvis” when wake-word is on.'],
+    },
+    hotkeyToggleListening: {
+      kicker: 'Wake-word toggle',
+      title: 'Turn the “hey jarvis” listener on or off',
+      body: 'Default Ctrl+Shift+J. Toggles the always-on speech listener that triggers on the “hey jarvis” phrase.',
+      points: ['The listener is local-only — no network mic.', 'Off saves CPU and stops the always-on indicator.', 'Wake state survives /clear and crashes.'],
+    },
+    hotkeyPauseResume: {
+      kicker: 'Pause / resume',
+      title: 'Toggle the speaking queue from anywhere',
+      body: 'Default Ctrl+Shift+P. Identical to clicking play/pause on the toolbar but works without focusing the toolbar window.',
+      points: ['Works during full-screen meetings.', 'Resumes from exactly where it paused.', 'Auto-continue setting still applies.'],
+    },
+    hotkeyPauseOnly: {
+      kicker: 'Pause only',
+      title: 'Hard-stop the queue',
+      body: 'Default Ctrl+Shift+O. Only pauses — never resumes — so muscle memory cannot accidentally turn audio back on in a quiet room.',
+      points: ['Ignores auto-continue.', 'Useful in shared offices.', 'Resume requires the dedicated pause/resume hotkey or the toolbar.'],
+    },
+    hotkeyResetDefaults: {
+      kicker: 'Reset hotkey defaults',
+      title: 'Restore the shipped hotkey set',
+      body: 'Reverts every hotkey input back to its shipped default chord and re-registers them globally.',
+      points: ['Useful after a conflict shakes out badly.', 'Per-hotkey edits are lost.', 'Confirm dialog guards against accidental clicks.'],
+    },
+  };
+
+  const modes = {
+    toolbar: {
+      src: 'ui-kit/?seed=mixed-states&chrome=0&mockAudioMs=45000',
+      detail: details.dots,
+    },
+    settings: {
+      src: 'ui-kit/?seed=settings-panel-sessions-expanded&chrome=0&mockAudioMs=45000',
+      detail: details.settings,
+    },
+    transcript: {
+      src: 'ui-kit/?seed=tabs-active&chrome=0&mockAudioMs=45000',
+      detail: details.transcript,
+      afterLoad: (doc) => {
+        let tries = 0;
+        const openTranscript = () => {
+          const btn = doc.getElementById('transcriptToggle');
+          if (btn) {
+            btn.click();
+            return;
+          }
+          if (tries++ < 30) setTimeout(openTranscript, 100);
+        };
+        openTranscript();
+      },
+    },
+    collapsed: {
+      src: 'ui-kit/?seed=collapsed-signal&chrome=0&demoCollapsed=1&demoCollapsedPalette=16&mockAudioMs=45000',
+      detail: details.collapsed,
+    },
+  };
+
+  function setDetail(detail) {
+    if (!detail) return;
+    if (title) title.textContent = detail.title || '';
+    if (kicker) kicker.textContent = detail.kicker || '';
+    if (body) body.textContent = detail.body || '';
+    if (points) {
+      points.replaceChildren(...(detail.points || [])
+        .map((text) => {
+          const item = document.createElement('li');
+          item.textContent = text;
+          return item;
+        }));
+    }
+  }
+
+  function detailFor(target) {
+    if (!target || typeof target.closest !== 'function') return null;
+
+    // Settings tab: route by data-settings-tab so each tab gets its own detail.
+    const tab = target.closest('.settings-tab[data-settings-tab]');
+    if (tab) return details[`tab-${tab.dataset.settingsTab}`] || details.settings;
+
+    // Collapsed letterbox is its own thing.
+    if (target.closest('#collapsedSignal, .bar.collapsed')) return details.collapsed;
+
+    // Specific toolbar buttons by ID — checked before broader fallbacks.
+    const idMap = ['back10','playPause','fwd10','time','clearPlayed','settingsBtn','close','reloadToolbar',
+                   'speedSlider','volumeSlider','collapseDelaySec','autoPruneSec',
+                   'openaiKeyInput','openaiKeySave','openaiKeyClear','openaiKeyChange','openaiTestBtn',
+                   'createSessionKind','createSessionLaunchMode','createSessionProject','createSessionBrowse',
+                   'createSessionLabel','createSessionIndex','createSessionSaveDefault','createSessionBtn',
+                   'hotkeyToggleWindow','hotkeySpeakClipboard','hotkeyToggleListening','hotkeyPauseResume',
+                   'hotkeyPauseOnly','hotkeyResetDefaults'];
+    for (const id of idMap) {
+      if (target.closest('#' + id)) return details[id] || null;
     }
 
-    if (prev) prev.addEventListener('click', () => show(index - 1));
-    if (next) next.addEventListener('click', () => show(index + 1));
-    dots.forEach((dot, dotIndex) => {
-      dot.addEventListener('click', () => show(dotIndex));
-    });
+    // openaiKeyClear2 maps to the same content as openaiKeyClear.
+    if (target.closest('#openaiKeyClear2')) return details.openaiKeyClear;
 
-    carousel.addEventListener('mouseenter', () => { paused = true; });
-    carousel.addEventListener('mouseleave', () => { paused = false; });
-    carousel.addEventListener('focusin', () => { paused = true; });
-    carousel.addEventListener('focusout', () => { paused = false; });
+    // Pill toggles (auto-prune, heartbeat, tool-calls, openai prefer/fallback).
+    // The user clicks an On/Off button or the inner checkbox; we resolve to the
+    // wrapping pill-toggle and read its checkbox id.
+    const pill = target.closest('.pill-toggle, .tri-ctrl');
+    if (pill) {
+      const input = pill.querySelector('input[type="checkbox"][id]');
+      if (input && details[input.id]) return details[input.id];
+    }
+    const checkbox = target.closest('input[type="checkbox"][id]');
+    if (checkbox && details[checkbox.id]) return details[checkbox.id];
 
-    window.setInterval(() => {
-      if (!paused && document.visibilityState === 'visible') show(index + 1);
-    }, 6500);
+    // Scrubber + mascot + Jarvis marker are split out for finer detail.
+    if (target.closest('#scrubberMascot')) return details.scrubberMascot;
+    if (target.closest('#scrubberJarvis')) return details.jarvisMarker;
+    if (target.closest('#scrubberWrap, #scrubber')) return details.scrubber;
 
-    show(0);
+    // Tab scroll arrows separate from session tabs.
+    if (target.closest('.tab-scroll-btn')) return details.tabScroll;
+    if (target.closest('#tabs, [role="tab"]:not(.settings-tab)')) return details.sessions;
+
+    // Dots: J-clip variant vs body-clip.
+    const dot = target.closest('.dot');
+    if (dot) return dot.classList.contains('clip') ? details.jarvis : details.dots;
+
+    // Transcript drawer: each control gets its own detail.
+    if (target.closest('#transcriptToggle')) return details.transcriptToggle;
+    if (target.closest('#transcriptViewToggle')) return details.transcriptViewToggle;
+    if (target.closest('.transcript-copy')) return details.transcriptCopy;
+    if (target.closest('.transcript-row, #transcriptList')) return details.transcriptRow;
+    if (target.closest('#transcriptPanel')) return details.transcript;
+
+    // Session registry rows.
+    if (target.closest('.session-remove')) return details.blockedRemove;
+    if (target.closest('.focus-btn')) return details.focus;
+    if (target.closest('.mute-btn')) return details.mute;
+    if (target.closest('.session-row, .session-expanded, #sessionsTable')) return details.sessionRow;
+
+    // Generic settings-panel fallback.
+    if (target.closest('.panel, .panel-section, .settings-page')) return details.settings;
+    return null;
   }
+
+  function wireFrame() {
+    if (!frame || !frame.contentDocument) return;
+    const doc = frame.contentDocument;
+    const blockDestructive = (event) => {
+      const target = event.target;
+      if (!target || typeof target.closest !== 'function') return false;
+      if (target.closest('.session-remove, #clearPlayed') || (event.type === 'contextmenu' && target.closest('.dot'))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setDetail(target.closest('#clearPlayed') ? details.clearPlayed : details.blockedRemove);
+        return true;
+      }
+      return false;
+    };
+    doc.addEventListener('click', (event) => {
+      const target = event.target;
+      if (blockDestructive(event)) return;
+      // Clicking the gear surfaces the settings panel overview (six pages, one panel),
+      // not the gear-button-specific copy — the user is opening the panel, so the
+      // overview is what they actually want to read at that moment.
+      if (target && typeof target.closest === 'function' && target.closest('#settingsBtn')) {
+        setDetail(details.settings);
+        return;
+      }
+      const detail = detailFor(target);
+      if (detail) setDetail(detail);
+    }, true);
+    doc.addEventListener('contextmenu', blockDestructive, true);
+    // Sliders and selects fire input/change without a meaningful click.
+    const updateFromEvent = (event) => {
+      const detail = detailFor(event.target);
+      if (detail) setDetail(detail);
+    };
+    doc.addEventListener('input', updateFromEvent, true);
+    doc.addEventListener('change', updateFromEvent, true);
+    // Collapsed letterbox is click-through, so hover surfaces the detail.
+    doc.addEventListener('mouseover', (event) => {
+      const target = event.target;
+      if (!target || typeof target.closest !== 'function') return;
+      if (target.closest('#collapsedSignal, .bar.collapsed')) {
+        setDetail(details.collapsed);
+      }
+    }, true);
+  }
+
+  setDetail(welcomeDetail);
+  updateToolbarDemoScale();
+  setToolbarDemoHeight(TOOLBAR_HEIGHT_DEFAULT);
+  window.addEventListener('resize', updateToolbarDemoScale);
+  window.addEventListener('message', (event) => {
+    if (!event || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
+    setToolbarDemoHeight(event.data.open ? TOOLBAR_HEIGHT_PANEL_OPEN : TOOLBAR_HEIGHT_DEFAULT);
+  });
+  if (frame) frame.addEventListener('load', wireFrame);
 })();
 </script>
 
