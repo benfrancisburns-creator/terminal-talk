@@ -1369,12 +1369,82 @@ window.api.onQueueUpdated((payload) => {
   }
 });
 
+// Generic transient toast for status messages (separate from the
+// undo-clear toast which has its own state machine). Auto-dismisses
+// after `ms` (default 4 s). Variant 'warning' tints the border copper
+// for hotkey-collision / TTS-failure surfaces.
+let _statusToastEl = null;
+let _statusToastTimer = null;
+function _showStatusToast(text, ms = 4000, variant = 'info') {
+  if (_statusToastTimer) {
+    clearTimeout(_statusToastTimer);
+    _statusToastTimer = null;
+  }
+  if (_statusToastEl) {
+    try { _statusToastEl.remove(); } catch {}
+    _statusToastEl = null;
+  }
+  const toast = document.createElement('div');
+  toast.className = `tt-toast tt-status-toast tt-status-toast-${variant}`;
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  const span = document.createElement('span');
+  span.textContent = text;
+  toast.appendChild(span);
+  document.body.appendChild(toast);
+  _statusToastEl = toast;
+  _statusToastTimer = setTimeout(() => {
+    if (_statusToastEl === toast) {
+      try { toast.remove(); } catch {}
+      _statusToastEl = null;
+    }
+    _statusToastTimer = null;
+  }, ms);
+}
+
 window.api.onClipboardStatus((msg) => {
   const state = msg && msg.state;
   const prev = synthInProgress;
   synthInProgress = (state === 'synth');
   if (prev !== synthInProgress) renderDots();
+  if (state === 'empty') {
+    _showStatusToast('No text selected — highlight some text first, then try again.', 4000, 'warning');
+  } else if (state === 'tts_failed') {
+    _showStatusToast('Voice synthesis failed. Check that Edge TTS is reachable, or test your OpenAI key in Settings → OpenAI.', 6000, 'warning');
+  }
 });
+
+// Hotkey-registration banner. Fires once at startup if any global
+// shortcut failed to register (typically because another app — Wispr
+// Flow, Voice Mode, a streaming overlay — already owns the chord).
+// Without this surface the user sees their hotkey doing nothing and
+// has no signal about why. Pull on first load too so a slow renderer
+// catches the push that may have already fired.
+function _showHotkeyBanner(failed) {
+  if (!failed || !failed.length) return;
+  const names = failed.map((f) => `${f.name} (${f.accel})`).join(', ');
+  _showStatusToast(
+    `Hotkey collision — these chords are owned by another app and won't fire: ${names}. Rebind them in Settings → Shortcuts.`,
+    9000,
+    'warning'
+  );
+}
+if (window.api.onHotkeyRegistration) {
+  window.api.onHotkeyRegistration((status) => _showHotkeyBanner(status && status.failed));
+}
+if (window.api.getHotkeyRegistration) {
+  window.api.getHotkeyRegistration().then((status) => _showHotkeyBanner(status && status.failed)).catch((err) => {
+    try {
+      if (window.api && window.api.logRendererError) {
+        window.api.logRendererError({
+          type: 'unhandledrejection',
+          message: `getHotkeyRegistration failed: ${err && err.message ? err.message : String(err)}`,
+          stack: err && err.stack ? err.stack : '',
+        });
+      }
+    } catch {}
+  });
+}
 
 window.api.onPriorityPlay((paths) => {
   // Real clip landed -- retire the placeholder even if main hasn't

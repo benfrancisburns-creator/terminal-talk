@@ -1927,6 +1927,19 @@ select option:checked, .panel .row select option:checked {
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* Status-toast variant — same shape as the undo toast but used for
+   transient warnings (empty selection, TTS failure, hotkey collision).
+   The warning variant tints the border copper so it reads as a
+   different class of message from the neutral "n clips cleared"
+   confirmation. */
+.tt-status-toast {
+  max-width: min(560px, calc(100vw - 40px));
+  line-height: 1.4;
+}
+.tt-status-toast-warning {
+  border-color: rgba(201, 123, 80, 0.6);
+}
+
 /* EX3 — inline button in settings panel (Reload toolbar etc). Visually
    distinct from the icon-btn toolbar buttons; reads as a link-shaped
    action rather than a primary control. */

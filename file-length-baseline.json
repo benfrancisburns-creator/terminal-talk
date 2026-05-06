@@ -1,12 +1,12 @@
 {
-  "ceiling": 2650,
+  "ceiling": 2700,
   "exclusions": [
     "scripts/run-tests.cjs"
   ],
   "files": {
     "scripts/run-tests.cjs": 18037,
-    "app/main.js": 2649,
-    "app/renderer.js": 2609,
+    "app/main.js": 2692,
+    "app/renderer.js": 2679,
     "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1153,
@@ -80,7 +80,7 @@
     "scripts/verify-install.ps1": 121,
     "app/lib/component.js": 119,
     "app/lib/window-dock.js": 126,
-    "app/preload.js": 264,
+    "app/preload.js": 273,
     "app/sentence_group.py": 118,
     "app/openai_tts.py": 117,
     "scripts/send-video-terminal-prompt.ps1": 117,

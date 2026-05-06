@@ -237,6 +237,11 @@ const api = {
   // sanity-check they're on the latest release without diffing
   // package.json. Reads app.getVersion() on the main side.
   getVersion: () => ipcRenderer.invoke('get-version'),
+  // Returns { failed: [{name, accel}], at: <unix-ms> } so the Shortcuts
+  // panel can show a banner per failed registration. Pulled (not pushed)
+  // so the renderer can read it on demand even if it loaded after the
+  // initial push fired.
+  getHotkeyRegistration: () => ipcRenderer.invoke('get-hotkey-registration'),
   demoStartReady: () => ipcRenderer.invoke('demo-start-ready'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
@@ -253,6 +258,10 @@ const api = {
   // dictation and never misses content while they talk.
   onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
   onMicReleased:          (cb) => subscribe('mic-released',           cb),
+  // Pushed once at startup if any global shortcut failed to register
+  // (e.g. another app already has the chord). Renderer also has the
+  // pull path via getHotkeyRegistration.
+  onHotkeyRegistration:   (cb) => subscribe('hotkey-registration',    cb, (p) => p),
   // Fires when main detects the auto-unset flag dropped by synth_turn
   // after openai_tts.py returned HTTP 401 during a real synth. main
   // has already cleared the key + demoted OpenAI TTS routes to 'edge' by

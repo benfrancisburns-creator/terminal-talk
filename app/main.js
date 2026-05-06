@@ -1266,10 +1266,23 @@ async function speakClipboard() {
   sendClipboardStatus('synth');
   try {
     const { captured } = await captureSelection();
-    if (!captured || !captured.trim()) { diag('speakClipboard: EMPTY capture, exit'); return; }
+    if (!captured || !captured.trim()) {
+      diag('speakClipboard: EMPTY capture, exit');
+      // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
+      // "hey jarvis") with nothing highlighted — silent failure today
+      // means they think the hotkey is broken. Toast tells them why.
+      sendClipboardStatus('empty');
+      return;
+    }
     const text = stripForTTS(captured);
     diag(`speakClipboard: stripped len=${text.length} preview="${text.slice(0,80)}"`);
-    if (!text) { diag('speakClipboard: EMPTY after strip, exit'); return; }
+    if (!text) {
+      diag('speakClipboard: EMPTY after strip, exit');
+      // Selection had only markdown noise (links, code-fences) that the
+      // strip removed — nothing speakable left. Same UX as empty-selection.
+      sendClipboardStatus('empty');
+      return;
+    }
     // Reload config so changes from the settings panel apply without restart.
     CFG = loadConfig();
     const apiKey = loadApiKey();
@@ -1343,6 +1356,14 @@ async function speakClipboard() {
         diag(`speakClipboard: priority-play to renderer (${paths.length})`);
         win.webContents.send('priority-play', paths);
       }, 250);
+    } else if (chunks.length > 0) {
+      // Captured text was non-empty after strip but every TTS provider
+      // failed for every chunk. Tell the renderer so the user gets a
+      // toast instead of silent confusion ("I pressed the hotkey, why
+      // didn't anything play?"). Most likely cause: edge-tts can't
+      // reach `speech.platform.bing.com`, or OpenAI key was rejected.
+      diag(`speakClipboard: ALL ${chunks.length} chunks failed`);
+      sendClipboardStatus('tts_failed');
     }
   } finally {
     clearClipboardBusy();
@@ -2133,6 +2154,14 @@ ipcMain.handle('demo-start-ready', () => {
   }
 });
 
+// Hotkey-registration status for the Settings → Shortcuts panel banner.
+// `hotkeyRegistrationStatus` is set once at startup by registerAndLog so
+// the renderer can ask "did any of my global shortcuts fail to bind?"
+// after it loads. Without this the user gets silent hotkey collisions
+// (e.g. Wispr Flow already owns Ctrl+Shift+A) and no signal about why.
+let hotkeyRegistrationStatus = { failed: [], at: 0 };
+ipcMain.handle('get-hotkey-registration', () => hotkeyRegistrationStatus);
+
 let voiceProc = null;
 function isListeningEnabled() {
   try { return fs.readFileSync(LISTENING_STATE_FILE, 'utf8').trim() !== 'off'; }
@@ -2567,11 +2596,15 @@ app.whenReady().then(() => {
   // globalShortcut.register() returns false silently when another app
   // has already reserved the combo. Without this diag line a user who
   // has (say) Wispr Flow binding Ctrl+Shift+A would see the toolbar's
-  // Ctrl+Shift+A doing nothing with zero signal about why.
+  // Ctrl+Shift+A doing nothing with zero signal about why. The
+  // failedHotkeys list is also pushed to the renderer below so the
+  // user gets a visible banner instead of mysteriously dead hotkeys.
+  const failedHotkeys = [];
   function registerAndLog(accel, fn, name) {
     if (!accel) return;
     const ok = globalShortcut.register(accel, fn);
     diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
+    if (!ok) failedHotkeys.push({ name, accel });
   }
   registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
   registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
@@ -2590,6 +2623,16 @@ app.whenReady().then(() => {
       }
     }, 'pause_only');
   }
+  // Push failed-registration detail to the renderer so settings-form
+  // can show a banner. Renderer subscribes via api.onHotkeyRegistration;
+  // delivery is fire-and-forget — if the renderer isn't ready yet, the
+  // get-hotkey-registration IPC handler below covers it on demand.
+  hotkeyRegistrationStatus = { failed: failedHotkeys, at: Date.now() };
+  setTimeout(() => {
+    if (failedHotkeys.length && win && !win.isDestroyed()) {
+      try { win.webContents.send('hotkey-registration', hotkeyRegistrationStatus); } catch {}
+    }
+  }, 1500);
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
   startMicWatcher();
