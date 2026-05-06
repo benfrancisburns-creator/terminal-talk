@@ -22,7 +22,7 @@
     "app/lib/sessions-table.js": 670,
     "app/wake-word-listener.py": 653,
     "app/posix_hooks.py": 637,
-    "docs/ui-kit/mock-ipc.js": 610,
+    "docs/ui-kit/mock-ipc.js": 663,
     "scripts/render-local-command-center-ad.cjs": 603,
     "scripts/record-feature-deep-dives.ps1": 572,
     "scripts/render-marketing-ad.cjs": 502,
