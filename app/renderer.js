@@ -1124,7 +1124,20 @@ function _finaliseClear() {
   const paths = _pendingClear.entries.map((e) => e.path);
   _pendingClear = null;
   for (const p of paths) {
-    window.api.deleteFile(p).catch(() => {});
+    // Surface delete failures to the diagnostic log instead of swallowing
+    // silently — a clear-played that quietly leaves files on disk would
+    // be invisible to the user but corrupt the queue's heard/unheard state.
+    window.api.deleteFile(p).catch((err) => {
+      try {
+        if (window.api && window.api.logRendererError) {
+          window.api.logRendererError({
+            type: 'unhandledrejection',
+            message: `deleteFile failed for ${p}: ${err && err.message ? err.message : String(err)}`,
+            stack: err && err.stack ? err.stack : '',
+          });
+        }
+      } catch {}
+    });
   }
 }
 
@@ -1920,7 +1933,20 @@ settingsBtn.addEventListener('click', async () => {
 if (isWindowMode && Number.isFinite(autoOpenSettingsMs) && autoOpenSettingsMs > 0) {
   setTimeout(() => {
     if (!document.body.classList.contains('settings-open')) {
-      setSettingsOpen(true).catch(() => {});
+      // Capture-mode auto-open is invoked from screenshot scripts and
+      // demo flows; if it fails we want to know in the log instead of
+      // ending up with a blank-panel screenshot and no clue why.
+      setSettingsOpen(true).catch((err) => {
+        try {
+          if (window.api && window.api.logRendererError) {
+            window.api.logRendererError({
+              type: 'unhandledrejection',
+              message: `auto-open setSettingsOpen failed: ${err && err.message ? err.message : String(err)}`,
+              stack: err && err.stack ? err.stack : '',
+            });
+          }
+        } catch {}
+      });
     }
   }, autoOpenSettingsMs);
 }

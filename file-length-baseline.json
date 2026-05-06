@@ -6,7 +6,7 @@
   "files": {
     "scripts/run-tests.cjs": 18037,
     "app/main.js": 2649,
-    "app/renderer.js": 2583,
+    "app/renderer.js": 2609,
     "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1153,
