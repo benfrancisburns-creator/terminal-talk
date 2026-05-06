@@ -873,7 +873,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
           <div class="toolbar-live-frame">
             <iframe
               title="Interactive Terminal Talk toolbar demo"
-              src="ui-kit/?seed=mixed-states&amp;chrome=0&amp;mockAudioMs=45000"
+              src="ui-kit/?seed=settings-panel-sessions-expanded&amp;chrome=0&amp;demoHoldOpen=1&amp;mockAudioMs=45000"
               loading="lazy"
               data-toolbar-demo></iframe>
           </div>
@@ -1721,7 +1721,10 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 
   setDetail(welcomeDetail);
   updateToolbarDemoScale();
-  setToolbarDemoHeight(TOOLBAR_HEIGHT_DEFAULT);
+  // Iframe loads with seed=settings-panel-sessions-expanded (panel open),
+  // so start at the panel-open height to avoid a resize flash. The
+  // postMessage listener will adjust if the user closes the panel.
+  setToolbarDemoHeight(TOOLBAR_HEIGHT_PANEL_OPEN);
   window.addEventListener('resize', updateToolbarDemoScale);
   window.addEventListener('message', (event) => {
     if (!event || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
