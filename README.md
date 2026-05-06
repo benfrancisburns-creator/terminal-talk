@@ -21,7 +21,7 @@ Windows first. Free by default. MIT licensed. No account required. Microsoft Edg
 
 **Try it in your browser (no install):** [live interactive toolbar demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [project landing page](https://benfrancisburns-creator.github.io/terminal-talk/)
 
-[Install](#install-windows) · [Technical overview](#technical-overview) · [Current UI](#current-toolbar-and-settings-states) · [Assistant matrix](#assistant-support-matrix) · [Settings reference](#settings-panel-gear-icon) · [Architecture](#how-it-works) · [Privacy](#privacy--security) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+[Install](#install-windows) · [Technical overview](#technical-overview) · [Try it live](#try-it-live) · [Assistant matrix](#assistant-support-matrix) · [Settings reference](#settings-panel-gear-icon) · [Architecture](#how-it-works) · [Privacy](#privacy--security) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Technical overview
 
@@ -48,25 +48,13 @@ Terminal Talk is deliberately small in concept: inputs create clips, clips enter
 | Highlight-to-speak | Read selected text from any app | `Ctrl+Shift+S` or "hey jarvis" captures the foreground selection locally, then routes it through the same TTS and queue path. |
 | Privacy | No telemetry and no cloud wake-word path | Wake-word audio stays local. Spoken text goes to Microsoft Edge TTS by default, or OpenAI only if configured. |
 
-## Current toolbar and settings states
+## Try it live
 
-These are fresh captures from the live Electron toolbar mirror, not hand-built mockups. The first two rows show playback and collapsed states; the final two rows show the settings bar opened from the gear.
+The fastest way to see what Terminal Talk does is to play with the **live interactive UI kit** — it loads the real Electron renderer in your browser with a safe demo queue, so every button, dot, tab, slider, and Settings toggle is clickable and explains itself in a side panel:
 
-| Resting playback surface | Transcript panel expanded |
-|---|---|
-| <img src="docs/screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with top session tabs, colour badges, clip dots, and transcript header" width="520"> | <img src="docs/screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken text rows, and copy buttons" width="520"> |
+**→ [https://benfrancisburns-creator.github.io/terminal-talk/#ui](https://benfrancisburns-creator.github.io/terminal-talk/#ui)**
 
-| Collapsed at rest | Collapsed while a split-palette session is speaking |
-|---|---|
-| <img src="docs/screenshots/toolbar-collapsed-resting.png" alt="Terminal Talk collapsed resting letterbox strip" width="260"> | <img src="docs/screenshots/toolbar-collapsed-signal-horizontal.png" alt="Terminal Talk collapsed waveform strip pulsing with a split session palette" width="260"> |
-
-| Settings tabs overview | Sessions tab with per-session controls |
-|---|---|
-| <img src="docs/screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel with Playback, Sessions, Create, OpenAI, Shortcuts, and About tabs" width="520"> | <img src="docs/screenshots/toolbar-sessions-panel-expanded.png" alt="Terminal Talk Sessions tab with one session expanded to show voice, heartbeat, and speech include overrides" width="520"> |
-
-| Create a session | OpenAI TTS tab |
-|---|---|
-| <img src="docs/screenshots/toolbar-create-session-tab.png" alt="Terminal Talk Create tab with assistant picker, project folder, label, colour, save default, and create controls" width="520"> | <img src="docs/screenshots/toolbar-openai-section-saved.png" alt="Terminal Talk OpenAI tab showing saved-key status, provider routing, fallback routing, and test controls" width="520"> |
+The kit shows resting playback, collapsed letterbox state on hover, and the full Settings panel — Playback, Sessions, Create, OpenAI, Shortcuts, and About. Click the gear to open the panel, click any control to read about it. Destructive demo actions (clip delete, session remove) are blocked so you can't break the example state.
 
 ---
 
@@ -146,85 +134,19 @@ Without `-Unattended`, the installer prompts interactively for each of the optio
 | Heartbeat ambient narration | Working flag from UserPromptSubmit/Stop hooks | Working flag from native UserPromptSubmit / tool / Stop hooks | Registry-backed when hook/session files expose state | Registry-backed when app-server/rollout state exposes state |
 | Permission alerts, footer closer | Yes, Claude hook + terminal-buffer path | Not exposed by Codex session logs | Claude Code footer path where the Desktop Code terminal surface exposes it | Not exposed by Codex Desktop |
 
-## Full UI reference
+## How playback decides what to speak next
 
-Current screenshots are rendered from the same Electron DOM/CSS that ships in the app via the UI kit mirror, so they track the real toolbar rather than hand-built mockups.
+The toolbar's audio queue applies three rules in this order:
 
-### 01 · Resting with active conversations
+1. **"Hey jarvis" / `Ctrl+Shift+S`** highlight-to-speak clips always win — they jump the entire queue.
+2. **Focus ★ session** — unplayed clips from the session you've starred in Settings → Sessions jump ahead of unfocused sessions.
+3. **Oldest unplayed clip** from any unmuted session.
 
-<p align="center">
-  <img src="docs/screenshots/toolbar-resting-with-tabs.png" alt="Terminal Talk toolbar resting with top session tabs, colour badges, clip dots, and transcript header" width="900">
-</p>
+That's how you make a slow agent's important reply play before a fast agent's 3-deep ramble. Muted sessions never produce dots; auto-prune removes heard body clips after a configurable delay (3–600 s, default 20 s); tool narration and heartbeat clips are ephemeral by design.
 
-The baseline expanded toolbar. It is frameless, always-on-top, draggable, and uses the top tab strip only for active sessions or sessions that still have clips in the queue. Registry-only sessions stay out of this top strip and live in Settings › Sessions, so the day-to-day playback surface does not get cluttered.
+The dot strip clusters by session in arrival order — three reds, gap, three yellows, gap, two greens — so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. The collapsed letterbox is a compact click-through strip that shows the speaking session's palette colour as a pulsing border and waveform, with horizontal/vertical splits preserved for two-colour identities.
 
-### 02 · Queue with three sessions
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-three-sessions.png" alt="Dot strip clusters by session: 3 red dots (Terminal A, first one playing), gap, 3 yellow dots (Terminal B), gap, 2 green dots (Terminal C)" width="900">
-</p>
-
-Three terminals queued in arrival order: **3 red** from Terminal A (first one playing, 2 queued behind), **3 yellow** from Terminal B, **2 green** from Terminal C. The 12 px gap between runs marks a change of speaker so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. If Terminal C has the important message you'd wait through 5 clips first — that's what the Sessions focus star solves.
-
-### 03 · Mixed states in one queue
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-mixed-states.png" alt="Eight dots on one bar: 3 red (first 2 faded=heard, 3rd playing with ring), gap, 2 yellow queued, gap, 2 green queued, gap, 1 blue J-clip for hey-jarvis highlight-to-speak" width="900">
-</p>
-
-A real queue in flight. Reading left to right: Terminal A (red) sent 3 clips — you've **heard** the first two (faded, click to replay, right-click to delete) and the third is **playing** now (pulsing white ring around the same red). Terminal B (yellow) has 2 **queued** flat discs behind it, then Terminal C (green) has 2 more. The blue dot on the far right is a **J-clip** — a highlight-to-speak capture from "hey jarvis" / `Ctrl+Shift+S`; J-clips have the highest priority and jump the whole queue when they arrive. Auto-prune removes heard clips after 3–600 s (default 20 s); muted sessions never produce dots at all.
-
-### 04 · Collapsed waveform signal
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-collapsed-resting.png" alt="Collapsed Terminal Talk resting letterbox strip" width="260">
-  <img src="docs/screenshots/toolbar-collapsed-signal-horizontal.png" alt="Collapsed Terminal Talk letterbox: short waveform strip pulsing with a horizontal split palette border" width="320">
-  <img src="docs/screenshots/toolbar-collapsed-signal-vertical.png" alt="Collapsed Terminal Talk letterbox: short waveform strip pulsing with a vertical split palette border" width="320">
-</p>
-
-The collapsed state is a compact click-through letterbox, roughly an inch wide. At rest it stays quiet and unobtrusive. When audio plays, the waveform and border pulse in the currently speaking session's palette. Split colours are preserved: left/right palettes render as horizontal border splits, and top/bottom palettes render as vertical border splits, so rare two-colour identities remain distinguishable at a glance.
-
-### 05 · Transcript panel expanded
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-transcript-expanded.png" alt="Terminal Talk toolbar with transcript panel expanded, spoken text rows, and copy buttons" width="900">
-</p>
-
-The transcript panel opens below the dot strip. It keeps recent spoken clips visible, lets you copy a row without searching the terminal, and follows the same session tab filter as the dot strip.
-
-### 06 · Tabbed Settings panel
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-settings-panel.png" alt="Terminal Talk settings panel with tabs for Playback, Sessions, Create, OpenAI, Shortcuts, and About" width="900">
-</p>
-
-The gear opens a tabbed settings panel instead of one long scrollbar. **Playback** handles speed, master volume, auto-collapse, body-clip auto-prune, auto-continue, colour-blind palette, heartbeat narration, and reload. **Sessions** lists active assistant sessions with chevron, palette swatch, short id, editable label, palette selector, focus star, mute, and remove. **Create** opens Codex, Claude Code, or Claude Desktop Code sessions with project folder, label, colour, and permissions choices. **OpenAI** is a full page for premium TTS routing, saved-key status, and Test. **Shortcuts** owns the global hotkeys. **About** is the in-app reference guide.
-
-**Playback precedence** — (1) "hey jarvis" / `Ctrl+Shift+S` highlight-to-speak always wins · (2) unplayed clips from the focused ★ session jump the queue · (3) oldest unplayed clip from any unmuted session. That's how you make Terminal C's important reply play before Terminal A's 3-deep ramble.
-
-### 07 · Sessions and per-session overrides
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-sessions-panel-expanded.png" alt="Settings Sessions tab with one session expanded to show voice, heartbeat, and speech-include overrides" width="900">
-</p>
-
-Each row is backed by `~/.terminal-talk/session-colours.json`. The 24-arrangement palette includes 8 solid colours, 8 top/bottom splits, and 8 left/right splits. The dropdown labels show when a colour is already used, and the expanded row gives that session its own voice, heartbeat override, and tri-state speech-includes.
-
-### 08 · Create a session
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-create-session-tab.png" alt="Settings Create tab with assistant picker, permissions, project folder, label, colour, save default, and create controls" width="900">
-</p>
-
-The Create tab starts a new assistant session from Terminal Talk. It can launch Codex, Claude Code, or Claude Desktop Code, seed the label/colour before the assistant speaks, and mark used colours in the picker so you do not accidentally collide with an active session. For Codex CLI, the launcher keeps the provisional terminal tab and the real rollout session bound together once Codex emits its true session id.
-
-### 09 · Snapped to the top edge
-
-<p align="center">
-  <img src="docs/screenshots/toolbar-snapped-top.png" alt="Toolbar flush against the top edge of a screen, flat-topped, with dots showing two heard reds plus three blues (one playing)" width="900">
-</p>
-
-Drag within ~20 px of the top or bottom edge and the bar snaps flush on release. The bar is **horizontal-only** — left/right edges aren't snap targets. `Ctrl+Shift+A` toggles the whole toolbar on and off; if it ever ends up somewhere weird, that hotkey is the recovery path and the bar re-centres on primary if it's dragged off every display.
+For an interactive walkthrough of every control, see the [live UI kit](#try-it-live).
 
 ## Who it's for
 
