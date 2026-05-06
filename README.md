@@ -11,7 +11,7 @@
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.6 beta · solo-maintained.** Works well on my machine, covered by a large unit harness plus 39 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. Mac port is next (in planning), Linux after. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.6 beta · solo-maintained.** Works well on Windows, covered by a large unit harness plus 39 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. **Mac and Linux ports are in progress** — POSIX install paths and shared hook handlers are already in the repo (`install.sh`, `app/posix_hooks.py`); the remaining Windows-only bits are the highlight-to-speak key helper and the WMI mic-watcher. Mac is the next platform target. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Terminal Talk turns Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop output into one colour-coded audio workstream.**
 

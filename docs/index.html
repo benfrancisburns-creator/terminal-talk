@@ -9,7 +9,39 @@
 <meta property="og:description" content="Auto-speaks Claude Code and Codex, keeps each session colour-coded, syncs identity into desktop coding apps, and lets highlighted text speak on demand. Free, offline wake-word, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Terminal Talk — your coding agents speak back through one toolbar">
+<meta name="twitter:description" content="Auto-speaks Claude Code and Codex, keeps each session colour-coded, syncs identity into desktop coding apps, and lets highlighted text speak on demand. Free, offline wake-word, MIT.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
 <link rel="icon" type="image/svg+xml" href="assets/logo/favicon-32.svg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Terminal Talk",
+  "alternateName": "TT",
+  "description": "Hands-free voice output for Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop. Speaks responses, tool progress, and selected text through one colour-coded toolbar with per-session identity, transcripts, focus, mute, and offline wake-word.",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "VoiceProductivity",
+  "operatingSystem": "Windows 10, Windows 11",
+  "url": "https://benfrancisburns-creator.github.io/terminal-talk/",
+  "downloadUrl": "https://github.com/benfrancisburns-creator/terminal-talk/releases/latest",
+  "softwareVersion": "0.6.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Ben Burns",
+    "url": "https://github.com/benfrancisburns-creator"
+  },
+  "codeRepository": "https://github.com/benfrancisburns-creator/terminal-talk",
+  "programmingLanguage": ["JavaScript", "Python", "PowerShell"],
+  "keywords": "Claude Code, Codex, voice, TTS, Edge TTS, openWakeWord, accessibility, hands-free"
+}
+</script>
 <link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/cascadia-mono-latin-400-normal.woff2">
 <link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/cascadia-mono-symbols2-400-normal.woff2">
 <style>
@@ -734,6 +766,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#ui">UI</a>
+      <a href="#why">Why</a>
       <a href="#install">Install</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
@@ -1013,6 +1046,39 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   </div>
 </section>
 
+<section id="why" class="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Why Terminal Talk</div>
+      <h2 class="sec-title">There are voice tools for coding. This is the one for parallel agent sessions.</h2>
+      <p class="sec-intro">Most voice-AI tools in this space solve dictation or wrap a single chat in a microphone. Terminal Talk does something narrower: it gives every parallel Claude Code or Codex session its own voice, colour, and queue position so you can run four agents at once and follow them by ear.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="icon">vs</div>
+        <h3>Aider voice</h3>
+        <p><strong>Aider speaks code at you while you dictate code back.</strong> Voice-to-code, single agent. Terminal Talk doesn't replace Aider's voice mode — they live at different layers. Use Aider's voice for dictation; use Terminal Talk to listen to all your other agents.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">vs</div>
+        <h3>Voice Mode</h3>
+        <p><strong>Voice Mode is a voice wrapper around a single Claude or Cursor session.</strong> Single-agent conversation. Terminal Talk is multi-agent monitoring — colour-coded narration of every Claude Code, Codex CLI, and Desktop session running side by side, plus per-session focus and mute.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">vs</div>
+        <h3>ElevenLabs MCP</h3>
+        <p><strong>ElevenLabs MCP routes premium TTS into Claude Code.</strong> Voice quality plus an MCP plug-in. Terminal Talk includes an MCP server too, but adds session identity, colour, focus/mute, transcripts, hooks, and free Edge voices by default — ElevenLabs is the voice; Terminal Talk is the orchestration around it.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">vs</div>
+        <h3>Cursor dictation</h3>
+        <p><strong>Cursor dictation is voice input into Cursor.</strong> Useful, but it's input, not output, and only inside Cursor. Terminal Talk is output across Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop — and it works with Cursor's plain-text terminals too if you run Claude/Codex CLI inside them.</p>
+      </div>
+    </div>
+    <p class="sec-intro" style="margin-top: 32px; text-align: center;">If you only ever run one assistant in one window, the voice tools above probably suit you. If you have four terminals open and want each to sound different, Terminal Talk is the one tool in this list that's actually built for that.</p>
+  </div>
+</section>
+
 <section id="install">
   <div class="wrap">
     <div class="sec-head">
@@ -1032,7 +1098,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 <span class="prompt">PS&gt;</span> .\install.ps1</pre>
         </div>
         <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows 10/11 · Python 3.10+ · Node 18+ · Microphone</span></div>
-        <div class="req-row">Mac and Linux ports are on the roadmap (no ETA yet — PRs welcome). Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
+        <div class="req-row">Mac and Linux ports are in progress — POSIX install paths exist; highlight-to-speak + mic-watcher are the remaining Windows-only bits. Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
       </div>
     </div>
   </div>
@@ -1079,7 +1145,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </details>
       <details>
         <summary>Why Windows-only at launch?</summary>
-        <p>The toolbar and hooks rely on PowerShell + Windows-specific keybindings. Mac and Linux ports are on the roadmap (no ETA yet — the architecture is ready for them but the platform-specific glue isn't written). If you can help with a port, PRs are welcome.</p>
+        <p>The Electron app, the queue, and the audio pipeline are platform-neutral. POSIX install scaffolding and shared Python hook handlers (<span class="mono">install.sh</span>, <span class="mono">app/posix_hooks.py</span>) are already in the repo and being driven by an in-progress Mac port. The Windows-specific bits still to port are the highlight-to-speak key helper (currently <span class="mono">ctypes.windll</span>) and the WMI mic-watcher. Mac is the next platform target; Linux follows. PRs that fill in those last Windows-only paths are welcome.</p>
       </details>
       <details>
         <summary>Can I change the wake word from "hey jarvis"?</summary>
