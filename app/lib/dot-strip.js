@@ -172,7 +172,26 @@
       // Per-dot listeners ride out with the DOM nodes on next render —
       // no bookkeeping needed because this.root.innerHTML = '' above
       // orphans the old buttons and GC takes their listeners with them.
-      dot.addEventListener('click', () => { if (this._onPlay) this._onPlay(f.path); });
+      // mousedown(button=2) catches the right-click before browsers
+      // derive a `click` event from it; macOS trackpad "secondary click"
+      // configurations sometimes deliver the gesture as a primary click,
+      // and Electron's contextmenu emission is also flakier on
+      // alwaysOnTop windows. Ctrl+click also routes to delete because
+      // it's the universal Mac equivalent of right-click.
+      dot.addEventListener('mousedown', (e) => {
+        if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (this._onDelete) this._onDelete(f.path);
+        }
+      });
+      dot.addEventListener('click', (e) => {
+        // Skip primary-click handler when it was actually a Ctrl+click —
+        // the mousedown handler already routed that to delete. Guard
+        // against synthetic test invocations that omit the event arg.
+        if (e && e.ctrlKey) return;
+        if (this._onPlay) this._onPlay(f.path);
+      });
       dot.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         if (this._onDelete) this._onDelete(f.path);

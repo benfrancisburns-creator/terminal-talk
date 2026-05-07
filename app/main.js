@@ -533,6 +533,11 @@ function createWindow() {
     movable: true,
     show: WINDOW_MODE,
     focusable: true,
+    // macOS: without this, the first click on an always-on-top window is
+    // consumed by the OS to activate the window and never reaches the DOM,
+    // so right-click-to-delete on the dot strip silently no-ops every
+    // time the toolbar isn't already the active app. No effect on Win/Linux.
+    acceptFirstMouse: true,
     hasShadow: useNativeWindowChrome,
     backgroundColor: CAPTURE_NATIVE_WINDOW ? '#101218' : '#00000000',
     webPreferences: {
