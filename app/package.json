@@ -6,11 +6,86 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging"
+    "dev": "electron . --enable-logging",
+    "pack": "electron-builder --dir",
+    "build:win": "electron-builder --win --x64",
+    "build:winnsis": "electron-builder --win nsis --x64",
+    "build:winportable": "electron-builder --win portable --x64"
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "41.2.1"
+    "electron": "41.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.benfrancisburns.terminal-talk",
+    "productName": "Terminal Talk",
+    "copyright": "Copyright (c) 2026 Ben Burns",
+    "directories": {
+      "output": "../dist",
+      "buildResources": "../build-resources"
+    },
+    "files": [
+      "**/*",
+      "!**/*.{md,test.js,spec.js}",
+      "!**/.{git,gitignore,gitattributes,DS_Store,vscode}",
+      "!**/{.eslintrc,.eslintignore,.npmignore}",
+      "!**/{tsconfig.json,jsconfig.json}",
+      "!**/node_modules/**/{test,tests,__tests__,example,examples,docs,doc}/**",
+      "!**/node_modules/**/*.{md,markdown,d.ts,map}",
+      "!**/node_modules/**/{LICENSE,license,LICENCE,licence,CHANGELOG,changelog,changes,HISTORY,history}*",
+      "!.tmp_synth/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../hooks",
+        "to": "hooks",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "requirements.txt"
+      },
+      {
+        "from": "../requirements-wakeword.txt",
+        "to": "requirements-wakeword.txt"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/lib/palette-classes.css",
+      "**/synth_turn.py",
+      "**/edge_tts_speak.py",
+      "**/openai_tts.py",
+      "**/sentence_split.py",
+      "**/sentence_group.py",
+      "**/tool_narration.py",
+      "**/text_strip.py",
+      "**/wake-word-listener.py",
+      "**/key_helper.py",
+      "**/posix_hooks.py"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Terminal Talk",
+      "uninstallDisplayName": "Terminal Talk ${version}",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "publish": null
   }
 }
-

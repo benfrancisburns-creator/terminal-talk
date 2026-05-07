@@ -6,6 +6,11 @@ package-lock.json
 __pycache__/
 *.pyc
 
+# electron-builder output (Windows installer + portable .exe artefacts)
+dist/
+build-resources/
+app/dist/
+
 # Runtime state (shouldn't be committed)
 app/listening.state
 app/node_modules/

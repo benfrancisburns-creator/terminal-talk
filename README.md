@@ -412,7 +412,7 @@ What Terminal Talk does:
 | Clipboard | Read locally during "hey jarvis" capture | Never sent anywhere except as TTS input above. |
 
 What Terminal Talk does **not** do:
-- No telemetry, analytics, error reporting, or "phone home" — anywhere in the codebase.
+- No telemetry, analytics, error reporting, or "phone home" — anywhere in the codebase. The full no-telemetry commitment is in [TELEMETRY.md](TELEMETRY.md).
 - No cloud account required (the free tier).
 - No background recording or transcription. The wake-word listener processes 80 ms audio chunks locally and discards them.
 - No modification of files outside `~/.terminal-talk/` and (if you opt in to hooks) `~/.claude/settings.json` (with backup).

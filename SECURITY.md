@@ -101,6 +101,7 @@ that's already covered:
 - **No telemetry, no analytics, no phone-home.** The only outbound
   network calls are `speech.platform.bing.com` (Edge TTS) and
   optionally `api.openai.com` (fallback, only if you provide a key).
+  Durable commitment in [TELEMETRY.md](TELEMETRY.md).
 - **Dependencies**: `npm audit` returns 0 vulnerabilities on every
   CI run (`.github/workflows/test.yml`). Dependabot raises PRs for
   npm, pip, and GitHub Actions updates weekly.
