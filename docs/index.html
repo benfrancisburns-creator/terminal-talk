@@ -828,7 +828,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="badges">
     <img src="https://img.shields.io/github/v/release/benfrancisburns-creator/terminal-talk?color=c97b50&label=release" alt="Latest release">
     <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
-    <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Windows">
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-0078d4" alt="macOS · Windows">
     <img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests">
   </div>
 </header>
@@ -1098,7 +1098,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 <span class="prompt">PS&gt;</span> .\install.ps1</pre>
         </div>
         <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows 10/11 · Python 3.10+ · Node 18+ · Microphone</span></div>
-        <div class="req-row">Mac and Linux ports are in progress — POSIX install paths exist; highlight-to-speak + mic-watcher are the remaining Windows-only bits. Uninstall with <span class="mono">.\uninstall.ps1</span> — reverses everything.</div>
+        <div class="req-row"><strong>macOS</strong> works the same way via <span class="mono">install.sh</span> (Homebrew + <span class="mono">brew install node python@3.12 portaudio</span> first). Linux port still in progress; the Windows-only mic-watcher (auto-pause when another app dictates) no-ops on macOS today. Uninstall on Windows with <span class="mono">.\uninstall.ps1</span>.</div>
       </div>
     </div>
   </div>
@@ -1144,8 +1144,8 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <p>Yes. It uses Microsoft Edge's built-in neural voice endpoint (the same one Edge browser uses for "Read Aloud" — no API key required) and openWakeWord for offline wake-word detection. An OpenAI TTS fallback is optional if you'd rather pay for premium voices.</p>
       </details>
       <details>
-        <summary>Why Windows-only at launch?</summary>
-        <p>The Electron app, the queue, and the audio pipeline are platform-neutral. POSIX install scaffolding and shared Python hook handlers (<span class="mono">install.sh</span>, <span class="mono">app/posix_hooks.py</span>) are already in the repo and being driven by an in-progress Mac port. The Windows-specific bits still to port are the highlight-to-speak key helper (currently <span class="mono">ctypes.windll</span>) and the WMI mic-watcher. Mac is the next platform target; Linux follows. PRs that fill in those last Windows-only paths are welcome.</p>
+        <summary>What about macOS and Linux?</summary>
+        <p><strong>macOS</strong> is supported. The synthetic-keystroke helper uses Quartz <span class="mono">CGEventCreateKeyboardEvent</span>, the foreground PID comes from <span class="mono">NSWorkspace.frontmostApplication</span>, and the process tree is walked with <span class="mono">psutil</span>. First launch prompts for Accessibility (synthetic Cmd+C) and Microphone (wake-word listener); both grants are one-time. The Windows-specific WMI mic-watcher (auto-pause when another app dictates) cleanly no-ops on macOS — that feature is the only one still Windows-only. <strong>Linux</strong> is next; POSIX install scaffolding and shared Python hooks (<span class="mono">install.sh</span>, <span class="mono">app/posix_hooks.py</span>) are already in the repo. PRs welcome.</p>
       </details>
       <details>
         <summary>Can I change the wake word from "hey jarvis"?</summary>

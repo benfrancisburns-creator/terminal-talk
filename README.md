@@ -5,23 +5,23 @@
 <p align="center">
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest"><img src="https://img.shields.io/github/v/release/benfrancisburns-creator/terminal-talk?color=c97b50&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-0078d4" alt="macOS · Windows">
   <img src="https://img.shields.io/badge/node-18%2B-339933" alt="Node 18+">
   <img src="https://img.shields.io/badge/status-early%20beta-orange" alt="Early beta">
   <a href="https://github.com/benfrancisburns-creator/terminal-talk/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/benfrancisburns-creator/terminal-talk/test.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
-> **Status: v0.6 beta · solo-maintained.** Works well on Windows, covered by a large unit harness plus 39 Playwright E2E tests, but this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. **Mac and Linux ports are in progress** — POSIX install paths and shared hook handlers are already in the repo (`install.sh`, `app/posix_hooks.py`); the remaining Windows-only bits are the highlight-to-speak key helper and the WMI mic-watcher. Mac is the next platform target. File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
+> **Status: v0.6 beta · solo-maintained.** Runs on Windows and macOS, covered by a large unit harness plus 39 Playwright E2E tests; this is still an early widely-shared release — expect rough edges. Issues and PRs welcome. The macOS port covers the full toolbar + highlight-to-speak + "hey jarvis" loop using Quartz CGEvent for synthetic keystrokes and `psutil` for the foreground process tree; the Windows-only mic-watcher (auto-pause when another app dictates) is the only feature that no-ops on macOS today. **Linux is next.** File bugs via [private Security Advisories](https://github.com/benfrancisburns-creator/terminal-talk/security/advisories/new) (security) or [public Issues](https://github.com/benfrancisburns-creator/terminal-talk/issues) (everything else).
 
 **Terminal Talk turns Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop output into one colour-coded audio workstream.**
 
 It is the voice-output half of a hands-free coding workflow: your assistants can keep working in separate terminal or desktop sessions while Terminal Talk speaks replies, tool progress, heartbeat state, and selected text through one local toolbar. Every source feeds the same queue, transcript, voice pipeline, focus controls, and 24-entry colour registry.
 
-Windows first. Free by default. MIT licensed. No account required. Microsoft Edge TTS provides the free voices; openWakeWord handles local wake-word detection; optional OpenAI TTS is explicit and encrypted.
+Windows and macOS. Free by default. MIT licensed. No account required. Microsoft Edge TTS provides the free voices; openWakeWord handles local wake-word detection; optional OpenAI TTS is explicit and encrypted.
 
 **Try it in your browser (no install):** [live interactive toolbar demo](https://benfrancisburns-creator.github.io/terminal-talk/ui-kit/) · [project landing page](https://benfrancisburns-creator.github.io/terminal-talk/)
 
-[Install](#install-windows) · [Technical overview](#technical-overview) · [Try it live](#try-it-live) · [Assistant matrix](#assistant-support-matrix) · [Settings reference](#settings-panel-gear-icon) · [Architecture](#how-it-works) · [Privacy](#privacy--security) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Technical overview](#technical-overview) · [Try it live](#try-it-live) · [Assistant matrix](#assistant-support-matrix) · [Settings reference](#settings-panel-gear-icon) · [Architecture](#how-it-works) · [Privacy](#privacy--security) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Technical overview
 
@@ -58,7 +58,9 @@ The kit shows resting playback, collapsed letterbox state on hover, and the full
 
 ---
 
-## Install (Windows)
+## Install
+
+### Windows
 
 ```powershell
 git clone https://github.com/benfrancisburns-creator/terminal-talk
@@ -72,13 +74,33 @@ The installer pip-installs `edge-tts`, `openwakeword`, `onnxruntime`, `sounddevi
 
 Re-running `install.ps1` is safe — it updates in place and preserves your `config.json` and session colour assignments.
 
-### First launch: SmartScreen warning
+### macOS
+
+```bash
+brew install node python@3.12 portaudio
+git clone https://github.com/benfrancisburns-creator/terminal-talk
+cd terminal-talk
+TT_PYTHON_EXE=$(brew --prefix)/bin/python3.12 bash install.sh
+```
+
+**Prerequisites:** macOS 11+ (Apple Silicon or Intel), [Homebrew](https://brew.sh), a working microphone. `portaudio` is required so `sounddevice` can compile against PortAudio for the wake-word listener.
+
+The installer creates a venv at `~/.terminal-talk/.venv`, pip-installs the same Python deps as Windows plus a small macOS-only set (`pyobjc-framework-Quartz`, `pyobjc-framework-Cocoa`, `psutil`) for synthetic Cmd+C and process-tree introspection, downloads the `hey_jarvis` wake-word model, runs `npm install`, and writes the toolbar to `~/.terminal-talk/`. Launch with `~/.terminal-talk/start-toolbar.sh` (or pass `--autostart` to install a LaunchAgent at `~/Library/LaunchAgents/com.terminal-talk.toolbar.plist`).
+
+**Permissions macOS will ask for** — grant each in **System Settings → Privacy & Security**:
+
+- **Accessibility** — the Cmd+C used by highlight-to-speak. Triggered the first time you press the speak-clipboard hotkey or fire "hey jarvis". Without it the wake-word listener still hears you, but synthesised keystrokes silently no-op.
+- **Microphone** — the wake-word listener. Triggered the first time the listener opens an audio stream (i.e. on first toolbar launch, unless you ran with `--skip-python-deps` and pre-flagged wake-word as unavailable).
+
+The macOS hotkey defaults stay as `Control+Shift+S` / `Control+Shift+A` etc. — they avoid Cmd+Shift+S, which collides with system Save As and the screenshot-save dialog. The settings panel renders the bindings using HIG glyphs (⌃⇧S etc.). Right-click on a clip dot deletes it; if your trackpad's secondary click isn't enabled, **Ctrl+click** works as a permanent fallback.
+
+### Windows: first launch SmartScreen warning
 
 Terminal Talk is not yet code-signed (an EV / Azure Trusted Signing certificate is on the roadmap once funding is in place — see [SECURITY.md](SECURITY.md#known-limitations)). On first launch Windows SmartScreen will show a blue prompt: *"Windows protected your PC."*
 
 Click **More info** → **Run anyway**. This is a one-time prompt; subsequent launches don't re-trigger it. The same is true for any open-source unsigned Electron app on Windows.
 
-### Installer flags
+### Windows: installer flags
 
 `install.ps1` accepts the following flags so power users can predict prompts and side-effects before running:
 
