@@ -182,6 +182,10 @@ function subscribe(channel, cb, unwrap) {
 
 /** @type {TerminalTalkApi} */
 const api = {
+  // Renderer-visible OS hint. Used by settings-form to render hotkey
+  // chords with platform-native glyphs (⌃⇧S on macOS, Ctrl+Shift+S on
+  // Win/Linux) without round-tripping over IPC.
+  platform: process.platform,
   getQueue: () => ipcRenderer.invoke('get-queue'),
   // Transcript panel: read the .txt + .original.txt sidecars next to a
   // queued audio clip. Path is validated main-side against QUEUE_DIR.

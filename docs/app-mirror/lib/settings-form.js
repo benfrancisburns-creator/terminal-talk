@@ -507,7 +507,24 @@
     }
 
     _displayAccelerator(value) {
-      return this._canonicalAccelerator(value)
+      const canonical = this._canonicalAccelerator(value);
+      // macOS HIG renders modifier chords with glyphs and no separators
+      // (⌃⇧S) instead of the cross-platform "Ctrl+Shift+S" form. The
+      // underlying Electron accelerator string stays the same — this is
+      // purely visual.
+      if (this._api && this._api.platform === 'darwin') {
+        const glyphMap = {
+          Control: '⌃',  // ⌃
+          Alt: '⌥',       // ⌥
+          Shift: '⇧',     // ⇧
+          Meta: '⌘',      // ⌘
+        };
+        return canonical
+          .split('+')
+          .map((p) => glyphMap[p] || p)
+          .join('');
+      }
+      return canonical
         .replace(/\bControl\b/g, 'Ctrl')
         .replace(/\bMeta\b/g, 'Win');
     }
