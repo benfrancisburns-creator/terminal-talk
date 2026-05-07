@@ -4,6 +4,47 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Live UI demo on the landing page.** `docs/index.html` now embeds the
+  real Electron renderer in an iframe with a click-to-explore detail
+  panel covering ~50 controls (every button, dot, tab, slider, and
+  Settings toggle). Replaces the static screenshot galleries.
+- **First-run welcome toast.** `cfg.first_run_completed` flag drives a
+  one-time 15-second toast on fresh install pointing the user at the
+  toolbar's location, the speak-clipboard hotkey, and the show/hide
+  hotkey. Persists `true` immediately so it never re-fires.
+- **Empty-selection / TTS-fail / hotkey-collision toasts.** Three
+  silent failure surfaces now produce visible toast warnings:
+  empty highlight-to-speak selection, all-chunks TTS failure, and
+  any global hotkey that failed to register because another app
+  (Wispr Flow, Voice Mode, etc.) already owns the chord.
+- **`docs/MCP-API.md`** — full schema for the 5 Terminal Talk MCP
+  server tools (`register_session`, `speak`, `mark_working`,
+  `set_session`, `list_sessions`), with parameters, examples,
+  validation rules, error codes, and Claude Desktop config snippet.
+- **`TELEMETRY.md`** — durable no-telemetry policy. Spells out what
+  is not collected, what's the only outbound traffic, how to verify,
+  and the rule for any future deviation.
+- **`docs/BUILD-WINDOWS-INSTALLER.md`** — prereqs, build commands,
+  branding asset list, code-signing roadmap, sanity checklist before
+  any public download. Pairs with the new electron-builder config.
+- **electron-builder Windows installer scaffold.** `app/package.json`
+  build block configures NSIS installer + portable .exe targets.
+  Untested — needs local Windows test build before attaching to a
+  release.
+- **JSDoc `@typedef` for `window.api`.** Full IPC surface in
+  `app/preload.js` documented with parameter types, return shapes,
+  validation rules, and the disposer pattern for event subscribers.
+- **"Why Terminal Talk" landing-page section.** Compares against
+  Aider voice, Voice Mode, ElevenLabs MCP, and Cursor dictation;
+  explains the multi-session monitoring differentiator.
+- **JSON-LD SoftwareApplication schema** + missing twitter meta tags
+  on the landing page so Slack/Twitter/LinkedIn previews resolve
+  correctly and Google rich-results pick the right snippet.
+- **GitHub Discussions enabled** for community Q&A so support
+  questions stay separate from bug reports.
+
 ### Changed
 
 - Reframed the README, landing page, docs, and in-app About copy around
@@ -12,6 +53,40 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
   queue/session features.
 - Installer now creates user-facing Start Menu/Desktop relaunch shortcuts plus a
   dedicated **Terminal Talk Codex** shortcut; uninstall removes those shortcuts.
+- **Platform story reconciled** across README, landing page FAQ, and
+  install row. Mac/Linux ports now described as in-progress with
+  POSIX install paths shipped and key-helper / mic-watcher as the
+  remaining Windows-only blockers — single truth instead of three
+  conflicting answers.
+- **README install section** now lists Git as a prerequisite, links
+  each prereq to its download page, documents all `install.ps1`
+  flags (`-Unattended`, `-HooksYes`, `-StatuslineYes`,
+  `-CodexHooksYes`, `-StartupYes`, `-DesktopShortcutYes`), and
+  warns about the Windows SmartScreen prompt on first launch.
+- **README screenshot galleries removed.** The live UI Kit is now
+  the visual reference; static screenshots removed in favour of a
+  "Try it live" callout pointing at the GitHub Pages demo.
+- **File-length ceiling raised** 2650 → 2725 to accommodate the
+  toast + first-run + hotkey-status additions to renderer.js and
+  main.js. Long-term ratchet-back-down via planned EX9 lib
+  extraction.
+
+### Fixed
+
+- **Window rescue + dock-bottom clamp.** Top-edge of the toolbar
+  must remain on a connected display's workArea; bottom-dock can
+  no longer push the top off-screen when the panel is open.
+  Closes the bug where the bar persisted at `y=-190` with only
+  2 px visible.
+- **Silent `.catch(() => {})` swallow in `app/renderer.js`.** The
+  `_finaliseClear` deleteFile loop and the capture-mode auto-open
+  `setSettingsOpen` now route failures through
+  `api.logRendererError` to the diagnostic log instead of
+  disappearing entirely.
+- **Internal scaffolding removed from public repo.** `COORDINATION.md`,
+  `ASSESSMENTS/` (14 files), 6 `SESSION-HANDOFF-*.md`, 4 `VIDEO_*.md`,
+  3 concept/plan docs untracked from git and added to `.gitignore`.
+  Files remain on disk locally for internal use.
 
 ## [0.6.0] — 2026-04-26
 
