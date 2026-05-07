@@ -1,0 +1,8 @@
+# macOS-only runtime dependencies for key_helper.py.
+#
+# Quartz CGEvent powers the Cmd+C synthesis used by highlight-to-speak;
+# AppKit (NSWorkspace) gives us the frontmost app PID without needing
+# Screen Recording permission; psutil walks the process tree.
+pyobjc-framework-Quartz>=10
+pyobjc-framework-Cocoa>=10
+psutil>=5.9

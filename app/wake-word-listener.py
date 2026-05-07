@@ -22,7 +22,6 @@ word out loud on a headless box.
 """
 import argparse
 import contextlib
-import ctypes
 import json
 import logging
 import logging.handlers
@@ -39,6 +38,14 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 from openwakeword.model import Model
+
+IS_WINDOWS = sys.platform == 'win32'
+IS_MAC = sys.platform == 'darwin'
+
+if IS_WINDOWS:
+    import ctypes
+elif IS_MAC:
+    import Quartz
 
 LOG_PATH = Path.home() / '.terminal-talk' / 'queue' / '_voice.log'
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -134,22 +141,51 @@ MIN_CONFIDENCE = 0.8
 VOICE_COMMAND_PATH = Path.home() / '.terminal-talk' / 'voice-command.json'
 RECOGNIZER_SCRIPT = Path(__file__).resolve().parent / 'voice-command-recognize.ps1'
 
-_user32 = ctypes.windll.user32
-_VK_CONTROL = 0x11
-_VK_SHIFT = 0x10
-_VK_S = 0x53
-_KEYUP = 0x0002
+# speak_clipboard global hotkey synthesis. The Electron toolbar
+# registers Control+Shift+S on every platform (the same accelerator
+# string maps to Ctrl on Win/Linux and stays literal Ctrl on macOS),
+# so the wake-word listener fires that exact combo regardless of OS.
+# When the macOS hotkey defaults flip to Cmd+Shift+S in a future
+# config-defaults change, the Mac branch here flips with it.
+if IS_WINDOWS:
+    _user32 = ctypes.windll.user32
+    _VK_CONTROL = 0x11
+    _VK_SHIFT = 0x10
+    _VK_S = 0x53
+    _KEYUP = 0x0002
 
-def send_hotkey():
-    try:
-        _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
-        _user32.keybd_event(_VK_SHIFT, 0, 0, 0)
-        _user32.keybd_event(_VK_S, 0, 0, 0)
-        _user32.keybd_event(_VK_S, 0, _KEYUP, 0)
-        _user32.keybd_event(_VK_SHIFT, 0, _KEYUP, 0)
-        _user32.keybd_event(_VK_CONTROL, 0, _KEYUP, 0)
-    except Exception as e:
-        log.error(f'sendkeys fail: {e}')
+    def send_hotkey():
+        try:
+            _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
+            _user32.keybd_event(_VK_SHIFT, 0, 0, 0)
+            _user32.keybd_event(_VK_S, 0, 0, 0)
+            _user32.keybd_event(_VK_S, 0, _KEYUP, 0)
+            _user32.keybd_event(_VK_SHIFT, 0, _KEYUP, 0)
+            _user32.keybd_event(_VK_CONTROL, 0, _KEYUP, 0)
+        except Exception as e:
+            log.error(f'sendkeys fail: {e}')
+
+elif IS_MAC:
+    # kVK_ANSI_S from <HIToolbox/Events.h>. Modifier-flag mask delivers
+    # Control+Shift+S as a single CGEvent, mirroring the Windows path's
+    # six-event SendInput sequence in spirit.
+    _KC_S = 0x01
+
+    def send_hotkey():
+        try:
+            flags = Quartz.kCGEventFlagMaskControl | Quartz.kCGEventFlagMaskShift
+            down = Quartz.CGEventCreateKeyboardEvent(None, _KC_S, True)
+            Quartz.CGEventSetFlags(down, flags)
+            up = Quartz.CGEventCreateKeyboardEvent(None, _KC_S, False)
+            Quartz.CGEventSetFlags(up, flags)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+        except Exception as e:
+            log.error(f'sendkeys fail: {e}')
+
+else:
+    def send_hotkey():
+        log.error(f'send_hotkey not implemented on {sys.platform}')
 
 
 def _rms(samples: np.ndarray) -> float:
@@ -204,6 +240,11 @@ def _run_recognizer(wav_path: Path) -> dict:
     """Spawn voice-command-recognize.ps1 with the captured WAV, parse
     its single-line JSON output. Returns {} on any failure — caller
     treats that as 'no match'."""
+    if not IS_WINDOWS:
+        # System.Speech.Recognition is Windows-only; non-Windows platforms
+        # treat every wake fire as the primary "Hey Jarvis → read
+        # highlighted text" workflow until a portable recognizer lands.
+        return {}
     try:
         proc = subprocess.run(
             ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
