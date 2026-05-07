@@ -373,6 +373,20 @@ function createIpcHandlers(deps) {
             } catch {}
           }
         }
+        // Also vouch for registry claude_pids that are still alive. On
+        // Windows the sessions/<pid>.json sidecar from
+        // codex-identify-live.ps1 + statusline.ps1 already covers this,
+        // but the POSIX hooks (posix_hooks.py) don't write that
+        // sidecar — they only stash claude_pid inside the assignments
+        // registry. Without this loop every Claude Code session on
+        // macOS / Linux would flip to "closed" 10 s after its last
+        // hook fire, even though the CLI process is still running.
+        for (const entry of Object.values(assignments || {})) {
+          const pid = Number(entry && entry.claude_pid);
+          if (Number.isFinite(pid) && pid > 0 && isPidAlive(pid)) {
+            livePids.add(pid);
+          }
+        }
         return computeStaleSessions(
           assignments, liveShorts, livePids,
           Math.floor(Date.now() / 1000),
