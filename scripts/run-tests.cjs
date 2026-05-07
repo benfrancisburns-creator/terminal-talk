@@ -11250,17 +11250,62 @@ describe('EX6f-3 — ipc-handlers (panel + config-mutation)', () => {
   });
 
   it('set-panel-open pins bottom-docked bar via setBounds + setApplyingDock flag', () => {
-    const deps = panelDeps({ cfg: { window: { dock: 'bottom' } } });
+    // Bar at curY=600 (room above), dock=bottom: panel-open computes
+    // newY = 600 + (192 - 618) = 174 — fully on-screen, clamp must
+    // preserve it.
+    const deps = panelDeps({
+      cfg: { window: { dock: 'bottom' } },
+      winOverrides: { getPosition: () => [100, 600], getSize: () => [680, 192] },
+      getWorkAreaForBar: () => ({ x: 0, y: 0, width: 1920, height: 1040 }),
+    });
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
     const call = deps._winCalls.find((c) => c[0] === 'setBounds');
     assertTruthy(call, 'should call setBounds');
-    // curY=200, curH=192, newH=618 -> newY = 200 + (192 - 618) = -226
-    assertEqual(call[1].y, -226);
+    assertEqual(call[1].y, 174);
     assertEqual(call[1].width, 680);
     assertEqual(call[1].height, 618);
     // applying-dock latch must flip true then eventually back to false
     assertEqual(deps._dockCalls[0], true);
+  });
+
+  it('set-panel-open clamps bottom-dock newY to workArea.y so the top stays reachable', () => {
+    // 2026-05-07 regression: bar at curY=200 with dock='bottom' (after
+    // a micro-drag that didn't re-snap to the bottom edge) opens the
+    // panel and computes newY = 200 + (192 - 618) = -226 — the X /
+    // gear / drag handle slide off the top of the screen and the bar
+    // becomes unreachable. Clamp newY to workArea.y so this can't
+    // happen again. cf9c699 fixed the matching applyDock("bottom")
+    // path; this fixes the panel-open path that bypassed it.
+    const deps = panelDeps({
+      cfg: { window: { dock: 'bottom' } },
+      winOverrides: { getPosition: () => [100, 200], getSize: () => [680, 192] },
+      getWorkAreaForBar: () => ({ x: 0, y: 0, width: 1920, height: 1040 }),
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
+    const call = deps._winCalls.find((c) => c[0] === 'setBounds');
+    assertTruthy(call, 'should call setBounds');
+    assertEqual(call[1].y, 0);              // clamped — NOT -226
+    assertEqual(call[1].height, 618);
+    assertEqual(deps._dockCalls[0], true);
+  });
+
+  it('set-panel-open clamps non-bottom dock with negative curY so top stays reachable', () => {
+    // Defence-in-depth — if curY is somehow negative on a non-bottom
+    // dock (e.g., legacy bug, or a workArea origin shift after an
+    // unplugged monitor), opening the panel must not preserve the
+    // negative y; clamp it so the drag handle is reachable.
+    const deps = panelDeps({
+      cfg: { window: { dock: 'top' } },
+      winOverrides: { getPosition: () => [100, -50], getSize: () => [680, 192] },
+      getWorkAreaForBar: () => ({ x: 0, y: 0, width: 1920, height: 1040 }),
+    });
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('set-panel-open', true), true);
+    const call = deps._winCalls.find((c) => c[0] === 'setBounds');
+    assertTruthy(call, 'should call setBounds');
+    assertEqual(call[1].y, 0);
   });
 
   it('set-panel-open returns false when window is destroyed', () => {

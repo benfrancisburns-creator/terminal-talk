@@ -2135,6 +2135,7 @@ createIpcHandlers({
   appDir: __dirname,
   pythonExe: PYTHON_EXE,
   setApplyingDock: (v) => { isApplyingDock = v; },
+  getWorkAreaForBar: (x, y, w) => displayForWindowBounds(x, y, w).workArea,
   setInteractiveRegion,
   QUEUE_DIR,
   isPathInside,

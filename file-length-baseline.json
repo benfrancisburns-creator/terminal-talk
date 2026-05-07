@@ -4,12 +4,12 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18037,
-    "app/main.js": 2697,
+    "scripts/run-tests.cjs": 18082,
+    "app/main.js": 2698,
     "app/renderer.js": 2705,
     "app/synth_turn.py": 1960,
     "app/tool_narration.py": 1851,
-    "app/lib/ipc-handlers.js": 1153,
+    "app/lib/ipc-handlers.js": 1172,
     "app/lib/codex-tool-narration.js": 1020,
     "app/session-registry.psm1": 977,
     "app/lib/settings-form.js": 959,

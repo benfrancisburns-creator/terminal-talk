@@ -70,6 +70,14 @@ function createIpcHandlers(deps) {
     appDir = null,
     pythonExe = process.platform === 'win32' ? 'python' : 'python3',
     setApplyingDock,
+    // Returns the workArea ({x, y, width, height}) of the display that
+    // owns the bar at (x, y, w). Injected so set-panel-open can clamp
+    // the panel-grow-upward y to the top of the workArea — without it,
+    // a bottom-docked bar sitting partway up the screen (after a
+    // micro-drag that didn't re-snap) opens the panel and pushes its
+    // top edge off-screen. Defaults to a generous workArea so tests
+    // and the standalone factory don't crash without an injection.
+    getWorkAreaForBar = () => ({ x: 0, y: 0, width: 99999, height: 99999 }),
     setInteractiveRegion = () => false,
     testMode = !!process.env.TT_TEST_MODE,
     syncCodexIdentity = () => {},
@@ -911,16 +919,27 @@ function createIpcHandlers(deps) {
       // the bar's y). setBounds with adjusted y makes it grow upward.
       const cfg = getCFG();
       const dock = cfg.window && cfg.window.dock;
+      const [curX, curY] = win.getPosition();
+      const [, curH] = win.getSize();
+      // Clamp to the owning display's workArea top — opening the panel
+      // grows the window upward when bottom-docked (and must never
+      // grow upward into negative-Y when top-docked or free-floating).
+      // If the bar's bottom would be pinned at curY + curH but the new
+      // height is taller than the room above, the resulting top must
+      // still sit inside the visible workArea or the user loses the X
+      // / gear / drag handle. Hit on a 1080p display 2026-05-07 when
+      // the bar was at y≈200 with dock='bottom' (after a micro-drag
+      // that didn't re-snap) and panel-open computed y=-226.
+      const work = getWorkAreaForBar(curX, curY, dim.width);
       if (dock === 'bottom') {
-        const [curX, curY] = win.getPosition();
-        const [, curH] = win.getSize();
         const newY = curY + (curH - dim.height);
+        const clampedY = Math.max(work.y, newY);
         setApplyingDock(true);
-        win.setBounds({ x: curX, y: newY, width: dim.width, height: dim.height });
+        win.setBounds({ x: curX, y: clampedY, width: dim.width, height: dim.height });
         setTimeout(() => { setApplyingDock(false); }, 300);
       } else {
-        const [curX, curY] = win.getPosition();
-        win.setBounds({ x: curX, y: curY, width: dim.width, height: dim.height });
+        const clampedY = Math.max(work.y, curY);
+        win.setBounds({ x: curX, y: clampedY, width: dim.width, height: dim.height });
       }
       return true;
     });
