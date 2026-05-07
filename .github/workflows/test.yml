@@ -38,6 +38,22 @@ jobs:
       - name: Run logic-only test subset
         run: node scripts/run-tests.cjs --logic-only --verbose
 
+  # Mac port smoke: same --logic-only subset on macos-latest. Catches
+  # platform-conditional regressions (path separators, process.platform
+  # branches, Quartz / NSWorkspace shims in key_helper.py +
+  # wake-word-listener.py) before they hit a Mac user. Kept lean — the
+  # full install.sh harness runs separately if/when we add a heavier job.
+  macos-logic:
+    name: Pure JS tests (macOS, Node 22)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '22' }
+
+      - name: Run logic-only test subset
+        run: node scripts/run-tests.cjs --logic-only --verbose
+
   doc-drift:
     name: Doc-drift guard (stale phrases in docs)
     runs-on: ubuntu-latest
