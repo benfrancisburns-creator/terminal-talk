@@ -18,6 +18,20 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// macOS ships only `python3` by default — `python` is missing, so a raw
+// spawnSync(PYTHON_BIN, ...) returns status=null. Resolve once at startup
+// and substitute everywhere. Honours PYTHON / TT_PYTHON_EXE so users
+// with a venv (or non-default Python) can point us at their interpreter
+// without editing the harness.
+const PYTHON_BIN = (() => {
+  const explicit = process.env.PYTHON || process.env.TT_PYTHON_EXE;
+  if (explicit) return explicit;
+  if (process.platform === 'win32') return 'python';
+  // POSIX fallback: prefer python3 if it's resolvable, else python.
+  const probe = spawnSync('python3', ['-c', 'pass'], { stdio: 'ignore' });
+  return probe.status === 0 ? 'python3' : 'python';
+})();
+
 const VERBOSE = process.argv.includes('--verbose');
 // `--logic-only` skips test groups that need the live install dir, PowerShell,
 // or the edge-tts service. Used by the Linux CI job for fast cross-platform smoke tests.
@@ -137,7 +151,7 @@ function runStatusline(sessionId, fakePid = null) {
 function runEdgeTts(voice, text) {
   const out = path.join(os.tmpdir(), `tt-test-${Date.now()}.mp3`);
   const script = path.join(APP_DIR, 'edge_tts_speak.py');
-  const result = spawnSync('python', [script, voice, out],
+  const result = spawnSync(PYTHON_BIN, [script, voice, out],
     { input: text, encoding: 'utf8', timeout: 30000 }
   );
   const exists = fs.existsSync(out);
@@ -593,13 +607,13 @@ describe('wake-word-listener.py + key_helper.py source-level invariants', () => 
   const helper = fs.readFileSync(path.join(__dirname, '..', 'app', 'key_helper.py'), 'utf8');
 
   it('wake-word-listener has byte-level Python syntax (no parse error)', () => {
-    const r = spawnSync('python', ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'wake-word-listener.py')],
+    const r = spawnSync(PYTHON_BIN, ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'wake-word-listener.py')],
       { encoding: 'utf8', timeout: 10000 });
     assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
   });
 
   it('key_helper has byte-level Python syntax (no parse error)', () => {
-    const r = spawnSync('python', ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'key_helper.py')],
+    const r = spawnSync(PYTHON_BIN, ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'key_helper.py')],
       { encoding: 'utf8', timeout: 10000 });
     assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
   });
@@ -656,7 +670,7 @@ describe('wake-word-listener.py + key_helper.py source-level invariants', () => 
     const tmpLog = path.join(tmpDir, '_voice.log');
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
     try {
-      const r = spawnSync('python', ['-c', `
+      const r = spawnSync(PYTHON_BIN, ['-c', `
 import logging, logging.handlers
 h = logging.handlers.RotatingFileHandler(r'${tmpLog.replace(/\\/g, '\\\\')}', maxBytes=1048576, backupCount=1, encoding='utf-8')
 h.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(message)s', datefmt='%H:%M:%S'))
@@ -1127,7 +1141,7 @@ describe('SYNTH TURN MUTE', () => {
 
   function runPy(code) {
     const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import synth_turn; `;
-    const r = spawnSync('python', ['-c', prelude + code], { encoding: 'utf8', timeout: 15000, env: testEnv });
+    const r = spawnSync(PYTHON_BIN, ['-c', prelude + code], { encoding: 'utf8', timeout: 15000, env: testEnv });
     if (r.status !== 0) throw new Error(`python exit ${r.status}: ${r.stderr}`);
     return (r.stdout || '').trim();
   }
@@ -1187,7 +1201,7 @@ describe('SYNTH TURN MUTE', () => {
     fs.writeFileSync(fakeTranscript, transcriptLines.join('\n'), 'utf8');
 
     try {
-      const r = spawnSync('python', [
+      const r = spawnSync(PYTHON_BIN, [
         path.join(appDirRepo, 'synth_turn.py'),
         '--session', testSessionId,
         '--transcript', fakeTranscript,
@@ -2781,7 +2795,7 @@ describe('HARDENING: voice id validation', () => {
 });
 
 function runPythonInline(code) {
-  const result = spawnSync('python', ['-c', code], { encoding: 'utf8', timeout: 15000 });
+  const result = spawnSync(PYTHON_BIN, ['-c', code], { encoding: 'utf8', timeout: 15000 });
   return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status };
 }
 
@@ -13775,7 +13789,7 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
       'out = [sanitize(req["text"], c) for c in req["combos"]]',
       'sys.stdout.write(json.dumps(out))',
     ].join('\n');
-    const r = spawnSync('python', ['-c', pyScript], {
+    const r = spawnSync(PYTHON_BIN, ['-c', pyScript], {
       input: JSON.stringify({ text: input, combos: sampleCombos }),
       encoding: 'utf8',
       timeout: 15000,
@@ -13822,7 +13836,7 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
       'from synth_turn import sanitize',
       'sys.stdout.write(sanitize("Plain _italic_ word", {}))',
     ].join('\n');
-    const r = spawnSync('python', ['-c', pyScript],
+    const r = spawnSync(PYTHON_BIN, ['-c', pyScript],
       { encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     if (r.status !== 0) throw new Error(`python helper exit ${r.status}; stderr: ${r.stderr}`);
     const pyOut = r.stdout.replace(/\s+/g, ' ').trim();
@@ -13867,7 +13881,7 @@ describe('PHASE 3 — speech_includes full combinatorial matrix', () => {
       'req = json.loads(sys.stdin.read())',
       'sys.stdout.write(sanitize(req["text"], req["flags"]))',
     ].join('\n');
-    const r = spawnSync('python', ['-c', pyScript], {
+    const r = spawnSync(PYTHON_BIN, ['-c', pyScript], {
       input: JSON.stringify({ text: input, flags }),
       encoding: 'utf8',
       timeout: 10000,
@@ -15701,7 +15715,7 @@ exec(compile(_module, str(_path), 'exec'), _ns)
 should_finalise = _ns['_should_finalise_capture']
 ${body}
 `;
-      const r = spawnSync('python', ['-c', shim], { encoding: 'utf8', timeout: 15000 });
+      const r = spawnSync(PYTHON_BIN, ['-c', shim], { encoding: 'utf8', timeout: 15000 });
       return { code: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
     }
 
