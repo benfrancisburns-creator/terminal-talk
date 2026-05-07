@@ -58,6 +58,12 @@ function createPlatform(opts = {}) {
     supportsWindowsMicWatcher: isWindows,
     supportsCodexIdentitySync: isWindows,
     supportsWindowsTerminalTabColor: isWindows,
+    // The footer-audio "Worked for X" watcher scrapes Windows Terminal's
+    // buffer via UIA + scrape-footer.ps1. There's no equivalent on macOS
+    // / Linux because the feature is fundamentally a Windows Terminal
+    // automation. The watcher cleanly no-ops on platforms where this
+    // is false, no PowerShell spawn attempts.
+    supportsFooterScrape: isWindows,
   };
 }
 

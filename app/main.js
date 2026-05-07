@@ -2526,6 +2526,7 @@ _codexIdentitySync = createCodexIdentitySync({
 // scraped text. Lives in the main app process because UIA hangs in the
 // hook process tree (inherited Claude-Code-CLI stdio/COM context).
 const _footerWatcher = createFooterWatcher({
+  enabled: platform.supportsFooterScrape,
   appDir: __dirname,
   sessionsDir: SESSIONS_DIR,
   queueDir: QUEUE_DIR,

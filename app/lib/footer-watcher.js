@@ -57,6 +57,7 @@ function timestampFilename() {
 
 function createFooterWatcher(opts = {}) {
   const {
+    enabled = true,
     sessionsDir,
     queueDir,
     appDir,
@@ -72,6 +73,24 @@ function createFooterWatcher(opts = {}) {
     spawnDep = spawn,
     nowFn = () => Date.now(),
   } = opts;
+
+  // Mirror the mic-watcher pattern: when the footer-scrape capability
+  // is unavailable on this platform (no Windows Terminal UIA host),
+  // return a no-op start/stop pair so the caller doesn't have to
+  // platform-branch its lifecycle. Without this, the flag-deletion
+  // watcher would still run and ENOENT-spam the diag log every ~500 ms
+  // attempting to spawn powershell.exe.
+  if (!enabled) {
+    let logged = false;
+    return {
+      start() {
+        if (logged) return;
+        logged = true;
+        diag('footer-watcher disabled on this platform');
+      },
+      stop() {},
+    };
+  }
 
   if (!sessionsDir || !queueDir || !appDir || !registryPath) {
     throw new Error('createFooterWatcher: sessionsDir, queueDir, appDir, registryPath are required');
