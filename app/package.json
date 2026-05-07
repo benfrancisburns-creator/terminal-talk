@@ -10,7 +10,8 @@
     "pack": "electron-builder --dir",
     "build:win": "electron-builder --win --x64",
     "build:winnsis": "electron-builder --win nsis --x64",
-    "build:winportable": "electron-builder --win portable --x64"
+    "build:winportable": "electron-builder --win portable --x64",
+    "build:mac": "electron-builder --mac --arm64 --x64"
   },
   "license": "MIT",
   "devDependencies": {
@@ -49,6 +50,10 @@
       {
         "from": "../requirements-wakeword.txt",
         "to": "requirements-wakeword.txt"
+      },
+      {
+        "from": "../requirements-mac.txt",
+        "to": "requirements-mac.txt"
       }
     ],
     "asar": true,
@@ -71,6 +76,25 @@
         { "target": "portable", "arch": ["x64"] }
       ],
       "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Terminal Talk listens for the wake word \"hey jarvis\" so it can read highlighted text aloud. Audio is processed locally by openWakeWord; no recordings leave your machine.",
+        "NSAppleEventsUsageDescription": "Terminal Talk synthesises a Cmd+C keystroke to copy the currently highlighted text when you press the speak-clipboard hotkey or fire the wake word."
+      }
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.dmg",
+      "writeUpdateInfo": false
     },
     "nsis": {
       "oneClick": false,
