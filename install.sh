@@ -158,10 +158,22 @@ if [ "$install_python_deps" -eq 1 ]; then
   if "$app_root/.venv/bin/python" -m pip install -r "$repo_root/requirements-wakeword.txt"; then
     rm -f "$tt_home/wake-word-unavailable.flag"
     say "   OK  wake-word deps installed"
+    # openwakeword 0.6 ships without model weights; the package downloads
+    # them lazily from GitHub. Doing it once here means the listener
+    # doesn't FATAL on first launch with NO_SUCHFILE for hey_jarvis.
+    if "$app_root/.venv/bin/python" -c 'from openwakeword.utils import download_models; download_models()' >/dev/null 2>&1; then
+      say "   OK  wake-word models downloaded"
+    else
+      say "   !!  wake-word model download failed; first listener launch may FATAL until network resolves"
+    fi
   else
     printf '%s\n' "Optional wake-word dependencies could not be installed for this Python/OS." \
       > "$tt_home/wake-word-unavailable.flag"
     say "   !!  Wake-word deps unavailable; toolbar/TTS install will continue"
+  fi
+  if [ "$os_name" = "Darwin" ] && [ -f "$repo_root/requirements-mac.txt" ]; then
+    "$app_root/.venv/bin/python" -m pip install -r "$repo_root/requirements-mac.txt"
+    say "   OK  macOS deps installed (Quartz / AppKit / psutil for key_helper.py)"
   fi
   export TT_PYTHON_EXE="$app_root/.venv/bin/python"
   printf 'TT_PYTHON_EXE=%s\n' "$(shell_quote "$TT_PYTHON_EXE")" >> "$env_path"

@@ -28,12 +28,17 @@ fi
 if [ -n "${TT_PYTHON_EXE:-}" ]; then
   :
 elif [ -x "$script_dir/.venv/bin/python" ]; then
-  export TT_PYTHON_EXE="$script_dir/.venv/bin/python"
+  TT_PYTHON_EXE="$script_dir/.venv/bin/python"
 elif [ -x "$tt_home/.venv/bin/python" ]; then
-  export TT_PYTHON_EXE="$tt_home/.venv/bin/python"
+  TT_PYTHON_EXE="$tt_home/.venv/bin/python"
 else
-  export TT_PYTHON_EXE="python3"
+  TT_PYTHON_EXE="python3"
 fi
+# Always export — sourcing terminal-talk.env sets the var locally but
+# without `export`, so a child `npm start` would otherwise inherit the
+# system python3 and crash wake-word-listener.py with "No module named
+# 'numpy'" because the venv interpreter is invisible to the child.
+export TT_PYTHON_EXE
 
 export TT_HOME="$tt_home"
 export TT_APP_DIR="$app_dir"
