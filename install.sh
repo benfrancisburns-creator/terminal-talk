@@ -122,6 +122,16 @@ say "   OK  app    $app_root"
 say "   OK  config $config_dir"
 
 step "Copying files"
+# Preserve node_modules across the rm-then-tar refresh when the caller
+# passed --skip-npm-install — otherwise re-running install.sh to update
+# (e.g.) hook registrations would nuke the deployed Electron deps and
+# leave the toolbar unable to start until the user manually
+# `npm install`s the deployed app dir.
+preserved_node_modules=''
+if [ "$install_npm_deps" -eq 0 ] && [ -d "$app_dir/node_modules" ]; then
+  preserved_node_modules="$(dirname "$app_dir")/.tt-node_modules.$$"
+  mv "$app_dir/node_modules" "$preserved_node_modules"
+fi
 rm -rf "$app_dir" "$hooks_dir"
 mkdir -p "$app_dir"
 (
@@ -131,6 +141,9 @@ mkdir -p "$app_dir"
   cd "$app_dir"
   tar -xf -
 )
+if [ -n "$preserved_node_modules" ] && [ -d "$preserved_node_modules" ]; then
+  mv "$preserved_node_modules" "$app_dir/node_modules"
+fi
 cp -R "$repo_root/hooks" "$hooks_dir"
 cp "$repo_root/scripts/start-toolbar.sh" "$app_root/start-toolbar.sh"
 chmod +x "$app_root/start-toolbar.sh" "$hooks_dir"/*.sh
