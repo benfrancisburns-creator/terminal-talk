@@ -18098,6 +18098,71 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
     }
   });
 
+  it('tt-doctor.sh is present and exposes section headers + summary contract', () => {
+    // Phase 5: triage script. Bash-only (uses set -u, colour codes, case),
+    // so it lives outside the POSIX-sh check above. Source-level invariants:
+    // every section the README + TROUBLESHOOTING docs reference must exist;
+    // the summary line must report PASS/WARN/FAIL counts so support can
+    // diff outputs across users.
+    const tt = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'tt-doctor.sh'), 'utf8');
+    if (!/^#!\/usr\/bin\/env bash/.test(tt)) {
+      throw new Error('tt-doctor.sh must use #!/usr/bin/env bash (uses set -u + bash idioms)');
+    }
+    for (const section of [
+      'Environment',
+      'Terminal Talk venv',
+      'Hooks',
+      'Audio synthesis',
+      'macOS permissions',
+      'Toolbar process',
+      'Recent errors',
+      'Summary',
+    ]) {
+      if (!new RegExp(`hdr\\s+["'](?:\\d\\..*)?${section}`).test(tt)) {
+        throw new Error(`tt-doctor.sh missing section header: ${section}`);
+      }
+    }
+    if (!/passed.*warnings.*failures/.test(tt)) {
+      throw new Error('tt-doctor.sh must print a PASS/WARN/FAIL summary line so support can grep counts');
+    }
+    if (!/--no-net|--no-network/.test(tt)) {
+      throw new Error('tt-doctor.sh must support --no-net to skip the edge-tts probe (CI / offline use)');
+    }
+  });
+
+  it('tt-doctor.sh runs end-to-end and exits cleanly with --no-net (smoke)', () => {
+    // Doesn't assert specific check outcomes (those depend on the
+    // runner's environment); just asserts the script doesn't crash
+    // mid-run and produces the summary line. Covers shell-syntax
+    // regressions like unbound-variable typos under set -u.
+    const r = spawnSync('bash', [path.join(__dirname, '..', 'scripts', 'tt-doctor.sh'), '--no-net'],
+      { encoding: 'utf8', timeout: 30000, env: { ...process.env, TERM: 'dumb' } });
+    if (r.status === null) {
+      throw new Error(`tt-doctor.sh did not return a status: ${r.error}`);
+    }
+    // 0 (all pass) or 1 (some fails) both indicate the script ran to
+    // completion. Crash codes (>1, signals) mean a shell error.
+    if (r.status !== 0 && r.status !== 1) {
+      throw new Error(`tt-doctor.sh crashed (exit=${r.status}): ${r.stderr || r.stdout}`);
+    }
+    if (!/Summary/.test(r.stdout)) {
+      throw new Error(`tt-doctor.sh did not reach Summary; output: ${r.stdout.slice(-500)}`);
+    }
+    if (!/passed.*warning.*failures/.test(r.stdout)) {
+      throw new Error(`tt-doctor.sh did not produce summary tally; output: ${r.stdout.slice(-500)}`);
+    }
+  });
+
+  it('install.sh deploys tt-doctor.sh into the install root', () => {
+    const install = fs.readFileSync(path.join(__dirname, '..', 'install.sh'), 'utf8');
+    if (!/cp\s+["'][^"']*scripts\/tt-doctor\.sh["']\s+["'][^"']*tt-doctor\.sh["']/.test(install)) {
+      throw new Error('install.sh must copy scripts/tt-doctor.sh into $app_root/tt-doctor.sh');
+    }
+    if (!/chmod\s+\+x[^\n]*tt-doctor\.sh/.test(install)) {
+      throw new Error('install.sh must chmod +x the deployed tt-doctor.sh');
+    }
+  });
+
   it('POSIX Claude and Codex wrappers delegate to the shared Python helper', () => {
     const wrappers = [
       'mark-working.sh', 'speak-on-tool.sh', 'speak-response.sh', 'speak-notification.sh',

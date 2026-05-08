@@ -6,6 +6,18 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **`tt-doctor` triage script** — `bash ~/.terminal-talk/tt-doctor.sh`
+  prints a one-shot pass/fail report across 7 sections: environment
+  (node / python / git / brew), venv + Python deps (edge_tts /
+  sounddevice / openwakeword + macOS frameworks CoreAudio / Speech /
+  Quartz), hooks (Claude + Codex registered + executable), audio
+  synthesis (`say(1)` + `edge-tts` round-trip), macOS TCC permissions
+  (Accessibility / Microphone / Speech Recognition introspected from
+  TCC.db when readable), toolbar + listener processes, and recent
+  errors from `_hook.log` / `_voice.log` / `_toolbar.log`. Exit 0 on
+  pass, exit 1 on failures (warnings don't fail the report). Use
+  `--no-net` to skip the edge-tts probe (CI / offline). Deployed to
+  `~/.terminal-talk/tt-doctor.sh` by `install.sh`.
 - **Custom wake words via config.json** — `wake_words` array in
   `~/.terminal-talk/config.json` lets users pick from openWakeWord 0.6's
   canned models (`alexa`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy`,

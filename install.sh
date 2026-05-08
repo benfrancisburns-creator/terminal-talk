@@ -146,7 +146,8 @@ if [ -n "$preserved_node_modules" ] && [ -d "$preserved_node_modules" ]; then
 fi
 cp -R "$repo_root/hooks" "$hooks_dir"
 cp "$repo_root/scripts/start-toolbar.sh" "$app_root/start-toolbar.sh"
-chmod +x "$app_root/start-toolbar.sh" "$hooks_dir"/*.sh
+cp "$repo_root/scripts/tt-doctor.sh" "$app_root/tt-doctor.sh"
+chmod +x "$app_root/start-toolbar.sh" "$app_root/tt-doctor.sh" "$hooks_dir"/*.sh
 if [ ! -f "$config_path" ]; then
   cp "$repo_root/config.example.json" "$config_path"
   say "   OK  config.json created"
