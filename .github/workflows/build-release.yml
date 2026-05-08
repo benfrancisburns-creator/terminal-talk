@@ -1,0 +1,158 @@
+# Phase 10 (#34): tag-driven release pipeline.
+#
+# Trigger: pushing a tag matching `v*` (e.g. `v0.7.0`, `v0.7.0-rc1`).
+# Builds the Mac DMGs (arm64 + x64), Windows Setup.exe + portable.exe,
+# then attaches everything to a GitHub Release with auto-generated
+# release notes from the commits since the previous tag.
+#
+# The existing `release.yml` workflow archives the docs/ snapshot on
+# the same tag push; the two run in parallel and don't depend on each
+# other. This workflow is named `build-release` to disambiguate.
+#
+# Action SHA-pinning matches every other workflow in this repo
+# (D2-8 + N5 audit). Don't move to floating tags without auditing.
+
+name: build-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allow manual runs against an arbitrary ref so we can dry-run the
+  # whole pipeline without cutting an actual release. Doesn't create
+  # a GitHub Release in workflow_dispatch mode (the create-release
+  # job's `if:` filters it out).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build artefacts for (workflow_dispatch only — does NOT create a Release)'
+        required: false
+        default: 'v0.0.0-dryrun'
+
+permissions:
+  # Needs write access to attach DMG / Setup.exe / zip to the Release.
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS DMG + zip (arm64 + x64)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install repo-root JS deps
+        run: npm install --no-audit --no-fund
+
+      - name: Install app/ JS deps
+        working-directory: app
+        run: npm install --no-audit --no-fund
+
+      - name: Build DMG + zip (universal — both architectures)
+        working-directory: app
+        env:
+          # No code signing in the OSS build — matches local `npm run build:mac`
+          # behaviour. Users see the unsigned-app Gatekeeper prompt on first
+          # launch (documented in README's macOS section).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run build:mac
+
+      - name: Upload macOS artefacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: macos-dmg-zip
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows:
+    name: Build Windows Setup.exe + portable.exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install repo-root JS deps
+        run: npm install --no-audit --no-fund
+
+      - name: Install app/ JS deps
+        working-directory: app
+        run: npm install --no-audit --no-fund
+
+      - name: Build NSIS installer
+        working-directory: app
+        run: npm run build:winnsis
+
+      - name: Build portable installer
+        working-directory: app
+        run: npm run build:winportable
+
+      - name: Upload Windows artefacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: windows-installers
+          path: |
+            dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release + attach artefacts
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    # Skip release creation on workflow_dispatch dry-runs — the build
+    # jobs still ran (fast feedback that the build pipeline is OK)
+    # but we don't want to fabricate Releases against synthetic tags.
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS artefacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: macos-dmg-zip
+          path: artefacts/macos
+
+      - name: Download Windows artefacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: windows-installers
+          path: artefacts/windows
+
+      - name: Stage artefacts for release attachment
+        run: |
+          mkdir -p artefacts/release
+          find artefacts/macos artefacts/windows -type f \
+            \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) \
+            -exec cp {} artefacts/release/ \;
+          echo "Staged artefacts:"
+          ls -lh artefacts/release/
+
+      - name: Create Release with auto-generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          # `--generate-notes` populates the body from commits since the
+          # previous tag. Pre-release marker auto-applies to anything
+          # tagged `vX.Y.Z-*` (rc, beta, alpha) so dot-releases don't
+          # accidentally surface a draft as the latest stable.
+          PRERELEASE_FLAG=""
+          if echo "$TAG_NAME" | grep -qE -- '-(rc|beta|alpha|dev)'; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            artefacts/release/*

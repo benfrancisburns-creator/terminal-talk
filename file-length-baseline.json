@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18528,
-    "app/renderer.js": 2733,
+    "scripts/run-tests.cjs": 18529,
+    "app/renderer.js": 2721,
     "app/main.js": 2622,
     "app/synth_turn.py": 1971,
     "app/tool_narration.py": 1851,
@@ -104,7 +104,7 @@
     "app/voice-command-recognize.ps1": 104,
     "app/lib/api-key-store.js": 101,
     "app/scrape-footer.ps1": 101,
-    "docs/ui-kit/kit-bootstrap.js": 98,
+    "docs/ui-kit/kit-bootstrap.js": 99,
     "hooks/codex-plugin-announce.ps1": 97,
     "app/lib/voice-command-watcher.js": 96,
     "tests/e2e/fixtures.ts": 96,
@@ -140,6 +140,7 @@
     "app/lib/ipc-validate.js": 47,
     "app/lib/concurrency.js": 46,
     "scripts/verify-voices.cjs": 43,
+    "app/lib/update-badge.js": 41,
     "app/lib/rate-limit.js": 40,
     "scripts/wrap-ascii-face.cjs": 36,
     "app/lib/renderer-error-dedupe.js": 35,

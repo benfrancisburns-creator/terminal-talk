@@ -6,6 +6,14 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Tag-driven release pipeline** — `.github/workflows/build-release.yml`
+  fires on `v*` tag pushes (or manual dry-run), builds Mac DMGs +
+  zips (arm64 + x64) on `macos-latest` and Windows Setup.exe +
+  Portable on `windows-latest` in parallel, then attaches every
+  artefact to a GitHub Release with auto-generated notes from the
+  commits since the previous tag. Pre-release marker auto-applies to
+  `v*-rc*` / `-beta*` / `-alpha*` / `-dev*` tags. `docs/RELEASING.md`
+  documents the playbook.
 - **In-app update notifier** — `app/lib/update-checker.js` periodically
   runs `git fetch origin main` (default interval 60 min, configurable
   via `cfg.update_check_interval_min`) and counts commits ahead. When

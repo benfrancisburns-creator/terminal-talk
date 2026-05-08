@@ -9698,16 +9698,17 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
     }
   });
 
-  it('renderer adds .has-update class to settings button when count > 0', () => {
+  it('renderer wires the update badge via lib/update-badge.js', () => {
     const renderer = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
-    if (!/onUpdateAvailable\(/.test(renderer)) {
-      throw new Error('renderer must subscribe to onUpdateAvailable');
+    const badge = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'update-badge.js'), 'utf8');
+    if (!/TT_UPDATE_BADGE\.wireUpdateBadge/.test(renderer)) {
+      throw new Error('renderer must call TT_UPDATE_BADGE.wireUpdateBadge to apply the badge state');
     }
-    if (!/settingsBtn\.classList\.add\(['"]has-update['"]\)/.test(renderer)) {
-      throw new Error('renderer must add .has-update class when count > 0 (drives the green badge CSS)');
+    if (!/classList\.add\(['"]has-update['"]\)/.test(badge)) {
+      throw new Error('lib/update-badge.js must add .has-update class when count > 0');
     }
-    if (!/settingsBtn\.classList\.remove\(['"]has-update['"]\)/.test(renderer)) {
-      throw new Error('renderer must remove .has-update class when count === 0 (clear after pull)');
+    if (!/classList\.remove\(['"]has-update['"]\)/.test(badge)) {
+      throw new Error('lib/update-badge.js must remove .has-update class when count === 0');
     }
   });
 

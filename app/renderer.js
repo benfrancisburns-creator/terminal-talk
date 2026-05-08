@@ -1508,22 +1508,10 @@ const { edge: EDGE_VOICES, openai: OPENAI_VOICES } = window.TT_VOICES;
 
 const settingsBtn = document.getElementById('settingsBtn');
 
-// Phase 8 (#32): subscribe to the periodic git-fetch update notifier.
-// Adds a green badge to the gear icon when commits are available on
-// origin/main; clears it when count === 0 (user pulled out-of-band).
-if (window.api.onUpdateAvailable) {
-  window.api.onUpdateAvailable((info) => {
-    try {
-      const count = (info && Number(info.count)) || 0;
-      if (count > 0) {
-        settingsBtn.classList.add('has-update');
-        settingsBtn.title = `Settings — ${count} commit${count === 1 ? '' : 's'} available${info.subject ? `: ${info.subject}` : ''}`;
-      } else {
-        settingsBtn.classList.remove('has-update');
-        settingsBtn.title = 'Settings';
-      }
-    } catch {}
-  });
+// Phase 8 (#32): wire the gear-icon update badge via lib/update-badge.js
+// (kept out-of-line to keep renderer.js under the 2725-line ceiling).
+if (window.TT_UPDATE_BADGE) {
+  window.TT_UPDATE_BADGE.wireUpdateBadge({ api: window.api, buttonEl: settingsBtn });
 }
 const settingsPanelEl = document.getElementById('panel');
 const settingsPanelInnerEl = document.querySelector('.panel-inner');
