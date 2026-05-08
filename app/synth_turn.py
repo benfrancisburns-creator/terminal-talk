@@ -1942,18 +1942,37 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                                 )
                                 if m:
                                     scraped_secs = int(m.group(2) or 0) * 60 + int(m.group(3))
-                                    drift = abs(scraped_secs - chosen_elapsed)
-                                    if drift <= 2:
+                                    # Ratio-based staleness check rather than
+                                    # absolute drift. Claude's footer clock can
+                                    # legitimately diverge from our JSONL-derived
+                                    # elapsed by tens of seconds on long turns
+                                    # (e.g. 14m 6s scraped vs 14m 41s JSONL —
+                                    # ~4% off, both clocks correct, just
+                                    # measuring slightly different windows).
+                                    # Stale-scrape detection should only trigger
+                                    # when the scraped line is from a clearly
+                                    # different turn — i.e. orders of magnitude
+                                    # different. 0.4x-2.5x catches everything
+                                    # legitimate while still rejecting e.g. a
+                                    # 5-second prior-turn footer scraped in the
+                                    # middle of a 5-minute current turn.
+                                    if scraped_secs <= 0 or chosen_elapsed <= 0:
+                                        ratio = 0.0
+                                    else:
+                                        ratio = scraped_secs / chosen_elapsed
+                                    if 0.4 <= ratio <= 2.5:
                                         footer_clip_text = humanise_footer_phrase(scraped)
                                         _log(
                                             f'on-stop: scraped Terminal.app footer '
-                                            f'"{scraped}" (drift={drift}s vs JSONL elapsed)'
+                                            f'"{scraped}" (scraped={scraped_secs}s '
+                                            f'JSONL={chosen_elapsed}s ratio={ratio:.2f})'
                                         )
                                     else:
                                         _log(
                                             f'on-stop: scraped footer "{scraped}" '
-                                            f'rejected (drift={drift}s > 2s vs JSONL '
-                                            f'elapsed={chosen_elapsed}s) — falling back'
+                                            f'rejected (scraped={scraped_secs}s '
+                                            f'JSONL={chosen_elapsed}s ratio={ratio:.2f} '
+                                            f'outside 0.4-2.5 range) — falling back'
                                         )
                     except Exception as exc:
                         _log(f'on-stop: footer scrape failed: {type(exc).__name__}: {exc}')
