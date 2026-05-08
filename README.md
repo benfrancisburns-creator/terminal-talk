@@ -84,6 +84,12 @@ curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bas
 
 The bootstrap auto-installs Homebrew if missing, `brew install`s `node + python@3.12 + portaudio`, clones the repo to `~/code/terminal-talk` (override with `TT_CLONE_DIR=…`), and runs `install.sh --unattended` end-to-end.
 
+**Update later** (pulls the latest commits from `main`, refreshes app code, restarts the toolbar — skips the brew/python/npm dep dance because nothing in those layers needs to change for a code refresh):
+
+```bash
+curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bash -s update
+```
+
 **Manual install** (clone first, run install.sh — useful if you want to inspect the script before running, or pass non-default flags):
 
 ```bash
