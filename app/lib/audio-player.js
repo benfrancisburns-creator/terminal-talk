@@ -209,6 +209,7 @@
     // ---- Public API ---------------------------------------------------
 
     getCurrentPath() { return this._currentPath; }
+    isCurrentManual() { return this._currentIsManual; }
 
     isIdle() {
       const a = this._audio;

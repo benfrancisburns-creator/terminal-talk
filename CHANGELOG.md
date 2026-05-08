@@ -4,6 +4,18 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dot-size differential between auto-played and manual clips restored**
+  — the inner white dot inside the active session-coloured dot now
+  renders 4 px for autoplay-from-queue clips and 7 px for manual
+  ("hey jarvis", Ctrl+Shift+S, click-on-dot) clips. Lets the user tell
+  at a glance whether the toolbar is following the queue or reading
+  something they explicitly asked for. Wired via
+  `audio-player.isCurrentManual()` → `dot-strip` adds `active-manual`
+  vs `active-auto` class → `styles.css` ::after pseudo with size
+  differential.
+
 ### Added
 
 - **`tt-doctor` triage script** — `bash ~/.terminal-talk/tt-doctor.sh`

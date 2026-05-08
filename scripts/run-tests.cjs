@@ -11997,6 +11997,70 @@ describe('EX7c — DotStrip', () => {
     assertEqual(root._children.length, 0);
   });
 
+  it('#42 active dot adopts active-manual when currentIsManual=true', () => {
+    // Manual = "hey jarvis" / Ctrl+Shift+S / user click on dot. The
+    // styles.css rule .dot.active.active-manual::after { width: 7px }
+    // produces the bigger inner white dot Ben described as the visual
+    // signal that "this clip is one I asked for, not autoplay".
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({ clipPaths, staleSessionPoller: makePoller() });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: clip.path,
+      currentIsManual: true,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children.find((c) => c._tag === 'button');
+    if (!dot) throw new Error('expected a dot button');
+    if (!dot.classList.contains('active')) throw new Error('active class missing on currently-playing dot');
+    if (!dot.classList.contains('active-manual')) {
+      throw new Error('active-manual class missing — bigger inner white dot will not render for manually-played clips');
+    }
+    if (dot.classList.contains('active-auto')) {
+      throw new Error('active-auto must NOT be set when currentIsManual=true');
+    }
+    ds.unmount();
+  });
+
+  it('#42 active dot adopts active-auto when currentIsManual=false (autoplay default)', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({ clipPaths, staleSessionPoller: makePoller() });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: clip.path,
+      currentIsManual: false,
+      heardPaths: new Set(),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children.find((c) => c._tag === 'button');
+    if (!dot.classList.contains('active-auto')) {
+      throw new Error('active-auto class missing — small inner white dot will not render for autoplay clips');
+    }
+    if (dot.classList.contains('active-manual')) {
+      throw new Error('active-manual must NOT be set when currentIsManual=false');
+    }
+    ds.unmount();
+  });
+
+  it('#42 styles.css ships the dot-size differential CSS', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+    if (!/\.dot\.active::after\s*\{[^}]*width:\s*4px/s.test(css)) {
+      throw new Error('styles.css missing default .dot.active::after { width: 4px } (auto inner dot)');
+    }
+    if (!/\.dot\.active\.active-manual::after\s*\{[^}]*width:\s*7px/s.test(css)) {
+      throw new Error('styles.css missing .dot.active.active-manual::after { width: 7px } (manual bigger inner dot)');
+    }
+  });
+
   // Clean up globals AFTER the describe block runs. Not perfect — any
   // test group added later that runs in the same process inherits
   // these — but safe in practice because run-tests.cjs is a single

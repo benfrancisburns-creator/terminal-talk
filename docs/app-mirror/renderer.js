@@ -1064,6 +1064,7 @@ function renderDots() {
   dotStrip.update({
     queue: visibleQueue,
     currentPath: audioPlayer.getCurrentPath(),
+    currentIsManual: typeof audioPlayer.isCurrentManual === 'function' ? audioPlayer.isCurrentManual() : false,
     heardPaths,
     sessionAssignments,
     synthInProgress,

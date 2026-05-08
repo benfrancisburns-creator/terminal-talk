@@ -641,6 +641,43 @@ body.demo-settings-mode * {
   50%      { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55), 0 0 8px rgba(255, 255, 255, 0.4); }
 }
 
+/* Inner white dot — visual signal of "this is currently playing" inside the
+   coloured session dot. Size differs by trigger source so the user can tell
+   at a glance whether the toolbar is following the queue (small dot) or
+   reading something they explicitly asked for (big dot):
+     active-auto    → 4px small dot   (autoplay-from-queue)
+     active-manual  → 7px bigger dot  (hey jarvis / Ctrl+Shift+S / click on dot)
+   Hidden on .clip dots (those carry the J letter and would clash) and on
+   .heard dots (heard styling already turns the whole dot white). */
+.dot.active::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.55);
+  animation: activeInnerPulse 1.6s ease-in-out infinite;
+}
+.dot.active.active-manual::after {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.7);
+}
+.dot.active.clip::after,
+.dot.active.heard::after { display: none; }
+@keyframes activeInnerPulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.active::after { animation: none; }
+}
+
 /* Heard: played by either autoplay or user click -> fades to white, then auto-deletes */
 .dot.heard {
   background: rgba(255, 255, 255, 0.9) !important;

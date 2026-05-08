@@ -94,7 +94,7 @@
 
     _renderNow() {
       if (!this.root) return;
-      const { queue, currentPath, heardPaths, sessionAssignments, synthInProgress } = this.state;
+      const { queue, currentPath, currentIsManual, heardPaths, sessionAssignments, synthInProgress } = this.state;
       this.root.innerHTML = '';
 
       // Muted sessions' clips are hidden entirely — no dot, no trace.
@@ -120,7 +120,7 @@
         prevShort = thisShort;
 
         this.root.appendChild(this._buildDot(f, fname, thisShort, {
-          currentPath, heardPaths, sessionAssignments,
+          currentPath, currentIsManual, heardPaths, sessionAssignments,
         }));
       }
 
@@ -138,12 +138,20 @@
     }
 
     _buildDot(f, fname, short, viewState) {
-      const { currentPath, heardPaths, sessionAssignments } = viewState;
+      const { currentPath, currentIsManual, heardPaths, sessionAssignments } = viewState;
       const dot = document.createElement('button');
       dot.className = 'dot';
       dot.setAttribute('role', 'listitem');
       dot.type = 'button';
-      if (f.path === currentPath) dot.classList.add('active');
+      if (f.path === currentPath) {
+        dot.classList.add('active');
+        // Phase 4 dot-size differential (#42): bigger inner white pulse
+        // for manual ("hey jarvis" / Ctrl+Shift+S / user click on dot)
+        // vs the smaller default pulse for autoplay-from-queue. Lets the
+        // user tell at a glance whether the toolbar is reading something
+        // they explicitly asked for vs continuing through the queue.
+        dot.classList.add(currentIsManual ? 'active-manual' : 'active-auto');
+      }
       if (this._clipPaths.isClipFile(fname)) {
         dot.classList.add('clip');
         dot.textContent = 'J';
