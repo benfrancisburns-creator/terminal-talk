@@ -76,6 +76,16 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 ### macOS
 
+**One-line install** (no Apple Developer account, no DMG dance — same shape as Homebrew / Rust / nvm):
+
+```bash
+curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bash
+```
+
+The bootstrap auto-installs Homebrew if missing, `brew install`s `node + python@3.12 + portaudio`, clones the repo to `~/code/terminal-talk` (override with `TT_CLONE_DIR=…`), and runs `install.sh --unattended` end-to-end.
+
+**Manual install** (clone first, run install.sh — useful if you want to inspect the script before running, or pass non-default flags):
+
 ```bash
 brew install node python@3.12 portaudio
 git clone https://github.com/benfrancisburns-creator/terminal-talk
@@ -83,7 +93,7 @@ cd terminal-talk
 TT_PYTHON_EXE=$(brew --prefix)/bin/python3.12 bash install.sh
 ```
 
-**Prerequisites:** macOS 11+ (Apple Silicon or Intel), [Homebrew](https://brew.sh), a working microphone. `portaudio` is required so `sounddevice` can compile against PortAudio for the wake-word listener.
+**Prerequisites:** macOS 11+ (Apple Silicon or Intel), [Homebrew](https://brew.sh) (the one-liner installs it for you if missing), a working microphone. `portaudio` is required so `sounddevice` can compile against PortAudio for the wake-word listener.
 
 The installer creates a venv at `~/.terminal-talk/.venv`, pip-installs the same Python deps as Windows plus a small macOS-only set (`pyobjc-framework-Quartz`, `pyobjc-framework-Cocoa`, `psutil`) for synthetic Cmd+C and process-tree introspection, downloads the `hey_jarvis` wake-word model, runs `npm install`, and writes the toolbar to `~/.terminal-talk/`. Launch with `~/.terminal-talk/start-toolbar.sh` (or pass `--autostart` to install a LaunchAgent at `~/Library/LaunchAgents/com.terminal-talk.toolbar.plist`).
 
