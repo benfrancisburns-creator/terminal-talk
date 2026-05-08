@@ -4,6 +4,15 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Documentation
+
+- **`docs/TROUBLESHOOTING-MACOS.md`** — common Mac issues and their
+  fixes: no audio, wake-word not firing, highlight-to-speak doing
+  nothing, voice commands not recognised, footer audio randomised,
+  auto-pause-during-dictation, custom wake words, permission resets,
+  and a log-inspection cheat-sheet. README's macOS section links to
+  it; first-line advice is `bash ~/.terminal-talk/tt-doctor.sh`.
+
 ### Fixed
 
 - **Dot-size differential between auto-played and manual clips restored**

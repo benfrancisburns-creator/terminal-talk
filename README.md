@@ -110,6 +110,8 @@ The installer creates a venv at `~/.terminal-talk/.venv`, pip-installs the same 
 
 The macOS hotkey defaults stay as `Control+Shift+S` / `Control+Shift+A` etc. — they avoid Cmd+Shift+S, which collides with system Save As and the screenshot-save dialog. The settings panel renders the bindings using HIG glyphs (⌃⇧S etc.). Right-click on a clip dot deletes it; if your trackpad's secondary click isn't enabled, **Ctrl+click** works as a permanent fallback.
 
+**Having issues?** Run `bash ~/.terminal-talk/tt-doctor.sh` for a one-shot pass/fail report across audio, permissions, hooks, and toolbar process. Common Mac problems and fixes live in [`docs/TROUBLESHOOTING-MACOS.md`](docs/TROUBLESHOOTING-MACOS.md).
+
 ### Windows: first launch SmartScreen warning
 
 Terminal Talk is not yet code-signed (an EV / Azure Trusted Signing certificate is on the roadmap once funding is in place — see [SECURITY.md](SECURITY.md#known-limitations)). On first launch Windows SmartScreen will show a blue prompt: *"Windows protected your PC."*
