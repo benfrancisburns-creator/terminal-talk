@@ -59,6 +59,17 @@
       "default": true,
       "description": "HB1 — global default. When Claude Code or Codex is actively working but the queue has been silent for 5 s, synthesise a spinner-verb ('Moonwalking', 'Pontificating') or thinking phrase as an ephemeral H-prefixed clip so you get audible confirmation the session is alive. Per-session heartbeat_enabled overrides can force on/off for one session."
     },
+    "update_check_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Phase 8 (#32): when the install lives in a git checkout, periodically run `git fetch origin main` and surface a green badge on the gear icon if commits are ahead. Set false to disable network probes entirely. DMG / Homebrew installs no-op regardless because `git rev-parse` fails outside a repo."
+    },
+    "update_check_interval_min": {
+      "type": "integer",
+      "default": 60,
+      "minimum": 5,
+      "description": "Minutes between update-checker probes. First probe fires 15 s after toolbar boot to stay out of the way of other startup spawns; thereafter the interval drives. Re-reads the config on each tick so a change reflects without a toolbar restart."
+    },
     "wake_words": {
       "type": "array",
       "default": ["hey_jarvis"],

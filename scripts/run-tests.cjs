@@ -9508,6 +9508,217 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
   });
 });
 
+describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
+  const { createUpdateChecker } = require(path.join(__dirname, '..', 'app', 'lib', 'update-checker.js'));
+  const { EventEmitter } = require('node:events');
+
+  // Fake child-process emitter that mimics the parts the factory uses:
+  // .stdout / .stderr emitters + .on('exit') + .on('error') + .kill().
+  // Each fake spawn returns the next pre-programmed result in order.
+  function makeFakeSpawn(scripts) {
+    let i = 0;
+    return (..._args) => {
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = () => {};
+      const script = scripts[i++] || { code: 0, stdout: '', stderr: '' };
+      // Async so listeners attach first.
+      setImmediate(() => {
+        if (script.stdout) proc.stdout.emit('data', Buffer.from(script.stdout));
+        if (script.stderr) proc.stderr.emit('data', Buffer.from(script.stderr));
+        proc.emit('exit', script.code);
+      });
+      return proc;
+    };
+  }
+
+  function makeFakeWin() {
+    const sent = [];
+    return {
+      sent,
+      isDestroyed: () => false,
+      webContents: {
+        send: (channel, payload) => { sent.push({ channel, payload }); },
+      },
+    };
+  }
+
+  it('disabled mode is a no-op start/stop', async () => {
+    const c = createUpdateChecker({ enabled: false });
+    c.start(); c.stop();
+    const r = await c.checkNow();
+    assertEqual(r, null);
+  });
+
+  it('quietly no-ops outside a git checkout (rev-parse exits non-zero)', async () => {
+    const win = makeFakeWin();
+    const c = createUpdateChecker({
+      enabled: true,
+      repoRoot: '/tmp/not-a-git-repo',
+      spawn: makeFakeSpawn([
+        { code: 128, stderr: 'fatal: not a git repository' },
+      ]),
+      getWin: () => win,
+    });
+    const r = await c.checkNow();
+    assertEqual(r, null);
+    assertEqual(win.sent.length, 0, 'no IPC fired outside a git repo');
+  });
+
+  it('fires update-available IPC when origin is ahead', async () => {
+    const win = makeFakeWin();
+    const c = createUpdateChecker({
+      enabled: true,
+      repoRoot: '/tmp/fake-repo',
+      branch: 'main',
+      spawn: makeFakeSpawn([
+        { code: 0, stdout: '.git' },             // rev-parse --git-dir
+        { code: 0, stdout: '' },                  // git fetch origin main
+        { code: 0, stdout: '3' },                 // rev-list --count
+        { code: 0, stdout: 'feat: new feature' }, // log -1 --format=%s
+      ]),
+      getWin: () => win,
+    });
+    const r = await c.checkNow();
+    if (!r || r.count !== 3) throw new Error(`expected count=3, got ${JSON.stringify(r)}`);
+    if (r.subject !== 'feat: new feature') throw new Error(`expected subject; got ${r.subject}`);
+    const fired = win.sent.find((m) => m.channel === 'update-available');
+    if (!fired) throw new Error('update-available IPC was not sent');
+    assertEqual(fired.payload.count, 3);
+    assertEqual(fired.payload.subject, 'feat: new feature');
+  });
+
+  it('fires count=0 clear when transitioning was-ahead → up-to-date', async () => {
+    const win = makeFakeWin();
+    let scriptIdx = 0;
+    const allScripts = [
+      // First check: 2 ahead.
+      { code: 0, stdout: '.git' },
+      { code: 0, stdout: '' },
+      { code: 0, stdout: '2' },
+      { code: 0, stdout: 'feat: a' },
+      // Second check: 0 ahead — should fire clear.
+      { code: 0, stdout: '.git' },
+      { code: 0, stdout: '' },
+      { code: 0, stdout: '0' },
+    ];
+    const c = createUpdateChecker({
+      enabled: true,
+      repoRoot: '/tmp/fake-repo',
+      spawn: () => {
+        const proc = new (require('node:events').EventEmitter)();
+        proc.stdout = new (require('node:events').EventEmitter)();
+        proc.stderr = new (require('node:events').EventEmitter)();
+        proc.kill = () => {};
+        const s = allScripts[scriptIdx++];
+        setImmediate(() => {
+          if (s.stdout) proc.stdout.emit('data', Buffer.from(s.stdout));
+          proc.emit('exit', s.code);
+        });
+        return proc;
+      },
+      getWin: () => win,
+    });
+    await c.checkNow();
+    await c.checkNow();
+    const fires = win.sent.filter((m) => m.channel === 'update-available');
+    if (fires.length !== 2) throw new Error(`expected 2 IPC fires (was-ahead + cleared); got ${fires.length}`);
+    assertEqual(fires[0].payload.count, 2);
+    assertEqual(fires[1].payload.count, 0);
+  });
+
+  it('honours cfg.update_check_enabled = false', () => {
+    let started = 0;
+    const win = makeFakeWin();
+    const c = createUpdateChecker({
+      enabled: true,
+      repoRoot: '/tmp/fake-repo',
+      spawn: () => { started++; return new EventEmitter(); },
+      getWin: () => win,
+      getCFG: () => ({ update_check_enabled: false }),
+    });
+    c.start();
+    // start() returns synchronously without scheduling — the disabled
+    // path logs and exits early. Stopping is a no-op.
+    c.stop();
+    if (started !== 0) throw new Error('disabled config must not spawn git');
+  });
+
+  it('does not double-spawn when checkNow is called concurrently (in-flight guard)', async () => {
+    let spawnCount = 0;
+    const win = makeFakeWin();
+    const c = createUpdateChecker({
+      enabled: true,
+      repoRoot: '/tmp/fake-repo',
+      spawn: () => {
+        spawnCount++;
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = () => {};
+        // Slow exit (50 ms) so the second checkNow lands while the first
+        // is still in-flight.
+        setTimeout(() => proc.emit('exit', 0), 50);
+        return proc;
+      },
+      getWin: () => win,
+    });
+    const [first, second] = await Promise.all([c.checkNow(), c.checkNow()]);
+    if (first === null && second === null) {
+      throw new Error('one of the concurrent calls must complete; both returned null');
+    }
+    // Second call returned null because in-flight guard held it; only one
+    // chain of spawns ran. Chain length is 4 calls (rev-parse, fetch,
+    // rev-list, log) but because we mocked all to exit immediately on
+    // exit handler we only observe the first being slow. The guard
+    // prevents 8 spawns (2 chains).
+    if (spawnCount > 4) {
+      throw new Error(`expected single chain (≤ 4 spawns), got ${spawnCount} — concurrent guard is broken`);
+    }
+  });
+
+  it('main.js wires update-checker start + stop alongside other watchers', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/createUpdateChecker\b/.test(main)) {
+      throw new Error('main.js must import createUpdateChecker from lib/update-checker');
+    }
+    if (!/startUpdateChecker\(\)/.test(main)) {
+      throw new Error('main.js must call startUpdateChecker() on app ready');
+    }
+    if (!/stopUpdateChecker\(\)/.test(main)) {
+      throw new Error('main.js must call stopUpdateChecker() on will-quit');
+    }
+  });
+
+  it('preload exposes onUpdateAvailable subscription', () => {
+    const preload = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+    if (!/onUpdateAvailable:\s*\(cb\)\s*=>\s*subscribe\('update-available'/.test(preload)) {
+      throw new Error('preload must expose onUpdateAvailable subscription on the update-available channel');
+    }
+  });
+
+  it('renderer adds .has-update class to settings button when count > 0', () => {
+    const renderer = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (!/onUpdateAvailable\(/.test(renderer)) {
+      throw new Error('renderer must subscribe to onUpdateAvailable');
+    }
+    if (!/settingsBtn\.classList\.add\(['"]has-update['"]\)/.test(renderer)) {
+      throw new Error('renderer must add .has-update class when count > 0 (drives the green badge CSS)');
+    }
+    if (!/settingsBtn\.classList\.remove\(['"]has-update['"]\)/.test(renderer)) {
+      throw new Error('renderer must remove .has-update class when count === 0 (clear after pull)');
+    }
+  });
+
+  it('styles.css ships the .icon-btn.has-update::after green dot', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+    if (!/\.icon-btn\.has-update::after\s*\{[^}]*background:\s*#4ade80/s.test(css)) {
+      throw new Error('styles.css missing .icon-btn.has-update::after green dot rule');
+    }
+  });
+});
+
 // =============================================================================
 // R3.9 — KIT PALETTE ≡ PRODUCT PALETTE. docs/README.md promises this
 // test exists; landing it here honours the claim.

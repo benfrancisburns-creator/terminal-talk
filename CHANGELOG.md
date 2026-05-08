@@ -4,6 +4,18 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **In-app update notifier** — `app/lib/update-checker.js` periodically
+  runs `git fetch origin main` (default interval 60 min, configurable
+  via `cfg.update_check_interval_min`) and counts commits ahead. When
+  > 0, fires `update-available` IPC carrying `{count, subject}`; the
+  renderer adds a small pulsing green dot to the gear icon (`.icon-btn.has-update::after`).
+  When the user pulls out-of-band and the next probe sees count = 0,
+  fires a clear so the badge drops. Quietly no-ops outside a git
+  checkout (DMG / Homebrew installs). Disable knob:
+  `cfg.update_check_enabled = false`.
+
 ### Documentation
 
 - **`docs/TROUBLESHOOTING-MACOS.md`** — common Mac issues and their

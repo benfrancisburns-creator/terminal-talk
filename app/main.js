@@ -929,6 +929,7 @@ const { createRegistryGuard } = require('./lib/registry-guard');
 const { createOpenaiInvalidWatcher } = require('./lib/openai-invalid-watcher');
 const { createVoiceCommandWatcher } = require('./lib/voice-command-watcher');
 const { createMicWatcher } = require('./lib/mic-watcher');
+const { createUpdateChecker } = require('./lib/update-checker');
 const { createTray } = require('./lib/tray');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
@@ -2261,6 +2262,21 @@ const _micWatcher = createMicWatcher({
 const startMicWatcher = _micWatcher.start;
 const stopMicWatcher = _micWatcher.stop;
 
+// Phase 8 (#32): periodic git-fetch update check. Disabled if the
+// install isn't a git checkout (DMG / brew users). __dirname is the
+// app folder; the repo root is its parent (terminal-talk/).
+const _updateChecker = createUpdateChecker({
+  enabled: true,
+  repoRoot: path.dirname(__dirname),
+  branch: 'main',
+  spawn,
+  getWin: () => win,
+  getCFG: () => CFG,
+  diag,
+});
+const startUpdateChecker = _updateChecker.start;
+const stopUpdateChecker = _updateChecker.stop;
+
 function toggleListening() {
   const now = isListeningEnabled();
   if (!now && !isWakeWordAvailable()) {
@@ -2551,6 +2567,7 @@ app.whenReady().then(() => {
   startTray();
   startOpenaiInvalidWatcher();
   startVoiceCommandWatcher();
+  startUpdateChecker();
 });
 
 // #9 — hard-kill a tracked python child by PID. Soft `.kill()` (SIGTERM)
@@ -2599,6 +2616,7 @@ app.on('will-quit', () => {
   stopTray();
   stopOpenaiInvalidWatcher();
   stopVoiceCommandWatcher();
+  stopUpdateChecker();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });

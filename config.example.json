@@ -47,6 +47,9 @@
 
   "wake_words": ["hey_jarvis"],
 
+  "update_check_enabled": true,
+  "update_check_interval_min": 60,
+
   "panels": {
     "_comment": "Toolbar panel state; managed by the app.",
     "transcript_expanded": false,

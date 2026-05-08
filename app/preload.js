@@ -269,6 +269,11 @@ const api = {
   // matching public method (play→resume, pause→pause, etc.). One verb
   // per fire; no payload beyond the action string.
   onVoiceCommand:         (cb) => subscribe('voice-command-action', cb, (a) => a),
+  // Phase 8 (#32): periodic git-fetch update notifier. Payload is
+  // { count, subject } — count > 0 means commits available; count === 0
+  // is a clear signal (was-ahead → now-up-to-date) so the renderer can
+  // drop the badge if the user pulled out-of-band.
+  onUpdateAvailable:      (cb) => subscribe('update-available', cb, (p) => p),
   // Pushed once at startup if any global shortcut failed to register
   // (e.g. another app already has the chord). Renderer also has the
   // pull path via getHotkeyRegistration.

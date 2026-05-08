@@ -766,6 +766,33 @@ body.demo-settings-mode * {
   transform: scale(0.93);
 }
 
+/* Phase 8 (#32): green dot in the upper-right corner of the gear icon
+   when origin/main has commits ahead of HEAD. Subtle pulse so the user
+   notices on next glance without it being a permanent eye-catcher. */
+.icon-btn.has-update {
+  position: relative;
+}
+.icon-btn.has-update::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  background: #4ade80;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
+  animation: updatePulse 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes updatePulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn.has-update::after { animation: none; }
+}
+
 .icon-btn.play {
   background: rgba(79, 163, 255, 0.18);
   color: #9ccaff;
