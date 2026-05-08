@@ -12,18 +12,21 @@
 // Self-restarts on exit (cheap 2 s backoff) unless the main window
 // is destroyed.
 //
-// Factory pattern: caller injects `scriptPath`, `powershellExe`,
-// `spawn` (from child_process), `getWin`, `diag`. Test harness can
-// substitute a fake spawn that returns a mock process.
+// Factory pattern: caller injects `executable`, `args`, `spawn`,
+// `getWin`, `diag`. Test harness can substitute a fake spawn that
+// returns a mock process. Generic across platforms — Windows passes
+// powershell.exe + a -File invocation; macOS passes python + a -u
+// invocation.
 
 function createMicWatcher({
   enabled = true,
-  scriptPath,
-  powershellExe,
+  executable,
+  args,
   spawn,
   getWin,
   diag = () => {},
   restartBackoffMs = 2000,
+  label = 'mic-watcher',
 } = {}) {
   if (!enabled) {
     let logged = false;
@@ -31,13 +34,13 @@ function createMicWatcher({
       start() {
         if (logged) return;
         logged = true;
-        diag('mic-watcher disabled on this platform');
+        diag(`${label} disabled on this platform`);
       },
       stop() {},
     };
   }
-  if (!scriptPath) throw new Error('createMicWatcher: scriptPath required');
-  if (!powershellExe) throw new Error('createMicWatcher: powershellExe required');
+  if (!executable) throw new Error('createMicWatcher: executable required');
+  if (!Array.isArray(args)) throw new Error('createMicWatcher: args (array) required');
   if (typeof spawn !== 'function') throw new Error('createMicWatcher: spawn required');
   if (typeof getWin !== 'function') throw new Error('createMicWatcher: getWin required');
 
@@ -46,9 +49,7 @@ function createMicWatcher({
   function start() {
     if (proc) return;
     try {
-      proc = spawn(powershellExe, [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath
-      ], {
+      proc = spawn(executable, args, {
         windowsHide: true,
         detached: false,
         stdio: ['ignore', 'pipe', 'ignore']
@@ -64,20 +65,20 @@ function createMicWatcher({
           if (!line || !win || win.isDestroyed()) continue;
           try {
             if (line.startsWith('MIC_CAPTURED')) {
-              diag(`mic-watcher: ${line}`);
+              diag(`${label}: ${line}`);
               win.webContents.send('mic-captured-elsewhere');
             } else if (line.startsWith('MIC_RELEASED')) {
-              diag(`mic-watcher: ${line}`);
+              diag(`${label}: ${line}`);
               win.webContents.send('mic-released');
             } else {
-              diag(`mic-watcher(?): ${line}`);  // unexpected protocol line
+              diag(`${label}(?): ${line}`);  // unexpected protocol line
             }
           } catch {}
         }
       });
       proc.on('exit', (code) => {
         proc = null;
-        diag(`mic-watcher exited code=${code}`);
+        diag(`${label} exited code=${code}`);
         // Restart unless the app is shutting down.
         setTimeout(() => {
           const win = getWin();
@@ -85,9 +86,9 @@ function createMicWatcher({
           start();
         }, restartBackoffMs);
       });
-      diag('mic-watcher started');
+      diag(`${label} started`);
     } catch (e) {
-      diag(`mic-watcher failed to start: ${e && e.message}`);
+      diag(`${label} failed to start: ${e && e.message}`);
       proc = null;
     }
   }

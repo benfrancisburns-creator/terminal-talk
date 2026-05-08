@@ -72,7 +72,8 @@
       "**/posix_hooks.py",
       "**/statusline.py",
       "**/claude_footer_scrape.py",
-      "**/voice_command_recognize_mac.py"
+      "**/voice_command_recognize_mac.py",
+      "**/mic_watcher_mac.py"
     ],
     "win": {
       "target": [

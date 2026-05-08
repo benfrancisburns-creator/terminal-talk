@@ -56,6 +56,7 @@ function createPlatform(opts = {}) {
     taskkillExe,
     hookShell: isWindows ? 'powershell' : 'posix',
     supportsWindowsMicWatcher: isWindows,
+    supportsMacMicWatcher: isMac,
     supportsCodexIdentitySync: isWindows,
     supportsWindowsTerminalTabColor: isWindows,
     // The footer-audio "Worked for X" watcher scrapes Windows Terminal's

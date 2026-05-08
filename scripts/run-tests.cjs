@@ -9039,8 +9039,8 @@ describe('MIC-WATCHER — auto-pause on external mic grab', () => {
     if (!/startMicWatcher/.test(mainSrc)) {
       throw new Error('main.js must reference startMicWatcher to launch the sidecar');
     }
-    if (!/spawn\(\s*powershellExe\b[\s\S]{0,200}scriptPath/.test(libMicSrc)) {
-      throw new Error('mic-watcher.js must spawn powershellExe on scriptPath (deps named via factory)');
+    if (!/spawn\(\s*executable\b[\s\S]{0,200}args/.test(libMicSrc)) {
+      throw new Error('mic-watcher.js must spawn executable with args (deps named via factory)');
     }
     if (!/stopMicWatcher/.test(mainSrc)) {
       throw new Error('main.js must clean up mic-watcher on will-quit (stopMicWatcher)');

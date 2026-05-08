@@ -2686,8 +2686,8 @@ if (window.api.onMicReleased) {
 if (window.api.onVoiceCommand && window.TT_VOICE_COMMAND_DISPATCH) {
   window.api.onVoiceCommand(window.TT_VOICE_COMMAND_DISPATCH.createVoiceCommandDispatch({
     audioPlayer,
-    onUnknown: (a) => { try { logRendererError('voice-command-unknown', new Error(`unknown voice-command action: ${a}`)); } catch {} },
-    onError:   (_a, e) => { try { logRendererError('voice-command-dispatch', e); } catch {} },
+    onUnknown: (a) => { try { window.api?.logRendererError?.({ at: 'voice-command-unknown', message: `unknown action: ${a}` }); } catch {} },
+    onError: (_a, e) => { try { window.api?.logRendererError?.({ at: 'voice-command-dispatch', message: String((e && e.message) || e) }); } catch {} },
   }));
 }
 // Dock-edge class. Main.js sends { kind: 'horizontal', edge: 'top'|'bottom' }

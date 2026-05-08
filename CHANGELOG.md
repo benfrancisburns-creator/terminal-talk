@@ -6,6 +6,16 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **macOS mic-watcher closes the last Windows-only feature gap** —
+  `app/mic_watcher_mac.py` mirrors `mic-watcher.ps1`'s stdout protocol
+  (`MIC_CAPTURED <app>` / `MIC_RELEASED`) using CoreAudio HAL's process
+  audio objects (macOS 14+: `kAudioHardwarePropertyProcessObjectList`
+  + `kAudioProcessPropertyIsRunningInput`). Auto-pauses TTS when
+  Wispr Flow / Voice Control / Zoom / QuickTime starts capturing the
+  mic; resumes when they let go. Self-excludes our own wake-word
+  listener via script-name match (robust against venv symlink quirks)
+  and skips Apple system daemons (`corespeechd`, `speechrecognitiond`)
+  that always hold the mic for "Hey Siri".
 - **One-line installer for macOS / Linux** —
   `curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bash`.
   Auto-installs Homebrew if missing, `brew install`s `node + python@3.12 + portaudio`,

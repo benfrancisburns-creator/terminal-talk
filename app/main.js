@@ -2199,6 +2199,7 @@ function startVoiceListener() {
 // tool) and auto-resume when they let go. Process state lives inside
 // the lib/mic-watcher.js factory closure post-#29 extract.
 const MIC_WATCHER_SCRIPT = path.join(__dirname, 'mic-watcher.ps1');
+const MIC_WATCHER_MAC_SCRIPT = path.join(__dirname, 'mic_watcher_mac.py');
 
 // OpenAI 401 auto-unset watcher — extracted to app/lib/openai-invalid-watcher.js
 // (#29). cfg passed by reference so the in-place OpenAI route demotion
@@ -2233,10 +2234,26 @@ const startVoiceCommandWatcher = _voiceCommandWatcher.start;
 const stopVoiceCommandWatcher = _voiceCommandWatcher.stop;
 
 // Mic-usage watcher — extracted to app/lib/mic-watcher.js (#29).
+// Generic factory: pick executable + args based on platform.
+let _micWatcherCfg = null;
+if (platform.supportsWindowsMicWatcher) {
+  _micWatcherCfg = {
+    executable: POWERSHELL_EXE,
+    args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', MIC_WATCHER_SCRIPT],
+    label: 'mic-watcher (windows)',
+  };
+} else if (platform.supportsMacMicWatcher) {
+  _micWatcherCfg = {
+    executable: PYTHON_EXE,
+    args: ['-u', MIC_WATCHER_MAC_SCRIPT],
+    label: 'mic-watcher (mac)',
+  };
+}
 const _micWatcher = createMicWatcher({
-  enabled: platform.supportsWindowsMicWatcher,
-  scriptPath: MIC_WATCHER_SCRIPT,
-  powershellExe: POWERSHELL_EXE,
+  enabled: !!_micWatcherCfg,
+  executable: _micWatcherCfg && _micWatcherCfg.executable,
+  args: _micWatcherCfg && _micWatcherCfg.args,
+  label: _micWatcherCfg && _micWatcherCfg.label,
   spawn,
   getWin: () => win,
   diag,

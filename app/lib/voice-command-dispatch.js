@@ -29,7 +29,7 @@
   } else {
     root.TT_VOICE_COMMAND_DISPATCH = factory();
   }
-}(typeof self !== 'undefined' ? self : this, function () {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
   function createVoiceCommandDispatch({
