@@ -1883,27 +1883,83 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         #
         # On Windows the footer-watcher (app/lib/footer-watcher.js)
         # scrapes Claude Code's literal "Worked for Xm Ys" line off the
-        # Windows Terminal buffer via UIA and queues a clip with the
-        # matching natural-English phrase. POSIX has no equivalent
-        # buffer scrape (Mac/Linux can run claude in any terminal app;
-        # there's no UIA tree to walk), so we generate the footer here
-        # from the JSONL entry timestamps.
+        # Windows Terminal buffer via UIA. POSIX strategy is two-tier:
         #
-        # Why JSONL timestamps and not the hook-based elapsed_sec: the
-        # mark-working flag fires at UserPromptSubmit, but Claude Code's
-        # internal clock starts when GENERATION begins, often 20-60 s
-        # later. JSONL entries carry the actual generation timestamps
-        # Claude Code emits, so user_prompt → last_assistant produces a
-        # duration that lines up with what the user sees on screen.
-        # _elapsed_from_transcript falls back to 0 when stamps are
-        # unreadable, in which case we use the hook's elapsed_sec — at
-        # least the user gets *some* footer rather than silence.
+        #   1. macOS Terminal.app: claude_footer_scrape.py reads the tab's
+        #      scrollback via AppleScript and returns Claude's literal
+        #      footer line. Same UX as Windows — user sees "Crunched
+        #      for 25s" on screen and hears "Crunched for 25 seconds".
+        #   2. Fallback (iTerm2, Warp, Linux, scrape miss, duration drift):
+        #      compute the elapsed from JSONL entry timestamps and
+        #      synthesise format_elapsed_phrase. Verb is randomised, the
+        #      number is correct.
+        #
+        # Why JSONL timestamps and not hook elapsed_sec for the fallback:
+        # the mark-working flag fires at UserPromptSubmit, but Claude
+        # Code's internal clock starts when GENERATION begins, often 20-
+        # 60 s later. JSONL entries carry the actual generation
+        # timestamps Claude Code emits, so user_prompt → last_assistant
+        # produces a duration that lines up with what the user sees on
+        # screen. We use this both for the fallback verb-phrase AND as
+        # a sanity check against the scraped string — if Claude's
+        # printed duration disagrees with our JSONL by more than 2 s
+        # the scrape is probably stale (a previous turn's line that
+        # Claude hasn't yet overwritten with the fresh one), so we
+        # bail and fall back rather than speak a wrong number.
         footer_clip_text = ''
         if mode == 'on-stop' and sys.platform != 'win32':
             jsonl_elapsed = _elapsed_from_transcript(entries, user_idx)
             chosen_elapsed = jsonl_elapsed if jsonl_elapsed > 0 else (elapsed_sec or 0)
             if chosen_elapsed >= 1:
-                footer_clip_text = format_elapsed_phrase(chosen_elapsed)
+                # Tier 1: try to scrape Claude's literal footer text on
+                # macOS. Fail silently → tier 2.
+                if sys.platform == 'darwin':
+                    try:
+                        config_for_pid = load_config()
+                        registry = config_for_pid.get('_registry') or {}
+                        # _registry isn't a real config key; we need
+                        # to load the assignments file directly. Avoid
+                        # importing posix_hooks (circular). Same path as
+                        # there: ~/.terminal-talk/session-colours.json.
+                        from pathlib import Path as _P
+                        reg_path = _P.home() / '.terminal-talk' / 'session-colours.json'
+                        claude_pid = 0
+                        if reg_path.exists():
+                            try:
+                                _reg_data = json.loads(reg_path.read_text(encoding='utf-8'))
+                                _entry = (_reg_data.get('assignments') or {}).get(session_short) or {}
+                                claude_pid = int(_entry.get('claude_pid') or 0)
+                            except Exception:
+                                claude_pid = 0
+                        if claude_pid > 0:
+                            sys.path.insert(0, str(_P(__file__).resolve().parent))
+                            from claude_footer_scrape import scrape_footer_for_claude_pid
+                            scraped = scrape_footer_for_claude_pid(claude_pid)
+                            if scraped:
+                                m = re.match(
+                                    r'^([A-ZÀ-Ž][a-zà-ž]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s\s*$',
+                                    scraped.strip(),
+                                )
+                                if m:
+                                    scraped_secs = int(m.group(2) or 0) * 60 + int(m.group(3))
+                                    drift = abs(scraped_secs - chosen_elapsed)
+                                    if drift <= 2:
+                                        footer_clip_text = humanise_footer_phrase(scraped)
+                                        _log(
+                                            f'on-stop: scraped Terminal.app footer '
+                                            f'"{scraped}" (drift={drift}s vs JSONL elapsed)'
+                                        )
+                                    else:
+                                        _log(
+                                            f'on-stop: scraped footer "{scraped}" '
+                                            f'rejected (drift={drift}s > 2s vs JSONL '
+                                            f'elapsed={chosen_elapsed}s) — falling back'
+                                        )
+                    except Exception as exc:
+                        _log(f'on-stop: footer scrape failed: {type(exc).__name__}: {exc}')
+                # Tier 2: format_elapsed_phrase from JSONL elapsed.
+                if not footer_clip_text:
+                    footer_clip_text = format_elapsed_phrase(chosen_elapsed)
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '

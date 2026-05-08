@@ -69,7 +69,8 @@
       "**/wake-word-listener.py",
       "**/key_helper.py",
       "**/posix_hooks.py",
-      "**/statusline.py"
+      "**/statusline.py",
+      "**/claude_footer_scrape.py"
     ],
     "win": {
       "target": [
