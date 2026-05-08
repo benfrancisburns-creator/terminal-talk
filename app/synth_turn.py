@@ -1872,16 +1872,31 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             if clean:
                 body_clips = group_sentences_for_tts(clean)
 
-        # End-of-response elapsed-time audio is now produced by the
-        # main app's footer-watcher (app/lib/footer-watcher.js), which
-        # scrapes Claude Code's literal "Worked for Xm Ys" footer line
-        # off the Windows Terminal buffer via UIA and queues a clip
-        # with the matching natural-English phrase. We don't append
-        # one here — earlier attempts to compute the duration ourselves
-        # always diverged from Claude Code's footer by 20–60 s
-        # (mark-working flag fires at user-prompt-submit; Claude
-        # Code's clock starts when generation begins, and the footer
-        # is printed AFTER the Stop hook completes).
+        # End-of-response elapsed-time audio.
+        #
+        # On Windows the footer-watcher (app/lib/footer-watcher.js)
+        # scrapes Claude Code's literal "Worked for Xm Ys" line off the
+        # Windows Terminal buffer via UIA and queues a clip with the
+        # matching natural-English phrase. POSIX has no equivalent
+        # buffer scrape (Mac/Linux can run claude in any terminal app;
+        # there's no UIA tree to walk), so we generate the footer here
+        # from the JSONL entry timestamps.
+        #
+        # Why JSONL timestamps and not the hook-based elapsed_sec: the
+        # mark-working flag fires at UserPromptSubmit, but Claude Code's
+        # internal clock starts when GENERATION begins, often 20-60 s
+        # later. JSONL entries carry the actual generation timestamps
+        # Claude Code emits, so user_prompt → last_assistant produces a
+        # duration that lines up with what the user sees on screen.
+        # _elapsed_from_transcript falls back to 0 when stamps are
+        # unreadable, in which case we use the hook's elapsed_sec — at
+        # least the user gets *some* footer rather than silence.
+        footer_clip_text = ''
+        if mode == 'on-stop' and sys.platform != 'win32':
+            jsonl_elapsed = _elapsed_from_transcript(entries, user_idx)
+            chosen_elapsed = jsonl_elapsed if jsonl_elapsed > 0 else (elapsed_sec or 0)
+            if chosen_elapsed >= 1:
+                footer_clip_text = format_elapsed_phrase(chosen_elapsed)
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '
@@ -1907,6 +1922,19 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                                 fallback_provider=fallback_provider,
                                 openai_voice=openai_voice,
                                 original_full=body_combined_raw or None)
+
+        # Footer clip last so its mtime sorts after every body clip in
+        # the queue. Separate synthesise call rather than appending to
+        # body_clips because (a) we don't want body_combined_raw used as
+        # its .original.txt (the source markdown), and (b) the second
+        # call's turn_ts is naturally later than body's, which is what
+        # gives us the trailing-mtime ordering.
+        if footer_clip_text:
+            synthesize_parallel([footer_clip_text], voice, session_short, openai_key,
+                                provider=provider,
+                                fallback_provider=fallback_provider,
+                                openai_voice=openai_voice)
+            _log(f'on-stop: synthesised footer "{footer_clip_text}" for {session_short}')
 
         # Update sync state. Both dimensions tracked independently:
         # synthesized_line_indices for assistant-text entries,
