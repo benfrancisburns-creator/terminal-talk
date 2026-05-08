@@ -1910,10 +1910,65 @@ async function chooseSessionProjectDir(startPath) {
   return { ok: true, path: result.filePaths[0] };
 }
 
+// macOS implementation of launchAssistantSession. Drives Terminal.app via
+// osascript: open a new window, cd into the project, set the tab title via
+// the OSC 0 escape sequence, then exec the assistant CLI. We don't try to
+// match Windows Terminal's tab-colour behaviour here — Terminal.app's
+// per-tab colour is tied to profiles, not programmable inline. The toolbar
+// will still colour the session correctly the moment the assistant fires
+// its first hook (UserPromptSubmit / SessionStart), so the visual identity
+// surfaces in the toolbar even if the terminal tab itself stays default.
+async function launchAssistantSessionMac({ kind, projectDir, title, launchMode, index }) {
+  const cmd = kind === 'codex'
+    ? 'codex'
+    : (launchMode === 'dangerous' ? 'claude --dangerously-skip-permissions' : 'claude');
+  // sh-quote: wrap in single quotes, escape any embedded single quote.
+  const sh = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  // AppleScript double-quoted string escape: backslash and double quote.
+  const apl = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const titleEsc = `printf '\\033]0;%s\\007' ${sh(title)}`;
+  const inner = `cd ${sh(projectDir)} && ${titleEsc} && ${cmd}`;
+  const ascript = [
+    'tell application "Terminal"',
+    '  activate',
+    `  do script "${apl(inner)}"`,
+    'end tell',
+  ].join('\n');
+
+  diag(`launch-assistant-session mac: kind=${kind} project=${projectDir} title="${title}" mode=${launchMode}`);
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn('osascript', ['-e', ascript], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += String(d); });
+    child.stderr.on('data', (d) => { stderr += String(d); });
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      reject(new Error('osascript timed out launching Terminal.app'));
+    }, 8000);
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(new Error(`osascript spawn failed: ${e && e.message}`));
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const detail = stderr.trim() || stdout.trim() || `exit ${code}`;
+        diag(`launch-assistant-session mac osascript failed: ${detail}`);
+        reject(new Error(`Terminal.app launch failed: ${detail}`));
+        return;
+      }
+      diag(`launch-assistant-session mac: launched ${kind} in ${projectDir}`);
+      resolve({ ok: true, kind, title, projectDir, index, pid: child.pid });
+    });
+  });
+}
+
 async function launchAssistantSession(payload) {
-  if (process.platform !== 'win32') {
-    throw new Error('Toolbar session launch currently requires Windows Terminal.');
-  }
   const p = payload && typeof payload === 'object' ? payload : {};
   const rawKind = String(p.kind || '').toLowerCase();
   const kind = rawKind === 'claude-desktop' || rawKind === 'claude-desktop-code' ? 'claude-desktop'
@@ -1943,6 +1998,13 @@ async function launchAssistantSession(payload) {
   const launchKind = kind === 'codex' ? 'Codex' : 'Claude';
   const titleBase = kind === 'codex' ? 'Codex TT' : 'Claude TT';
   const title = label ? `${titleBase} - ${label}` : titleBase;
+
+  if (process.platform === 'darwin') {
+    return await launchAssistantSessionMac({ kind, projectDir, title, launchMode, index });
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('Toolbar session launch is currently supported on Windows and macOS only.');
+  }
   const launcherScript = path.join(__dirname, 'assistant-session-launch.ps1');
   if (!fs.existsSync(launcherScript)) throw new Error('Session launcher script is missing.');
   const wtBridgeScript = path.join(__dirname, 'assistant-wt-launch.ps1');
