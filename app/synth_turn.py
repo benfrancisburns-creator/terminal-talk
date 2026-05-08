@@ -1093,6 +1093,80 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
 # Parallel synthesis with rolling in-order release
 # ---------------------------------------------------------------------------
 
+def _run_say_fallback(sentence: str, out_path: Path) -> bool:
+    """macOS-only emergency TTS fallback. Fires AFTER the user's
+    configured providers (edge-tts, optionally openai-tts) have all
+    refused this sentence — typically a transient `NoAudioReceived`
+    response from speech.platform.bing.com. Without this fallback the
+    sentence drops silently from the queue and the user never hears
+    that segment of Claude's response.
+
+    Uses /usr/bin/say + /usr/bin/afconvert (both ship with every
+    macOS install — no extra deps to manage):
+
+        say -o tmp.aiff "<sentence>"
+        afconvert -f WAVE -d LEI16 tmp.aiff <out_path>
+
+    The output file extension stays .mp3 to match synthesize_parallel's
+    filename convention; the bytes are WAV-format. Electron's
+    HTMLAudioElement (Safari WebKit on macOS) handles WAV content
+    regardless of extension, and the .txt sidecar matching keys off
+    the .mp3 stem so the transcript panel still finds the spoken-text
+    pair.
+
+    Voice quality is noticeably lower than edge-tts neural voices —
+    that's the trade-off, and why this is a last-resort. Better the
+    user hears a slightly-flatter rendition of the sentence than
+    silence where audio should have been. Logged distinctly so the
+    audit trail in _hook.log makes it obvious when edge-tts was
+    unreliable enough to trigger the local path.
+    """
+    if sys.platform != 'darwin':
+        return False
+    import subprocess
+    aiff_tmp = out_path.with_suffix('.aiff.tmp')
+    try:
+        say_proc = subprocess.run(
+            ['/usr/bin/say', '-o', str(aiff_tmp), '--', sentence],
+            capture_output=True, timeout=15,
+        )
+        if say_proc.returncode != 0 or not aiff_tmp.exists():
+            stderr = say_proc.stderr.decode('utf-8', errors='replace').strip()
+            _log(
+                f'say fallback: say(1) failed rc={say_proc.returncode} '
+                f'stderr={stderr[:200]!r}'
+            )
+            return False
+        af_proc = subprocess.run(
+            ['/usr/bin/afconvert', '-f', 'WAVE', '-d', 'LEI16',
+             str(aiff_tmp), str(out_path)],
+            capture_output=True, timeout=10,
+        )
+        if (
+            af_proc.returncode != 0
+            or not out_path.exists()
+            or out_path.stat().st_size < 500
+        ):
+            size = out_path.stat().st_size if out_path.exists() else 0
+            stderr = af_proc.stderr.decode('utf-8', errors='replace').strip()
+            _log(
+                f'say fallback: afconvert failed rc={af_proc.returncode} '
+                f'size={size} stderr={stderr[:200]!r}'
+            )
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        _log(f'say fallback: timeout (sentence len={len(sentence)})')
+        return False
+    except Exception as e:
+        _log(f'say fallback: exception {type(e).__name__}: {e}')
+        return False
+    finally:
+        if aiff_tmp.exists():
+            with contextlib.suppress(Exception):
+                aiff_tmp.unlink()
+
+
 def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) -> bool:
     """Invoke edge_tts_speak.py with retries on transient Microsoft-service
     wobbles. Returns True on success.
@@ -1369,6 +1443,19 @@ def synthesize_parallel(
                 ok = _run_edge_tts(sentence, voice, tmp)
             if ok:
                 break
+        # Last-resort fallback: macOS local TTS via /usr/bin/say. Only
+        # fires when every configured provider has refused this
+        # sentence — typically transient edge-tts NoAudioReceived. The
+        # local path is offline + free + always available, so it acts
+        # as a reliability floor: the user always hears *something*
+        # instead of a silently-dropped sentence. Voice quality is
+        # lower than the cloud providers, which is the deliberate
+        # trade-off (free + reliable > polished + flaky).
+        if not ok and sys.platform == 'darwin':
+            if _run_say_fallback(sentence, tmp):
+                ok = True
+                preview = sentence[:80].replace('\n', ' ')
+                _log(f'say fallback succeeded for: {preview!r}')
         with release_lock:
             results[seq] = tmp if ok else None
             _release_ready()
