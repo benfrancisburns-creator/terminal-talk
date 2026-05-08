@@ -930,6 +930,7 @@ const { createOpenaiInvalidWatcher } = require('./lib/openai-invalid-watcher');
 const { createVoiceCommandWatcher } = require('./lib/voice-command-watcher');
 const { createMicWatcher } = require('./lib/mic-watcher');
 const { createUpdateChecker } = require('./lib/update-checker');
+const { createSynthDaemon } = require('./lib/synth-daemon');
 const { createTray } = require('./lib/tray');
 const { exponentialBackoff } = require('./lib/backoff');
 const { mapLimit } = require('./lib/concurrency');
@@ -2262,6 +2263,23 @@ const _micWatcher = createMicWatcher({
 const startMicWatcher = _micWatcher.start;
 const stopMicWatcher = _micWatcher.stop;
 
+// Phase 11 (#35): long-lived synth daemon over Unix socket. POSIX-
+// only (Mac + Linux). Saves ~80 ms cold-start + imports per hook
+// fire — typical turn fires 6-12 times so 0.5-1 s of pure overhead.
+// posix_hooks.py:spawn_synth tries the socket first and falls
+// through to per-hook subprocess if it can't connect, so the
+// daemon being down never breaks audio.
+const _synthDaemon = createSynthDaemon({
+  enabled: !platform.isWindows,
+  pythonExe: PYTHON_EXE,
+  appDir: __dirname,
+  spawn,
+  getWin: () => win,
+  diag,
+});
+const startSynthDaemon = _synthDaemon.start;
+const stopSynthDaemon = _synthDaemon.stop;
+
 // Phase 8 (#32): periodic git-fetch update check. Disabled if the
 // install isn't a git checkout (DMG / brew users). __dirname is the
 // app folder; the repo root is its parent (terminal-talk/).
@@ -2568,6 +2586,10 @@ app.whenReady().then(() => {
   startOpenaiInvalidWatcher();
   startVoiceCommandWatcher();
   startUpdateChecker();
+  // Synth daemon spawned LAST so the watchers above are wired before
+  // the first hook can fire — the daemon's hot path skips the
+  // subprocess fallback only when it's already accepting connections.
+  startSynthDaemon();
 });
 
 // #9 — hard-kill a tracked python child by PID. Soft `.kill()` (SIGTERM)
@@ -2617,6 +2639,7 @@ app.on('will-quit', () => {
   stopOpenaiInvalidWatcher();
   stopVoiceCommandWatcher();
   stopUpdateChecker();
+  stopSynthDaemon();
 });
 
 app.on('window-all-closed', (e) => { e.preventDefault(); });

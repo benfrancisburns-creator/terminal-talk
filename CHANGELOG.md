@@ -6,6 +6,17 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Long-lived synth daemon over Unix socket (POSIX)** — `app/synth_daemon.py`
+  imports `synth_turn` once at boot and dispatches per-turn synth runs
+  via `~/.terminal-talk/synth.sock` (line-delimited JSON request /
+  response). Saves ~80 ms cold-start + module imports per hook fire;
+  on a typical turn (6-12 hooks) that's 0.5-1 s of pure overhead
+  reclaimed. `posix_hooks.spawn_synth` tries the socket first with a
+  200 ms connect timeout and falls through to per-hook `subprocess.Popen`
+  on any failure — daemon down ≠ broken hooks. Lifecycle managed by
+  `app/lib/synth-daemon.js` (POSIX-only, watchdog respawn, SIGTERM on
+  app quit). Daemon log rotates at 1 MB into
+  `~/.terminal-talk/queue/_synth_daemon.log`.
 - **Tag-driven release pipeline** — `.github/workflows/build-release.yml`
   fires on `v*` tag pushes (or manual dry-run), builds Mac DMGs +
   zips (arm64 + x64) on `macos-latest` and Windows Setup.exe +

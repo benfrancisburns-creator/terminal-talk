@@ -9720,6 +9720,186 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('SYNTH DAEMON — long-lived socket dispatcher (#35 Phase 11)', () => {
+  const { createSynthDaemon } = require(path.join(__dirname, '..', 'app', 'lib', 'synth-daemon.js'));
+  const { EventEmitter } = require('node:events');
+  const daemonSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'synth_daemon.py'), 'utf8');
+  const posixHooksSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'posix_hooks.py'), 'utf8');
+
+  it('synth_daemon.py has byte-level Python syntax (no parse error)', () => {
+    const r = spawnSync(PYTHON_BIN, ['-m', 'py_compile', path.join(__dirname, '..', 'app', 'synth_daemon.py')],
+      { encoding: 'utf8', timeout: 10000 });
+    assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
+  });
+
+  it('synth_daemon imports synth_turn lazily + dispatches handle_request', () => {
+    if (!/def\s+_import_synth_turn\b/.test(daemonSrc)) {
+      throw new Error('synth_daemon.py must import synth_turn lazily so the daemon-boot cost lands once');
+    }
+    if (!/synth_turn_module\.run\(/.test(daemonSrc)) {
+      throw new Error('synth_daemon.py must call synth_turn_module.run(...) — re-uses the existing entry point');
+    }
+    if (!/AF_UNIX/.test(daemonSrc)) {
+      throw new Error('synth_daemon.py must use AF_UNIX socket (POSIX-only)');
+    }
+    if (!/SOCKET_PATH\.unlink\(\)/.test(daemonSrc)) {
+      throw new Error('synth_daemon.py must clean up the socket file on shutdown');
+    }
+    if (!/0o600/.test(daemonSrc)) {
+      throw new Error('synth_daemon.py must chmod the socket to 0o600 (owner-only)');
+    }
+  });
+
+  it('synth_daemon protocol: missing required keys returns parseable error', () => {
+    // End-to-end: spawn daemon in a sandbox TT_HOME, send malformed
+    // request, expect {"ok": false, "error": "..."} response.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-daemon-'));
+    fs.mkdirSync(path.join(tmpDir, 'queue'));
+    const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    const env = { ...process.env, TT_HOME: tmpDir };
+    const daemon = require('node:child_process').spawn(
+      PYTHON_BIN, ['-u', path.join(__dirname, '..', 'app', 'synth_daemon.py')],
+      { env, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    let probeResult = null;
+    try {
+      // Wait for socket to appear (max 3 s).
+      const socketPath = path.join(tmpDir, 'synth.sock');
+      const deadline = Date.now() + 3000;
+      while (!fs.existsSync(socketPath) && Date.now() < deadline) {
+        const r = spawnSync('sleep', ['0.1']);
+        if (r.error) break;
+      }
+      if (!fs.existsSync(socketPath)) {
+        throw new Error('daemon did not bind socket within 3 s');
+      }
+      // Use a Python helper to do the socket round-trip — Node's
+      // net module supports AF_UNIX but mixing line-delimited
+      // protocols across runtimes is fiddlier than a Python one-liner.
+      const r = spawnSync(PYTHON_BIN, ['-c', `
+import socket, json
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(r'${socketPath.replace(/\\/g, '\\\\')}')
+s.sendall(json.dumps({'session_id': 'x'}).encode() + b'\\n')
+data = b''
+while b'\\n' not in data:
+    chunk = s.recv(4096)
+    if not chunk: break
+    data += chunk
+print(data.decode().strip())
+s.close()
+`], { encoding: 'utf8', timeout: 10000 });
+      if (r.status !== 0) {
+        throw new Error(`daemon probe failed: ${r.stderr || r.stdout}`);
+      }
+      probeResult = JSON.parse(r.stdout.trim());
+    } finally {
+      try { daemon.kill('SIGTERM'); } catch {}
+      try { daemon.kill('SIGKILL'); } catch {}
+      cleanup();
+    }
+    if (!probeResult) throw new Error('no probe result');
+    assertEqual(probeResult.ok, false);
+    if (!/missing required keys/.test(probeResult.error || '')) {
+      throw new Error(`expected "missing required keys" error; got: ${probeResult.error}`);
+    }
+  });
+
+  it('posix_hooks.py spawn_synth tries the daemon socket FIRST + falls through', () => {
+    if (!/def\s+_try_synth_daemon\b/.test(posixHooksSrc)) {
+      throw new Error('posix_hooks.py must define _try_synth_daemon for the socket fast-path');
+    }
+    if (!/SYNTH_DAEMON_SOCKET\b/.test(posixHooksSrc)) {
+      throw new Error('posix_hooks.py must reference SYNTH_DAEMON_SOCKET');
+    }
+    // The fast-path call must come BEFORE the subprocess.Popen call —
+    // anchor on order via a single regex that matches both in the
+    // expected sequence.
+    if (!/_try_synth_daemon\([\s\S]{0,600}subprocess\.Popen/.test(posixHooksSrc)) {
+      throw new Error('posix_hooks.py must call _try_synth_daemon BEFORE the subprocess.Popen fallback');
+    }
+  });
+
+  it('lib/synth-daemon.js disabled mode is a clean no-op', () => {
+    const d = createSynthDaemon({ enabled: false });
+    d.start(); d.stop();
+    assertEqual(d.getPid(), null);
+  });
+
+  it('lib/synth-daemon.js spawns python with the daemon script', () => {
+    let spawnCount = 0;
+    const fakeWin = { isDestroyed: () => false };
+    const lastArgs = [];
+    const d = createSynthDaemon({
+      enabled: true,
+      pythonExe: '/fake/python',
+      appDir: '/fake/app',
+      spawn: (_exe, args) => {
+        spawnCount++;
+        lastArgs.push(...args);
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = () => {};
+        proc.pid = 12345;
+        return proc;
+      },
+      getWin: () => fakeWin,
+    });
+    d.start();
+    if (lastArgs[0] !== '-u' || !lastArgs[1].endsWith('synth_daemon.py')) {
+      throw new Error(`expected spawn args to be -u <appDir>/synth_daemon.py; got ${JSON.stringify(lastArgs)}`);
+    }
+    if (spawnCount !== 1) throw new Error(`expected exactly 1 spawn on start; got ${spawnCount}`);
+    if (d.getPid() !== 12345) throw new Error(`expected getPid() to return 12345; got ${d.getPid()}`);
+    d.stop();
+  });
+
+  it('lib/synth-daemon.js wires watchdog restart in the exit handler (source invariant)', () => {
+    // Source-level check rather than a runtime timer dance — the
+    // existing test runner is sync, so async setTimeout-driven
+    // assertions race the summary line. The exit handler must:
+    //   (a) call setTimeout with the configured backoff
+    //   (b) call start() again from inside that timer (only if win is alive)
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'synth-daemon.js'), 'utf8');
+    if (!/proc\.on\(\s*['"]exit['"][\s\S]{0,500}setTimeout\([\s\S]{0,300}start\(\)/.test(src)) {
+      throw new Error('lib/synth-daemon.js must restart on exit via setTimeout(start, restartBackoffMs)');
+    }
+    if (!/win\.isDestroyed\(\)/.test(src)) {
+      throw new Error('lib/synth-daemon.js watchdog must skip respawn when window is destroyed (no respawning into the void)');
+    }
+    if (!/SIGTERM/.test(src)) {
+      throw new Error('lib/synth-daemon.js must SIGTERM the daemon on stop (graceful shutdown unlinks the socket)');
+    }
+  });
+
+  it('main.js wires synth-daemon start LAST + stop alongside other watchers', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/createSynthDaemon\b/.test(main)) {
+      throw new Error('main.js must import createSynthDaemon');
+    }
+    if (!/startSynthDaemon\(\)/.test(main)) {
+      throw new Error('main.js must call startSynthDaemon() on app ready');
+    }
+    if (!/stopSynthDaemon\(\)/.test(main)) {
+      throw new Error('main.js must call stopSynthDaemon() on will-quit');
+    }
+    // Daemon must be POSIX-only (gated by !platform.isWindows).
+    if (!/createSynthDaemon\([\s\S]{0,200}enabled:\s*!platform\.isWindows/.test(main)) {
+      throw new Error('main.js must gate createSynthDaemon by !platform.isWindows (POSIX-only Unix socket)');
+    }
+  });
+
+  it('app/package.json asarUnpack ships synth_daemon.py', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'package.json'), 'utf8'));
+    const unpack = (pkg.build && pkg.build.asarUnpack) || [];
+    if (!unpack.some((p) => /synth_daemon\.py/.test(p))) {
+      throw new Error('app/package.json asarUnpack must include synth_daemon.py so it ships in the DMG');
+    }
+  });
+});
+
 // =============================================================================
 // R3.9 — KIT PALETTE ≡ PRODUCT PALETTE. docs/README.md promises this
 // test exists; landing it here honours the claim.

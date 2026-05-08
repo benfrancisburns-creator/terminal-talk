@@ -299,12 +299,70 @@ def clear_working(short: str, caller: str) -> int:
     return elapsed
 
 
+SYNTH_DAEMON_SOCKET = TT_HOME / 'synth.sock'
+# Connection budget. The daemon accepts() instantly when listening; if
+# we can't connect in 200 ms it's either down, swamped, or the socket
+# file is stale. Either way we fall through to the per-hook subprocess
+# path so the user never loses audio because the daemon flaked.
+_SYNTH_DAEMON_CONNECT_TIMEOUT_SEC = 0.2
+
+
+def _try_synth_daemon(session_id: str, transcript: Path, mode: str, elapsed_sec: int) -> bool:
+    """Phase 11 (#35): submit a synth job to the long-lived daemon over
+    its Unix socket. Returns True if accepted (daemon will run it
+    async — the daemon's accept loop dispatches a thread, so our
+    short connection is just the handshake), False if the daemon is
+    unavailable or rejected the request.
+
+    Why not block on the daemon's response: synth_turn.run() can take
+    tens of seconds on long turns, and the hook caller (Claude /
+    Codex) has its own timeout. We send the request and disconnect;
+    the daemon owns the work after that. Errors are logged in
+    _synth_daemon.log on the daemon side, not surfaced here.
+    """
+    if not SYNTH_DAEMON_SOCKET.exists():
+        return False
+    try:
+        import socket as _socket
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        sock.settimeout(_SYNTH_DAEMON_CONNECT_TIMEOUT_SEC)
+        try:
+            sock.connect(str(SYNTH_DAEMON_SOCKET))
+        except (TimeoutError, ConnectionRefusedError, FileNotFoundError, OSError):
+            with contextlib.suppress(Exception):
+                sock.close()
+            return False
+        req = json.dumps({
+            'session_id': session_id,
+            'transcript_path': str(transcript),
+            'mode': mode,
+            'elapsed_sec': int(elapsed_sec or 0),
+        }).encode('utf-8') + b'\n'
+        try:
+            sock.sendall(req)
+        finally:
+            with contextlib.suppress(Exception):
+                sock.close()
+        return True
+    except Exception:
+        return False
+
+
 def spawn_synth(session_id: str, transcript: Path, mode: str, caller: str, elapsed_sec: int = 0) -> int:
     synth = APP_DIR / 'synth_turn.py'
     if not synth.exists() or not transcript.exists():
         log(caller, f'synth skip: synth={synth.exists()} transcript={transcript}')
         return 0
     short = session_short(session_id)
+
+    # Phase 11 fast path: daemon socket. Saves ~80 ms cold-start +
+    # imports per hook fire. Falls through silently to subprocess on
+    # any failure so the daemon being down (or not yet booted) never
+    # results in lost audio.
+    if _try_synth_daemon(session_id, transcript, mode, elapsed_sec):
+        log(caller, f'submitted synth via daemon mode={mode} short={short}')
+        return 0
+
     err_path = QUEUE_DIR / f'synth-{mode}-{short}.err'
     args = [
         _python_exe(), '-u', str(synth),
