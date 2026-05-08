@@ -45,8 +45,17 @@ say "Terminal Talk installer · platform=$PLATFORM · install dir=$INSTALL_DIR"
 
 if [ "$PLATFORM" = "macos" ]; then
   if ! command -v brew >/dev/null 2>&1; then
-    say "Homebrew not found — installing it now."
-    say "(This will prompt for your password to grant /opt/homebrew write access.)"
+    say ""
+    say "Homebrew is not installed — Terminal Talk needs it to fetch:"
+    say "  · node       → runs the Electron toolbar"
+    say "  · python@3.12 → runs the wake-word listener + TTS bridge"
+    say "  · portaudio  → C library the Python wake-word listener links against"
+    say ""
+    say "About to run the official Homebrew installer (it'll ask for your"
+    say "password — that grants the installer write access to /opt/homebrew."
+    say "If you'd rather install Homebrew yourself first, press Ctrl+C now,"
+    say "run the command at https://brew.sh, then re-run this installer)."
+    say ""
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [ -x /opt/homebrew/bin/brew ]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
