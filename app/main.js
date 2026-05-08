@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeImage, clipboard, nativeTheme, safeStorage, dialog, shell } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeImage, clipboard, nativeTheme, safeStorage, dialog, shell, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -2620,6 +2620,23 @@ function logIntegrity() {
 }
 
 app.whenReady().then(() => {
+  // macOS App Nap suspends the renderer + the main process's event
+  // loop when the toolbar is in the background long enough — and a
+  // small always-on-top toolbar that the user isn't actively
+  // interacting with crosses that bar very fast. Symptom observed
+  // live: 9-minute log silence between heartbeats, queue polling
+  // stopped, footer synth fired but the toolbar was suspended so
+  // the new clip never got picked up. Resumed only when the user's
+  // cursor entered the bar. powerSaveBlocker + 'prevent-app-
+  // suspension' tells macOS to leave us awake regardless of
+  // foreground state. No-op on Windows / Linux.
+  try {
+    powerSaveBlocker.start('prevent-app-suspension');
+    diag('powerSaveBlocker: prevent-app-suspension active (macOS App Nap mitigation)');
+  } catch (e) {
+    diag(`powerSaveBlocker: failed to start: ${e && e.message}`);
+  }
+
   // #6 G5 — boot-event log line. Single self-contained snapshot of
   // install state so post-mortem can identify which version, which
   // PID, which CFG path, and the load-state of validator-accepted
