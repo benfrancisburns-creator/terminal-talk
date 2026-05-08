@@ -63,7 +63,8 @@ def _tty_for_pid(pid: int) -> str:
 def _terminal_app_history(tty_path: str) -> str:
     """Ask Terminal.app for the scrollback history of the tab whose
     `tty` property matches `tty_path`. Returns the history string, or
-    empty if no tab found (iTerm2, Warp, headless, etc.).
+    empty if no tab found (claude is running in a different terminal,
+    Terminal.app isn't running, etc.).
 
     AppleScript walks every window and every tab inside each window
     because Terminal.app's `selected tab of window 1` is whichever the
@@ -99,6 +100,63 @@ def _terminal_app_history(tty_path: str) -> str:
     return result.stdout or ''
 
 
+def _iterm2_history(tty_path: str) -> str:
+    """iTerm2 equivalent of _terminal_app_history. iTerm2 calls them
+    "sessions" rather than "tabs"; the property layout is otherwise
+    parallel — `tty` is exposed on each session, and `text` returns
+    the visible buffer (which always includes Claude's just-printed
+    footer because Claude prints it right before the next prompt
+    appears, so it's the bottom line on screen).
+
+    Skipped silently if iTerm2 isn't running. The first try-block
+    around the inner tty test handles iTerm versions where some
+    sessions don't expose tty (split panes can confuse it).
+    """
+    if not tty_path:
+        return ''
+    script = (
+        'set out to ""\n'
+        'try\n'
+        '  tell application "iTerm"\n'
+        '    repeat with w in windows\n'
+        '      repeat with s in sessions of w\n'
+        '        try\n'
+        f'          if tty of s is "{tty_path}" then\n'
+        '            set out to text of s\n'
+        '            exit repeat\n'
+        '          end if\n'
+        '        end try\n'
+        '      end repeat\n'
+        '      if out is not "" then exit repeat\n'
+        '    end repeat\n'
+        '  end tell\n'
+        'on error\n'
+        '  set out to ""\n'
+        'end try\n'
+        'return out\n'
+    )
+    try:
+        result = subprocess.run(
+            ['osascript', '-e', script],
+            capture_output=True, text=True, timeout=4,
+        )
+    except Exception:
+        return ''
+    return result.stdout or ''
+
+
+def _read_terminal_history(tty_path: str) -> str:
+    """Try every supported macOS terminal in order. First match wins.
+    Returns empty string when no terminal exposes the tty (Warp,
+    WezTerm, Hyper, Alacritty — none of these have an AppleScript
+    bridge for buffer contents, so claude running there falls back
+    cleanly to format_elapsed_phrase rather than ever blocking)."""
+    history = _terminal_app_history(tty_path)
+    if history:
+        return history
+    return _iterm2_history(tty_path)
+
+
 def scrape_footer_for_claude_pid(claude_pid: int) -> str:
     """Top-level entry point. Returns the latest "<Verb> for <duration>"
     line from Terminal.app's scrollback for the tab running the given
@@ -114,7 +172,7 @@ def scrape_footer_for_claude_pid(claude_pid: int) -> str:
     tty = _tty_for_pid(claude_pid)
     if not tty:
         return ''
-    history = _terminal_app_history(tty)
+    history = _read_terminal_history(tty)
     if not history:
         return ''
     matches = list(_FOOTER_RE.finditer(history))
