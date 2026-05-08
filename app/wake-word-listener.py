@@ -236,33 +236,59 @@ def _write_wav(path: Path, samples: np.ndarray) -> None:
         w.writeframes(samples.tobytes())
 
 
+_MAC_RECOGNIZER_SCRIPT = Path(__file__).resolve().parent / 'voice_command_recognize_mac.py'
+
+
 def _run_recognizer(wav_path: Path) -> dict:
-    """Spawn voice-command-recognize.ps1 with the captured WAV, parse
-    its single-line JSON output. Returns {} on any failure — caller
-    treats that as 'no match'."""
-    if not IS_WINDOWS:
-        # System.Speech.Recognition is Windows-only; non-Windows platforms
-        # treat every wake fire as the primary "Hey Jarvis → read
-        # highlighted text" workflow until a portable recognizer lands.
-        return {}
-    try:
-        proc = subprocess.run(
-            ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-             '-File', str(RECOGNIZER_SCRIPT), str(wav_path)],
-            capture_output=True, text=True, timeout=8,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        )
-    except subprocess.TimeoutExpired:
-        log.warning('recognizer timed out')
-        return {}
-    except Exception as e:
-        log.error(f'recognizer spawn fail: {type(e).__name__}: {e}')
+    """Spawn the platform-appropriate recogniser with the captured WAV,
+    parse its single-line JSON output. Returns {} on any failure —
+    caller treats that as 'no match'.
+
+    Platform routing:
+      - Windows: voice-command-recognize.ps1 driving System.Speech.
+      - macOS:   voice_command_recognize_mac.py driving SFSpeechRecognizer.
+      - Linux:   no recogniser yet — fall through to the speakClipboard
+                 path. Future port could use whisper.cpp or similar.
+    """
+    if IS_WINDOWS:
+        try:
+            proc = subprocess.run(
+                ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                 '-File', str(RECOGNIZER_SCRIPT), str(wav_path)],
+                capture_output=True, text=True, timeout=8,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except subprocess.TimeoutExpired:
+            log.warning('recognizer timed out')
+            return {}
+        except Exception as e:
+            log.error(f'recognizer spawn fail: {type(e).__name__}: {e}')
+            return {}
+    elif IS_MAC:
+        # SFSpeechRecognizer needs the same Python interpreter that has
+        # pyobjc-framework-Speech installed — the wake-word listener
+        # already runs in that venv (TT_PYTHON_EXE), so sys.executable
+        # is the right interpreter here.
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(_MAC_RECOGNIZER_SCRIPT), str(wav_path)],
+                capture_output=True, text=True, timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            log.warning('mac recognizer timed out')
+            return {}
+        except Exception as e:
+            log.error(f'mac recognizer spawn fail: {type(e).__name__}: {e}')
+            return {}
+    else:
+        # Linux / other POSIX: no recogniser yet. Fall through to the
+        # primary "Hey Jarvis → read highlighted text" workflow.
         return {}
 
     if proc.returncode != 0:
         log.warning(f'recognizer rc={proc.returncode} stderr={proc.stderr[:200]}')
     # Last non-empty line of stdout is our JSON (earlier lines may be
-    # PS verbose noise if something went sideways).
+    # PS verbose noise on Windows or the same on Mac).
     lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
     if not lines:
         return {}
