@@ -6,6 +6,32 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **macOS port — Terminal Talk now runs natively on macOS** (in addition to
+  Windows). The Electron toolbar, queue, audio playback, transcript
+  watcher, on-stream/on-tool/on-stop synth pipeline, hooks (Claude Code
+  + Codex), wake-word listener, highlight-to-speak (`Cmd+C` via Quartz
+  CGEvent), settings panel (with HIG-glyph hotkey display: ⌃⇧S etc.),
+  tray icon, and "Worked for X seconds" footer audio all work on
+  macOS. See `README.md` for the brew prereqs and the install command.
+  Permissions Mac will prompt for on first launch: Accessibility (for
+  synthetic Cmd+C) and Microphone (for the wake-word listener).
+- **`Create session` button now wires through to Terminal.app on
+  macOS** via `osascript`. Picks the project folder, opens a new
+  Terminal.app window in that directory, sets the tab title, and
+  exec's `claude` (or `codex`). The toolbar assigns a colour to the
+  session as soon as its first hook fires. iTerm2 / Warp variants can
+  follow as auto-detected fallbacks behind the same entrypoint.
+- **DMG + zip release artifacts for macOS** (arm64 + x64) via a
+  `build:mac` script using electron-builder. Adds the `mac` block to
+  `app/package.json` with the required Info.plist usage descriptions
+  (`NSMicrophoneUsageDescription`, `NSAppleEventsUsageDescription`).
+  Code signing is left to a future commit once the Apple Developer ID
+  is in place (`identity: null`).
+- **macos-latest CI runner.** New `macos-logic` job in
+  `.github/workflows/test.yml` runs `scripts/run-tests.cjs
+  --logic-only` on every push, catching platform-conditional
+  regressions (path separators, `process.platform` branches, Quartz
+  shims) before they hit a Mac user.
 - **Live UI demo on the landing page.** `docs/index.html` now embeds the
   real Electron renderer in an iframe with a click-to-explore detail
   panel covering ~50 controls (every button, dot, tab, slider, and
@@ -73,6 +99,29 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **POSIX session staleness.** The Sessions panel showed every Claude
+  Code session as "closed" 10 s after the last hook fired, because
+  `get-stale-sessions` only added sidecar PIDs (Windows-only) to
+  `livePids` — POSIX `posix_hooks.py` writes `claude_pid` into the
+  registry, never the sidecar. Now also vouches for any registry
+  `claude_pid` that's still alive.
+- **`install.sh --skip-npm-install` deleted `node_modules`.** The
+  `rm -rf $app_dir` step ran before the tar copy (which excludes
+  `node_modules`), so re-running install.sh to register hooks left
+  the toolbar unable to start. Preserves and restores the existing
+  `node_modules` across the rebuild.
+- **`start-toolbar.sh` did not export `TT_PYTHON_EXE`** when the
+  variable came from sourcing `terminal-talk.env`, so `npm start`'s
+  child Electron fell back to the system `python3`. Wake-word
+  listener crashed with `No module named 'numpy'` until the venv
+  interpreter was picked up explicitly. Affects POSIX in general,
+  not just macOS.
+- **Footer-audio watcher was spawning `powershell.exe` on macOS.**
+  Gated by the new `platform.supportsFooterScrape` capability flag;
+  the watcher cleanly no-ops on non-Win platforms.
+- **`Reset defaults` settings button relabeled to `Reset hotkeys`**
+  with a tooltip clarifying scope, after a user mistook it for a
+  global "reset every setting on this panel" button.
 - **Window rescue + dock-bottom clamp.** Top-edge of the toolbar
   must remain on a connected display's workArea; bottom-dock can
   no longer push the top off-screen when the panel is open.
