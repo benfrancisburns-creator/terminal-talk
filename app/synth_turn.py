@@ -747,12 +747,40 @@ def _table_cell_summary(cell: str) -> str:
     return s
 
 
-def _table_summary(m: re.Match[str]) -> str:
-    """Replace a markdown table block with one speakable summary line.
+# Threshold for reading every row vs falling back to a one-row sample.
+# Field-observed flaw 2026-05-08: an 8-row commit-table was summarised
+# as "Table with 8 rows. Columns: #, Subject, Files. First row: ...",
+# silently losing 7/8 of the information the user wrote down. Tables
+# with this many rows are usually meaningful per-row (commit lists,
+# file matrices, decision tables — every row carries a distinct point).
+# Above the threshold we keep the compact summary because reading 30+
+# rows aloud is its own kind of bad UX.
+_TABLE_FULL_READ_ROW_LIMIT = 10
 
-    Audio cannot preserve columns visually, so speak the table shape and
-    a compact first-row sample. That gives the listener context without
-    reading every separator or cell.
+
+def _table_row_phrase(header_cells: list[str], cells: list[str]) -> str:
+    """Speakable rendering of one body row: 'col-name: cell; col-name: cell'.
+    Skips empty cells + extras beyond the header column count so a row
+    with stray trailing pipes doesn't trail off into "; ; ;"."""
+    pairs = []
+    for i in range(min(len(header_cells), len(cells))):
+        if header_cells[i] and cells[i]:
+            pairs.append(f'{header_cells[i]}: {cells[i]}')
+    return '; '.join(pairs)
+
+
+def _table_summary(m: re.Match[str]) -> str:
+    """Replace a markdown table block with speakable text.
+
+    Audio cannot preserve columns visually. Two strategies depending on
+    table size:
+
+      Small tables (<= _TABLE_FULL_READ_ROW_LIMIT rows): read every
+        row as 'Row N: col-name: cell; col-name: cell.' Listener gets
+        every datum the writer put in the table.
+
+      Larger tables: fall back to the old 'shape + first row' summary
+        because reading 20+ rows aloud is its own bad-UX failure mode.
     """
     header_cells = [_table_cell_summary(c) for c in m.group('header').split('|')]
     header_cells = [c for c in header_cells if c]
@@ -764,15 +792,25 @@ def _table_summary(m: re.Match[str]) -> str:
         rows.append(cells)
     row_count = len(rows)
     if not header_cells:
-        return f'Table with {row_count} rows.'
+        return f'Table with {row_count} rows.\n'
     cols = ', '.join(header_cells)
     plural = 'row' if row_count == 1 else 'rows'
+
+    if row_count <= _TABLE_FULL_READ_ROW_LIMIT:
+        # Read every row. Sentence-split treats each ". " as a clip
+        # boundary so listener gets a natural pause between rows.
+        body_parts = [f'Table with {row_count} {plural}.', f'Columns: {cols}.']
+        for i, cells in enumerate(rows, start=1):
+            phrase = _table_row_phrase(header_cells, cells)
+            if phrase:
+                body_parts.append(f'Row {i}: {phrase}.')
+        return ' '.join(body_parts) + '\n'
+
     first_row = rows[0] if rows else []
-    pairs = []
-    for i in range(min(len(header_cells), len(first_row), 3)):
-        if header_cells[i] and first_row[i]:
-            pairs.append(f'{header_cells[i]}: {first_row[i]}')
-    sample = f' First row: {"; ".join(pairs)}.' if pairs else ''
+    sample_phrase = _table_row_phrase(
+        header_cells, first_row[:min(3, len(first_row))],
+    )
+    sample = f' First row: {sample_phrase}.' if sample_phrase else ''
     return f'Table with {row_count} {plural}. Columns: {cols}.{sample}\n'
 
 

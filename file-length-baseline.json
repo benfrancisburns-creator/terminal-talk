@@ -7,7 +7,7 @@
     "scripts/run-tests.cjs": 18096,
     "app/renderer.js": 2714,
     "app/main.js": 2587,
-    "app/synth_turn.py": 1933,
+    "app/synth_turn.py": 1971,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1186,
     "app/lib/codex-tool-narration.js": 1020,
