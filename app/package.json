@@ -68,7 +68,8 @@
       "**/text_strip.py",
       "**/wake-word-listener.py",
       "**/key_helper.py",
-      "**/posix_hooks.py"
+      "**/posix_hooks.py",
+      "**/statusline.py"
     ],
     "win": {
       "target": [

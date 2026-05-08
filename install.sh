@@ -307,10 +307,44 @@ StartupNotify=false
 EOF
 }
 
+register_statusline() {
+  "$TT_PYTHON_EXE" - "$@" <<'PY'
+import json, sys
+from pathlib import Path
+
+settings_path = Path(sys.argv[1]).expanduser()
+python_exe = sys.argv[2]
+script_path = sys.argv[3]
+settings_path.parent.mkdir(parents=True, exist_ok=True)
+try:
+    data = json.loads(settings_path.read_text(encoding='utf-8')) if settings_path.exists() else {}
+except Exception as exc:
+    raise SystemExit(f'{settings_path} is not valid JSON: {exc}')
+if not isinstance(data, dict):
+    data = {}
+# Quote both paths for the shell wrapper Claude Code spawns. Single-
+# quoted with embedded single quotes escaped as '\'' so spaces in the
+# install path (e.g. /Users/Some Name/.terminal-talk) survive.
+def shq(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+data['statusLine'] = {
+    'type': 'command',
+    'command': f'{shq(python_exe)} {shq(script_path)}',
+}
+settings_path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+PY
+}
+
 if [ "$claude_hooks" -eq 1 ] && confirm "Register Claude Code hooks? [Y/n]" Y; then
   step "Claude Code hooks"
   update_json_hooks claude "$HOME/.claude/settings.json" "$hooks_dir"
   say "   OK  Claude hooks registered"
+  # Statusline rides on the same Claude settings.json — registering it
+  # here means the user only answers one prompt for both. Mirrors the
+  # Windows install.ps1 flow where the statusline is also a sub-step
+  # of "register Claude integration".
+  register_statusline "$HOME/.claude/settings.json" "$TT_PYTHON_EXE" "$app_dir/statusline.py"
+  say "   OK  Statusline registered (restart Claude Code to see the per-session glyph)"
 fi
 
 if [ "$codex_hooks" -eq 1 ] && confirm "Register Codex CLI hooks? [Y/n]" Y; then
