@@ -385,6 +385,81 @@
       return was;
     }
 
+    // ---- Public playback-control surface (used by the play/pause/back
+    // toolbar buttons AND by the voice-command dispatch in
+    // app/renderer.js once a 'hey jarvis play' / 'pause' / 'next' /
+    // 'back' / 'stop' / 'cancel' arrives). Each method is idempotent
+    // and safe to invoke when nothing is playing.
+
+    pause() {
+      if (this._audio.src && !this._audio.paused) {
+        try { this._audio.pause(); } catch {}
+      }
+    }
+
+    resume() {
+      if (this._audio.src && this._audio.paused && !this._audio.ended) {
+        const r = this._audio.play();
+        if (r && typeof r.then === 'function') {
+          r.catch((e) => this._handlePlayError(this._currentPath, e));
+        }
+        return;
+      }
+      // Nothing currently paused — fall through to "play next unheard".
+      this._playFirstUnheard();
+    }
+
+    togglePause() {
+      if (!this._audio.src) {
+        this._playFirstUnheard();
+        return;
+      }
+      if (this._audio.paused) {
+        this.resume();
+      } else {
+        this.pause();
+      }
+    }
+
+    next() {
+      const queue = this._getQueue();
+      const heard = this._getHeardPaths();
+      const unheard = queue
+        .filter((f) => !heard.has(f.path))
+        .sort((a, b) => a.mtime - b.mtime);
+      const target = unheard[0];
+      if (target) this.playPath(target.path, true, true);
+    }
+
+    back() {
+      this._audio.currentTime = Math.max(0, this._audio.currentTime - 10);
+    }
+
+    forward() {
+      if (!isFinite(this._audio.duration)) return;
+      this._audio.currentTime = Math.min(
+        this._audio.duration,
+        this._audio.currentTime + 10,
+      );
+    }
+
+    // Voice-command vocabulary aliases. 'stop' and 'cancel' both map
+    // to abort() — distinct in the spoken grammar (user might say
+    // either) but identical at the player level: cut the wire,
+    // discard the in-flight clip.
+    stop() { this.abort(); }
+    cancel() { this.abort(); }
+
+    _playFirstUnheard() {
+      const queue = this._getQueue();
+      const heard = this._getHeardPaths();
+      const unheard = queue
+        .filter((f) => !heard.has(f.path))
+        .sort((a, b) => a.mtime - b.mtime);
+      const target = unheard[0] || queue[0];
+      if (target) this.playPath(target.path, true);
+    }
+
     // Wraps the native AudioContext to emit a two-tone cue on listening
     // start/stop. Exposed publicly so renderer can wire onListeningState
     // straight to this method.
@@ -450,35 +525,17 @@
     // ---- Buttons ------------------------------------------------------
 
     _wireButtons() {
+      // Button handlers delegate to the same public methods that
+      // voice-command dispatch in app/renderer.js calls. Single source
+      // of truth for "what does play / pause / back / forward do".
       if (this._playPauseBtn) {
-        this._on(this._playPauseBtn, 'click', () => {
-          if (!this._audio.src) {
-            const queue = this._getQueue();
-            const heard = this._getHeardPaths();
-            const unheard = queue.filter((f) => !heard.has(f.path)).sort((a, b) => a.mtime - b.mtime);
-            const next = unheard[0] || queue[0];
-            if (next) this.playPath(next.path, true);
-            return;
-          }
-          if (this._audio.paused) {
-            const r = this._audio.play();
-            if (r && typeof r.then === 'function') {
-              r.catch((e) => this._handlePlayError(this._currentPath, e));
-            }
-          } else this._audio.pause();
-        });
+        this._on(this._playPauseBtn, 'click', () => this.togglePause());
       }
       if (this._back10Btn) {
-        this._on(this._back10Btn, 'click', () => {
-          this._audio.currentTime = Math.max(0, this._audio.currentTime - 10);
-        });
+        this._on(this._back10Btn, 'click', () => this.back());
       }
       if (this._fwd10Btn) {
-        this._on(this._fwd10Btn, 'click', () => {
-          if (isFinite(this._audio.duration)) {
-            this._audio.currentTime = Math.min(this._audio.duration, this._audio.currentTime + 10);
-          }
-        });
+        this._on(this._fwd10Btn, 'click', () => this.forward());
       }
     }
 

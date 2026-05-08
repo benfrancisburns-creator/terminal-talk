@@ -262,6 +262,13 @@ const api = {
   // dictation and never misses content while they talk.
   onMicCapturedElsewhere: (cb) => subscribe('mic-captured-elsewhere', cb),
   onMicReleased:          (cb) => subscribe('mic-released',           cb),
+  // Voice-command dispatch from main → renderer. Fires when the
+  // wake-word listener (via voice-command.json + voice-command-watcher.js)
+  // resolves a "hey jarvis play / pause / next / back / stop / cancel"
+  // utterance. Renderer dispatches the action verb to the audio-player's
+  // matching public method (play→resume, pause→pause, etc.). One verb
+  // per fire; no payload beyond the action string.
+  onVoiceCommand:         (cb) => subscribe('voice-command-action', cb, (a) => a),
   // Pushed once at startup if any global shortcut failed to register
   // (e.g. another app already has the chord). Renderer also has the
   // pull path via getHotkeyRegistration.

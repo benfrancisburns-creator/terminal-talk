@@ -2681,6 +2681,15 @@ if (window.api.onMicReleased) {
     audioPlayer.systemAutoResume();
   });
 }
+// Voice-command dispatch — see app/lib/voice-command-dispatch.js. Completes
+// the wake-word → voice-command.json → watcher → renderer chain.
+if (window.api.onVoiceCommand && window.TT_VOICE_COMMAND_DISPATCH) {
+  window.api.onVoiceCommand(window.TT_VOICE_COMMAND_DISPATCH.createVoiceCommandDispatch({
+    audioPlayer,
+    onUnknown: (a) => { try { logRendererError('voice-command-unknown', new Error(`unknown voice-command action: ${a}`)); } catch {} },
+    onError:   (_a, e) => { try { logRendererError('voice-command-dispatch', e); } catch {} },
+  }));
+}
 // Dock-edge class. Main.js sends { kind: 'horizontal', edge: 'top'|'bottom' }
 // after a snap — vertical mode was removed so we just track which horizontal
 // edge we're glued to (for the dock-bottom rule in styles.css that flattens
