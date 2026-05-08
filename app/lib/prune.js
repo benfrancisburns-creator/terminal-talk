@@ -14,6 +14,16 @@
 const realFs = require('node:fs');
 const realPath = require('node:path');
 
+// 14 days. .txt + .original.txt sidecars are kept long after the
+// .mp3 they describe so the transcript-panel "show me what was
+// said earlier today" feature works after the audio has been
+// auto-pruned. But unbounded retention turns the queue dir into
+// a long-tail of small files (1000+ observed in the field after a
+// day of use). Two-week retention covers any plausible "scroll
+// back through last week's sessions" use case while still letting
+// the dir self-trim. Audio still uses staleMs (much shorter).
+const SIDECAR_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
 function createPruner({
   queueDir,
   sessionsDir,
@@ -38,6 +48,21 @@ function createPruner({
           try {
             const stat = fs.statSync(full);
             if (now - stat.mtimeMs > staleMs) fs.unlinkSync(full);
+          } catch {}
+          continue;
+        }
+        // Transcript-panel sidecars: .txt (spoken text) and
+        // .original.txt (pre-strip markdown source). Persist far
+        // longer than audio (audio plays once and is gone; sidecars
+        // are the lasting record), but not forever. Two-week
+        // retention is the threshold below; older sidecars get
+        // swept here. Skips _hook.log / _toolbar.log / _voice.log
+        // / _watchdog.log — those start with underscore and the
+        // suffix check below excludes them via the .txt-only test.
+        if ((f.endsWith('.txt') || f.endsWith('.original.txt')) && !f.startsWith('_')) {
+          try {
+            const stat = fs.statSync(full);
+            if (now - stat.mtimeMs > SIDECAR_MAX_AGE_MS) fs.unlinkSync(full);
           } catch {}
           continue;
         }
