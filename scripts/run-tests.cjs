@@ -747,6 +747,98 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
       throw new Error('key_helper.py must reply "err <reason>" on unknown commands so main-side caller can differentiate fail from pending');
     }
   });
+
+  it('wake-word-listener loads WAKE_WORDS via wake_word_config (Phase 4 custom wake word)', () => {
+    // Source-level invariants: the loader lives in wake_word_config
+    // (deps-light, testable without numpy/sounddevice). The listener
+    // imports it and calls load_wake_words() at module load.
+    const config = fs.readFileSync(path.join(__dirname, '..', 'app', 'wake_word_config.py'), 'utf8');
+    if (!/WAKE_WORDS_DEFAULT\s*:\s*list\[str\]\s*=\s*\[['"]hey_jarvis['"]\]/.test(config)) {
+      throw new Error('wake_word_config.py must keep WAKE_WORDS_DEFAULT = ["hey_jarvis"] as the canonical fallback');
+    }
+    if (!/BUILTIN_WAKE_WORDS\s*:\s*frozenset\[str\]\s*=\s*frozenset/.test(config)) {
+      throw new Error('wake_word_config.py must define BUILTIN_WAKE_WORDS as a frozenset (canned-name allowlist)');
+    }
+    if (!/def\s+load_wake_words/.test(config) || !/def\s+validate_wake_word/.test(config)) {
+      throw new Error('wake_word_config.py must export load_wake_words() and validate_wake_word()');
+    }
+    if (!/from\s+wake_word_config\s+import\s+[^]*?load_wake_words/.test(wake)) {
+      throw new Error('wake-word-listener.py must import load_wake_words from wake_word_config');
+    }
+    if (!/WAKE_WORDS\s*=\s*load_wake_words\(/.test(wake)) {
+      throw new Error('wake-word-listener.py must assign WAKE_WORDS = load_wake_words(...) at module load');
+    }
+  });
+
+  it('wake_word_config loader filters bad entries + falls back at runtime', () => {
+    // End-to-end probe importing wake_word_config directly (no numpy /
+    // sounddevice / openwakeword required). Tests: canned names kept,
+    // path not found dropped, non-.onnx dropped, empty-after-filter
+    // falls back to default.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-wakeword-'));
+    const cfgPath = path.join(tmpDir, 'config.json');
+    const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      fs.writeFileSync(cfgPath, JSON.stringify({
+        wake_words: ['hey_jarvis', 'alexa', 'totally_invalid', '/etc/hosts'],
+      }));
+      const appDir = path.join(__dirname, '..', 'app');
+      const r = spawnSync(PYTHON_BIN, ['-c', `
+import os, sys
+os.environ['TT_CONFIG_PATH'] = r'${cfgPath.replace(/\\/g, '\\\\')}'
+os.environ['TT_HOME'] = r'${tmpDir.replace(/\\/g, '\\\\')}'
+sys.path.insert(0, r'${appDir.replace(/\\/g, '\\\\')}')
+from wake_word_config import load_wake_words
+print('WAKE_WORDS', ','.join(load_wake_words()))
+`], { encoding: 'utf8', timeout: 10000 });
+      if (r.status !== 0) {
+        throw new Error(`wake_word_config probe exited ${r.status}: ${r.stderr || r.stdout}`);
+      }
+      const out = (r.stdout || '').trim();
+      if (!/^WAKE_WORDS hey_jarvis,alexa$/m.test(out)) {
+        throw new Error(`expected loader to keep [hey_jarvis, alexa] and drop invalids; got: ${out}`);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('wake_word_config falls back to default when config has no valid entries', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-wakeword-fb-'));
+    const cfgPath = path.join(tmpDir, 'config.json');
+    const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+    try {
+      fs.writeFileSync(cfgPath, JSON.stringify({ wake_words: ['totally_invalid', '/etc/hosts'] }));
+      const appDir = path.join(__dirname, '..', 'app');
+      const r = spawnSync(PYTHON_BIN, ['-c', `
+import os, sys
+os.environ['TT_CONFIG_PATH'] = r'${cfgPath.replace(/\\/g, '\\\\')}'
+os.environ['TT_HOME'] = r'${tmpDir.replace(/\\/g, '\\\\')}'
+sys.path.insert(0, r'${appDir.replace(/\\/g, '\\\\')}')
+from wake_word_config import load_wake_words
+print('WAKE_WORDS', ','.join(load_wake_words()))
+`], { encoding: 'utf8', timeout: 10000 });
+      if (r.status !== 0) {
+        throw new Error(`fallback probe exited ${r.status}: ${r.stderr || r.stdout}`);
+      }
+      const out = (r.stdout || '').trim();
+      if (!/^WAKE_WORDS hey_jarvis$/m.test(out)) {
+        throw new Error(`expected fallback to ['hey_jarvis']; got: ${out}`);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('config.schema.json declares wake_words array with the canned-name allowlist documented', () => {
+    const schema = fs.readFileSync(path.join(__dirname, '..', 'config.schema.json'), 'utf8');
+    if (!/"wake_words"\s*:/.test(schema)) {
+      throw new Error('config.schema.json must declare a "wake_words" property');
+    }
+    if (!/hey_jarvis/.test(schema) || !/hey_mycroft/.test(schema)) {
+      throw new Error('config.schema.json wake_words description must list the canned-name allowlist (hey_jarvis, hey_mycroft, etc.)');
+    }
+  });
 });
 
 // =============================================================================

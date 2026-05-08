@@ -6,6 +6,15 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Custom wake words via config.json** — `wake_words` array in
+  `~/.terminal-talk/config.json` lets users pick from openWakeWord 0.6's
+  canned models (`alexa`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy`,
+  `timer`, `weather`) or supply absolute paths to user-trained `.onnx`
+  files (< 5 MB). Invalid entries are skipped with a warning to
+  `_voice.log`; config that yields zero valid entries falls back to
+  `['hey_jarvis']`. Loader extracted to `app/wake_word_config.py` so
+  it can be tested without the audio stack. Restart-on-write handled
+  by the existing voice-listener watchdog.
 - **Synth-audit diagnostic** — `npm run synth-audit` (one-shot) +
   `--watch --jsonl=path` (background watcher) compute per-turn
   shrinkage ratios and surface dropped backticked / bolded / table-

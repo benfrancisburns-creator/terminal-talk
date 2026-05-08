@@ -91,7 +91,15 @@ logging.basicConfig(
 )
 log = logging.getLogger('wake')
 
-WAKE_WORDS = ['hey_jarvis']
+# Wake-word config loader lives in wake_word_config.py so tests can
+# exercise it without importing the audio stack (numpy / sounddevice /
+# openwakeword). Listener just consumes the resolved list at module
+# load. Restart-on-config-change is handled by the toolbar's voice-
+# listener watchdog, so a one-shot read here is sufficient.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from wake_word_config import load_wake_words  # noqa: E402
+
+WAKE_WORDS = load_wake_words(log=log)
 THRESHOLD = 0.5
 COOLDOWN_SEC = 2.0
 

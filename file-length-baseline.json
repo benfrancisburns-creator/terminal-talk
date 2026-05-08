@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18096,
+    "scripts/run-tests.cjs": 18188,
     "app/renderer.js": 2714,
     "app/main.js": 2604,
     "app/synth_turn.py": 1971,
@@ -17,7 +17,7 @@
     "app/lib/codex-session-watcher.js": 920,
     "scripts/record-real-toolbar-videos.ps1": 853,
     "app/codex-hook-common.psm1": 805,
-    "app/wake-word-listener.py": 720,
+    "app/wake-word-listener.py": 728,
     "hooks/speak-response.ps1": 707,
     "app/lib/claude-desktop-title-sync.js": 683,
     "app/lib/sessions-table.js": 670,
@@ -92,6 +92,7 @@
     "app/openai_tts.py": 117,
     "scripts/send-video-terminal-prompt.ps1": 117,
     "app/lib/palette-alloc.js": 115,
+    "app/wake_word_config.py": 115,
     "app/lib/prune.js": 114,
     "app/lib/watchdog.js": 114,
     "scripts/record-desktop.cjs": 114,

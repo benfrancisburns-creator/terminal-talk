@@ -45,6 +45,8 @@
 
   "heartbeat_enabled": true,
 
+  "wake_words": ["hey_jarvis"],
+
   "panels": {
     "_comment": "Toolbar panel state; managed by the app.",
     "transcript_expanded": false,

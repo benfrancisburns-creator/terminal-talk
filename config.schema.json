@@ -59,6 +59,12 @@
       "default": true,
       "description": "HB1 — global default. When Claude Code or Codex is actively working but the queue has been silent for 5 s, synthesise a spinner-verb ('Moonwalking', 'Pontificating') or thinking phrase as an ephemeral H-prefixed clip so you get audible confirmation the session is alive. Per-session heartbeat_enabled overrides can force on/off for one session."
     },
+    "wake_words": {
+      "type": "array",
+      "default": ["hey_jarvis"],
+      "items": { "type": "string" },
+      "description": "Wake words the listener arms. Each entry is either a canned openWakeWord 0.6 model name (alexa, hey_jarvis, hey_mycroft, hey_rhasspy, timer, weather) OR an absolute path to a user-trained .onnx file under 5 MB. Invalid entries are skipped with a warning to _voice.log; if every entry is invalid the listener falls back to ['hey_jarvis']. Restart the toolbar (or kill the wake-word listener — the watchdog respawns it) for changes to take effect."
+    },
     "panels": {
       "type": "object",
       "description": "UI panel persistence. Each sub-panel records its collapsed/expanded state and view mode so the toolbar restores exactly how the user left it.",

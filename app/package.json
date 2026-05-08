@@ -68,6 +68,7 @@
       "**/tool_narration.py",
       "**/text_strip.py",
       "**/wake-word-listener.py",
+      "**/wake_word_config.py",
       "**/key_helper.py",
       "**/posix_hooks.py",
       "**/statusline.py",
