@@ -60,6 +60,7 @@
     "asarUnpack": [
       "**/lib/palette-classes.css",
       "**/synth_turn.py",
+      "**/synth_footer.py",
       "**/edge_tts_speak.py",
       "**/openai_tts.py",
       "**/sentence_split.py",

@@ -1616,155 +1616,12 @@ def _run_stream_mode(
     return body_text_chunks, updated_offsets, fully_done
 
 
-# Past-tense spinner verbs mirroring Claude Code's own terminal footer
-# ("Cooked for 49s", "Sautéed for 1m 0s"). Present-continuous forms live
-# in app/lib/heartbeat.js SPINNER_VERBS; this is the past-tense render
-# so the end-of-response clip sounds natural ("Simmered for 2 minutes"
-# not "Simmering for 2 minutes"). Sautéed explicitly included because
-# the terminal uses it and it's what Ben pointed at in the transcript.
-# Irregulars (Thinking → Thought, Doing → Done, Spinning → Spun) use
-# their standard past forms.
-PAST_TENSE_VERBS = (
-    'Accomplished', 'Actioned', 'Actualised', 'Baked', 'Booped', 'Brewed',
-    'Calculated', 'Cerebrated', 'Channelled', 'Churned', 'Clauded', 'Coalesced',
-    'Cogitated', 'Combobulated', 'Computed', 'Concocted', 'Conjured', 'Considered',
-    'Contemplated', 'Cooked', 'Crafted', 'Created', 'Crunched', 'Deciphered',
-    'Deliberated', 'Determined', 'Discombobulated', 'Divined', 'Effected',
-    'Elucidated', 'Enchanted', 'Envisioned', 'Finagled', 'Flibbertigibbeted',
-    'Forged', 'Formed', 'Frolicked', 'Generated', 'Germinated', 'Hatched',
-    'Herded', 'Honked', 'Hustled', 'Ideated', 'Imagined', 'Incubated',
-    'Inferred', 'Jived', 'Manifested', 'Marinated', 'Meandered', 'Moonwalked',
-    'Moseyed', 'Mulled', 'Mustered', 'Mused', 'Noodled', 'Percolated',
-    'Perused', 'Philosophised', 'Pontificated', 'Pondered', 'Processed',
-    'Puttered', 'Puzzled', 'Reticulated', 'Ruminated', 'Sautéed', 'Schemed',
-    'Schlepped', 'Shimmied', 'Shucked', 'Simmered', 'Smooshed', 'Spelunked',
-    'Spun', 'Stewed', 'Sussed', 'Synthesised', 'Thought', 'Tinkered',
-    'Transmuted', 'Unfurled', 'Unravelled', 'Vibed', 'Wandered', 'Whirred',
-    'Wibbled', 'Wizarded', 'Worked', 'Wrangled',
-)
-
-
-_TIMESTAMP_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z?$')
-
-
-def _parse_timestamp(value) -> float:
-    """Parse a Claude Code JSONL ISO-8601 UTC timestamp to epoch seconds.
-
-    Accepts strings like '2026-05-04T13:38:06.064Z' (the format Claude
-    Code writes). Returns 0.0 on any parse failure so callers can fall
-    back gracefully.
-    """
-    if not isinstance(value, str):
-        return 0.0
-    m = _TIMESTAMP_RE.match(value.strip())
-    if not m:
-        return 0.0
-    try:
-        from datetime import datetime, timezone
-        y, mo, d, h, mi, s = (int(m.group(i)) for i in range(1, 7))
-        frac = m.group(7)
-        micro = int((frac + '000000')[:6]) if frac else 0
-        dt = datetime(y, mo, d, h, mi, s, micro, tzinfo=timezone.utc)
-        return dt.timestamp()
-    except Exception:
-        return 0.0
-
-
-def _elapsed_from_transcript(entries: list, user_idx: int) -> int:
-    """Compute elapsed seconds from JSONL: last_user_prompt → last_assistant.
-
-    user_idx is the index of the most recent USER PROMPT (already filtered
-    against tool_result entries by find_last_user_idx). The last assistant
-    timestamp is the latest 'assistant' entry after that index. Returns 0
-    if either timestamp is unreadable, so callers fall back to their own
-    elapsed measurement.
-    """
-    if user_idx is None or user_idx < 0 or user_idx >= len(entries):
-        return 0
-    user_ts = _parse_timestamp((entries[user_idx] or {}).get('timestamp'))
-    if user_ts <= 0:
-        return 0
-    last_assistant_ts = 0.0
-    for i in range(len(entries) - 1, user_idx, -1):
-        e = entries[i] or {}
-        if e.get('type') != 'assistant':
-            continue
-        ts = _parse_timestamp(e.get('timestamp'))
-        if ts > last_assistant_ts:
-            last_assistant_ts = ts
-            break
-    if last_assistant_ts <= 0:
-        return 0
-    delta = last_assistant_ts - user_ts
-    if delta < 1:
-        return 0
-    return int(round(delta))
-
-
-def humanise_footer_phrase(footer: str) -> str:
-    """Expand a scraped Claude Code footer into natural spoken English.
-
-    Claude Code prints e.g. 'Crunched for 6m 39s' to the terminal. Edge-TTS
-    pronounces 'm' as "em" and 's' as "ess" — gibberish. This expands the
-    abbreviation in place while keeping the actual verb Claude Code chose,
-    so the audio clip says exactly what's on screen but spoken naturally.
-
-    Returns the original string unchanged if the format isn't recognised.
-
-        'Crunched for 6m 39s' → 'Crunched for 6 minutes and 39 seconds'
-        'Cooked for 49s'      → 'Cooked for 49 seconds'
-        'Brewed for 1m'       → 'Brewed for 1 minute'
-        'Brewed for 1m 1s'    → 'Brewed for 1 minute and 1 second'
-    """
-    if not footer:
-        return ''
-    m = re.match(r'^([A-Za-zÀ-ſ]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s\s*$', footer.strip())
-    if not m:
-        return footer.strip()
-    verb = m.group(1)
-    mins = int(m.group(2)) if m.group(2) else 0
-    secs = int(m.group(3))
-    if mins == 0:
-        return f'{verb} for {secs} second{"" if secs == 1 else "s"}'
-    if secs == 0:
-        return f'{verb} for {mins} minute{"" if mins == 1 else "s"}'
-    return (
-        f'{verb} for {mins} minute{"" if mins == 1 else "s"} '
-        f'and {secs} second{"" if secs == 1 else "s"}'
-    )
-
-
-def format_elapsed_phrase(seconds: int, rng=None) -> str:
-    """Humanise a turn duration for the end-of-response audio clip.
-
-    Mirrors Claude Code's terminal footer "Cooked for 49s" / "Sautéed
-    for 1m 0s" pattern, but kept in natural spoken English so edge-tts
-    doesn't say "one em zero ess" for "1m 0s". Verb picked at random
-    from PAST_TENSE_VERBS per turn — matches the terminal's varied
-    spinner feel. `rng` overridable for deterministic tests.
-
-        5   → 'Cooked for 5 seconds'
-        59  → 'Sautéed for 59 seconds'
-        60  → 'Simmered for 1 minute'
-        90  → 'Pondered for 1 minute and 30 seconds'
-        448 → 'Thought for 7 minutes and 28 seconds'
-    """
-    if seconds is None or seconds < 1:
-        return ''
-    seconds = int(seconds)
-    if rng is None:
-        import random
-        rng = random
-    verb = rng.choice(PAST_TENSE_VERBS)
-    mins, secs = divmod(seconds, 60)
-    if mins == 0:
-        return f'{verb} for {secs} second{"" if secs == 1 else "s"}'
-    if secs == 0:
-        return f'{verb} for {mins} minute{"" if mins == 1 else "s"}'
-    return (
-        f'{verb} for {mins} minute{"" if mins == 1 else "s"} '
-        f'and {secs} second{"" if secs == 1 else "s"}'
-    )
+# Past-tense verb list, ISO-8601 timestamp parser, JSONL-elapsed
+# computation, footer humaniser, format_elapsed_phrase, and the
+# scrape+drift-check footer pipeline live in app/synth_footer.py to
+# keep this file under the 2725-line file-length ceiling AND to bring
+# run()'s cyclomatic complexity below the ruff C901 threshold (33).
+# Phase 0 of the v0.7 housekeeping pass.
 
 
 def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
@@ -1856,25 +1713,14 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                 if tool_idx not in announced_set:
                     new_tool_entries.append((tool_idx, tname, tinput, tresult))
 
-        # On-stop ALWAYS owes the user a footer clip ("Cooked for 49s"
-        # etc.) when elapsed is known. Without this carve-out the
-        # early-exit below fires whenever the on-stream watcher has
-        # already synthesised all body text during the turn — and the
-        # footer never gets spoken. Observed live 2026-04-23: body audio
-        # played fine, silence where the footer should have been.
-        #
-        # On POSIX we synthesise the footer ourselves (Windows path goes
-        # through footer-watcher.js), so we also count the JSONL-derived
-        # elapsed as evidence of "owes a footer" — the hook-based
-        # elapsed_sec can be 0 if the working flag wasn't set this turn,
-        # but the transcript timestamps still tell us how long the
-        # generation took.
-        owes_footer = mode == 'on-stop' and (
-            (elapsed_sec is not None and elapsed_sec >= 1)
-            or (sys.platform != 'win32'
-                and _elapsed_from_transcript(entries, user_idx) >= 1)
-        )
-        if not pending and not new_tool_entries and not owes_footer:
+        # On-stop owes the user a footer clip when elapsed is known.
+        # owes_footer in synth_footer.py encapsulates the POSIX two-
+        # tier check (hook elapsed_sec OR JSONL-derived elapsed) and
+        # the Windows-side short-circuit (footer-watcher.js owns it
+        # there, so synth_turn never owes a footer on win32).
+        from synth_footer import owes_footer as _owes_footer
+        is_owed_footer = _owes_footer(mode, elapsed_sec, entries, user_idx)
+        if not pending and not new_tool_entries and not is_owed_footer:
             _log(f'{mode}: nothing new for {session_short}')
             return 0
 
@@ -1966,122 +1812,20 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             if clean:
                 body_clips = group_sentences_for_tts(clean)
 
-        # End-of-response elapsed-time audio.
-        #
-        # Two strategies, picked at runtime by platform:
-        #
-        #   Windows: footer-watcher.js scrapes Claude Code's literal
-        #     "Worked for Xm Ys" line off the Windows Terminal buffer
-        #     via UIA. Owned entirely by the JS side — the synth
-        #     pipeline below short-circuits on win32 and never touches
-        #     the footer.
-        #
-        #   POSIX: two-tier here in synth_turn.
-        #     1. claude_footer_scrape.py reads the tab's scrollback via
-        #        AppleScript (Terminal.app + iTerm2 are both supported)
-        #        and returns Claude's literal footer line. Same UX as
-        #        Windows — user sees "Crunched for 25s" on screen and
-        #        hears "Crunched for 25 seconds".
-        #     2. Fallback (Warp / WezTerm / SSH session / scrape miss):
-        #        compute the elapsed from JSONL entry timestamps and
-        #        synthesise format_elapsed_phrase. Verb is randomised,
-        #        the number is correct.
-        #
-        # Why JSONL timestamps and not hook elapsed_sec for the fallback:
-        # the mark-working flag fires at UserPromptSubmit, but Claude
-        # Code's internal clock starts when GENERATION begins, often 20-
-        # 60 s later. JSONL entries carry the actual generation
-        # timestamps Claude Code emits, so user_prompt → last_assistant
-        # produces a duration that lines up with what the user sees on
-        # screen. We use this both for the fallback verb-phrase AND as
-        # a sanity check against the scraped string — if Claude's
-        # printed duration disagrees with our JSONL by more than 2 s
-        # the scrape is probably stale (a previous turn's line that
-        # Claude hasn't yet overwritten with the fresh one), so we
-        # bail and fall back rather than speak a wrong number.
-        footer_clip_text = ''
-        if mode == 'on-stop' and sys.platform != 'win32':
-            jsonl_elapsed = _elapsed_from_transcript(entries, user_idx)
-            chosen_elapsed = jsonl_elapsed if jsonl_elapsed > 0 else (elapsed_sec or 0)
-            if chosen_elapsed >= 1:
-                # Tier 1: try to scrape Claude's literal footer text on
-                # macOS. Fail silently → tier 2.
-                if sys.platform == 'darwin':
-                    try:
-                        config_for_pid = load_config()
-                        registry = config_for_pid.get('_registry') or {}
-                        # _registry isn't a real config key; we need
-                        # to load the assignments file directly. Avoid
-                        # importing posix_hooks (circular). Same path as
-                        # there: ~/.terminal-talk/session-colours.json.
-                        from pathlib import Path as _P
-                        reg_path = _P.home() / '.terminal-talk' / 'session-colours.json'
-                        claude_pid = 0
-                        if reg_path.exists():
-                            try:
-                                _reg_data = json.loads(reg_path.read_text(encoding='utf-8'))
-                                _entry = (_reg_data.get('assignments') or {}).get(session_short) or {}
-                                claude_pid = int(_entry.get('claude_pid') or 0)
-                            except Exception:
-                                claude_pid = 0
-                        if claude_pid > 0:
-                            sys.path.insert(0, str(_P(__file__).resolve().parent))
-                            from claude_footer_scrape import scrape_footer_for_claude_pid
-                            scraped = scrape_footer_for_claude_pid(claude_pid)
-                            if scraped:
-                                m = re.match(
-                                    r'^([A-ZÀ-Ž][a-zà-ž]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s\s*$',
-                                    scraped.strip(),
-                                )
-                                if m:
-                                    scraped_secs = int(m.group(2) or 0) * 60 + int(m.group(3))
-                                    # Ratio-based staleness check rather than
-                                    # absolute drift. Claude's footer clock can
-                                    # legitimately diverge from our JSONL-derived
-                                    # elapsed by tens of seconds on long turns
-                                    # (e.g. 14m 6s scraped vs 14m 41s JSONL —
-                                    # ~4% off, both clocks correct, just
-                                    # measuring slightly different windows).
-                                    # Stale-scrape detection should only trigger
-                                    # when the scraped line is from a clearly
-                                    # different turn — i.e. orders of magnitude
-                                    # different. 0.4x-2.5x catches everything
-                                    # legitimate while still rejecting e.g. a
-                                    # 5-second prior-turn footer scraped in the
-                                    # middle of a 5-minute current turn.
-                                    if scraped_secs <= 0 or chosen_elapsed <= 0:
-                                        ratio = 0.0
-                                    else:
-                                        ratio = scraped_secs / chosen_elapsed
-                                    # Field-observed ratios sit at 1.00-1.01
-                                    # in steady state — Claude's clock
-                                    # legitimately drifts ~4% on long turns
-                                    # but never further. Prior 0.4-2.5 range
-                                    # was set defensive on day one with no
-                                    # data; tightening now that we have a
-                                    # measurement. 0.85-1.20 still admits
-                                    # 20% over-measure (tool-use pause
-                                    # variance) without letting a stale
-                                    # prior-turn line slip through.
-                                    if 0.85 <= ratio <= 1.20:
-                                        footer_clip_text = humanise_footer_phrase(scraped)
-                                        _log(
-                                            f'on-stop: scraped Terminal.app footer '
-                                            f'"{scraped}" (scraped={scraped_secs}s '
-                                            f'JSONL={chosen_elapsed}s ratio={ratio:.2f})'
-                                        )
-                                    else:
-                                        _log(
-                                            f'on-stop: scraped footer "{scraped}" '
-                                            f'rejected (scraped={scraped_secs}s '
-                                            f'JSONL={chosen_elapsed}s ratio={ratio:.2f} '
-                                            f'outside 0.4-2.5 range) — falling back'
-                                        )
-                    except Exception as exc:
-                        _log(f'on-stop: footer scrape failed: {type(exc).__name__}: {exc}')
-                # Tier 2: format_elapsed_phrase from JSONL elapsed.
-                if not footer_clip_text:
-                    footer_clip_text = format_elapsed_phrase(chosen_elapsed)
+        # End-of-response elapsed-time audio. POSIX two-tier strategy
+        # (Windows owns its own footer via footer-watcher.js): scrape
+        # Claude's literal printed line on Mac when possible, else
+        # format from JSONL elapsed. See synth_footer.py for full
+        # documentation of the tier logic + drift sanity check.
+        from synth_footer import compute_footer_clip_text
+        footer_clip_text = compute_footer_clip_text(
+            mode=mode,
+            elapsed_sec=elapsed_sec,
+            entries=entries,
+            user_idx=user_idx,
+            session_short=session_short,
+            log_fn=_log,
+        )
 
         _log(f'{mode}: {session_short} — {len(pending)} new entries, '
              f'{len(body_clips)} body clips, {len(question_sentences)} questions, '
@@ -2167,6 +1911,22 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         _log(f'UNCAUGHT: {type(e).__name__}: {e}')
         return 1
+
+
+# Backwards-compat re-exports for the test harness, which imports
+# `synth_turn.PAST_TENSE_VERBS` / `synth_turn.format_elapsed_phrase`
+# directly via `python -c "import synth_turn; ..."`. Phase 0 moved
+# the canonical implementations to synth_footer; rebinding them as
+# module attributes here keeps the existing tests passing without
+# touching the test file. Module-attribute reassignment (not from-
+# import) sidesteps the I001 import-block-ordering check on a
+# bottom-of-file re-export.
+import synth_footer as _synth_footer  # noqa: E402
+
+PAST_TENSE_VERBS = _synth_footer.PAST_TENSE_VERBS
+_elapsed_from_transcript = _synth_footer.elapsed_from_transcript
+format_elapsed_phrase = _synth_footer.format_elapsed_phrase
+humanise_footer_phrase = _synth_footer.humanise_footer_phrase
 
 
 if __name__ == '__main__':

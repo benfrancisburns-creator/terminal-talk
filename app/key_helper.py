@@ -149,7 +149,7 @@ if IS_WINDOWS:
     _SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
     _SendInput.restype = wintypes.UINT
 
-    def _press(vk: int, up: bool) -> '_INPUT':
+    def _press(vk: int, up: bool) -> _INPUT:
         ev = _INPUT()
         ev.type = _INPUT_KEYBOARD
         ev.ki.wVk = vk
@@ -224,8 +224,8 @@ if IS_WINDOWS:
 # macOS backend
 # ---------------------------------------------------------------------------
 elif IS_MAC:
-    import Quartz
     import psutil
+    import Quartz
     from AppKit import NSWorkspace
 
     # Virtual key codes — see <HIToolbox/Events.h>. C is 0x08; Cmd lives

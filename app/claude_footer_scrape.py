@@ -32,7 +32,6 @@ import re
 import subprocess
 import sys
 
-
 # Generous match: a capitalised word (incl. accented characters for
 # "Sautéed" / "Brûléed" / "Pondéréd"-style variants) followed by " for "
 # followed by an optional minutes group and a required seconds group.
