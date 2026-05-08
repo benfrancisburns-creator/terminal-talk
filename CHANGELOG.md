@@ -6,6 +6,36 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **One-line installer for macOS / Linux** —
+  `curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bash`.
+  Auto-installs Homebrew if missing, `brew install`s `node + python@3.12 + portaudio`,
+  clones the repo, runs `install.sh --unattended`. End-to-end ~3-10 min
+  with no clicks. Re-run with `bash -s update` to pick up new commits
+  (skips the brew/python/npm dance, just refreshes app code + restarts
+  the toolbar). Same shape as the Homebrew / Rust / nvm install UX.
+- **Per-session statusline glyph for Claude Code on macOS** —
+  `app/statusline.py` mirrors `statusline.ps1`'s output contract
+  (same colour, same glyph format, same ⭐/🔇 prefixes). Registered
+  via Claude Code's `statusLine.command` setting in `~/.claude/settings.json`
+  during install. The terminal footer now shows the session colour
+  matching the toolbar's queue dot.
+- **Terminal.app + iTerm2 footer scrape on macOS** —
+  `app/claude_footer_scrape.py` resolves `claude_pid` → `/dev/ttysXXX`
+  → terminal-app tab → grep latest "<verb> for <duration>" line via
+  AppleScript. The synthesised end-of-turn footer now matches Claude
+  Code's literal printed line on Terminal.app and iTerm2 (Warp /
+  WezTerm / Hyper / Alacritty fall back to the verb-randomised
+  format_elapsed_phrase path because they don't expose buffer content
+  via AppleScript). Full Windows parity for footer accuracy.
+- **Local `say`(1) TTS fallback on macOS** when every cloud TTS
+  provider has refused a sentence — typically transient
+  `NoAudioReceived` from edge-tts. Uses `say -o tmp.aiff` +
+  `afconvert -f WAVE -d LEI16` (both ship with macOS — no extra
+  dependency) to produce a WAV-format file at the synth's expected
+  `.mp3` path. Voice quality is lower than neural voices, but the
+  user always hears *something* instead of a silently-dropped
+  sentence. Logged distinctly in `_hook.log` so audits can tell
+  when the local path took over.
 - **macOS port — Terminal Talk now runs natively on macOS** (in addition to
   Windows). The Electron toolbar, queue, audio playback, transcript
   watcher, on-stream/on-tool/on-stop synth pipeline, hooks (Claude Code
@@ -99,6 +129,30 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **macOS App Nap suspended the toolbar.** Live audit caught a
+  9-minute log silence between heartbeats — App Nap put the renderer
+  + main event loop to sleep, queue polling stopped, a footer-clip
+  synth fired during the gap and the new clip never got picked up.
+  The toolbar resumed only when the user's cursor entered the bar.
+  Fix: `powerSaveBlocker.start('prevent-app-suspension')` at
+  `app.whenReady()`. macOS-specific; Windows / Linux ignore the
+  flag harmlessly.
+- **`speech_includes` defaults more permissive on first install.**
+  `code_blocks`, `urls`, `bullet_markers`, `inline_code`, `image_alt`
+  default to true so a freshly-installed user hears the full response
+  including markdown context, instead of having to discover and toggle
+  each flag separately. Per-session overrides still win as before.
+- **Footer scrape drift band tightened from 0.4-2.5× to 0.85-1.20×.**
+  Day-one defensive range, replaced with the field-observed actual
+  range (1.00-1.01) plus a small tolerance for tool-use-pause
+  variance. Closes a stale-line loophole (e.g. previous turn 60s,
+  current turn 35s — old range would accept ratio=1.71 and speak the
+  wrong duration).
+- **Sidecar disk hygiene.** `pruneOldFiles` now also sweeps `.txt`
+  and `.original.txt` transcript-panel sidecars older than 14 days,
+  so the queue dir doesn't accumulate without bound (1000+ files
+  observed after a day of moderate use). Audio files still prune
+  on the much-shorter `staleMs` cycle as before.
 - **POSIX session staleness.** The Sessions panel showed every Claude
   Code session as "closed" 10 s after the last hook fired, because
   `get-stale-sessions` only added sidecar PIDs (Windows-only) to
