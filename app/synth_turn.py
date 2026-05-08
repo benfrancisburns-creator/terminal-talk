@@ -1881,18 +1881,24 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
 
         # End-of-response elapsed-time audio.
         #
-        # On Windows the footer-watcher (app/lib/footer-watcher.js)
-        # scrapes Claude Code's literal "Worked for Xm Ys" line off the
-        # Windows Terminal buffer via UIA. POSIX strategy is two-tier:
+        # Two strategies, picked at runtime by platform:
         #
-        #   1. macOS Terminal.app: claude_footer_scrape.py reads the tab's
-        #      scrollback via AppleScript and returns Claude's literal
-        #      footer line. Same UX as Windows — user sees "Crunched
-        #      for 25s" on screen and hears "Crunched for 25 seconds".
-        #   2. Fallback (iTerm2, Warp, Linux, scrape miss, duration drift):
-        #      compute the elapsed from JSONL entry timestamps and
-        #      synthesise format_elapsed_phrase. Verb is randomised, the
-        #      number is correct.
+        #   Windows: footer-watcher.js scrapes Claude Code's literal
+        #     "Worked for Xm Ys" line off the Windows Terminal buffer
+        #     via UIA. Owned entirely by the JS side — the synth
+        #     pipeline below short-circuits on win32 and never touches
+        #     the footer.
+        #
+        #   POSIX: two-tier here in synth_turn.
+        #     1. claude_footer_scrape.py reads the tab's scrollback via
+        #        AppleScript (Terminal.app + iTerm2 are both supported)
+        #        and returns Claude's literal footer line. Same UX as
+        #        Windows — user sees "Crunched for 25s" on screen and
+        #        hears "Crunched for 25 seconds".
+        #     2. Fallback (Warp / WezTerm / SSH session / scrape miss):
+        #        compute the elapsed from JSONL entry timestamps and
+        #        synthesise format_elapsed_phrase. Verb is randomised,
+        #        the number is correct.
         #
         # Why JSONL timestamps and not hook elapsed_sec for the fallback:
         # the mark-working flag fires at UserPromptSubmit, but Claude
@@ -1960,7 +1966,17 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
                                         ratio = 0.0
                                     else:
                                         ratio = scraped_secs / chosen_elapsed
-                                    if 0.4 <= ratio <= 2.5:
+                                    # Field-observed ratios sit at 1.00-1.01
+                                    # in steady state — Claude's clock
+                                    # legitimately drifts ~4% on long turns
+                                    # but never further. Prior 0.4-2.5 range
+                                    # was set defensive on day one with no
+                                    # data; tightening now that we have a
+                                    # measurement. 0.85-1.20 still admits
+                                    # 20% over-measure (tool-use pause
+                                    # variance) without letting a stale
+                                    # prior-turn line slip through.
+                                    if 0.85 <= ratio <= 1.20:
                                         footer_clip_text = humanise_footer_phrase(scraped)
                                         _log(
                                             f'on-stop: scraped Terminal.app footer '
