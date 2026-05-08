@@ -6,6 +6,12 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Synth-audit diagnostic** — `npm run synth-audit` (one-shot) +
+  `--watch --jsonl=path` (background watcher) compute per-turn
+  shrinkage ratios and surface dropped backticked / bolded / table-
+  cell / list-marker spans across the queue. Built to identify
+  what gets scrubbed from spoken audio — tracker for the action-
+  library effort.
 - **macOS mic-watcher closes the last Windows-only feature gap** —
   `app/mic_watcher_mac.py` mirrors `mic-watcher.ps1`'s stdout protocol
   (`MIC_CAPTURED <app>` / `MIC_RELEASED`) using CoreAudio HAL's process
