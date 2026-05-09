@@ -737,9 +737,24 @@ _MARKDOWN_TABLE_RE = re.compile(
 
 
 def _table_cell_summary(cell: str) -> str:
-    """Clean one markdown-table cell for a short spoken summary."""
+    """Clean one markdown-table cell for a short spoken summary.
+
+    HTML-tag stripping is selective: real HTML tags get stripped (e.g.
+    `<br/>`, `<div class="x">`, `</span>`) but lower-case identifier-
+    style placeholders inside angle brackets stay verbatim
+    (`<file>`, `<one-line why>`, `<sha7>`). Without this, a decision-
+    matrix table with template syntax loses its slot names — Ben hit
+    this in the May-9 audit on a 12-row 'Kind | Template | What it
+    cuts' table that read 'Edited : ' aloud."""
     s = str(cell or '')
-    s = re.sub(r'<[^>]+>', ' ', s)
+    # Strip only attribute-bearing or close-tag forms; keep lower-case
+    # placeholder syntax. `<file>` and `<one-line why>` survive;
+    # `<br/>`, `<div class="x">`, `</p>` are removed.
+    # Strip when the angle-bracket content has real HTML markup chars
+    # (`=`, `"`, `/`). Anything else (placeholders like `<file>`,
+    # `<one-line why>`, `<sha7>` and even uppercase `<TYPE>`) survives
+    # verbatim because audio listeners need to hear the slot name.
+    s = re.sub(r'<[^>]*[="/][^>]*>', ' ', s)
     s = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', s)
     s = re.sub(r'`+([^`\n]+?)`+', r'\1', s)
     s = re.sub(r'[*_~|]+', ' ', s)
@@ -747,25 +762,34 @@ def _table_cell_summary(cell: str) -> str:
     return s
 
 
-# Threshold for reading every row vs falling back to a one-row sample.
-# Field-observed flaw 2026-05-08: an 8-row commit-table was summarised
-# as "Table with 8 rows. Columns: #, Subject, Files. First row: ...",
-# silently losing 7/8 of the information the user wrote down. Tables
-# with this many rows are usually meaningful per-row (commit lists,
-# file matrices, decision tables — every row carries a distinct point).
-# Above the threshold we keep the compact summary because reading 30+
-# rows aloud is its own kind of bad UX.
-_TABLE_FULL_READ_ROW_LIMIT = 10
+# Thresholds for table narration (tuned 2026-05-09 against 231-turn
+# audit corpus that showed 12-row decision matrices losing 11/12 of
+# their content under the original 10-row limit):
+#   <= 25 rows  → read every row (most decision/comparison tables fit)
+#   26-50 rows  → "abridged" mode: rows 1-3 + last 2, with an omitted-
+#                 count note between them (preserves table shape +
+#                 endpoint data without forcing 50-row monologue audio)
+#   > 50 rows   → first-row sample only (truly massive enumerations —
+#                 commit logs spanning months, file inventories etc.)
+_TABLE_FULL_READ_ROW_LIMIT = 25
+_TABLE_ABRIDGED_ROW_LIMIT = 50
+_TABLE_ABRIDGED_HEAD_ROWS = 3
+_TABLE_ABRIDGED_TAIL_ROWS = 2
 
 
 def _table_row_phrase(header_cells: list[str], cells: list[str]) -> str:
     """Speakable rendering of one body row: 'col-name: cell; col-name: cell'.
-    Skips empty cells + extras beyond the header column count so a row
-    with stray trailing pipes doesn't trail off into "; ; ;"."""
+    Empty cells skipped (no signal). Empty HEADERS get a 'col N' fallback
+    so a table with `| | |` blank-header rows still narrates its data —
+    the May-9 audit caught a 5-row 'Commits added · CI gates · Phases
+    done' table reduced to just 'Table with 5 rows.' because every
+    row produced an empty pair."""
     pairs = []
     for i in range(min(len(header_cells), len(cells))):
-        if header_cells[i] and cells[i]:
-            pairs.append(f'{header_cells[i]}: {cells[i]}')
+        if not cells[i]:
+            continue
+        label = header_cells[i] or f'col {i+1}'
+        pairs.append(f'{label}: {cells[i]}')
     return '; '.join(pairs)
 
 
@@ -783,7 +807,6 @@ def _table_summary(m: re.Match[str]) -> str:
         because reading 20+ rows aloud is its own bad-UX failure mode.
     """
     header_cells = [_table_cell_summary(c) for c in m.group('header').split('|')]
-    header_cells = [c for c in header_cells if c]
     rows = []
     for ln in m.group('rows').splitlines():
         if not ln.strip().startswith('|'):
@@ -791,9 +814,14 @@ def _table_summary(m: re.Match[str]) -> str:
         cells = [_table_cell_summary(c) for c in ln.strip().strip('|').split('|')]
         rows.append(cells)
     row_count = len(rows)
-    if not header_cells:
-        return f'Table with {row_count} rows.\n'
-    cols = ', '.join(header_cells)
+    # Empty-header tables (`| | |\n|---|---|\n...`) used to bail out
+    # with "Table with N rows." and silently drop the data — Ben's
+    # 2026-05-09 audit caught a 5-row "Commits / CI gates / Phases"
+    # table reduced to nothing. Now we keep header_cells at full
+    # length (including empty strings) so the row renderer can fall
+    # back to `col N` labels via _table_row_phrase.
+    non_empty_headers = [c for c in header_cells if c]
+    cols = ', '.join(non_empty_headers) if non_empty_headers else f'{len(header_cells)} unnamed'
     plural = 'row' if row_count == 1 else 'rows'
 
     if row_count <= _TABLE_FULL_READ_ROW_LIMIT:
@@ -801,6 +829,29 @@ def _table_summary(m: re.Match[str]) -> str:
         # boundary so listener gets a natural pause between rows.
         body_parts = [f'Table with {row_count} {plural}.', f'Columns: {cols}.']
         for i, cells in enumerate(rows, start=1):
+            phrase = _table_row_phrase(header_cells, cells)
+            if phrase:
+                body_parts.append(f'Row {i}: {phrase}.')
+        return ' '.join(body_parts) + '\n'
+
+    if row_count <= _TABLE_ABRIDGED_ROW_LIMIT:
+        # 26-50 rows: read first N + last M with an omitted-count note
+        # between them. Captures the table's endpoints (which are
+        # usually meaningful — first row often the most-recent commit /
+        # most-important entry; last row often the summary / oldest)
+        # while keeping audio under ~90 s.
+        head = rows[:_TABLE_ABRIDGED_HEAD_ROWS]
+        tail = rows[-_TABLE_ABRIDGED_TAIL_ROWS:]
+        omitted = row_count - len(head) - len(tail)
+        body_parts = [f'Table with {row_count} {plural}.', f'Columns: {cols}.']
+        for i, cells in enumerate(head, start=1):
+            phrase = _table_row_phrase(header_cells, cells)
+            if phrase:
+                body_parts.append(f'Row {i}: {phrase}.')
+        if omitted > 0:
+            body_parts.append(f'Rows {len(head)+1} through {row_count - len(tail)} omitted ({omitted} {("row" if omitted == 1 else "rows")}).')
+        for offset, cells in enumerate(tail):
+            i = row_count - len(tail) + 1 + offset
             phrase = _table_row_phrase(header_cells, cells)
             if phrase:
                 body_parts.append(f'Row {i}: {phrase}.')

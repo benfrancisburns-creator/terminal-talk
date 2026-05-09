@@ -4,6 +4,35 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Narration regressions surfaced by the May-9 audit corpus
+  (231 turns)**:
+  - **Empty-header tables** now narrate every non-empty cell with a
+    `col 1: ...; col 2: ...` fallback label. The 2026-05-08 fix
+    (`652b640`) silently dropped tables with `| | |` blank headers
+    because the row-phrase builder skipped pairs where the header
+    was empty — Ben's "Commits added · CI gates · Phases done"
+    summary table reduced to just `Table with 5 rows.` with no
+    content. Now every non-empty cell speaks regardless of header
+    state.
+  - **Tables up to 25 rows** (was 10) read every row.
+    The previous 10-row limit was field-tested too tight: a 12-row
+    decision matrix lost 11/12 of its rows. 26-50 row tables use
+    a new "abridged" mode (rows 1-3 + last 2 + omitted-count
+    note); > 50 rows still falls back to the first-row sample.
+  - **Angle-bracket placeholders** (`<file>`, `<one-line why>`,
+    `<sha7>`) now survive into spoken text. The HTML-tag stripper
+    in `_table_cell_summary` was killing every `<...>` span
+    indiscriminately; restricted to entries containing real HTML
+    markup chars (`=`, `"`, `/`).
+  - **Synth-audit underscore false-positive** — `findMissing` no
+    longer strips underscores from the `bare` form before the
+    substring check. `node_modules` now stays `node_modules` and
+    is also checked as `node modules` (the synth pipeline
+    substitutes `_` → space). Eliminates the largest false-positive
+    class in the audit JSONL.
+
 ### Added
 
 - **Long-lived synth daemon over Unix socket (POSIX)** — `app/synth_daemon.py`

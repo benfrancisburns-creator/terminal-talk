@@ -69,13 +69,22 @@ function loadTurns(maxAgeSec = 86400) {
 }
 
 function findMissing(spans, spokenLowerBlob) {
+  // Underscores are KEPT in the bare form because the synth pipeline's
+  // _table_cell_summary substitutes `[*_~|]+` → space, so `node_modules`
+  // becomes `node modules` in spoken text. Pre-2026-05-09 the watcher
+  // stripped underscores from `bare` too, leaving `nodemodules` which
+  // never matched the spoken `node modules` — false-positive in the
+  // largest-volume class. Now we check both forms: literal underscored
+  // and underscores-as-spaces.
   const missing = [];
   const seen = new Set();
   for (const raw of spans) {
-    const bare = raw.replace(/[`*_~|]+/g, '').trim();
+    const bare = raw.replace(/[`*~|]+/g, '').trim();
     if (bare.length < 3 || seen.has(bare)) continue;
     seen.add(bare);
-    if (!spokenLowerBlob.includes(bare.toLowerCase())) {
+    const lower = bare.toLowerCase();
+    const spaced = lower.replace(/_/g, ' ');
+    if (!spokenLowerBlob.includes(lower) && !spokenLowerBlob.includes(spaced)) {
       missing.push(bare);
     }
   }

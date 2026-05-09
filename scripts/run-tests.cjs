@@ -5497,6 +5497,81 @@ describe('SYNTH TURN TEXT EXTRACTION', () => {
     const out = run(`print(synth_turn.sanitize(${JSON.stringify(text)}, {'code_blocks': True, 'inline_code': False}))`);
     if (!out.includes('hello world')) throw new Error(`code content dropped: ${out}`);
   });
+
+  // Block A regression fixes — corpus-driven (May-9 audit found these
+  // gaps after sampling 231 turns of real spoken vs original markdown).
+
+  it('Block A1: empty-header table narrates rows with col-N fallback', () => {
+    // 5-row table with `| | |` blank headers used to bail out with just
+    // "Table with 5 rows." — losing every cell. Now non-empty cells get
+    // a `col 1: ...; col 2: ...` fallback label.
+    const tbl = JSON.stringify(
+      'pre\n\n| | |\n|---|---|\n| Alpha | Aaa |\n| Beta | Bbb |\n| Gamma | Ccc |\n\npost\n'
+    );
+    const out = run(`print(synth_turn.sanitize(${tbl}, {}))`);
+    if (!/col 1: Alpha/.test(out) || !/col 2: Aaa/.test(out)) {
+      throw new Error(`empty-header fallback missing 'col 1/2' labels: ${out}`);
+    }
+    if (!/Beta/.test(out) || !/Gamma/.test(out)) {
+      throw new Error(`empty-header table dropped rows beyond first: ${out}`);
+    }
+  });
+
+  it('Block A2: 25-row threshold reads every row of a 12-row decision matrix', () => {
+    // Pre-fix limit was 10, so a 12-row table summarised to 'first row only'
+    // and lost 11/12 of its content. Threshold raised to 25.
+    let tbl = '| Kind | Subject |\n|---|---|\n';
+    for (let i = 1; i <= 12; i++) tbl += `| K${i} | subj-${i} |\n`;
+    tbl += '\n';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(tbl)}, {}))`);
+    for (const i of [1, 6, 12]) {
+      if (!new RegExp(`Row ${i}: Kind: K${i}`).test(out)) {
+        throw new Error(`Row ${i} missing — 25-row threshold not applied: ${out.slice(0, 400)}`);
+      }
+    }
+  });
+
+  it('Block A2: 30-row table uses abridged head+tail mode with omitted-count note', () => {
+    let tbl = '| # | Subject |\n|---|---|\n';
+    for (let i = 1; i <= 30; i++) tbl += `| ${i} | row-${i} |\n`;
+    tbl += '\n';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(tbl)}, {}))`);
+    // Head: rows 1-3
+    if (!/Row 1: #: 1/.test(out) || !/Row 3: #: 3/.test(out)) {
+      throw new Error(`abridged head rows missing: ${out.slice(0, 400)}`);
+    }
+    // Tail: last 2 rows (29, 30)
+    if (!/Row 29: #: 29/.test(out) || !/Row 30: #: 30/.test(out)) {
+      throw new Error(`abridged tail rows missing: ${out.slice(0, 400)}`);
+    }
+    // Omitted-count note (4 through 28 = 25 rows omitted)
+    if (!/omitted/i.test(out)) {
+      throw new Error(`abridged omitted-count note missing: ${out.slice(0, 400)}`);
+    }
+  });
+
+  it('Block A3: angle-bracket placeholders survive (<file>, <one-line why>)', () => {
+    const tbl = '| Kind | Template |\n|---|---|\n| EDIT | "Edited <file>: <one-line why>" |\n\n';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(tbl)}, {}))`);
+    if (!/<file>/.test(out)) {
+      throw new Error(`<file> placeholder stripped — should survive: ${out}`);
+    }
+    if (!/<one-line why>/.test(out)) {
+      throw new Error(`<one-line why> placeholder stripped — should survive: ${out}`);
+    }
+  });
+
+  it('Block A3: real HTML tags still get stripped (<a href="x">, <br/>)', () => {
+    const tbl = '| Kind | Body |\n|---|---|\n| Anchor | Click <a href="x">here</a> |\n| Break | foo <br/> bar |\n\n';
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(tbl)}, {}))`);
+    if (/<a href/.test(out) || /<br/.test(out)) {
+      throw new Error(`real HTML tags should strip: ${out}`);
+    }
+    // Inner text (`here`, `foo bar`) must still narrate
+    if (!/Click here/.test(out) || !/foo.*bar/.test(out)) {
+      throw new Error(`inner text lost when stripping HTML: ${out}`);
+    }
+  });
 });
 
 describe('INSTALL SANITY', () => {
@@ -9761,7 +9836,7 @@ describe('SYNTH DAEMON — long-lived socket dispatcher (#35 Phase 11)', () => {
       PYTHON_BIN, ['-u', path.join(__dirname, '..', 'app', 'synth_daemon.py')],
       { env, stdio: ['ignore', 'pipe', 'pipe'] }
     );
-    let probeResult = null;
+    let probeResult;
     try {
       // Wait for socket to appear (max 3 s).
       const socketPath = path.join(tmpDir, 'synth.sock');
