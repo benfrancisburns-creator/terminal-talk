@@ -6,6 +6,21 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **Heartbeat clips no longer churn the dot strip + tab badges**.
+  Ben (2026-05-09): the H-prefix ambient-filler clips were rendering
+  as visible dots and ticking the per-tab unread count up + down
+  every ~8 s as each one played and auto-deleted. Both `dot-strip`
+  and `tabs.update` now filter heartbeats out of their input via the
+  existing `isHeartbeatClip` helper. Heartbeats stay in the master
+  `queue` array (audio-player still picks them up via pendingQueue
+  and plays them as designed) — they just don't render as visible
+  state any more.
+- **Auto-played dot is now noticeably smaller** (2 px tiny pixel
+  vs. 9 px near-solid centre for manual). The earlier 4 px / 7 px
+  pair read as "the same big white dot" to Ben in practice; the new
+  4.5× size ratio plus stronger glow contrast gives an unmistakeable
+  at-a-glance differential between autoplay-from-queue and a clip
+  the user explicitly asked for via click / hey-jarvis / Ctrl+Shift+S.
 - **Auto-played clips now show the small inner dot during the
   auto-continue chain** (#42 follow-up). After a user clicked a dot,
   the continuation chain was passing `manual=true` to each

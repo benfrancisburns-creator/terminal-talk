@@ -9980,6 +9980,46 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
   global.document = _origDoc;
 });
 
+describe('HEARTBEAT CLIP VISIBILITY — kept off the dot-strip + tabs', () => {
+  // Ben (2026-05-09): "the heartbeat narration is registering in the
+  // tab area causing it to change state every 8 seconds" + "the
+  // heartbeat is clogging the queue with clips that come and go so
+  // the number is up and down regularly". Heartbeat clips (H- prefix)
+  // are ambient filler; they MUST stay in the master `queue` array
+  // for audio-player to play, but they MUST be filtered out of the
+  // dot-strip render + tab badge counts.
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+
+  it('renderer imports isHeartbeatClip helper', () => {
+    if (!/const\s+isHeartbeatClip\s*=\s*_paths\.isHeartbeatClip/.test(rendererSrc)) {
+      throw new Error('renderer.js must import isHeartbeatClip from window.TT_CLIP_PATHS');
+    }
+  });
+
+  it('renderDots filters heartbeat clips from visibleQueue (dot-strip)', () => {
+    // Anchor on the visibleNoHeartbeat const that the fix introduces;
+    // dot-strip's input must derive from this filtered base, not the
+    // raw `queue` array.
+    if (!/visibleNoHeartbeat\s*=\s*queue\.filter[\s\S]{0,150}isHeartbeatClip/.test(rendererSrc)) {
+      throw new Error('renderDots must build visibleNoHeartbeat = queue.filter(...isHeartbeatClip...)');
+    }
+    // dotStrip.update's queue arg must be visibleQueue (which derives
+    // from visibleNoHeartbeat), not the raw `queue`.
+    if (!/dotStrip\.update\(\{[\s\S]{0,200}queue:\s*visibleQueue/.test(rendererSrc)) {
+      throw new Error('dotStrip.update must receive visibleQueue (heartbeat-filtered)');
+    }
+  });
+
+  it('renderDots filters heartbeat clips from tabs.update (badge counts)', () => {
+    if (!/tabs\.update\(\{[\s\S]{0,200}queue:\s*tabsQueue/.test(rendererSrc)) {
+      throw new Error('tabs.update must receive tabsQueue (heartbeat-filtered)');
+    }
+    if (!/tabsAllPaths\s*=\s*allQueuePaths\.filter[\s\S]{0,150}isHeartbeatClip/.test(rendererSrc)) {
+      throw new Error('tabs.update allPaths must filter heartbeats so per-tab badges don\'t churn');
+    }
+  });
+});
+
 describe('CLEAR-PLAYED UNDO RACE (#47)', () => {
   // Ben (2026-05-09): clicking Clear-played briefly removed clips,
   // then they re-appeared, then disappeared again. Race: renderer's
@@ -13061,12 +13101,16 @@ describe('EX7c — DotStrip', () => {
   });
 
   it('#42 styles.css ships the dot-size differential CSS', () => {
+    // Sizes tuned 2026-05-09 after Ben's "auto played still showing
+    // big white dot" feedback: auto dropped from 4 px → 2 px (a tiny
+    // bright pixel), manual bumped 7 px → 9 px (near-solid centre)
+    // for an unmistakeable 4.5× size ratio.
     const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
-    if (!/\.dot\.active::after\s*\{[^}]*width:\s*4px/s.test(css)) {
-      throw new Error('styles.css missing default .dot.active::after { width: 4px } (auto inner dot)');
+    if (!/\.dot\.active::after\s*\{[^}]*width:\s*2px/s.test(css)) {
+      throw new Error('styles.css missing default .dot.active::after { width: 2px } (auto tiny dot)');
     }
-    if (!/\.dot\.active\.active-manual::after\s*\{[^}]*width:\s*7px/s.test(css)) {
-      throw new Error('styles.css missing .dot.active.active-manual::after { width: 7px } (manual bigger inner dot)');
+    if (!/\.dot\.active\.active-manual::after\s*\{[^}]*width:\s*9px/s.test(css)) {
+      throw new Error('styles.css missing .dot.active.active-manual::after { width: 9px } (manual big dot)');
     }
   });
 

@@ -638,6 +638,7 @@ function findFocusedSessionShort() {
 const _paths = window.TT_CLIP_PATHS;
 const extractSessionShort = _paths.extractSessionShort;
 const isEphemeralClip = _paths.isEphemeralClip;
+const isHeartbeatClip = _paths.isHeartbeatClip;
 
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away
@@ -1053,10 +1054,19 @@ function renderDots() {
   // only clips that belong to that session. The underlying `queue` array
   // stays the single source of truth — DotStrip gets a filtered view,
   // playback order + heardPaths tracking continue globally.
+  //
+  // Heartbeat clips (H- prefix) are ambient filler — they auto-play at
+  // reduced volume during silent stretches and auto-delete on play-end.
+  // They MUST stay in the master `queue` array so audio-player can pick
+  // them up via pendingQueue, but they MUST NOT show as dots or count
+  // toward per-tab badges; otherwise the tab/dot strip churns every
+  // ~8 s as each heartbeat appears + plays + auto-deletes (Ben's
+  // 2026-05-09 report). Filter them out at the render boundary.
+  const visibleNoHeartbeat = queue.filter((f) => !isHeartbeatClip(f.path.split(/[\\/]/).pop()));
   const shortId = selectedTab;
   const visibleQueue = shortId === 'all'
-    ? queue
-    : queue.filter((f) => {
+    ? visibleNoHeartbeat
+    : visibleNoHeartbeat.filter((f) => {
         const fname = f.path.split(/[\\/]/).pop();
         return window.TT_CLIP_PATHS.extractSessionShort(fname) === shortId;
       });
@@ -1075,10 +1085,13 @@ function renderDots() {
   // carries every on-disk audio path (uncapped) so the badge count
   // reflects the real backlog past MAX_FILES — deleting a clip
   // actually decrements the number you see instead of the old
-  // "delete 20, next 20 slide in, badge stays at 20" loop.
+  // "delete 20, next 20 slide in, badge stays at 20" loop. Heartbeats
+  // also filtered here for the same reason as the dot-strip filter.
+  const tabsQueue = visibleNoHeartbeat;
+  const tabsAllPaths = allQueuePaths.filter((p) => !isHeartbeatClip(p.split(/[\\/]/).pop()));
   tabs.update({
-    queue,
-    allPaths: allQueuePaths,
+    queue: tabsQueue,
+    allPaths: tabsAllPaths,
     heardPaths,
     sessionAssignments,
     selectedTab,
