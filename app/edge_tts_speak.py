@@ -33,34 +33,67 @@ EDGE_TTS_RETRIES = int(os.environ.get('TT_EDGE_TTS_RETRIES', '6'))
 EDGE_TTS_SAVE_TIMEOUT_SEC = 30
 
 
+async def _try_synth_once(payload: str, voice: str, out_path: str) -> int:
+    """One attempt at edge-tts. Returns 0 on success, raises on failure
+    so the retry loop can decide what to do."""
+    tmp = out_path + '.partial'
+    c = edge_tts.Communicate(payload, voice)
+    await asyncio.wait_for(c.save(tmp), timeout=EDGE_TTS_SAVE_TIMEOUT_SEC)
+    size = os.path.getsize(tmp)
+    if size < MIN_MP3_BYTES:
+        raise RuntimeError(
+            f'output too small ({size} bytes, threshold {MIN_MP3_BYTES})'
+        )
+    os.replace(tmp, out_path)
+    return 0
+
+
+def _strip_ssml(text: str) -> str:
+    """Remove all SSML tags from text — the fallback path when edge-tts
+    rejects an SSML payload. Inverse of narration_ssml.build()'s wrap."""
+    import re as _re
+    return _re.sub(r'<[^>]+>', '', text)
+
+
 async def synth(text: str, voice: str, out_path: str) -> int:
+    """Block B (#45): accept either plain text or pre-built SSML
+    (detected by leading `<speak`). On any synth failure we retry; on
+    persistent failure with SSML input, fall back to plain-text by
+    stripping every tag and trying once more — daemon-down ≠ broken
+    audio is the same principle as elsewhere in the pipeline."""
+    is_ssml = text.lstrip().startswith('<speak')
     last_err = None
     for attempt in range(EDGE_TTS_RETRIES):
         try:
-            tmp = out_path + '.partial'
-            c = edge_tts.Communicate(text, voice)
-            await asyncio.wait_for(c.save(tmp), timeout=EDGE_TTS_SAVE_TIMEOUT_SEC)
-            size = os.path.getsize(tmp)
-            if size < MIN_MP3_BYTES:
-                raise RuntimeError(
-                    f'output too small ({size} bytes, threshold {MIN_MP3_BYTES})'
-                )
-            os.replace(tmp, out_path)
-            return 0
+            return await _try_synth_once(text, voice, out_path)
         except asyncio.TimeoutError:
             last_err = RuntimeError(
                 f'edge-tts save timed out after {EDGE_TTS_SAVE_TIMEOUT_SEC}s'
             )
-            # Proactively drop the partial so the next attempt starts clean.
-            try:
-                if os.path.exists(out_path + '.partial'):
-                    os.remove(out_path + '.partial')
-            except Exception:
-                pass  # cleanup best-effort — leftover .partial is handled by startup sweep
-            await asyncio.sleep(0.3 + 0.2 * attempt)
         except Exception as e:
             last_err = e
-            await asyncio.sleep(0.3 + 0.2 * attempt)
+        # Cleanup partial before the next attempt.
+        try:
+            if os.path.exists(out_path + '.partial'):
+                os.remove(out_path + '.partial')
+        except Exception:
+            pass  # cleanup best-effort — leftover .partial is handled by startup sweep
+        await asyncio.sleep(0.3 + 0.2 * attempt)
+
+    # All retries failed. If we were running SSML, peel it back to
+    # plain text and try ONE more time before reporting silent failure.
+    if is_ssml:
+        plain = _strip_ssml(text).strip()
+        if plain:
+            print(
+                f'edge-tts: SSML attempts exhausted; retrying with plain text '
+                f'(last error: {type(last_err).__name__}: {last_err})',
+                file=sys.stderr,
+            )
+            try:
+                return await _try_synth_once(plain, voice, out_path)
+            except Exception as e:
+                last_err = e
     try:
         tmp = out_path + '.partial'
         if os.path.exists(tmp):

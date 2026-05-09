@@ -9795,6 +9795,106 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+
+  function py(code) {
+    const prelude = `import sys; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import narration_ssml as ns; `;
+    const r = runPythonInline(prelude + code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  it('narration_ssml.py byte-level Python syntax', () => {
+    const r = spawnSync(PYTHON_BIN, ['-m', 'py_compile', path.join(appDirRepo, 'narration_ssml.py')],
+      { encoding: 'utf8', timeout: 10000 });
+    assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
+  });
+
+  it('needs_ssml: pure prose returns False', () => {
+    assertEqual(py(`print(ns.needs_ssml('Just a normal sentence about something.'))`), 'False');
+  });
+
+  it('needs_ssml: text with commit hash returns True', () => {
+    assertEqual(py(`print(ns.needs_ssml('Committed a48a6e3 on main.'))`), 'True');
+  });
+
+  it('needs_ssml: bullet list returns True', () => {
+    assertEqual(py(`print(ns.needs_ssml('- alpha\\n- bravo\\n- charlie'))`), 'True');
+  });
+
+  it('build: commit hash wrapped in <say-as interpret-as="characters">', () => {
+    const out = py(`print(ns.build('Committed a48a6e3 on main.'))`);
+    if (!/<say-as interpret-as="characters">a48a6e3<\/say-as>/.test(out)) {
+      throw new Error(`SHA spell-out missing: ${out}`);
+    }
+    if (!/<speak/.test(out)) throw new Error(`speak envelope missing: ${out}`);
+  });
+
+  it('build: dev acronyms get <sub alias=...> wrappers', () => {
+    const out = py(`print(ns.build('npm build using IPC + JSON.'))`);
+    if (!/<sub alias="N P M">npm<\/sub>/i.test(out)) {
+      throw new Error(`npm alias missing: ${out}`);
+    }
+    if (!/<sub alias="I P C">ipc<\/sub>/i.test(out)) {
+      throw new Error(`IPC alias missing: ${out}`);
+    }
+  });
+
+  it('build: file extensions get "dot X" alias', () => {
+    const out = py(`print(ns.build('Edited app/main.py and lib/text.js.'))`);
+    if (!/<sub alias="dot py">\.py<\/sub>/.test(out)) {
+      throw new Error(`.py alias missing: ${out}`);
+    }
+    if (!/<sub alias="dot J S">\.js<\/sub>/.test(out)) {
+      throw new Error(`.js alias missing: ${out}`);
+    }
+  });
+
+  it('build: bullet list gets <break time="200ms"/> between items', () => {
+    const out = py(`print(ns.build('- alpha\\n- bravo\\n- charlie'))`);
+    const breakCount = (out.match(/<break time="200ms"\/>/g) || []).length;
+    if (breakCount < 2) {
+      throw new Error(`expected 2+ <break time="200ms"/> between bullets; got ${breakCount}: ${out}`);
+    }
+  });
+
+  it('build: idempotent — already-SSML input returns unchanged', () => {
+    const out = py(`a = ns.build('Committed a48a6e3.'); b = ns.build(a); print('SAME' if a == b else 'DIFF')`);
+    assertEqual(out, 'SAME');
+  });
+
+  it('build: XML-escapes user content (& < > preserved as entities)', () => {
+    const out = py(`print(ns.build('Mix of & < > chars'))`);
+    if (!/&amp;/.test(out) || !/&lt;/.test(out) || !/&gt;/.test(out)) {
+      throw new Error(`XML escaping incomplete: ${out}`);
+    }
+  });
+
+  it('edge_tts_speak.py has SSML detection + plain-text fallback path', () => {
+    const src = fs.readFileSync(path.join(appDirRepo, 'edge_tts_speak.py'), 'utf8');
+    if (!/_strip_ssml\b/.test(src)) {
+      throw new Error('edge_tts_speak.py must define _strip_ssml for the fallback path');
+    }
+    if (!/is_ssml\s*=.*startswith\(['"]<speak/.test(src)) {
+      throw new Error('edge_tts_speak.py must detect SSML by leading <speak prefix');
+    }
+    if (!/SSML attempts exhausted/.test(src)) {
+      throw new Error('edge_tts_speak.py must log when falling back from SSML to plain text');
+    }
+  });
+
+  it('synth_turn.py wraps sentences via _maybe_ssml_wrap before edge_tts call', () => {
+    const src = fs.readFileSync(path.join(appDirRepo, 'synth_turn.py'), 'utf8');
+    if (!/def\s+_maybe_ssml_wrap/.test(src)) {
+      throw new Error('synth_turn.py must define _maybe_ssml_wrap helper');
+    }
+    if (!/payload\s*=\s*_maybe_ssml_wrap\(sentence\)/.test(src)) {
+      throw new Error('synth_turn.py must call _maybe_ssml_wrap inside _run_edge_tts');
+    }
+  });
+});
+
 describe('SYNTH-AUDIT — corpus categorisation + duration estimate (#44 Block D)', () => {
   const audit = require(path.join(__dirname, '..', 'scripts', 'synth-audit.cjs'));
 

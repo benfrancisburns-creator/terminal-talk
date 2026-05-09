@@ -1256,6 +1256,23 @@ def _run_say_fallback(sentence: str, out_path: Path) -> bool:
                 aiff_tmp.unlink()
 
 
+def _maybe_ssml_wrap(sentence: str) -> str:
+    """Block B (#45): wrap the sentence in SSML when its content
+    benefits from pauses / pronunciation aliases. Pure prose stays
+    plain-text so the synth fast-path skips the wrapper. Failures
+    in the SSML pipeline never break audio — _run_edge_tts retries
+    with the original on subprocess error, and edge_tts_speak.py
+    has its own SSML→plain-text fallback as a second line of
+    defence (Block B4)."""
+    try:
+        from narration_ssml import build, needs_ssml
+        if needs_ssml(sentence):
+            return build(sentence)
+    except Exception as e:
+        _log(f'ssml wrap failed: {type(e).__name__}: {e}; using plain text')
+    return sentence
+
+
 def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) -> bool:
     """Invoke edge_tts_speak.py with retries on transient Microsoft-service
     wobbles. Returns True on success.
@@ -1267,14 +1284,21 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
     which one went missing. Now we retry 3× with exponential-ish backoff
     (0.4 s, 1.0 s) and, on final failure, log a preview of the sentence so
     the user can see exactly what was lost. Total worst-case overhead:
-    ~1.5 s of sleep per lost sentence — far preferable to a silent gap."""
+    ~1.5 s of sleep per lost sentence — far preferable to a silent gap.
+
+    Block B (#45): the sentence is wrapped in SSML when the content
+    benefits from pauses / pronunciation. edge_tts_speak.py detects
+    the `<speak` prefix and feeds it to edge_tts.Communicate as
+    SSML; on persistent failure it strips the tags and retries plain.
+    """
     import subprocess
+    payload = _maybe_ssml_wrap(sentence)
     last_err = None
     for attempt in range(1, attempts + 1):
         try:
             proc = subprocess.run(
                 [sys.executable, str(EDGE_TTS_SCRIPT), voice, str(out_path)],
-                input=sentence.encode('utf-8'),
+                input=payload.encode('utf-8'),
                 timeout=SYNTH_TIMEOUT_SEC,
                 capture_output=True,
             )

@@ -6,6 +6,22 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **SSML for pauses + pronunciation in edge-tts** — new
+  `app/narration_ssml.py` builds `<speak>...</speak>` payloads with:
+  - `<break time="...">` between bullets (200 ms), table rows
+    (400 ms), paragraphs (600 ms), headings (100 ms after);
+  - `<say-as interpret-as="characters">` around 7-char hex commit
+    SHAs so they spell out letter-by-letter;
+  - `<sub alias="...">` for ~30 dev acronyms (npm, DMG, CLI, IPC,
+    JSON, JSONL, API, SDK, etc.) and ~25 file extensions
+    (`.py`→"dot py", `.json`→"dot jay son", etc.).
+  Wrapper applied per-call by `synth_turn._maybe_ssml_wrap` only
+  when `needs_ssml(text)` is True (commit hashes, multi-bullet,
+  multi-row table, or known acronym present); pure prose stays
+  plain-text. `edge_tts_speak.py` detects the `<speak` prefix and
+  feeds it as SSML; on persistent failure, strips every tag and
+  retries plain-text — daemon-down ≠ broken audio.
+
 - **Synth-audit semantic categorisation + duration estimate** —
   every per-turn JSONL record now carries `category`
   (prose/list/table/code based on dominant character share) and
