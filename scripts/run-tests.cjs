@@ -9795,6 +9795,129 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)', () => {
+  const appDirRepo = path.join(__dirname, '..', 'app');
+
+  function lib(code) {
+    const prelude = `import sys, json; sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}'); import narration_library as nl; `;
+    const r = runPythonInline(prelude + code);
+    if (r.code !== 0) throw new Error(`python exited ${r.code}: ${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  it('narration_library.py byte-level Python syntax', () => {
+    const r = spawnSync(PYTHON_BIN, ['-m', 'py_compile', path.join(appDirRepo, 'narration_library.py')],
+      { encoding: 'utf8', timeout: 10000 });
+    assertEqual(r.status, 0, `py_compile failed: ${r.stderr}`);
+  });
+
+  // Each kind has at least one positive case (matches above threshold)
+  // and verifies the rendered output stays tight + grammatical.
+
+  it('COMMIT: "Committed a48a6e3: subject" detected + rewritten', () => {
+    const out = lib(`print(nl.render('Committed a48a6e3: feat(narration): SSML for pauses.'))`);
+    if (!/Committed a48a6e3:/.test(out) || !/SSML for pauses/.test(out)) {
+      throw new Error(`COMMIT rewrite incomplete: ${out}`);
+    }
+  });
+
+  it('TEST: "Tests N/M passed" rewritten as "Tests: N of M passed"', () => {
+    const out = lib(`print(nl.render('Tests 974/974 passed; all green.'))`);
+    if (!/Tests: 974 of 974 passed/.test(out)) {
+      throw new Error(`TEST rewrite missing: ${out}`);
+    }
+  });
+
+  it('BUILD: "Built the DMG" rewritten preserving artefact', () => {
+    const out = lib(`print(nl.render('Built the DMG successfully.'))`);
+    if (!/Built\s+DMG/i.test(out)) throw new Error(`BUILD rewrite missing: ${out}`);
+  });
+
+  it('BLOCK: "Blocked: error" detected and kept tight', () => {
+    const out = lib(`print(nl.render('Blocked: ONNXRuntimeError on model load.'))`);
+    if (!/Blocked:\s+ONNXRuntimeError on model load/.test(out)) {
+      throw new Error(`BLOCK rewrite incorrect: ${out}`);
+    }
+  });
+
+  it('PLAN: "Plan: 4 steps — investigate, ..." extracts step count + first noun', () => {
+    const out = lib(`print(nl.render('Plan: 4 steps — investigate, fix, test, ship.'))`);
+    if (!/Plan: 4 steps, starting with investigate/.test(out)) {
+      throw new Error(`PLAN rewrite missing step count or first noun: ${out}`);
+    }
+  });
+
+  it('EDIT: "Edited <file> to do X" extracts file + summary', () => {
+    const out = lib(`print(nl.render('Edited app/main.js to add the gear-icon update badge.'))`);
+    if (!/Edited app\/main\.js: add the gear-icon update badge/.test(out)) {
+      throw new Error(`EDIT rewrite missing file or summary: ${out}`);
+    }
+  });
+
+  it('INVESTIGATE: "Looking at file.py to do X" keeps target without purpose clause', () => {
+    const out = lib(`print(nl.render('Looking at synth_turn.py to understand the table summariser.'))`);
+    if (!/Looking at synth_turn\.py/.test(out)) {
+      throw new Error(`INVESTIGATE target missing extension: ${out}`);
+    }
+    if (/to understand/.test(out)) {
+      throw new Error(`INVESTIGATE should not echo purpose clause: ${out}`);
+    }
+  });
+
+  it('DECIDE: "Going with X because Y" extracts both option + reason', () => {
+    const out = lib(`print(nl.render('Going with Redis because it is faster than memcached.'))`);
+    if (!/Going with Redis because it is faster than memcached/.test(out)) {
+      throw new Error(`DECIDE rewrite incomplete: ${out}`);
+    }
+    // Reason should appear ONCE, not twice (regression check).
+    const because = (out.match(/because/g) || []).length;
+    assertEqual(because, 1, `DECIDE duplicated 'because' connector: ${out}`);
+  });
+
+  it('STATUS: "Done with X; next: Y" extracts both slots', () => {
+    const out = lib(`print(nl.render('Done with Phase 11; next: Phase 6 first-run wizard.'))`);
+    if (!/Done with Phase 11; next: Phase 6 first-run wizard/.test(out)) {
+      throw new Error(`STATUS rewrite missing slot: ${out}`);
+    }
+  });
+
+  it('QUESTION: "(a) X or (b) Y?" extracts both options', () => {
+    const out = lib(`print(nl.render('Should I do (a) push now or (b) keep working?'))`);
+    if (!/option A: push now/.test(out)) throw new Error(`QUESTION option A missing: ${out}`);
+    if (!/option B: keep working/.test(out)) throw new Error(`QUESTION option B missing: ${out}`);
+  });
+
+  it('Below-threshold: pure prose passes through unchanged', () => {
+    const text = 'This is just regular conversation about plans.';
+    const out = lib(`print(nl.render(${JSON.stringify(text)}))`);
+    assertEqual(out, text, 'prose should pass through');
+  });
+
+  it('Below-threshold: stray SHA without commit context passes through', () => {
+    const text = 'The hash a48a6e3 appears in the log but unrelated.';
+    const out = lib(`print(nl.render(${JSON.stringify(text)}))`);
+    assertEqual(out, text, 'stray SHA without commit verb should not trigger COMMIT');
+  });
+
+  it('detect_kind returns (kind, confidence, slots) tuple', () => {
+    const out = lib(`r = nl.detect_kind('Committed a48a6e3: subject.'); print(json.dumps([r[0], r[1], r[2]]))`);
+    const parsed = JSON.parse(out);
+    assertEqual(parsed[0], 'COMMIT');
+    if (!(parsed[1] >= 0.7)) throw new Error(`expected confidence >= 0.7, got ${parsed[1]}`);
+    assertEqual(parsed[2].sha7, 'a48a6e3');
+  });
+
+  it('synth_turn.py wires _maybe_apply_narration_library at end of sanitize', () => {
+    const src = fs.readFileSync(path.join(appDirRepo, 'synth_turn.py'), 'utf8');
+    if (!/def\s+_maybe_apply_narration_library/.test(src)) {
+      throw new Error('synth_turn.py must define _maybe_apply_narration_library');
+    }
+    if (!/_maybe_apply_narration_library\(t\.strip\(\)\)/.test(src)) {
+      throw new Error('synth_turn.py must call _maybe_apply_narration_library at the end of sanitize()');
+    }
+  });
+});
+
 describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
 

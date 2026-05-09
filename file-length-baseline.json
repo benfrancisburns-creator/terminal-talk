@@ -4,10 +4,10 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18943,
+    "scripts/run-tests.cjs": 19066,
     "app/renderer.js": 2721,
     "app/main.js": 2645,
-    "app/synth_turn.py": 2046,
+    "app/synth_turn.py": 2074,
     "app/tool_narration.py": 1851,
     "app/lib/ipc-handlers.js": 1186,
     "app/lib/codex-tool-narration.js": 1020,
@@ -28,6 +28,7 @@
     "scripts/render-marketing-ad.cjs": 502,
     "app/codex-identify-live.ps1": 493,
     "app/lib/text.js": 453,
+    "app/narration_library.py": 443,
     "scripts/record-live-codex-toolbar.ps1": 440,
     "app/codex-terminal.psm1": 413,
     "scripts/build-hero-svg.cjs": 400,

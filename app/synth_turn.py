@@ -1079,7 +1079,35 @@ def sanitize(text: str, flags: dict) -> str:
     # Matches JS stripForTTS's `\s+` collapse, minus newline handling.
     t = re.sub(r'[^\S\n]+', ' ', t)
 
-    return t.strip()
+    t = _maybe_apply_narration_library(t.strip())
+    return t
+
+
+def _maybe_apply_narration_library(text: str) -> str:
+    """Block C (#46): pass each paragraph through the action library.
+    Paragraphs that match a known kind (COMMIT, EDIT, RUN, etc.) above
+    the confidence threshold get rewritten into a tight spoken-form
+    template; non-matching paragraphs flow through unchanged. Failures
+    in the library are caught and the original text returned — the
+    library is strictly additive, never lossy."""
+    try:
+        from narration_library import render
+    except Exception:
+        return text
+    if not text:
+        return text
+    paragraphs = re.split(r'(\n\s*\n)', text)  # keep blank-line separators
+    out = []
+    for chunk in paragraphs:
+        # Even-index chunks are paragraphs; odd-index are separators.
+        if chunk.strip() and not chunk.isspace():
+            try:
+                out.append(render(chunk))
+            except Exception:
+                out.append(chunk)
+        else:
+            out.append(chunk)
+    return ''.join(out)
 
 
 # ---------------------------------------------------------------------------

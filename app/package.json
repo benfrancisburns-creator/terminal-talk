@@ -63,6 +63,7 @@
       "**/synth_footer.py",
       "**/synth_daemon.py",
       "**/narration_ssml.py",
+      "**/narration_library.py",
       "**/edge_tts_speak.py",
       "**/openai_tts.py",
       "**/sentence_split.py",

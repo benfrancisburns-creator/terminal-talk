@@ -6,6 +6,24 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Action library — 12-kind developer-action taxonomy** — new
+  `app/narration_library.py` recognises common developer actions
+  (COMMIT, TEST, BUILD, BLOCK, PLAN, EDIT, RUN, INVESTIGATE,
+  DISCOVER, DECIDE, STATUS, QUESTION) and rewrites each detected
+  paragraph into a tight spoken-form template:
+  - `Tests 974/974 passed; all green.` → `Tests: 974 of 974 passed.`
+  - `Edited app/main.js to add the gear-icon update badge.` →
+    `Edited app/main.js: add the gear-icon update badge.`
+  - `Plan: 4 steps — investigate, fix, test, ship.` →
+    `Plan: 4 steps, starting with investigate.`
+  Each kind has a regex matcher with a confidence score (0-1);
+  threshold 0.70 — pure prose passes through unchanged so the
+  library is strictly additive (never lossy). Below-threshold
+  matches and any internal failure return the original text.
+  Wired into `synth_turn.sanitize` as the final pass before
+  sentence-split, so the audit + SSML pipeline see the rewritten
+  forms.
+
 - **SSML for pauses + pronunciation in edge-tts** — new
   `app/narration_ssml.py` builds `<speak>...</speak>` payloads with:
   - `<break time="...">` between bullets (200 ms), table rows
