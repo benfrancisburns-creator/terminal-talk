@@ -1977,6 +1977,7 @@ const { createIpcHandlers } = require('./lib/ipc-handlers');
 let _codexIdentitySync = null;
 createIpcHandlers({
   ipcMain,
+  shell,
   diag,
   getReloadGraceUntil: () => _reloadGraceUntil,
   callEdgeTTS,

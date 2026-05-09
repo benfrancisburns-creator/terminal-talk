@@ -4,6 +4,22 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **First-run permission wizard for macOS** (Phase 6 / #30) —
+  `app/lib/first-run-wizard.js` walks first-launch users through
+  the three Privacy & Security permissions Terminal Talk needs:
+  Accessibility (synthetic Cmd+C for highlight-to-speak),
+  Microphone (wake-word listener), Speech Recognition (voice
+  commands). Each step has an "Open System Settings" button that
+  deep-links via `x-apple.systempreferences:` to the right pane,
+  plus "I've granted it" / "Skip" / "Done" controls. Replaces the
+  generic toast on Mac; toast still fires on Windows / Linux.
+  New `open-external` IPC handler with allowlisted schemes
+  (`https://`, `http://`, `x-apple.systempreferences:`) so a
+  compromised renderer can't trigger arbitrary protocol handlers.
+  Re-runnable from any caller that imports `wireFirstRunWizard`.
+
 ### Fixed
 
 - **Clear-played clips no longer reappear briefly during the undo

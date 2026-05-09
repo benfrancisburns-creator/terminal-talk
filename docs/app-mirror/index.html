@@ -448,8 +448,27 @@
   <script src="lib/sessions-table.js"></script>
   <script src="lib/settings-form.js"></script>
   <script src="lib/audio-player.js"></script>
+  <!-- First-run permission wizard (Phase 6 / #30) — macOS only. Hidden by
+       default; renderer.js opens it on first launch when first_run_completed
+       is false AND the platform is darwin. Settings panel exposes a
+       re-trigger so users can rerun it any time. Three steps: Accessibility,
+       Microphone, Speech Recognition. -->
+  <div class="frw-modal" id="firstRunWizard" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="frwTitle">
+    <div class="frw-card">
+      <h2 class="frw-title" id="frwTitle" data-frw-title>Permission</h2>
+      <p class="frw-blurb" data-frw-blurb></p>
+      <div class="frw-step-dots" data-frw-stepdots aria-hidden="true"></div>
+      <div class="frw-actions">
+        <button type="button" class="frw-btn frw-btn-primary" data-frw-open>Open System Settings</button>
+        <button type="button" class="frw-btn" data-frw-granted>I've granted it</button>
+        <button type="button" class="frw-btn frw-btn-skip" data-frw-skip>Skip</button>
+        <button type="button" class="frw-btn" data-frw-close style="display: none;">Done</button>
+      </div>
+    </div>
+  </div>
   <script src="lib/voice-command-dispatch.js"></script>
   <script src="lib/update-badge.js"></script>
+  <script src="lib/first-run-wizard.js"></script>
   <script src="lib/transcript-panel.js"></script>
   <script src="renderer.js"></script>
 </body>

@@ -24,6 +24,10 @@ const { providerOrder } = require('./tts-routing');
 function createIpcHandlers(deps) {
   const {
     ipcMain,
+    // Phase 6 (#30): Electron shell for the first-run-wizard's deep-
+    // link into System Settings. Optional — when omitted, the
+    // open-external handler returns false rather than crashing.
+    shell,
     // Read-side deps (EX6f-1)
     diag,
     // Heartbeat (HB1): main-side edge-tts spawner. Injected so the
@@ -1158,6 +1162,37 @@ function createIpcHandlers(deps) {
         // the toolbar again (Ctrl+Shift+A, hey-jarvis, or a fresh launch).
         setUserHidden(true);
         win.hide();
+      }
+    });
+
+    // Phase 6 (#30): renderer-side first-run-wizard deep-links into
+    // System Settings via macOS x-apple.systempreferences:// URLs.
+    // Restricted scheme allowlist: only macOS System Settings URLs +
+    // https/http URLs are passed to shell.openExternal so a compromised
+    // renderer can't trigger arbitrary protocol handlers.
+    ipcMain.handle('open-external', async (_event, url) => {
+      if (typeof url !== 'string' || !url) {
+        diag('open-external rejected: empty/non-string url');
+        return false;
+      }
+      const allowed =
+        url.startsWith('https://') ||
+        url.startsWith('http://') ||
+        url.startsWith('x-apple.systempreferences:');
+      if (!allowed) {
+        diag(`open-external rejected: scheme not allowlisted: ${url.slice(0, 80)}`);
+        return false;
+      }
+      try {
+        if (shell && typeof shell.openExternal === 'function') {
+          await shell.openExternal(url);
+          return true;
+        }
+        diag('open-external: shell unavailable');
+        return false;
+      } catch (e) {
+        diag(`open-external failed: ${e && e.message}`);
+        return false;
       }
     });
 

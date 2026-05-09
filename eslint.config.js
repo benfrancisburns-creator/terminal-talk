@@ -103,6 +103,9 @@ module.exports = [
       'app/lib/settings-form.js',
       'app/lib/audio-player.js',
       'app/lib/tabs.js',
+      'app/lib/voice-command-dispatch.js',
+      'app/lib/update-badge.js',
+      'app/lib/first-run-wizard.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

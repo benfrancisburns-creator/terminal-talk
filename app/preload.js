@@ -194,6 +194,10 @@ const api = {
   readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
   deleteFile: (p) => ipcRenderer.invoke('delete-file', p),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
+  // Phase 6 (#30): first-run-wizard deep-links into macOS System
+  // Settings via x-apple.systempreferences:// URLs. Main-side handler
+  // allowlists schemes; renderer can't trigger arbitrary protocols.
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getConfig: () => ipcRenderer.invoke('get-config'),
   getStaleSessions: () => ipcRenderer.invoke('get-stale-sessions'),
   updateConfig: (partial) => ipcRenderer.invoke('update-config', partial),

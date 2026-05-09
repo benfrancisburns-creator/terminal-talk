@@ -2084,3 +2084,88 @@ input[type="range"]:focus-visible {
     transition: none !important;
   }
 }
+
+/* --- First-run permission wizard (Phase 6 / #30) ----------------------
+   Modal overlays the toolbar on first Mac launch. Opt-in via a class
+   on the modal element so the default state is hidden + non-interactive.
+   Sized to fit comfortably inside the resized expanded toolbar window.
+   --------------------------------------------------------------------- */
+.frw-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.frw-modal.open { display: flex; }
+.frw-card {
+  background: rgba(28, 28, 32, 0.98);
+  color: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+}
+.frw-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.95);
+}
+.frw-blurb {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 14px;
+}
+.frw-step-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.frw-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+}
+.frw-step-dot.active { background: rgba(74, 222, 128, 0.85); }
+.frw-step-dot.done   { background: rgba(255, 255, 255, 0.4); }
+.frw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.frw-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.frw-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.frw-btn-primary {
+  background: rgba(79, 163, 255, 0.25);
+  border-color: rgba(79, 163, 255, 0.55);
+}
+.frw-btn-primary:hover { background: rgba(79, 163, 255, 0.4); }
+.frw-btn-skip {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.frw-btn-skip:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+}

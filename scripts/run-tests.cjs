@@ -9795,6 +9795,186 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
+  const wizardModule = require(path.join(__dirname, '..', 'app', 'lib', 'first-run-wizard.js'));
+
+  // Minimal `document` shim so the wizard's render() can build step
+  // dots without a full DOM. Restored after the describe block.
+  const _origDoc = global.document;
+  global.document = {
+    createElement: () => ({
+      className: '',
+      _children: [],
+      appendChild: function (c) { this._children.push(c); },
+    }),
+  };
+
+  function makeMockEl() {
+    const el = {
+      _classes: new Set(),
+      _attrs: {},
+      _children: [],
+      _listeners: {},
+      classList: {
+        add(c) { el._classes.add(c); },
+        remove(c) { el._classes.delete(c); },
+        contains(c) { return el._classes.has(c); },
+      },
+      setAttribute(k, v) { el._attrs[k] = v; },
+      addEventListener(name, fn) {
+        if (!el._listeners[name]) el._listeners[name] = [];
+        el._listeners[name].push(fn);
+      },
+      appendChild(c) { el._children.push(c); },
+      _click() { (el._listeners.click || []).forEach((f) => f()); },
+      style: {},
+      querySelector() { return makeMockEl(); },
+    };
+    return el;
+  }
+
+  function makeMockModal() {
+    // Minimal modal with placeholder children for each wired selector
+    // so the wizard wires up without throwing. Tests can drive the
+    // _click hook on returned buttons to simulate user interaction.
+    const buttons = {
+      open: makeMockEl(),
+      granted: makeMockEl(),
+      skip: makeMockEl(),
+      close: makeMockEl(),
+    };
+    const titleEl = makeMockEl();
+    const blurbEl = makeMockEl();
+    const dotsEl = makeMockEl();
+    titleEl.textContent = '';
+    blurbEl.textContent = '';
+    dotsEl.innerHTML = '';
+    const modal = makeMockEl();
+    modal.querySelector = function(sel) {
+      if (sel === '[data-frw-title]') return titleEl;
+      if (sel === '[data-frw-blurb]') return blurbEl;
+      if (sel === '[data-frw-stepdots]') return dotsEl;
+      if (sel === '[data-frw-open]') return buttons.open;
+      if (sel === '[data-frw-granted]') return buttons.granted;
+      if (sel === '[data-frw-skip]') return buttons.skip;
+      if (sel === '[data-frw-close]') return buttons.close;
+      return null;
+    };
+    return { modal, buttons, titleEl, blurbEl, dotsEl };
+  }
+
+  it('exports STEPS array with 3 entries (Accessibility, Mic, Speech)', () => {
+    if (!Array.isArray(wizardModule.STEPS)) throw new Error('STEPS must be an array');
+    assertEqual(wizardModule.STEPS.length, 3);
+    const keys = wizardModule.STEPS.map((s) => s.key);
+    assertEqual(keys.join(','), 'accessibility,microphone,speech');
+  });
+
+  it('STEPS each have settingsURL with x-apple.systempreferences scheme', () => {
+    for (const s of wizardModule.STEPS) {
+      if (!s.settingsURL.startsWith('x-apple.systempreferences:')) {
+        throw new Error(`step ${s.key} settingsURL must use x-apple.systempreferences scheme`);
+      }
+    }
+  });
+
+  it('wireFirstRunWizard returns no-op shape when modal element missing', () => {
+    const w = wizardModule.wireFirstRunWizard({});
+    if (typeof w.show !== 'function') throw new Error('wizard must expose show()');
+    if (typeof w.hide !== 'function') throw new Error('wizard must expose hide()');
+    assertEqual(w.isShowing(), false);
+  });
+
+  it('"Open System Settings" button calls api.openExternal with current step URL', () => {
+    const opened = [];
+    const fakeApi = { openExternal: (url) => { opened.push(url); return Promise.resolve(true); } };
+    const { modal, buttons } = makeMockModal();
+    const w = wizardModule.wireFirstRunWizard({ api: fakeApi, modalEl: modal });
+    w.show();
+    buttons.open._click();
+    assertEqual(opened.length, 1);
+    if (!opened[0].includes('Privacy_Accessibility')) {
+      throw new Error(`expected Accessibility URL on step 1, got ${opened[0]}`);
+    }
+    // Advance to step 2 — should now open Microphone URL.
+    buttons.granted._click();
+    buttons.open._click();
+    if (!opened[1].includes('Privacy_Microphone')) {
+      throw new Error(`expected Microphone URL on step 2, got ${opened[1]}`);
+    }
+  });
+
+  it('"I\'ve granted it" advances steps and calls onComplete after the final', () => {
+    let completedCount = 0;
+    const { modal, buttons } = makeMockModal();
+    const w = wizardModule.wireFirstRunWizard({
+      api: { openExternal: () => {} },
+      modalEl: modal,
+      onComplete: () => { completedCount += 1; },
+    });
+    w.show();
+    assertEqual(w.isShowing(), true);
+    buttons.granted._click();  // step 1 → 2
+    buttons.granted._click();  // step 2 → 3
+    buttons.granted._click();  // step 3 → finish
+    assertEqual(completedCount, 1);
+    assertEqual(w.isShowing(), false);
+  });
+
+  it('Skip button advances same as Granted (skippable per-step)', () => {
+    const { modal, buttons } = makeMockModal();
+    const w = wizardModule.wireFirstRunWizard({
+      api: { openExternal: () => {} },
+      modalEl: modal,
+    });
+    w.show();
+    buttons.skip._click();
+    buttons.skip._click();
+    buttons.skip._click();
+    assertEqual(w.isShowing(), false, 'wizard should hide after skipping last step');
+  });
+
+  it('preload exposes openExternal IPC + main allowlists schemes', () => {
+    const preload = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+    if (!/openExternal:\s*\(url\)\s*=>\s*ipcRenderer\.invoke\(['"]open-external['"]/.test(preload)) {
+      throw new Error('preload.js must expose openExternal via ipcRenderer.invoke("open-external")');
+    }
+    const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8');
+    if (!/ipcMain\.handle\(['"]open-external['"]/.test(ipcSrc)) {
+      throw new Error('ipc-handlers.js must register the open-external handler');
+    }
+    if (!/x-apple\.systempreferences/.test(ipcSrc)) {
+      throw new Error('open-external handler must allowlist x-apple.systempreferences scheme');
+    }
+  });
+
+  it('renderer triggers wizard on first launch when platform === darwin', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (!/_showFirstRunWizard\(\)/.test(src)) {
+      throw new Error('renderer.js must define _showFirstRunWizard()');
+    }
+    if (!/window\.api\.platform\s*===\s*['"]darwin['"]/.test(src)) {
+      throw new Error('renderer.js must gate the wizard on platform === "darwin" (toast still fires on Win/Linux)');
+    }
+  });
+
+  it('index.html includes the modal markup with the data-frw-* hooks', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+    if (!/<div[^>]*class="frw-modal"[^>]*id="firstRunWizard"/.test(html)) {
+      throw new Error('index.html must include the firstRunWizard modal element');
+    }
+    for (const hook of ['data-frw-title', 'data-frw-blurb', 'data-frw-open', 'data-frw-granted', 'data-frw-skip']) {
+      if (!new RegExp(hook).test(html)) {
+        throw new Error(`index.html missing wizard hook: ${hook}`);
+      }
+    }
+  });
+
+  // Restore the global `document` so subsequent describe blocks see
+  // their original environment.
+  global.document = _origDoc;
+});
+
 describe('CLEAR-PLAYED UNDO RACE (#47)', () => {
   // Ben (2026-05-09): clicking Clear-played briefly removed clips,
   // then they re-appeared, then disappeared again. Race: renderer's
