@@ -1,0 +1,72 @@
+                 _______                  _             _ 
+                |__   __|                (_)           | |
+                   | | ___ _ __ _ __ ___  _ _ __   __ _| |
+                   | |/ _ \ '__| '_ ` _ \| | '_ \ / _` | |
+                   | |  __/ |  | | | | | | | | | | (_| | |
+                   |_|\___|_|  |_| |_| |_|_|_| |_|\__,_|_|
+
+                         _______     _ _    
+                        |__   __|   | | |   
+                           | | __ _ | | | __
+                           | |/ _` || | |/ /
+                           | | (_| || |   < 
+                           |_|\__,_||_|_|\_\
+
++----------------------------------------------------------------------------+
+|                          TERMINAL TALK                                      |
+|      Voice workflow for Claude Code, Codex CLI, and highlighted text         |
++----------------------------------------------------------------------------+
+
+        +-----------------------+         +-----------------------+
+        |  Claude Code          |         |  OpenAI Codex CLI     |
+        |  hooks + transcript   |         |  ~/.codex/sessions    |
+        |                       |         |                       |
+        |  $ edit renderer.js   |         |  $ codex              |
+        |  $ run npm test       |         |  > commentary         |
+        |  "Brewed for 8m 49s"  |         |  > final answer       |
+        +-----------+-----------+         +-----------+-----------+
+                    \                               /
+                     \                             /
+                      v                           v
+        +--------------------------------------------------------+
+        |                 shared speech queue                    |
+        |                                                        |
+        |   [A][A][A]  |  [B][B]  |  [C][C][C]  |  [J]          |
+        |    Claude       Codex       another      hey jarvis    |
+        |                                                        |
+        |   oldest -> newest        focus star jumps priority    |
+        +---------------------------+----------------------------+
+                                    |
+                                    v
+        +--------------------------------------------------------+
+        |  always-on-top toolbar                                  |
+        |                                                        |
+        |  <<10   [PLAY]   10>>    o========O------  1:23/2:10   |
+        |  clear played   settings   hide   transcript panel     |
+        +---------------------------+----------------------------+
+                                    |
+                                    v
+        +--------------------------------------------------------+
+        |  voice pipeline                                          |
+        |                                                        |
+        |  text cleanup -> per-session voice -> Edge TTS / OpenAI |
+        |  markdown tables, code fences, links, headings handled |
+        +---------------------------+----------------------------+
+                                    |
+                                    v
+                   .-------------------------------.
+                  /   "Claude and Codex can talk."  \
+                 /     "Say hey jarvis to read it."  \
+                '-------------------------------------'
+                         \   ^              ^   /
+                          \  |              |  /
+                           \ |              | /
+                            \|              |/
+                         +---+--------------+---+
+                         |    offline wake word  |
+                         |    global hotkeys     |
+                         |    session colours    |
+                         +-----------------------+
+
+   Windows toolbar. Free by default. MIT licensed. No accounts required.
+   Wake-word detection is local; free TTS uses Microsoft Edge's voice service.

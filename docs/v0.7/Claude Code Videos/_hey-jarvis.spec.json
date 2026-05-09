@@ -1,0 +1,92 @@
+{
+  "title": "Terminal Talk — Hey Jarvis",
+  "windowTitle": "Claude Code — hey jarvis reads any highlighted text",
+  "out": "docs/Claude Code Videos/hey-jarvis-demo.webm",
+  "durationMs": 38000,
+  "fullscreen": true,
+  "wallpaper": "docs/assets/wallpaper/terminal-talk-wallpaper-bg.jpg",
+  "terminalHeight": 380,
+  "fontSize": 16,
+  "cardWidth": 560,
+  "cardAlign": "left",
+  "chips": ["highlight any text", "press Ctrl+Shift+S", "or say hey jarvis"],
+  "states": [
+    {
+      "at": 0,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"dim\">The Hub schema migration is approved.</span>",
+        "<span class=\"dim\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 7800,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"sel\">The Hub schema migration is approved.</span>",
+        "<span class=\"sel\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"dim\">↑ select any text — code, prose, anywhere on Windows.</span>"
+      ]
+    },
+    {
+      "at": 11500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"sel\">The Hub schema migration is approved.</span>",
+        "<span class=\"sel\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"accent\">Ctrl+Shift+S — or say <b>hey jarvis</b>.</span>"
+      ]
+    },
+    {
+      "at": 14000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"sel\">The Hub schema migration is approved.</span>",
+        "<span class=\"sel\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"blue\">→ Playing as a priority clip <span class=\"jdot\"></span></span>"
+      ]
+    },
+    {
+      "at": 22500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"dim\">The Hub schema migration is approved.</span>",
+        "<span class=\"dim\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"accent\">Hey-jarvis clips jump the queue.</span>"
+      ]
+    },
+    {
+      "at": 28500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"dim\">The Hub schema migration is approved.</span>",
+        "<span class=\"dim\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"accent\">Each clip lands in the transcript panel — copyable.</span>"
+      ]
+    },
+    {
+      "at": 33500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\projects\\\\mateain&gt;</span> <span class=\"cmd\">claude \"approve the schema migration\"</span>",
+        "",
+        "<span class=\"dim\">The Hub schema migration is approved.</span>",
+        "<span class=\"dim\">Apply it during the maintenance window on Friday at 8 PM.</span>",
+        "",
+        "<span class=\"accent\">Hands-free reading. Anywhere on Windows.</span>"
+      ]
+    }
+  ]
+}

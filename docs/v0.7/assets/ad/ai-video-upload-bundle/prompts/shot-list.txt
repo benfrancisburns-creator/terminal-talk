@@ -1,0 +1,22 @@
+﻿# Shot List
+
+1. Command center boot-up, empty center, terminal panels waking up.
+2. Mascot command position, speech bubble appears, session lines connect outward.
+3. Frontend and backend panels report in.
+4. Tests, docs, Claude Code, and Codex panels report in.
+5. Decision moment: merge after review, then deploy.
+6. Hey Jarvis priority clip enters the queue.
+7. Pull back to the full room and end on Terminal Talk.
+
+Export each AI-generated clip as MP4 and place the downloads in:
+
+docs/assets/ad/external/
+
+Use filenames:
+- 01-command-center-boot.mp4
+- 02-mascot-command.mp4
+- 03-frontend-backend.mp4
+- 04-status-overview.mp4
+- 05-decision-point.mp4
+- 06-hey-jarvis-priority.mp4
+- 07-end-card-pullback.mp4

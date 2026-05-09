@@ -1,0 +1,103 @@
+{
+  "title": "Terminal Talk — Smart Tool Narration",
+  "windowTitle": "Claude Code — Terminal Talk hears every tool call",
+  "out": "docs/Claude Code Videos/smart-tool-narration.webm",
+  "durationMs": 36000,
+  "terminalHeight": 380,
+  "fontSize": 18,
+  "cardWidth": 980,
+  "chips": ["smart pipe-tail context", "function-name locality", "speakable tables"],
+  "audioCues": [
+    { "at": 2400,  "file": "01-reading.mp3" },
+    { "at": 7000,  "file": "02-grep.mp3" },
+    { "at": 12500, "file": "03-edit.mp3" },
+    { "at": 18500, "file": "04-tests.mp3" },
+    { "at": 24500, "file": "05-table.mp3" }
+  ],
+  "pipCues": [
+    { "at": 2400,  "pip": 0, "side": "a" },
+    { "at": 7000,  "pip": 1, "side": "a" },
+    { "at": 12500, "pip": 2, "side": "a" },
+    { "at": 18500, "pip": 3, "side": "b" },
+    { "at": 24500, "pip": 4, "side": "a" }
+  ],
+  "states": [
+    {
+      "at": 0,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Reviewing the audio pipeline. Will read the player, the watcher, and run the tests.</span>",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 2400,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Using the Read tool…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Reading audio-player.js</span></span>",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 7000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Using the Grep tool…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Searching for system auto pause — found 14 matches</span></span>",
+        "<span class=\"blue\">Result count surfaces in the spoken phrase.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 12500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Using the Edit tool…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Edit to handle mic captured</span></span>",
+        "<span class=\"blue\">Function name from <code>originalFile</code> — not just the line number.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 18500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Using the Bash tool…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Running the tests, then counting matches</span></span>",
+        "<span class=\"blue\">Pipe-tail context: \"| wc -l\" → \"and counting matches\".</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 24500,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Markdown tables in replies…</span>",
+        "<span class=\"accent\">→ <span class=\"highlight\">Table with 3 rows. Columns: file, line, today, with Phase 3 v2.</span></span>",
+        "<span class=\"blue\">Used to drop silently — now they get a speakable summary.</span>",
+        "",
+        ""
+      ]
+    },
+    {
+      "at": 31000,
+      "lines": [
+        "<span class=\"prompt\">PS C:\\\\terminal-talk&gt;</span> <span class=\"cmd\">claude \"audit the audio pipeline for regressions\"</span>",
+        "<span class=\"dim\">Six tool calls. You heard every one of them.</span>",
+        "<span class=\"accent\">Less staring. More listening. More flow.</span>",
+        "",
+        "",
+        ""
+      ]
+    }
+  ]
+}
