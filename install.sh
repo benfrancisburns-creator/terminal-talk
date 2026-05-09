@@ -33,7 +33,39 @@ hooks_dir="$app_root/hooks"
 queue_dir="$tt_home/queue"
 sessions_dir="$tt_home/sessions"
 config_path="${TT_CONFIG_PATH:-"$config_dir/config.json"}"
-python_exe="${TT_PYTHON_EXE:-python3}"
+# Python interpreter resolution. Honour TT_PYTHON_EXE override first.
+# On macOS, system python3 is 3.9 (the macOS-shipped interpreter) which
+# fails the >= 3.10 prereq below. Probe Homebrew's `python@3.12` /
+# `python@3.11` paths before falling back to PATH-resolved `python3`,
+# so a vanilla `bash install.sh` works on a Mac that has the brew
+# packages installed (the curl-pipe-bash one-liner installs those, but
+# `/opt/homebrew/bin` may not be on the user's PATH yet because their
+# shell rc hasn't been re-sourced). Bug #48: pre-fix, install.sh on a
+# fresh-shell Mac bailed out with "Python 3.10+ required; found 3.9.6"
+# even though brew python 3.12 was installed.
+if [ -n "${TT_PYTHON_EXE:-}" ]; then
+  python_exe="$TT_PYTHON_EXE"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  # Try brew's keg-only python links in version-priority order. If none
+  # exist, fall through to whatever `python3` resolves to and let the
+  # version check below produce a clear error.
+  python_exe="python3"
+  for candidate in \
+    /opt/homebrew/opt/python@3.13/bin/python3.13 \
+    /opt/homebrew/opt/python@3.12/bin/python3.12 \
+    /opt/homebrew/opt/python@3.11/bin/python3.11 \
+    /usr/local/opt/python@3.13/bin/python3.13 \
+    /usr/local/opt/python@3.12/bin/python3.12 \
+    /usr/local/opt/python@3.11/bin/python3.11
+  do
+    if [ -x "$candidate" ]; then
+      python_exe="$candidate"
+      break
+    fi
+  done
+else
+  python_exe="python3"
+fi
 
 unattended=0
 claude_hooks=1

@@ -6,6 +6,28 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **install.sh resolves brew Python before the macOS system Python**
+  (#48). On Darwin the script now probes
+  `/opt/homebrew/opt/python@3.13|3.12|3.11/bin/python3.X` (and the
+  Intel-Mac `/usr/local/opt/...` equivalents) in version-priority
+  order before falling back to PATH-resolved `python3`. Bug pre-fix:
+  a fresh-shell Mac with brew Python installed but `/opt/homebrew/bin`
+  not yet on PATH would bail out with "Python 3.10+ required; found
+  3.9.6" — workaround was setting `TT_PYTHON_EXE` explicitly. The
+  env-var override still takes priority over the probe.
+
+### Tested
+
+- **Queue delivery defences locked in via source-level invariants**
+  (#41). Three regression-guard tests pin the existing protections
+  for "queue keeps delivering when the toolbar is hidden":
+  `powerSaveBlocker.start("prevent-app-suspension")` fires on app
+  ready (App Nap mitigation), `notifyQueue` doesn't gate the
+  `queue-updated` IPC on `win.isVisible()`, and `posix_hooks.py`'s
+  synth dispatch is independent of toolbar visibility. No code
+  changes needed — the protections were already there from earlier
+  work; the tests prevent silent regression in a future refactor.
+
 - **Heartbeat clips no longer churn the dot strip + tab badges**.
   Ben (2026-05-09): the H-prefix ambient-filler clips were rendering
   as visible dots and ticking the per-tab unread count up + down

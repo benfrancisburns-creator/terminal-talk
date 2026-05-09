@@ -9980,6 +9980,82 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
   global.document = _origDoc;
 });
 
+describe('install.sh python resolution probes brew before falling back (#48)', () => {
+  // Ben (2026-05-09): bash install.sh on a fresh-shell Mac bailed
+  // out with "Python 3.10+ required; found 3.9.6" because /usr/bin
+  // came before /opt/homebrew/bin on PATH. Pre-fix workaround was
+  // setting TT_PYTHON_EXE explicitly. Fix: probe Homebrew's keg-
+  // only python paths in version-priority order before falling back
+  // to PATH-resolved python3.
+  const install = fs.readFileSync(path.join(__dirname, '..', 'install.sh'), 'utf8');
+
+  it('install.sh probes /opt/homebrew/opt/python@3.12 on Darwin', () => {
+    if (!/\/opt\/homebrew\/opt\/python@3\.12\/bin\/python3\.12/.test(install)) {
+      throw new Error('install.sh must probe /opt/homebrew/opt/python@3.12/bin/python3.12 (Apple Silicon brew)');
+    }
+    if (!/\/usr\/local\/opt\/python@3\.12\/bin\/python3\.12/.test(install)) {
+      throw new Error('install.sh must probe /usr/local/opt/python@3.12/bin/python3.12 (Intel-Mac brew)');
+    }
+  });
+
+  it('install.sh keeps TT_PYTHON_EXE override as the highest priority', () => {
+    // The override path must come BEFORE the Darwin probe block so
+    // power users can still pin a specific interpreter via env var.
+    const overrideIdx = install.indexOf('TT_PYTHON_EXE');
+    const probeIdx = install.indexOf('/opt/homebrew/opt/python@');
+    if (overrideIdx < 0 || probeIdx < 0) {
+      throw new Error('install.sh must contain BOTH TT_PYTHON_EXE override + brew probe block');
+    }
+    if (overrideIdx >= probeIdx) {
+      throw new Error('TT_PYTHON_EXE override must appear before the brew probe (env beats heuristic)');
+    }
+  });
+});
+
+describe('QUEUE DELIVERY DEFENCES — App Nap + visibility (#41)', () => {
+  // Ben (2026-05-09): "when you don't open the toolbar they should
+  // be delivered accurately so we have a proper queue delivery
+  // system". Source-level invariants that pin the existing
+  // protections so a refactor can't silently regress them.
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+
+  it('main.js calls powerSaveBlocker.start on app ready (App Nap mitigation)', () => {
+    // Without this, macOS suspends the toolbar after a few minutes
+    // of background idle. Symptom (logged previously): 9-minute
+    // silence between heartbeats while the user expected continuous
+    // delivery. powerSaveBlocker tells macOS to leave us awake.
+    if (!/powerSaveBlocker\.start\(\s*['"]prevent-app-suspension['"]/.test(mainSrc)) {
+      throw new Error('main.js must call powerSaveBlocker.start("prevent-app-suspension") on app ready');
+    }
+  });
+
+  it('notifyQueue always fires queue-updated when win exists (no visibility gate)', () => {
+    // The queue-updated IPC is the renderer's only audio-pipeline
+    // input. Gating it on win.isVisible() would silently starve
+    // playback whenever the user hides the toolbar.
+    const fnMatch = mainSrc.match(/function\s+notifyQueue\s*\(\)\s*\{[\s\S]+?\n\}/);
+    if (!fnMatch) throw new Error('could not locate notifyQueue function');
+    const body = fnMatch[0];
+    // Must NOT have an early return / send-skip gated on isVisible.
+    if (/if\s*\(\s*!win\.isVisible\(\)\s*\)\s*\{?\s*return/.test(body)) {
+      throw new Error('notifyQueue must not return early when win is hidden — clips would silently be lost');
+    }
+    if (!/win\.webContents\.send\(\s*['"]queue-updated['"]/.test(body)) {
+      throw new Error('notifyQueue must send the queue-updated IPC unconditionally (subject to win existence)');
+    }
+  });
+
+  it('synth daemon hot-path is independent of toolbar visibility', () => {
+    // posix_hooks.spawn_synth submits to the daemon socket regardless
+    // of whether the toolbar window is visible — keeps clips flowing
+    // when the toolbar is hidden.
+    const posix = fs.readFileSync(path.join(__dirname, '..', 'app', 'posix_hooks.py'), 'utf8');
+    if (/win.*isVisible|isVisible.*win/.test(posix)) {
+      throw new Error('posix_hooks.py must not gate synth dispatch on toolbar visibility');
+    }
+  });
+});
+
 describe('HEARTBEAT CLIP VISIBILITY — kept off the dot-strip + tabs', () => {
   // Ben (2026-05-09): "the heartbeat narration is registering in the
   // tab area causing it to change state every 8 seconds" + "the
