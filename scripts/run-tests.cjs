@@ -9948,13 +9948,18 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
     }
   });
 
-  it('renderer triggers wizard on first launch when platform === darwin', () => {
+  it('renderer delegates first-run trigger to the wizard module', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
-    if (!/_showFirstRunWizard\(\)/.test(src)) {
-      throw new Error('renderer.js must define _showFirstRunWizard()');
+    if (!/TT_FIRST_RUN_WIZARD\.triggerOnFirstRun/.test(src)) {
+      throw new Error('renderer.js must call TT_FIRST_RUN_WIZARD.triggerOnFirstRun');
     }
-    if (!/window\.api\.platform\s*===\s*['"]darwin['"]/.test(src)) {
-      throw new Error('renderer.js must gate the wizard on platform === "darwin" (toast still fires on Win/Linux)');
+    // The wizard module owns the platform check (api.platform === darwin).
+    const lib = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'first-run-wizard.js'), 'utf8');
+    if (!/api\.platform\s*===\s*['"]darwin['"]/.test(lib)) {
+      throw new Error('first-run-wizard.js must gate the modal on api.platform === "darwin"');
+    }
+    if (!/triggerOnFirstRun/.test(lib)) {
+      throw new Error('first-run-wizard.js must export triggerOnFirstRun');
     }
   });
 

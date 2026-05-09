@@ -1997,56 +1997,18 @@ async function loadSettings() {
     transcriptPanel.refresh();
   }
   renderDots();
-  // First-run welcome — fires once on a fresh install. Skipped in
-  // capture/demo modes so screenshot pipelines + the landing-page
-  // iframe don't show the welcome on every reload. Persisted as
-  // `first_run_completed: true` so it never re-fires.
-  //
-  // Phase 6 (#30): on macOS, replace the toast with a guided three-
-  // step wizard for the Accessibility / Microphone / Speech
-  // Recognition permissions. Without it, users hit those prompts at
-  // random moments later and often deny them by mistake. Wizard is
-  // re-runnable from Settings.
-  if (cfg.first_run_completed === false && !isWindowMode && !isSettingsDemoMode) {
-    const isMac = window.api && window.api.platform === 'darwin';
-    if (isMac && window.TT_FIRST_RUN_WIZARD) {
-      _showFirstRunWizard();
-    } else {
-      const speakKey = (cfg.hotkeys && cfg.hotkeys.speak_clipboard) || 'Ctrl+Shift+S';
-      const showHideKey = (cfg.hotkeys && cfg.hotkeys.toggle_window) || 'Ctrl+Shift+A';
-      _showStatusToast(
-        `Welcome to Terminal Talk. The toolbar is here, top of your screen — drag it anywhere. Highlight any text and press ${speakKey} to hear it read aloud. Press ${showHideKey} to show or hide the toolbar. Click the gear for Settings.`,
-        15000,
-        'info'
-      );
-    }
-    window.api.updateConfig({ first_run_completed: true }).catch((err) => {
-      try {
-        if (window.api && window.api.logRendererError) {
-          window.api.logRendererError({
-            type: 'unhandledrejection',
-            message: `failed to persist first_run_completed: ${err && err.message ? err.message : String(err)}`,
-            stack: err && err.stack ? err.stack : '',
-          });
-        }
-      } catch {}
+  // First-run welcome — delegated to lib/first-run-wizard.js's
+  // triggerOnFirstRun helper so renderer.js stays under the file-
+  // length ceiling. The helper handles platform detection (Mac shows
+  // the wizard, Win/Linux falls back to a toast), persists the
+  // first_run_completed flag, and is itself a no-op in demo modes.
+  if (!isWindowMode && !isSettingsDemoMode && window.TT_FIRST_RUN_WIZARD) {
+    window.TT_FIRST_RUN_WIZARD.triggerOnFirstRun({
+      cfg, api: window.api,
+      modalEl: document.getElementById('firstRunWizard'),
+      showStatusToast: _showStatusToast,
     });
   }
-}
-
-let _firstRunWizardInstance = null;
-function _showFirstRunWizard() {
-  // Lazy-init so the modal element + the wizard module both have to
-  // exist before we wire up; missing either degrades to a no-op.
-  if (!_firstRunWizardInstance) {
-    const modal = document.getElementById('firstRunWizard');
-    if (!modal || !window.TT_FIRST_RUN_WIZARD) return;
-    _firstRunWizardInstance = window.TT_FIRST_RUN_WIZARD.wireFirstRunWizard({
-      api: window.api,
-      modalEl: modal,
-    });
-  }
-  try { _firstRunWizardInstance.show(); } catch {}
 }
 
 async function setSettingsOpen(open) {

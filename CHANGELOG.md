@@ -6,6 +6,15 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Added
 
+- **Homebrew tap** (Phase 9 / #33) — install via `brew tap
+  benfrancisburns-creator/tap && brew install terminal-talk`. Formula
+  builds from source against the published `v0.6.0` tag, runs
+  `install.sh --unattended --no-claude-hooks --no-codex-hooks`
+  (hooks deferred because brew's build sandbox can't see
+  `~/.claude` / `~/.codex`), and drops `terminal-talk` + `tt-doctor`
+  shims into `HOMEBREW_PREFIX/bin`. Caveats document the post-install
+  hook-registration step + the macOS first-run permission wizard.
+  Tap repo: <https://github.com/benfrancisburns-creator/homebrew-tap>.
 - **First-run permission wizard for macOS** (Phase 6 / #30) —
   `app/lib/first-run-wizard.js` walks first-launch users through
   the three Privacy & Security permissions Terminal Talk needs:

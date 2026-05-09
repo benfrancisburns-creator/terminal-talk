@@ -76,7 +76,17 @@ Re-running `install.ps1` is safe — it updates in place and preserves your `con
 
 ### macOS
 
-**One-line install** (no Apple Developer account, no DMG dance — same shape as Homebrew / Rust / nvm):
+**Homebrew tap** (the most Mac-native path — `brew install` handles all dependencies + bin shims + future upgrades):
+
+```bash
+brew tap benfrancisburns-creator/tap
+brew install terminal-talk
+# Optional: register Claude Code / Codex CLI hooks (per-user state — brew can't write ~/.claude / ~/.codex from its sandbox)
+bash "$(brew --prefix terminal-talk)/libexec/install.sh"
+terminal-talk
+```
+
+**One-line curl install** (no Apple Developer account, no DMG dance — same shape as Homebrew / Rust / nvm):
 
 ```bash
 curl -fsSL https://benfrancisburns-creator.github.io/terminal-talk/install | bash

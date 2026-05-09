@@ -131,5 +131,44 @@
     return { show, hide, isShowing, _STEPS: STEPS };
   }
 
-  return { wireFirstRunWizard, STEPS };
+  // Helper that decides whether to fire on a first launch + handles
+  // platform-specific UX (Mac wizard vs Win/Linux welcome toast).
+  // Lives in this module so renderer.js doesn't carry the trigger
+  // logic + stays under its file-length ceiling.
+  function triggerOnFirstRun({ cfg, api, modalEl, showStatusToast } = {}) {
+    if (!cfg || cfg.first_run_completed !== false) return;
+    const isMac = api && api.platform === 'darwin';
+    if (isMac && modalEl) {
+      const w = wireFirstRunWizard({ api, modalEl });
+      try { w.show(); } catch {}
+    } else if (typeof showStatusToast === 'function') {
+      const speakKey = (cfg.hotkeys && cfg.hotkeys.speak_clipboard) || 'Ctrl+Shift+S';
+      const showHideKey = (cfg.hotkeys && cfg.hotkeys.toggle_window) || 'Ctrl+Shift+A';
+      showStatusToast(
+        `Welcome to Terminal Talk. The toolbar is here, top of your screen — drag it anywhere. Highlight any text and press ${speakKey} to hear it read aloud. Press ${showHideKey} to show or hide the toolbar. Click the gear for Settings.`,
+        15000,
+        'info'
+      );
+    }
+    if (api && typeof api.updateConfig === 'function') {
+      try {
+        const p = api.updateConfig({ first_run_completed: true });
+        if (p && typeof p.catch === 'function') {
+          p.catch((err) => {
+            try {
+              if (api.logRendererError) {
+                api.logRendererError({
+                  type: 'unhandledrejection',
+                  message: `failed to persist first_run_completed: ${err && err.message ? err.message : String(err)}`,
+                  stack: err && err.stack ? err.stack : '',
+                });
+              }
+            } catch {}
+          });
+        }
+      } catch {}
+    }
+  }
+
+  return { wireFirstRunWizard, triggerOnFirstRun, STEPS };
 }));

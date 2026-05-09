@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 19291,
-    "app/renderer.js": 2758,
+    "scripts/run-tests.cjs": 19296,
+    "app/renderer.js": 2720,
     "app/main.js": 2646,
     "app/synth_turn.py": 2074,
     "app/tool_narration.py": 1851,
@@ -76,6 +76,7 @@
     "scripts/preview-settings-demo.cjs": 179,
     "app/lib/heartbeat.js": 175,
     "scripts/check-file-length.cjs": 175,
+    "app/lib/first-run-wizard.js": 174,
     "app/terminal-talk-mcp-server.js": 172,
     "scripts/build-ai-video-upload-bundle.ps1": 170,
     "tests/e2e/settings.spec.ts": 164,
@@ -88,7 +89,6 @@
     "app/edge_tts_speak.py": 142,
     "scripts/render-mocks.cjs": 137,
     "app/codex-wt-launch.ps1": 136,
-    "app/lib/first-run-wizard.js": 135,
     "app/lib/window-dock.js": 126,
     "scripts/build-local-command-center-ad.ps1": 126,
     "app/lib/config-validate.js": 121,
