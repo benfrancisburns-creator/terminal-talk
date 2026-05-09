@@ -1050,18 +1050,10 @@ function renderDots() {
     }
   }
 
-  // Tab filter: 'all' passes the queue through; a session shortId keeps
-  // only clips that belong to that session. The underlying `queue` array
-  // stays the single source of truth — DotStrip gets a filtered view,
-  // playback order + heardPaths tracking continue globally.
-  //
-  // Heartbeat clips (H- prefix) are ambient filler — they auto-play at
-  // reduced volume during silent stretches and auto-delete on play-end.
-  // They MUST stay in the master `queue` array so audio-player can pick
-  // them up via pendingQueue, but they MUST NOT show as dots or count
-  // toward per-tab badges; otherwise the tab/dot strip churns every
-  // ~8 s as each heartbeat appears + plays + auto-deletes (Ben's
-  // 2026-05-09 report). Filter them out at the render boundary.
+  // Heartbeats stay in `queue` for audio-player but must not render —
+  // otherwise the strip + tab badges churn every ~8 s as each H-clip
+  // plays + auto-deletes. Tab filter applied AFTER the heartbeat
+  // filter so a session-specific tab also excludes them.
   const visibleNoHeartbeat = queue.filter((f) => !isHeartbeatClip(f.path.split(/[\\/]/).pop()));
   const shortId = selectedTab;
   const visibleQueue = shortId === 'all'
@@ -1080,13 +1072,8 @@ function renderDots() {
     synthInProgress,
   });
 
-  // Tabs always see the FULL queue (so per-tab unread counts stay
-  // accurate even while a non-All tab is selected). allQueuePaths
-  // carries every on-disk audio path (uncapped) so the badge count
-  // reflects the real backlog past MAX_FILES — deleting a clip
-  // actually decrements the number you see instead of the old
-  // "delete 20, next 20 slide in, badge stays at 20" loop. Heartbeats
-  // also filtered here for the same reason as the dot-strip filter.
+  // Tabs see the FULL (heartbeat-filtered) queue + allPaths so per-
+  // tab unread badges count clips past MAX_FILES correctly.
   const tabsQueue = visibleNoHeartbeat;
   const tabsAllPaths = allQueuePaths.filter((p) => !isHeartbeatClip(p.split(/[\\/]/).pop()));
   tabs.update({

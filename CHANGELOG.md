@@ -4,6 +4,8 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-09
+
 ### Fixed
 
 - **install.sh resolves brew Python before the macOS system Python**
