@@ -605,7 +605,14 @@
                 && !this._isPathSessionStale(f.path))
               .sort((a, b) => a.mtime - b.mtime)[0];
             if (next) {
-              this.playPath(next.path, true, true);
+              // Pass manual=false so the dot-size differential (#42) shows
+              // the SMALL inner dot for the continuation — only the user's
+              // initial click is "manual" in the visual sense; everything
+              // chained after is autoplay-from-queue. userClick=true is
+              // preserved so the auto-continue-after-click chain keeps
+              // chaining (the wasUserClick check on the next ended event
+              // reads from _currentIsUserClick, not _currentIsManual).
+              this.playPath(next.path, false, true);
               return;
             }
             // No more forward clips — chain complete, stop cleanly.

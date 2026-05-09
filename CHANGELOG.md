@@ -4,6 +4,19 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Auto-played clips now show the small inner dot during the
+  auto-continue chain** (#42 follow-up). After a user clicked a dot,
+  the continuation chain was passing `manual=true` to each
+  subsequent `playPath`, so every clip in the chain inherited the
+  big-dot manual treatment — exactly the differential the dot-size
+  fix was supposed to provide. Now the continuation passes
+  `manual=false` for the visual flag (small dot, since only the
+  initial click was user-driven) while preserving `userClick=true`
+  so the auto-continue-after-click chain logic still chains. Source-
+  level test asserts the correct `(false, true)` arg order.
+
 ### Added
 
 - **Homebrew tap** (Phase 9 / #33) — install via `brew tap

@@ -11106,6 +11106,36 @@ describe('AUTO-CONTINUE AFTER CLICK (v0.3.6 renderer guard)', () => {
       throw new Error('continuation branch must pick the next clip with mtime > justPlayed (strictly forward in time)');
     }
   });
+
+  it('#42 auto-continue passes manual=false so the chain shows the small dot', () => {
+    // Regression guard for the dot-size differential. When the user
+    // clicks a dot, the FIRST clip plays as manual (big inner dot).
+    // Before the fix, the continuation chain after that click was
+    // calling `playPath(next.path, true, true)` — manual=true — so
+    // every clip in the chain inherited the big dot, hiding the
+    // auto/manual distinction Ben wanted. The fix passes manual=false
+    // for the continuation; userClick=true is preserved so the chain
+    // logic (which reads _currentIsUserClick on the NEXT ended event)
+    // still chains.
+    const audioPlayerSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'), 'utf8'
+    );
+    // The auto-continue branch is uniquely identified by its filter
+    // on `f.mtime > justPlayedClip.mtime`. Assert the playPath call
+    // immediately after that block uses manual=false, userClick=true.
+    const branchMatch = audioPlayerSrc.match(
+      /f\.mtime\s*>\s*justPlayedClip\.mtime[\s\S]{0,800}?this\.playPath\(\s*next\.path\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/
+    );
+    if (!branchMatch) {
+      throw new Error('could not locate the auto-continue playPath() call');
+    }
+    if (branchMatch[1] !== 'false') {
+      throw new Error(`auto-continue must pass manual=false (small inner dot); got manual=${branchMatch[1]}`);
+    }
+    if (branchMatch[2] !== 'true') {
+      throw new Error(`auto-continue must preserve userClick=true (chain continues); got userClick=${branchMatch[2]}`);
+    }
+  });
 });
 
 describe('S3.3 — config validator', () => {
