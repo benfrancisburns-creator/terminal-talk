@@ -1210,7 +1210,56 @@ def resolve_voice_and_flags(session_short: str, config: dict) -> tuple[str, dict
 # Parallel synthesis with rolling in-order release
 # ---------------------------------------------------------------------------
 
-def _run_say_fallback(sentence: str, out_path: Path) -> bool:
+# Map Microsoft Edge neural voice names → closest macOS native say(1)
+# voice. When edge-tts fails and we drop to the say fallback, we want
+# to honour the user's voice intent rather than silently flipping to
+# the system default (which on most Macs is a male voice — Ben hit
+# this 2026-05-09 with Sonia configured but say producing male audio
+# during transient edge-tts timeouts). Picks deliberately stay within
+# the same locale + gender bucket as the requested edge voice.
+_EDGE_TO_SAY_VOICE = {
+    # UK English — female
+    'en-GB-SoniaNeural': 'Kate',
+    'en-GB-LibbyNeural': 'Kate',
+    'en-GB-MaisieNeural': 'Kate',
+    'en-GB-OliviaNeural': 'Kate',
+    'en-GB-AbbiNeural': 'Kate',
+    # UK English — male
+    'en-GB-RyanNeural': 'Daniel',
+    'en-GB-AlfieNeural': 'Daniel',
+    'en-GB-ThomasNeural': 'Daniel',
+    'en-GB-EthanNeural': 'Daniel',
+    # US English — female
+    'en-US-AriaNeural': 'Samantha',
+    'en-US-JennyNeural': 'Samantha',
+    'en-US-MichelleNeural': 'Samantha',
+    'en-US-AmberNeural': 'Samantha',
+    'en-US-SaraNeural': 'Samantha',
+    # US English — male
+    'en-US-GuyNeural': 'Alex',
+    'en-US-DavisNeural': 'Alex',
+    'en-US-TonyNeural': 'Alex',
+    'en-US-AndrewNeural': 'Alex',
+    'en-US-EricNeural': 'Alex',
+    # Australian — female
+    'en-AU-NatashaNeural': 'Karen',
+    'en-AU-FreyaNeural': 'Karen',
+    # Australian — male
+    'en-AU-WilliamNeural': 'Lee',
+    # Irish — female
+    'en-IE-EmilyNeural': 'Moira',
+}
+
+
+def _say_voice_for_edge(edge_voice: str | None) -> str | None:
+    """Return the macOS say(1) voice closest to a given edge voice,
+    or None if no mapping exists (caller falls back to system default)."""
+    if not edge_voice:
+        return None
+    return _EDGE_TO_SAY_VOICE.get(edge_voice)
+
+
+def _run_say_fallback(sentence: str, out_path: Path, edge_voice: str | None = None) -> bool:
     """macOS-only emergency TTS fallback. Fires AFTER the user's
     configured providers (edge-tts, optionally openai-tts) have all
     refused this sentence — typically a transient `NoAudioReceived`
@@ -1242,11 +1291,13 @@ def _run_say_fallback(sentence: str, out_path: Path) -> bool:
         return False
     import subprocess
     aiff_tmp = out_path.with_suffix('.aiff.tmp')
+    say_voice = _say_voice_for_edge(edge_voice)
+    say_args = ['/usr/bin/say']
+    if say_voice:
+        say_args.extend(['-v', say_voice])
+    say_args.extend(['-o', str(aiff_tmp), '--', sentence])
     try:
-        say_proc = subprocess.run(
-            ['/usr/bin/say', '-o', str(aiff_tmp), '--', sentence],
-            capture_output=True, timeout=15,
-        )
+        say_proc = subprocess.run(say_args, capture_output=True, timeout=15)
         if say_proc.returncode != 0 or not aiff_tmp.exists():
             stderr = say_proc.stderr.decode('utf-8', errors='replace').strip()
             _log(
@@ -1593,10 +1644,10 @@ def synthesize_parallel(
         # lower than the cloud providers, which is the deliberate
         # trade-off (free + reliable > polished + flaky).
         if not ok and sys.platform == 'darwin':
-            if _run_say_fallback(sentence, tmp):
+            if _run_say_fallback(sentence, tmp, edge_voice=voice):
                 ok = True
                 preview = sentence[:80].replace('\n', ' ')
-                _log(f'say fallback succeeded for: {preview!r}')
+                _log(f'say fallback succeeded for: {preview!r} (voice={voice})')
         with release_lock:
             results[seq] = tmp if ok else None
             _release_ready()

@@ -9980,6 +9980,47 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
   global.document = _origDoc;
 });
 
+describe('say(1) fallback honours configured voice (no male-voice leak on edge-tts timeout)', () => {
+  // Ben (2026-05-09): "i have the voice set as sonia but every now
+  // and then i'm getting a male voice in the audio clips". Cause:
+  // when edge-tts times out, _run_say_fallback was calling say(1)
+  // without a -v flag → system default voice (typically male) →
+  // user hears a male sentence inside an otherwise-female stream.
+  // Fix: map the edge voice → closest macOS native voice, pass via
+  // -v. Sonia → Kate, Ryan → Daniel, US Aria → Samantha, etc.
+  const synthSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'synth_turn.py'), 'utf8');
+
+  it('_EDGE_TO_SAY_VOICE map covers Sonia + Ryan + the common US voices', () => {
+    if (!/_EDGE_TO_SAY_VOICE\s*=\s*\{/.test(synthSrc)) {
+      throw new Error('synth_turn.py must define _EDGE_TO_SAY_VOICE map');
+    }
+    if (!/'en-GB-SoniaNeural'\s*:\s*'Kate'/.test(synthSrc)) {
+      throw new Error('Sonia must map to Kate (UK female native)');
+    }
+    if (!/'en-GB-RyanNeural'\s*:\s*'Daniel'/.test(synthSrc)) {
+      throw new Error('Ryan must map to Daniel (UK male native)');
+    }
+    if (!/'en-US-AriaNeural'\s*:\s*'Samantha'/.test(synthSrc)) {
+      throw new Error('Aria must map to Samantha (US female native)');
+    }
+  });
+
+  it('_run_say_fallback accepts an edge_voice arg + emits -v flag when mapped', () => {
+    if (!/def\s+_run_say_fallback\s*\(\s*sentence:\s*str,\s*out_path:\s*Path,\s*edge_voice:\s*str\s*\|\s*None\s*=\s*None\s*\)/.test(synthSrc)) {
+      throw new Error('_run_say_fallback signature must include edge_voice: str | None = None');
+    }
+    if (!/say_args\.extend\(\[['"]-v['"]\s*,\s*say_voice\]\)/.test(synthSrc)) {
+      throw new Error('_run_say_fallback must extend say_args with [-v, say_voice] when a mapping exists');
+    }
+  });
+
+  it('synthesize_parallel passes the configured voice into the fallback', () => {
+    if (!/_run_say_fallback\(sentence,\s*tmp,\s*edge_voice\s*=\s*voice\)/.test(synthSrc)) {
+      throw new Error('synthesize_parallel must pass edge_voice=voice into the say fallback so per-session overrides apply');
+    }
+  });
+});
+
 describe('install.sh python resolution probes brew before falling back (#48)', () => {
   // Ben (2026-05-09): bash install.sh on a fresh-shell Mac bailed
   // out with "Python 3.10+ required; found 3.9.6" because /usr/bin

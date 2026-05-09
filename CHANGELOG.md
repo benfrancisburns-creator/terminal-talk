@@ -4,6 +4,21 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS `say(1)` fallback honours the configured edge voice**.
+  Ben (2026-05-09): "I have the voice set as Sonia but every now and
+  then I'm getting a male voice in the audio clips". Cause: when
+  edge-tts timed out (transient `speech.platform.bing.com` flake),
+  `_run_say_fallback` invoked `say` with no `-v` flag, falling back
+  to the macOS system default voice (typically male) — so a single
+  Sonia stream sporadically produced male sentences when edge had a
+  bad minute. Fix: a new `_EDGE_TO_SAY_VOICE` map projects the
+  configured edge voice onto the closest native macOS voice (Sonia
+  → Kate, Ryan → Daniel, US Aria → Samantha, Guy → Alex, etc.) and
+  `say` is invoked with `-v <native>`. The voice arg is passed
+  through `synthesize_parallel` so per-session overrides apply.
+
 ## [0.7.0] — 2026-05-09
 
 ### Fixed
