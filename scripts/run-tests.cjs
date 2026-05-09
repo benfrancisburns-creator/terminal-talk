@@ -9795,6 +9795,51 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('CLEAR-PLAYED UNDO RACE (#47)', () => {
+  // Ben (2026-05-09): clicking Clear-played briefly removed clips,
+  // then they re-appeared, then disappeared again. Race: renderer's
+  // optimistic in-memory clear vs. main.js's notifyQueue() rescanning
+  // the disk during the 10 s undo window (files not yet unlinked).
+  // The queue-updated handler must consult _pendingClear and filter
+  // those paths out before reassigning `queue`.
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+
+  it('queue-updated handler filters pending-clear paths before assigning queue', () => {
+    // Source-level invariant: somewhere inside the onQueueUpdated
+    // callback, `_pendingClear` must be consulted and used to filter
+    // `files` before the `queue = files` assignment.
+    const handlerStart = rendererSrc.indexOf('window.api.onQueueUpdated');
+    if (handlerStart < 0) throw new Error('onQueueUpdated handler not found');
+    const handlerEnd = rendererSrc.indexOf('});', handlerStart);
+    const handler = rendererSrc.slice(handlerStart, handlerEnd);
+    if (!/_pendingClear/.test(handler)) {
+      throw new Error('onQueueUpdated must consult _pendingClear to filter soft-deleted clips');
+    }
+    if (!/pendingClearPaths/.test(handler)) {
+      throw new Error('onQueueUpdated must build a Set of pending-clear paths to filter');
+    }
+    if (!/files\s*=\s*files\.filter/.test(handler)) {
+      throw new Error('onQueueUpdated must filter the incoming `files` array (not just downstream)');
+    }
+  });
+
+  it('the filter applies BEFORE queue = files assignment (order matters)', () => {
+    // If the filter ran AFTER `queue = files`, the next tick's
+    // newArrivals computation would briefly include the soft-deleted
+    // paths — same UX as the original bug.
+    const handlerStart = rendererSrc.indexOf('window.api.onQueueUpdated');
+    const handler = rendererSrc.slice(handlerStart, handlerStart + 2000);
+    const filterIdx = handler.indexOf('files = files.filter');
+    const assignIdx = handler.indexOf('queue = files');
+    if (filterIdx < 0 || assignIdx < 0) {
+      throw new Error('expected both filter + assign to be present');
+    }
+    if (filterIdx > assignIdx) {
+      throw new Error('filter must run BEFORE queue = files (race regression)');
+    }
+  });
+});
+
 describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)', () => {
   const appDirRepo = path.join(__dirname, '..', 'app');
 

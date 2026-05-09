@@ -1318,12 +1318,25 @@ async function initialLoad() {
 }
 
 window.api.onQueueUpdated((payload) => {
-  const files = Array.isArray(payload) ? payload : (payload && payload.files) || [];
+  let files = Array.isArray(payload) ? payload : (payload && payload.files) || [];
   if (payload && payload.assignments) {
     sessionAssignments = payload.assignments;
     if (document.body.classList.contains('settings-open')) renderSessionsTable();
   }
-  allQueuePaths = (payload && Array.isArray(payload.allPaths)) ? payload.allPaths : files.map((f) => f.path);
+  let nextAllPaths = (payload && Array.isArray(payload.allPaths)) ? payload.allPaths : files.map((f) => f.path);
+  // Filter out paths in the pending-clear undo window so soft-deleted
+  // clips don't reappear when notifyQueue() rescans the on-disk queue
+  // (the actual fs.unlink is deferred 10 s; the in-memory state is the
+  // source of truth during that window). Without this, "Clear all
+  // played" briefly removes clips, then they pop back, then disappear
+  // again — Ben hit this on 2026-05-09. The soft-deleted set lives on
+  // the renderer side because main has no notion of "pending undo".
+  if (_pendingClear && _pendingClear.entries) {
+    const pendingClearPaths = new Set(_pendingClear.entries.map((e) => e.path));
+    files = files.filter((f) => !pendingClearPaths.has(f.path));
+    nextAllPaths = nextAllPaths.filter((p) => !pendingClearPaths.has(p));
+  }
+  allQueuePaths = nextAllPaths;
   const prevPaths = new Set(queue.map(f => f.path));
   const newArrivals = files
     .filter(f => !prevPaths.has(f.path) && !playedPaths.has(f.path))

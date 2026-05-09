@@ -4,6 +4,23 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- **Clear-played clips no longer reappear briefly during the undo
+  window** (#47). Race condition: clicking "Clear all played"
+  removed clips from the renderer's in-memory queue immediately
+  but the actual `fs.unlink` was deferred 10 s for the Undo
+  affordance. During that window, main.js's `notifyQueue()` would
+  rescan the on-disk queue (files still there), fire
+  `queue-updated` with the full list, and the renderer's handler
+  blindly assigned `queue = files` — clips popped back, then
+  disappeared again on the next `notifyQueue` after the unlink.
+  Fix: filter pending-clear paths out of the incoming `files`
+  array (and the `allPaths` companion list) before the
+  `queue = files` assignment, so soft-deleted clips stay invisible
+  during the entire undo window. Source-level invariant tests
+  prevent the order-of-ops regression.
+
 ### Added
 
 - **Action library — 12-kind developer-action taxonomy** — new

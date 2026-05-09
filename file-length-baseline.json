@@ -4,8 +4,8 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 19066,
-    "app/renderer.js": 2721,
+    "scripts/run-tests.cjs": 19111,
+    "app/renderer.js": 2734,
     "app/main.js": 2645,
     "app/synth_turn.py": 2074,
     "app/tool_narration.py": 1851,
