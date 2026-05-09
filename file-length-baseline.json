@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 18784,
+    "scripts/run-tests.cjs": 18843,
     "app/renderer.js": 2721,
     "app/main.js": 2645,
     "app/synth_turn.py": 2022,
@@ -34,6 +34,7 @@
     "app/lib/terminal-talk-mcp-tools.js": 376,
     "app/lib/codex-desktop-title-sync.js": 373,
     "app/key_helper.py": 370,
+    "scripts/synth-audit.cjs": 345,
     "app/codex-launch.ps1": 338,
     "app/lib/codex-identity-sync.js": 336,
     "scripts/open-video-demo-terminals.ps1": 332,
@@ -50,7 +51,6 @@
     "scripts/render-command-center-reference-pack.cjs": 276,
     "app/lib/tabs.js": 273,
     "scripts/capture-kit-screenshots.cjs": 270,
-    "scripts/synth-audit.cjs": 270,
     "scripts/generate-tokens-css.cjs": 258,
     "app/lib/registry-guard.js": 256,
     "app/assistant-session-launch.ps1": 254,

@@ -4,6 +4,20 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Synth-audit semantic categorisation + duration estimate** —
+  every per-turn JSONL record now carries `category`
+  (prose/list/table/code based on dominant character share) and
+  `est_spoken_sec` (spoken_chars / 14, edge-tts default rate).
+  The text report adds a "Retention by content category" block
+  showing per-bucket retention + total audio time, so we can see
+  whether (e.g.) Block A's table fixes moved table-heavy retention
+  while prose-heavy stayed flat. First post-Block-A run on 248
+  turns: prose 92%, list 89%, **table 56%** — confirms tables
+  are the worst category by a wide margin and Block A's targeting
+  was correct.
+
 ### Fixed
 
 - **Narration regressions surfaced by the May-9 audit corpus

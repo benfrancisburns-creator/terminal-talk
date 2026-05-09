@@ -91,6 +91,45 @@ function findMissing(spans, spokenLowerBlob) {
   return missing;
 }
 
+// Block D2 (#44): semantic category — what dominates the original
+// content. Lets the report split retention by content type so we can
+// see if (e.g.) table-heavy turns improved post-Block-A while prose-
+// heavy stayed flat. Categories are mutually exclusive — pick the
+// one with the highest character share (with a 'prose' tiebreaker).
+function classifyContent(orig) {
+  const total = orig.length || 1;
+  let codeChars = 0;
+  let tableChars = 0;
+  let listChars = 0;
+  for (const line of orig.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('|') && t.endsWith('|')) tableChars += line.length + 1;
+    else if (/^[ \t]*(?:\d+\.|[-*+])[ \t]+/.test(line)) listChars += line.length + 1;
+  }
+  // Code blocks (```...```) — count the inner body lines.
+  const fenceRE = /```[a-zA-Z]*\n([\s\S]*?)```/g;
+  let m;
+  while ((m = fenceRE.exec(orig))) codeChars += m[1].length;
+  const proseChars = total - tableChars - listChars - codeChars;
+  const buckets = [
+    ['table', tableChars],
+    ['list', listChars],
+    ['code', codeChars],
+    ['prose', proseChars],
+  ];
+  buckets.sort((a, b) => b[1] - a[1]);
+  return buckets[0][0];  // dominant category
+}
+
+// Block D3 (#44): rough English speaking-rate estimate. edge-tts at
+// default voice + speed=1.0 outputs ~14 chars/sec including pauses.
+// Multiply by playback_speed in cfg if you want to model 1.25× etc.,
+// but the JSONL stays speed-agnostic so ratios across turns compare.
+function estimateSpokenSec(spokenChars, charsPerSec = 14) {
+  return Number((spokenChars / charsPerSec).toFixed(1));
+}
+
 function auditTurn(entry) {
   if (!entry.orig || entry.clips.length === 0) return null;
   const orig = entry.orig;
@@ -128,6 +167,8 @@ function auditTurn(entry) {
     orig_chars: orig.length,
     spoken_chars: spokenChars,
     shrinkage_ratio: Number(ratio.toFixed(3)),
+    category: classifyContent(orig),
+    est_spoken_sec: estimateSpokenSec(spokenChars),
     missing_backtick: findMissing(backtickSpans, spokenBlob).slice(0, 5),
     missing_bold: findMissing(boldSpans, spokenBlob).slice(0, 5),
     missing_url: findMissing(urlSpans, spokenBlob).slice(0, 3),
@@ -149,7 +190,29 @@ function summarise(reports) {
     totalDropped.table_cell += r.missing_table_cell.length;
     totalDropped.list_marker += r.missing_list_marker.length;
   }
-  return { ranked, totalDropped, count: reports.length };
+  // Block D2: per-category retention. Compares whether (e.g.) Block A's
+  // table fixes moved table-heavy retention while leaving prose-heavy
+  // alone. Calculated from total-orig / total-spoken char ratios per
+  // bucket so a single tiny prose turn doesn't skew prose-heavy.
+  const catBuckets = {};
+  for (const r of reports) {
+    const cat = r.category || 'prose';
+    if (!catBuckets[cat]) catBuckets[cat] = { count: 0, orig: 0, spoken: 0, est_sec: 0 };
+    catBuckets[cat].count += 1;
+    catBuckets[cat].orig += r.orig_chars;
+    catBuckets[cat].spoken += r.spoken_chars;
+    catBuckets[cat].est_sec += r.est_spoken_sec || 0;
+  }
+  const byCategory = {};
+  for (const cat of Object.keys(catBuckets)) {
+    const b = catBuckets[cat];
+    byCategory[cat] = {
+      count: b.count,
+      retention: Number((b.spoken / Math.max(1, b.orig)).toFixed(3)),
+      total_est_sec: Number(b.est_sec.toFixed(1)),
+    };
+  }
+  return { ranked, totalDropped, byCategory, count: reports.length };
 }
 
 function fmtPct(n) {
@@ -167,6 +230,18 @@ function renderText(reports, summary, mostShrunkLimit = 10) {
   lines.push(`  table cells:        ${summary.totalDropped.table_cell}`);
   lines.push(`  list markers:       ${summary.totalDropped.list_marker}`);
   lines.push('');
+  // Block D2: per-category retention so we can see if one bucket
+  // (table-heavy / list-heavy / prose-heavy / code-heavy) is moving
+  // while another stays flat — useful for measuring Block A's effect
+  // on the next audit pass.
+  if (summary.byCategory && Object.keys(summary.byCategory).length) {
+    lines.push('Retention by content category:');
+    const cats = Object.entries(summary.byCategory).sort((a, b) => b[1].count - a[1].count);
+    for (const [cat, b] of cats) {
+      lines.push(`  ${cat.padEnd(7)} ${String(b.count).padStart(4)} turns  retention=${fmtPct(b.retention).padStart(4)}  est_audio=${b.total_est_sec.toFixed(0).padStart(5)} s`);
+    }
+    lines.push('');
+  }
   lines.push(`Most-shrunk turns (worst content / size ratio):`);
   for (const r of summary.ranked.slice(0, mostShrunkLimit)) {
     lines.push(`  ${r.turn}  ratio=${fmtPct(r.shrinkage_ratio)}  orig=${r.orig_chars}c spoken=${r.spoken_chars}c clips=${r.clip_count}`);

@@ -9795,6 +9795,65 @@ describe('UPDATE-CHECKER — periodic git-fetch notifier (#32 Phase 8)', () => {
   });
 });
 
+describe('SYNTH-AUDIT — corpus categorisation + duration estimate (#44 Block D)', () => {
+  const audit = require(path.join(__dirname, '..', 'scripts', 'synth-audit.cjs'));
+
+  it('auditTurn classifies table-dominant content as category="table"', () => {
+    const orig = '| Kind | Subj |\n|---|---|\n| A | a |\n| B | b |\n| C | c |\n| D | d |\n| E | e |\n';
+    const r = audit.auditTurn({ id: 't1', orig, clips: ['some narration'], lastMtime: Date.now() });
+    if (r.category !== 'table') throw new Error(`expected category=table, got ${r.category}`);
+  });
+
+  it('auditTurn classifies bullet-list content as category="list"', () => {
+    const orig = '- alpha\n- bravo\n- charlie\n- delta\n- echo\n- foxtrot\n';
+    const r = audit.auditTurn({ id: 't2', orig, clips: ['narrated'], lastMtime: Date.now() });
+    if (r.category !== 'list') throw new Error(`expected category=list, got ${r.category}`);
+  });
+
+  it('auditTurn classifies prose-dominant content as category="prose"', () => {
+    const orig = 'This is plain prose without any markdown structure. Just sentences.\n';
+    const r = audit.auditTurn({ id: 't3', orig, clips: ['narrated'], lastMtime: Date.now() });
+    if (r.category !== 'prose') throw new Error(`expected category=prose, got ${r.category}`);
+  });
+
+  it('auditTurn classifies fenced-code-block content as category="code"', () => {
+    const orig = '```python\n' + 'print("hello")\n'.repeat(12) + '```\n';
+    const r = audit.auditTurn({ id: 't4', orig, clips: ['narr'], lastMtime: Date.now() });
+    if (r.category !== 'code') throw new Error(`expected category=code, got ${r.category}`);
+  });
+
+  it('auditTurn includes est_spoken_sec rounded to 1 decimal', () => {
+    const orig = 'short';
+    const clips = ['x'.repeat(140)];  // 140 chars / 14 cps = 10 s
+    const r = audit.auditTurn({ id: 't5', orig, clips, lastMtime: Date.now() });
+    assertEqual(r.est_spoken_sec, 10);
+  });
+
+  it('summarise produces per-category byCategory with retention + total_est_sec', () => {
+    const reports = [
+      { turn: 'a', mtime: '2026-01-01T00:00:00Z', clip_count: 1, orig_chars: 100, spoken_chars: 90, shrinkage_ratio: 0.9, category: 'prose', est_spoken_sec: 6.4, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
+      { turn: 'b', mtime: '2026-01-01T00:00:01Z', clip_count: 1, orig_chars: 200, spoken_chars: 100, shrinkage_ratio: 0.5, category: 'table', est_spoken_sec: 7.1, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
+    ];
+    const s = audit.summarise(reports);
+    if (!s.byCategory) throw new Error('summarise missing byCategory');
+    assertEqual(s.byCategory.prose.count, 1);
+    assertEqual(s.byCategory.prose.retention, 0.9);
+    assertEqual(s.byCategory.table.retention, 0.5);
+  });
+
+  it('findMissing keeps underscores + checks both _ and space forms (Block A4)', () => {
+    // The test exercises the underscore-fix indirectly via auditTurn —
+    // an original with `node_modules` and spoken text containing "node modules"
+    // should NOT report it as missing.
+    const orig = 'Discussion of `node_modules` here.';
+    const clips = ['Discussion of node modules here.'];
+    const r = audit.auditTurn({ id: 't6', orig, clips, lastMtime: Date.now() });
+    if (r.missing_backtick.length > 0) {
+      throw new Error(`underscore false-positive — node_modules wrongly flagged: ${JSON.stringify(r.missing_backtick)}`);
+    }
+  });
+});
+
 describe('SYNTH DAEMON — long-lived socket dispatcher (#35 Phase 11)', () => {
   const { createSynthDaemon } = require(path.join(__dirname, '..', 'app', 'lib', 'synth-daemon.js'));
   const { EventEmitter } = require('node:events');
