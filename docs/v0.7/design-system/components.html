@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Terminal Talk — Component Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<!--
+  D2-1: single-entry component reference.
+
+  Replaces four near-duplicate pages (colors-session, components-dots,
+  component-sessions-row, components-forms) with one router:
+    ?name=dots             → kit demo seeded with mixed-states
+    ?name=sessions-row     → kit demo seeded with settings-panel
+    ?name=forms            → kit demo seeded with settings-panel
+    ?name=palette-swatches → colors-session.html (kept as canonical
+                             reference because the kit doesn't natively
+                             render a 24-arrangement grid; everything
+                             else iframes the kit per S5's pattern)
+
+  Missing / invalid `?name=` → index of available names.
+
+  Why iframe-per-name instead of route-per-page? So the kit stays the
+  single source of truth for every component mock. When the kit layout
+  changes, every component page follows automatically — no stale
+  duplicate CSS, no re-synced markup.
+-->
+<style>
+  html, body {
+    margin: 0;
+    background: #0f1014;
+    color: #fff;
+    font-family: var(--tt-font-ui, 'Inter', system-ui, sans-serif);
+    min-height: 100vh;
+  }
+  .nav {
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .nav a {
+    color: #9ccaff;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .nav a:hover { color: #fff; }
+  .nav a.current { color: #fff; font-weight: 600; }
+  .nav .sep { color: rgba(255, 255, 255, 0.25); }
+  .stage {
+    padding: 18px;
+    display: block;
+  }
+  iframe {
+    width: 100%;
+    height: calc(100vh - 80px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: transparent;
+  }
+  .index {
+    padding: 24px 32px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.6;
+  }
+  .index h1 {
+    font-size: 20px;
+    margin: 0 0 8px;
+    color: #fff;
+  }
+  .index p.lede {
+    color: rgba(255, 255, 255, 0.65);
+    margin: 0 0 18px;
+    max-width: 60ch;
+  }
+  .index ul { list-style: none; padding: 0; margin: 0; }
+  .index li { margin: 4px 0; }
+  .index code {
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', 'Cascadia Mono', monospace;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<script>
+  // Map is intentionally minimal so additions cost one entry each.
+  // title: shown in the top nav; src: iframe URL relative to this file.
+  const COMPONENTS = {
+    'dots':             { title: 'Dots',             src: '../ui-kit/index.html?seed=mixed-states&chrome=0' },
+    'sessions-row':     { title: 'Sessions row',     src: '../ui-kit/index.html?seed=settings-panel&chrome=0' },
+    'forms':            { title: 'Forms',            src: '../ui-kit/index.html?seed=settings-panel&chrome=0' },
+    'palette-swatches': { title: 'Palette swatches', src: 'colors-session.html' },
+  };
+
+  const params = new URLSearchParams(location.search);
+  const name = params.get('name');
+  const entry = name ? COMPONENTS[name] : null;
+
+  const root = document.body;
+  const nav = document.createElement('div');
+  nav.className = 'nav';
+  let first = true;
+  for (const key of Object.keys(COMPONENTS)) {
+    if (!first) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '·';
+      nav.appendChild(sep);
+    }
+    const a = document.createElement('a');
+    a.href = '?name=' + encodeURIComponent(key);
+    a.textContent = COMPONENTS[key].title;
+    if (key === name) a.classList.add('current');
+    nav.appendChild(a);
+    first = false;
+  }
+  root.appendChild(nav);
+
+  if (!entry) {
+    const div = document.createElement('div');
+    div.className = 'index';
+    div.innerHTML = `
+      <h1>Component reference</h1>
+      <p class="lede">
+        One page per UI primitive. Each entry iframes the kit or a
+        dedicated swatch page so this file never duplicates component
+        markup — the kit stays the single source of truth.
+      </p>
+      <ul id="list"></ul>
+      <p>No <code>?name=</code> parameter set. Pick one from the list above.</p>
+    `;
+    const ul = div.querySelector('#list');
+    for (const key of Object.keys(COMPONENTS)) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '?name=' + encodeURIComponent(key);
+      a.textContent = COMPONENTS[key].title + '  —  ?name=' + key;
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    root.appendChild(div);
+  } else {
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const iframe = document.createElement('iframe');
+    iframe.src = entry.src;
+    iframe.title = entry.title;
+    iframe.loading = 'eager';
+    stage.appendChild(iframe);
+    root.appendChild(stage);
+    document.title = 'Terminal Talk — ' + entry.title;
+  }
+</script>
+</body>
+</html>

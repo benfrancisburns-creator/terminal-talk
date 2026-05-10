@@ -1,0 +1,21 @@
+﻿# Runway Act-Two Prompt
+
+Upload `assets/01-mascot-character-reference.png` as the character image.
+Use a driving performance video where the performer says the mascot lines from `dialogue-manifest.json`.
+
+Prompt:
+
+Animate this exact pixel-art Terminal Talk mascot as a confident software command-center operator.
+The mascot is coordinating several terminal sessions in a futuristic software command center.
+Keep the orange pixel-art body, square eyes, smile, chunky legs, simple rectangular silhouette, and white pixel speech bubble design.
+The mascot speaks clearly, turns toward terminal panels, gestures like a calm technical lead, and relays short decisions back to the room.
+No humans, weapons, soldiers, explosions, military insignia, or real-world logos.
+Do not turn the mascot into a realistic robot or animal.
+Keep the motion professional, energetic, premium, and software-focused.
+
+Suggested settings:
+- 16:9
+- 25-30 seconds per generated segment
+- Gesture control on for first pass
+- Facial expressiveness 2-3
+- If the mascot deforms, reduce expressiveness and disable gesture control

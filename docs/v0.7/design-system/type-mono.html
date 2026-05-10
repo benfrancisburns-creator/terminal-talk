@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:#0f1014;font-family:var(--tt-font-ui);color:var(--tt-fg-2)}
+  .stage{padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+  .cap{font-size:10px;letter-spacing:var(--tt-tracking-caps);text-transform:uppercase;color:var(--tt-fg-5)}
+  .row{display:flex;align-items:center;gap:12px}
+  .label{font-family:var(--tt-font-mono);font-size:10px;color:var(--tt-fg-5);min-width:170px}
+  pre.ascii{font:400 8px/1.05 var(--tt-font-mono);margin:0;padding:10px 12px;background:var(--tt-surface-inset);border:1px solid var(--tt-border-section);border-radius:var(--tt-radius-block);color:var(--tt-fg-4);white-space:pre}
+  .mono{font-family:var(--tt-font-mono);font-size:11px;color:var(--tt-fg-4)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cap">Mono type — Cascadia Mono / JetBrains Mono fallback</div>
+  <div class="row"><span class="label">Kbd</span><kbd class="tt-type-kbd">Ctrl+Shift+A</kbd><kbd class="tt-type-kbd">Ctrl+Shift+S</kbd><kbd class="tt-type-kbd">Ctrl+Shift+J</kbd></div>
+  <div class="row"><span class="label">Code</span><code class="tt-type-code">edge-tts</code><code class="tt-type-code">~/.terminal-talk/</code></div>
+  <div class="row"><span class="label">Session short id</span><span class="mono">abcd1234 · a08f2b71 · 7e5c9a04</span></div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <span class="label">ASCII · 8px mono · inset card</span>
+    <pre class="ascii">████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+   ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝</pre>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "source": "docs/videos/terminal-talk-master-long-form.mp4",
+  "outputDir": "docs/videos/chapters",
+  "chapters": [
+    {
+      "id": "cold-open",
+      "title": "Cold Open And Promise",
+      "start": "00:00:00",
+      "end": "00:02:00",
+      "description": "Collapsed toolbar, hover reveal, and product promise."
+    },
+    {
+      "id": "create-four-terminals",
+      "title": "Create Four Terminals",
+      "start": "00:02:00",
+      "end": "00:06:00",
+      "description": "Create Claude and Codex sessions from Terminal Talk."
+    },
+    {
+      "id": "batch-prompts",
+      "title": "Batch Prompt Four Assistant Roles",
+      "start": "00:06:00",
+      "end": "00:10:00",
+      "description": "Paste distinct role prompts into all four terminals: launch, traffic, controls, and receipts."
+    },
+    {
+      "id": "toolbar-controls",
+      "title": "Toolbar Controls",
+      "start": "00:10:00",
+      "end": "00:14:00",
+      "description": "Show play controls, session tabs, transcript, labels, colours, focus, mute, and voice controls."
+    },
+    {
+      "id": "transcript",
+      "title": "Transcript And Spoken Record",
+      "start": "00:14:00",
+      "end": "00:17:00",
+      "description": "Show recent spoken entries and session identity in the transcript."
+    },
+    {
+      "id": "collapsed-colour-flash",
+      "title": "Collapsed Colour Flash",
+      "start": "00:17:00",
+      "end": "00:20:00",
+      "description": "Collapse the toolbar and trigger multiple sessions so the colour flash identifies the speaker."
+    },
+    {
+      "id": "hey-jarvis",
+      "title": "Hey Jarvis Read Anything",
+      "start": "00:20:00",
+      "end": "00:23:00",
+      "description": "Read selected text from another app and show J identity."
+    },
+    {
+      "id": "settings",
+      "title": "Settings Playback Shortcuts OpenAI",
+      "start": "00:23:00",
+      "end": "00:27:00",
+      "description": "Show global playback, shortcuts, optional OpenAI, and Sessions tabs."
+    },
+    {
+      "id": "heartbeat-tool-narration",
+      "title": "Heartbeat And Tool Narration",
+      "start": "00:27:00",
+      "end": "00:30:00",
+      "description": "Show progress narration while an assistant is working."
+    },
+    {
+      "id": "closing-recap",
+      "title": "Closing Recap",
+      "start": "00:30:00",
+      "end": "00:32:00",
+      "description": "Show final proof that the workflow is audible, identifiable, and reviewable."
+    }
+  ]
+}

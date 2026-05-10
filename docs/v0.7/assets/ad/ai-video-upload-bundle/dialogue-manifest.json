@@ -1,0 +1,122 @@
+﻿[
+    {
+        "id":  "001",
+        "role":  "Mascot",
+        "start":  "00:00.7",
+        "end":  "00:04.3",
+        "audio":  "audio/001-mascot.mp3",
+        "text":  "Terminal Talk online. Claude and Codex sessions are in view."
+    },
+    {
+        "id":  "002",
+        "role":  "Mascot",
+        "start":  "00:05.2",
+        "end":  "00:07.0",
+        "audio":  "audio/002-mascot.mp3",
+        "text":  "Frontend, settings status."
+    },
+    {
+        "id":  "003",
+        "role":  "Frontend",
+        "start":  "00:07.2",
+        "end":  "00:10.3",
+        "audio":  "audio/003-frontend.wav",
+        "text":  "Auto collapse, shortcuts, and voice controls are ready."
+    },
+    {
+        "id":  "004",
+        "role":  "Mascot",
+        "start":  "00:11.0",
+        "end":  "00:12.3",
+        "audio":  "audio/004-mascot.wav",
+        "text":  "Backend?"
+    },
+    {
+        "id":  "005",
+        "role":  "Backend",
+        "start":  "00:12.7",
+        "end":  "00:15.4",
+        "audio":  "audio/005-backend.wav",
+        "text":  "Native hooks are live. Queue handling and auto prune are stable."
+    },
+    {
+        "id":  "006",
+        "role":  "Mascot",
+        "start":  "00:16.1",
+        "end":  "00:18.0",
+        "audio":  "audio/006-mascot.wav",
+        "text":  "Tests and docs, status."
+    },
+    {
+        "id":  "007",
+        "role":  "Tests",
+        "start":  "00:18.2",
+        "end":  "00:20.2",
+        "audio":  "audio/007-tests.wav",
+        "text":  "Checks green. Capture scripts verified."
+    },
+    {
+        "id":  "008",
+        "role":  "Docs",
+        "start":  "00:20.5",
+        "end":  "00:22.7",
+        "audio":  "audio/008-docs.wav",
+        "text":  "Video feature list updated."
+    },
+    {
+        "id":  "009",
+        "role":  "Mascot",
+        "start":  "00:23.5",
+        "end":  "00:25.8",
+        "audio":  "audio/009-mascot.wav",
+        "text":  "Codex, give me heartbeat state."
+    },
+    {
+        "id":  "010",
+        "role":  "Codex",
+        "start":  "00:26.0",
+        "end":  "00:28.0",
+        "audio":  "audio/010-codex.wav",
+        "text":  "Working state mapped. Terminal title synced."
+    },
+    {
+        "id":  "011",
+        "role":  "Claude",
+        "start":  "00:28.6",
+        "end":  "00:30.9",
+        "audio":  "audio/011-claude.wav",
+        "text":  "Plugin session cleanup is complete."
+    },
+    {
+        "id":  "012",
+        "role":  "Mascot",
+        "start":  "00:31.4",
+        "end":  "00:35.2",
+        "audio":  "audio/012-mascot.wav",
+        "text":  "Decision point: OpenAI fallback stays opt in."
+    },
+    {
+        "id":  "013",
+        "role":  "Mascot",
+        "start":  "00:36.0",
+        "end":  "00:39.0",
+        "audio":  "audio/013-mascot.wav",
+        "text":  "Hey Jarvis clip received. Priority audio goes first."
+    },
+    {
+        "id":  "014",
+        "role":  "Mascot",
+        "start":  "00:40.0",
+        "end":  "00:45.4",
+        "audio":  "audio/014-mascot.wav",
+        "text":  "Each session has a label, colour, voice, and transcript. Keep building."
+    },
+    {
+        "id":  "015",
+        "role":  "Narrator",
+        "start":  "00:46.2",
+        "end":  "00:51.0",
+        "audio":  "audio/015-narrator.wav",
+        "text":  "Terminal Talk gives Claude Code and Codex one spoken queue, with identity, shortcuts, and voice fallback."
+    }
+]

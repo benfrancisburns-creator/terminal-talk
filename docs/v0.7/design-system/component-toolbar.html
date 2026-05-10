@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;background:
+    radial-gradient(circle at 25% 30%, #26324a 0%, transparent 55%),
+    radial-gradient(circle at 70% 80%, #30203e 0%, transparent 55%),
+    #0e0f13;
+    font-family:'Segoe UI','Inter',system-ui,sans-serif;color:#fff}
+  .stage{padding:26px;display:flex;justify-content:center;align-items:center;min-height:120px}
+  /* Replica of the floating bar at actual size */
+  .bar{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 14px;background:rgba(24,26,32,0.88);border:1px solid rgba(255,255,255,0.08);border-radius:22px;box-shadow:0 12px 32px rgba(0,0,0,0.45),0 2px 6px rgba(0,0,0,0.3);backdrop-filter:blur(24px) saturate(140%);min-width:600px}
+  .dots{display:flex;align-items:center;gap:6px}
+  .dot{width:16px;height:16px;border-radius:50%}
+  .dot.active{width:18px;height:18px;box-shadow:0 0 0 2px rgba(255,255,255,0.4),0 0 10px rgba(255,255,255,0.25)}
+  .dot.clip{font-size:10px;font-weight:700;color:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center}
+  .divider{width:1px;height:22px;background:rgba(255,255,255,0.1);margin:0 2px}
+  .btn{width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.85);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .btn.play{background:rgba(79,163,255,0.18);color:#9ccaff;width:32px;height:32px}
+  .btn.close{background:transparent;width:22px;height:22px;color:rgba(255,255,255,0.5)}
+  .rail{flex:1;min-width:140px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;position:relative}
+  .rail .fill{position:absolute;left:0;top:0;bottom:0;width:34%;background:rgba(255,255,255,0.25);border-radius:2px}
+  .rail .thumb{position:absolute;left:34%;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#fff}
+  .time{font-size:11px;color:rgba(255,255,255,0.55);font-variant-numeric:tabular-nums;min-width:78px;text-align:right}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="bar">
+    <div class="dots">
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="dot active" style="background:#60a5fa"></div>
+      <div class="dot clip" style="background:#ffd93d">J</div>
+      <div class="dot" style="background:linear-gradient(to right,#c084fc 50%,#4ade80 50%)"></div>
+      <div class="dot" style="background:rgba(255,255,255,0.9);box-shadow:0 0 0 2px #ff5e5e"></div>
+    </div>
+    <div class="divider"></div>
+    <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg></button>
+    <button class="btn play"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
+    <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg></button>
+    <div class="rail"><div class="fill"></div><div class="thumb"></div></div>
+    <span class="time">0:41 / 2:10</span>
+    <button class="btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+    <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4.9a7 7 0 0 0-2.1-1.2L14 3h-4l-.4 2.5a7 7 0 0 0-2.1 1.2l-2.4-.9-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-.9a7 7 0 0 0 2.1 1.2L10 21h4l.4-2.5a7 7 0 0 0 2.1-1.2l2.4.9 2-3.5-2-1.5A7 7 0 0 0 19 12z"/></svg></button>
+    <button class="btn close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+  </div>
+</div>
+</body>
+</html>

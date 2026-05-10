@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal Talk</title>
+  <!-- Strict CSP for the toolbar renderer. The renderer only loads local
+       scripts/styles, plays local audio clips (via the audio element
+       pointing at file: URLs), and has no network fetch surface — all
+       network calls (TTS, OpenAI fallback) happen in the main process
+       where contextIsolation + sandbox can't reach anyway.
+         - default-src 'none'  deny by default
+         - script-src 'self'   only renderer.js (and no inline <script>)
+         - style-src 'self'    styles.css + lib/palette-classes.css +
+                               renderer's Constructable Stylesheet for
+                               the 3 continuous-value sites (mascot /
+                               jarvis / spinner word positions). D2-9
+                               dropped 'unsafe-inline' in v0.3.
+         - img-src 'self' data:  SVG icons + any inline data: URLs
+         - media-src 'self' blob: file:  the <audio> tag plays queue files
+         - font-src 'self'  we don't load web fonts in the app
+         - connect-src 'none'  renderer must not call out to the network
+       Tightened per Electron's security checklist (see SECURITY.md). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none';">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="lib/palette-classes.css">
+</head>
+<body>
+  <div class="bar" id="bar">
+    <span id="collapsedSignal" class="collapsed-signal" aria-hidden="true"></span>
+    <div class="bar-top">
+    <button class="icon-btn" id="back10" title="Back 10s" aria-label="Back 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <button class="icon-btn play" id="playPause" title="Play/Pause" aria-label="Play or pause">
+      <svg aria-hidden="true" id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg aria-hidden="true" id="pauseIcon" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button class="icon-btn" id="fwd10" title="Forward 10s" aria-label="Forward 10 seconds">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="16" font-size="7" fill="currentColor" stroke="none" text-anchor="middle">10</text></svg>
+    </button>
+    <!-- The native <input type="range"> handles all pointer events (drag, -->
+    <!-- click-to-seek). Its thumb is made transparent in styles.css. The -->
+    <!-- visible mascot is an SVG overlay positioned by renderer.js so we -->
+    <!-- can animate individual legs (walking) and rotate him 180° when -->
+    <!-- the user scrubs backward (angry face). -->
+    <div id="scrubberWrap" class="scrubber-wrap">
+      <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" aria-label="Playback scrubber">
+      <svg aria-hidden="true" id="scrubberMascot" class="scrubber-mascot" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <!-- Palette classes fill these named regions so the mascot mirrors
+             the exact session marker: solid, top/bottom, or left/right. -->
+        <rect x="13" y="0"  width="57" height="44" fill="var(--mascot-body-top-left, currentColor)"/>
+        <rect x="70" y="0"  width="57" height="44" fill="var(--mascot-body-top-right, currentColor)"/>
+        <rect x="13" y="44" width="57" height="44" fill="var(--mascot-body-bottom-left, var(--mascot-secondary, currentColor))"/>
+        <rect x="70" y="44" width="57" height="44" fill="var(--mascot-body-bottom-right, var(--mascot-secondary, currentColor))"/>
+        <rect x="0"   y="36" width="13" height="8"  fill="var(--mascot-ear-left-top, currentColor)"/>
+        <rect x="0"   y="44" width="13" height="18" fill="var(--mascot-ear-left-bottom, var(--mascot-secondary, currentColor))"/>
+        <rect x="127" y="36" width="13" height="8"  fill="var(--mascot-ear-right-top, currentColor)"/>
+        <rect x="127" y="44" width="13" height="18" fill="var(--mascot-ear-right-bottom, var(--mascot-secondary, currentColor))"/>
+        <!-- Each leg stays on its own animation track while the palette
+             variables decide whether the lower row is solid, top/bottom, or
+             split left/right. -->
+        <rect class="leg leg-1" x="19"  y="88" width="16" height="32" fill="var(--mascot-leg-left, var(--mascot-secondary, currentColor))"/>
+        <rect class="leg leg-2" x="46"  y="88" width="16" height="32" fill="var(--mascot-leg-left, var(--mascot-secondary, currentColor))"/>
+        <rect class="leg leg-3" x="79"  y="88" width="16" height="32" fill="var(--mascot-leg-right, var(--mascot-secondary, currentColor))"/>
+        <rect class="leg leg-4" x="106" y="88" width="16" height="32" fill="var(--mascot-leg-right, var(--mascot-secondary, currentColor))"/>
+        <!-- Eyes -->
+        <rect x="36" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <rect x="88" y="26" width="16" height="16" fill="#3a3a3a"/>
+        <!-- Smile -->
+        <rect x="44" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="88" y="58" width="8"  height="6"  fill="#3a3a3a"/>
+        <rect x="44" y="64" width="52" height="6"  fill="#3a3a3a"/>
+      </svg>
+      <!-- Shown instead of the mascot when the currently-playing clip is a
+           highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clip. The mascot
+           is reserved for assistant response clips — see renderer.js
+           updateScrubberMode() + README "About the mascot" for the why. -->
+      <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
+    </div>
+    <span id="time" aria-live="off">0:00 / 0:00</span>
+    <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button class="icon-btn close" id="close" title="Hide (Esc)" aria-label="Hide the toolbar">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    </div>
+    <div class="tabs-row" id="tabsRow">
+      <button class="tab-scroll-btn tab-scroll-left" id="tabScrollLeft" type="button" title="Previous sessions" aria-label="Show previous session tabs">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Session filter"></div>
+      <button class="tab-scroll-btn tab-scroll-right" id="tabScrollRight" type="button" title="More sessions" aria-label="Show more session tabs">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <div class="dots-row"><div class="dots" id="dots" role="list" aria-label="Clip queue"></div></div>
+    <!-- Transcript panel — expandable section showing the spoken text of
+         recent audio clips with copy buttons. Collapsed by default;
+         click the header to expand. Phase 1 (no per-word karaoke
+         highlight): just the text per clip + copy-all + view toggle
+         between spoken (post-strip-for-tts) and original (pre-strip
+         markdown). Sidecar files (.txt / .original.txt) are written
+         by synth_turn.py + tts-helper.psm1 next to each audio clip. -->
+    <div id="transcriptPanel" class="transcript-panel" aria-expanded="false">
+      <div class="transcript-header">
+        <button id="transcriptToggle" type="button" class="transcript-toggle" aria-pressed="false" aria-controls="transcriptList" title="Show recent clip transcripts with copy buttons">
+          <svg class="chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <span>Transcript</span>
+          <span id="transcriptCount" class="transcript-count" aria-live="polite"></span>
+        </button>
+        <button id="transcriptViewToggle" type="button" class="transcript-view-toggle" aria-label="View mode: spoken" title="Toggle between spoken (TTS-cleaned) and original (markdown source) text">Spoken</button>
+      </div>
+      <div id="transcriptList" class="transcript-list" role="list" aria-label="Recent clip transcripts"></div>
+    </div>
+  </div>
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <div class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab active" id="settingsTabPlayback" role="tab" aria-selected="true" aria-controls="playbackSection" data-settings-tab="playback">Playback</button>
+        <button type="button" class="settings-tab" id="settingsTabSessions" role="tab" aria-selected="false" aria-controls="sessionsSection" data-settings-tab="sessions" tabindex="-1">Sessions</button>
+        <button type="button" class="settings-tab" id="settingsTabCreateSession" role="tab" aria-selected="false" aria-controls="createSessionSection" data-settings-tab="create-session" tabindex="-1">Create</button>
+        <button type="button" class="settings-tab" id="settingsTabOpenAI" role="tab" aria-selected="false" aria-controls="openaiSection" data-settings-tab="openai" tabindex="-1">OpenAI</button>
+        <button type="button" class="settings-tab" id="settingsTabShortcuts" role="tab" aria-selected="false" aria-controls="shortcutsSection" data-settings-tab="shortcuts" tabindex="-1">Shortcuts</button>
+        <button type="button" class="settings-tab" id="settingsTabAbout" role="tab" aria-selected="false" aria-controls="aboutSection" data-settings-tab="about" tabindex="-1">About</button>
+      </div>
+      <section class="panel-section settings-page active" id="playbackSection" data-settings-page="playback" role="tabpanel" aria-labelledby="settingsTabPlayback">
+        <header>Playback</header>
+        <div class="row">
+          <label for="speedSlider">Speed</label>
+          <input type="range" id="speedSlider" min="50" max="250" step="5" value="125">
+          <span id="speedValue" class="readout">1.25x</span>
+        </div>
+        <div class="row">
+          <label for="volumeSlider">Volume</label>
+          <input type="range" id="volumeSlider" min="0" max="100" step="1" value="100">
+          <span id="volumeValue" class="readout">100%</span>
+        </div>
+        <div class="row">
+          <label for="collapseDelaySec" title="How long the toolbar stays expanded after interaction before shrinking to the slim click-through strip. Playback keeps the collapsed strip coloured by session instead of pinning the full toolbar open.">Auto-collapse delay</label>
+          <div class="prune-value">
+            <input type="number" id="collapseDelaySec" min="1" max="120" step="1" value="3">
+            <span class="prune-suffix">s idle</span>
+          </div>
+        </div>
+        <div class="row">
+          <label for="autoPruneToggle" title="Controls the longer delay on body / response clips only. Tool narrations (T-prefix) and heartbeat (H-prefix) clips are always ambient — they auto-delete ~200 ms after they finish playing regardless of this setting, so they never clutter the dot strip.">Auto-prune body clips <span class="hint-sub">(tool narrations &amp; heartbeat always vanish)</span></label>
+          <div class="pill-toggle tri-ctrl">
+            <input type="checkbox" id="autoPruneToggle" class="pill-toggle-input" checked>
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+          <div class="prune-value">
+            <input type="number" id="autoPruneSec" min="3" max="600" step="1" value="20">
+            <span class="prune-suffix">s after play</span>
+          </div>
+        </div>
+        <!-- 2-column grid for the four single-toggle playback rows. Keeps
+             the sliders + auto-prune (which has a side seconds input) at
+             full width above, compacts the four simpler controls into
+             half-width pairs below. -->
+        <div class="row-grid">
+          <div class="row">
+            <label for="autoContinueToggle" title="When on, clicking a dot plays that clip and auto-continues through the remaining clips in time order — regardless of whether they were already heard. Off plays just the clicked clip.">Auto-continue after clicking</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="autoContinueToggle" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="paletteVariantToggle" title="Switch the 8-colour session palette to Paul Tol's 'muted' scheme — proven distinguishable under deutan / protan / tritan colour-blindness (≈6% of men). Default palette stays for everyone else.">Colour-blind palette</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="paletteVariantToggle" class="pill-toggle-input">
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="heartbeatToggle" title="When Claude or Codex is working on your prompt and the audio queue is silent for 5+ seconds, play short spinner-verb clips ('Moonwalking', 'Pontificating') and thinking phrases ('Thinking this through', 'Just a moment') so you know the session is alive. Stops the moment real response audio begins.">Heartbeat narration</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="heartbeatToggle" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="incToolCalls" title="Speak short ephemeral clips during Claude hooks and Codex rollout tool events (e.g. 'Reading foo.py', 'Searching files') so you hear progress while the assistant works. Off silences these but keeps full response narration intact. Per-session overrides in the Sessions panel below let you tune this per terminal.">Tool-call narration</label>
+            <div class="pill-toggle tri-ctrl">
+              <input type="checkbox" id="incToolCalls" class="pill-toggle-input" checked>
+              <button type="button" class="tri-btn on"  data-val="1">On</button>
+              <button type="button" class="tri-btn off" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="row">
+            <label>Troubleshooting</label>
+            <button type="button" id="reloadToolbar" class="text-btn" title="Rebuild the toolbar from disk (keyboard: Ctrl+R). Useful if the display is stuck or stale.">Reload toolbar</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page" id="openaiSection" data-settings-page="openai" role="tabpanel" aria-labelledby="settingsTabOpenAI">
+        <header>OpenAI <span class="panel-header-sub">(premium)</span></header>
+        <p class="panel-hint">
+          Optional. Paste an OpenAI API key to enable OpenAI TTS as either a fallback
+          (when edge-tts has a network wobble) or your primary voice. Pricing is
+          ~$0.015 per 1,000 characters, billed by OpenAI on their side.
+        </p>
+        <!-- Key-input row: shown ONLY when no key is saved or the last
+             test failed. When a valid key is in place we swap in the
+             "Change key" row below to save a line of panel height. -->
+        <div class="row" id="openaiKeyInputRow">
+          <label for="openaiKeyInput" title="Your key is stored encrypted (Windows DPAPI) in openai_key.enc, with a user-ACL'd plaintext sidecar at config.secrets.json that PowerShell hooks read. Neither is in config.json or git.">API key</label>
+          <input type="password" id="openaiKeyInput" class="openai-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false">
+          <button type="button" id="openaiKeySave"  class="text-btn">Save</button>
+          <button type="button" id="openaiKeyClear" class="text-btn danger">Clear</button>
+        </div>
+        <!-- Compact replacement row shown when a key IS saved. One-
+             click to switch back to the input row if the user wants to
+             rotate the key. -->
+        <div class="row hidden" id="openaiKeyChangeRow">
+          <label>API key</label>
+          <span class="panel-hint-inline">Saved (hidden for security)</span>
+          <button type="button" id="openaiKeyChange" class="text-btn">Change key</button>
+          <button type="button" id="openaiKeyClear2" class="text-btn danger">Clear</button>
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <span id="openaiKeyStatus" class="openai-key-status" aria-live="polite">
+            <span class="status-dot" data-state="unset"></span>
+            <span class="status-text">Not set</span>
+          </span>
+        </div>
+        <div class="row">
+          <label for="openaiPreferToggle" title="On — OpenAI is your primary voice: every response, tool narration and heartbeat plays in OpenAI's voice. Off — edge-tts is primary (free, default). Needs a saved key to switch on.">Use OpenAI as primary <span class="hint-sub">(paid, opt-in)</span></label>
+          <div class="pill-toggle tri-ctrl" id="openaiPreferPillBox">
+            <input type="checkbox" id="openaiPreferToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="openaiFallbackToggle" title="When on, OpenAI is allowed to run only if the primary TTS provider fails. This can spend OpenAI credits; monitor your balance or enable billing auto top-up/auto recharge. When off, fallback stays on the free Edge route.">Use OpenAI as fallback <span class="hint-sub">(paid, opt-in)</span></label>
+          <div class="pill-toggle tri-ctrl" id="openaiFallbackPillBox">
+            <input type="checkbox" id="openaiFallbackToggle" class="pill-toggle-input">
+            <button type="button" class="tri-btn on"  data-val="1">On</button>
+            <button type="button" class="tri-btn off" data-val="0">Off</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Test voice</label>
+          <button type="button" id="openaiTestBtn" class="text-btn" title="Synthesise a short test phrase through whichever provider is currently preferred and drop it in the queue. Confirms your key works and lets you hear the voice without waiting for a real reply.">Test</button>
+          <span id="openaiTestResult" class="openai-test-result" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page" id="sessionsSection" data-settings-page="sessions" role="tabpanel" aria-labelledby="settingsTabSessions">
+        <header>Active sessions</header>
+        <div id="sessionsTable" class="sessions-table" role="grid" aria-label="Active assistant sessions"></div>
+      </section>
+
+      <section class="panel-section settings-page" id="createSessionSection" data-settings-page="create-session" role="tabpanel" aria-labelledby="settingsTabCreateSession">
+        <header>Create session</header>
+        <div class="session-create" id="sessionCreate">
+          <div class="session-create-head">
+            <span>New assistant session</span>
+            <span id="createSessionStatus" class="session-create-status" aria-live="polite"></span>
+          </div>
+          <div class="session-create-grid">
+            <label for="createSessionKind">Assistant</label>
+            <select id="createSessionKind">
+              <option value="codex">Codex</option>
+              <option value="claude">Claude Code</option>
+              <option value="claude-desktop">Claude Desktop Code</option>
+            </select>
+            <label for="createSessionLaunchMode">Permissions</label>
+            <select id="createSessionLaunchMode"></select>
+            <label for="createSessionProject">Project folder</label>
+            <div class="session-create-project">
+              <input type="text" id="createSessionProject" spellcheck="false" autocomplete="off" placeholder="C:\path\to\project">
+              <button type="button" id="createSessionBrowse" class="text-btn">Browse</button>
+            </div>
+            <label for="createSessionLabel">Label</label>
+            <input type="text" id="createSessionLabel" spellcheck="false" autocomplete="off" placeholder="e.g. Codex x TT">
+            <label for="createSessionIndex">Colour</label>
+            <select id="createSessionIndex"></select>
+          </div>
+          <div class="session-create-actions">
+            <button type="button" id="createSessionSaveDefault" class="text-btn">Save default</button>
+            <button type="button" id="createSessionBtn" class="text-btn">Create</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page" id="shortcutsSection" data-settings-page="shortcuts" role="tabpanel" aria-labelledby="settingsTabShortcuts">
+        <header>Shortcuts</header>
+        <div class="row hotkey-row">
+          <label for="hotkeyToggleWindow">Show / hide toolbar</label>
+          <input type="text" id="hotkeyToggleWindow" class="hotkey-input" readonly value="Ctrl+Shift+A" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeySpeakClipboard">Read selected text</label>
+          <input type="text" id="hotkeySpeakClipboard" class="hotkey-input" readonly value="Ctrl+Shift+S" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyToggleListening">Mic listener</label>
+          <input type="text" id="hotkeyToggleListening" class="hotkey-input" readonly value="Ctrl+Shift+J" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyPauseResume">Pause / resume</label>
+          <input type="text" id="hotkeyPauseResume" class="hotkey-input" readonly value="Ctrl+Shift+P" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyPauseOnly">Pause only</label>
+          <input type="text" id="hotkeyPauseOnly" class="hotkey-input" readonly value="Ctrl+Shift+O" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <span id="hotkeyStatus" class="hotkey-status" aria-live="polite"></span>
+          <button type="button" id="hotkeyResetDefaults" class="text-btn" title="Restore the five global shortcuts to Control+Shift+A/S/J/P/O. Does not reset per-session toggles (those each have their own controls).">Reset hotkeys</button>
+        </div>
+      </section>
+
+      <section class="panel-section settings-page about" id="aboutSection" data-settings-page="about" role="tabpanel" aria-labelledby="settingsTabAbout">
+        <header>About Terminal Talk</header>
+        <div class="about-lockup">
+          <figure class="about-wallpaper-card" aria-label="Terminal Talk hero image">
+            <img src="assets/about-terminal-talk-hero.svg" alt="Terminal Talk hero showing the logo, 24-palette pixel mascot, and assistant workflow speech bubble">
+          </figure>
+        </div>
+        <div class="about-intro">
+          <p>
+            Terminal Talk is for running more than one coding assistant without losing track of who spoke,
+            what is waiting in the queue, and which session needs your attention next.
+          </p>
+          <p>
+            It turns Claude, Codex, desktop-agent, and highlight-to-speak output into colour-coded audio
+            clips. You keep working in the terminal while the toolbar handles playback, identity, focus,
+            transcripts, and voice routing.
+          </p>
+        </div>
+        <p class="panel-hint version-line">
+          Installed version: <span id="versionLabel" class="version-value">…</span>
+        </p>
+        <div class="about-guide" aria-label="Terminal Talk guide">
+          <section class="about-card about-card-wide">
+            <h3>Intended use</h3>
+            <p>
+              Keep Terminal Talk open while Claude Code, Codex CLI, Codex Desktop, or Claude Desktop Code
+              work in parallel. Let routine progress clips play quietly, focus the session you care about,
+              and use the transcript when you need to inspect the exact spoken text.
+            </p>
+            <ul>
+              <li>Use it as a command centre when several assistants are editing, testing, or researching at once.</li>
+              <li>Use it as an accessibility layer when reading long assistant output would slow you down.</li>
+              <li>Use it as a demo layer when you want sessions to narrate what they are doing on screen.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Daily workflow</h3>
+            <ul>
+              <li>Start your assistant sessions normally or from the Create tab.</li>
+              <li>Give each session a clear label, colour, and voice.</li>
+              <li>Pin or focus the session you want to hear before the others.</li>
+              <li>Let finished response clips auto-prune so the toolbar stays clean.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Playback model</h3>
+            <ul>
+              <li>Assistant replies become body clips in the queue.</li>
+              <li>Tool narration and heartbeat clips are short ambient status updates.</li>
+              <li>Highlight-to-speak clips are treated as priority user clips.</li>
+              <li>The collapsed strip flashes the colour of the clip that is actually playing.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Session identity</h3>
+            <ul>
+              <li>Each active assistant gets one slot in the 24-colour palette.</li>
+              <li>Labels are user-owned, so rename sessions around the work they are doing.</li>
+              <li>Focus affects playback priority; mute prevents new audio from that session.</li>
+              <li>Sync pushes identity into supported terminal and desktop surfaces.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Claude and Codex</h3>
+            <ul>
+              <li>Claude Code uses hooks, transcript files, and footer scraping for turn-end summaries.</li>
+              <li>Codex CLI/Desktop is watched through persisted rollout/session state.</li>
+              <li>Desktop apps can need refresh help because their sidebars cache conversation titles.</li>
+              <li>Nested agents should be treated carefully so one workflow does not impersonate another.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Voice setup</h3>
+            <ul>
+              <li>Uses Edge voices by default for free local playback.</li>
+              <li>Can use OpenAI TTS as a paid primary voice or fallback when a key is saved.</li>
+              <li>Different voices per session make it easier to recognise speakers by ear.</li>
+              <li>Stores OpenAI credentials outside git and keeps the key hidden after saving.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Toolbar controls</h3>
+            <ul>
+              <li>Use playback controls for the current clip and transcript controls for inspection.</li>
+              <li>Use Settings > Playback for speed, volume, collapse, prune, and narration behaviour.</li>
+              <li>Use Settings > Sessions for identity, colour, focus, mute, voice, and sync.</li>
+              <li>Use Settings > Shortcuts for global key bindings.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Privacy boundary</h3>
+            <ul>
+              <li>Wake-word detection runs locally.</li>
+              <li>Terminal Talk reads local assistant logs and local highlighted text.</li>
+              <li>Free TTS uses Edge's voice service; OpenAI TTS only runs when you opt in.</li>
+              <li>Session labels, colours, and playback state live under your user profile.</li>
+            </ul>
+          </section>
+          <section class="about-card">
+            <h3>Good habits</h3>
+            <ul>
+              <li>Use short labels that describe the work, not the tool.</li>
+              <li>Mute exploratory sessions when they are noisy but not important.</li>
+              <li>Keep focus on the session you want to hear next during busy multi-agent work.</li>
+              <li>Close stale sessions so colour slots stay meaningful.</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+  <script src="lib/tokens-window.js"></script>
+  <script src="lib/voices-window.js"></script>
+  <script src="lib/clip-paths.js"></script>
+  <script src="lib/heartbeat.js"></script>
+  <script src="lib/component.js"></script>
+  <script src="lib/stale-session-poller.js"></script>
+  <script src="lib/dot-strip.js"></script>
+  <script src="lib/tabs.js"></script>
+  <script src="lib/sessions-table.js"></script>
+  <script src="lib/settings-form.js"></script>
+  <script src="lib/audio-player.js"></script>
+  <!-- First-run permission wizard (Phase 6 / #30) — macOS only. Hidden by
+       default; renderer.js opens it on first launch when first_run_completed
+       is false AND the platform is darwin. Settings panel exposes a
+       re-trigger so users can rerun it any time. Three steps: Accessibility,
+       Microphone, Speech Recognition. -->
+  <div class="frw-modal" id="firstRunWizard" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="frwTitle">
+    <div class="frw-card">
+      <h2 class="frw-title" id="frwTitle" data-frw-title>Permission</h2>
+      <p class="frw-blurb" data-frw-blurb></p>
+      <div class="frw-step-dots" data-frw-stepdots aria-hidden="true"></div>
+      <div class="frw-actions">
+        <button type="button" class="frw-btn frw-btn-primary" data-frw-open>Open System Settings</button>
+        <button type="button" class="frw-btn" data-frw-granted>I've granted it</button>
+        <button type="button" class="frw-btn frw-btn-skip" data-frw-skip>Skip</button>
+        <button type="button" class="frw-btn" data-frw-close style="display: none;">Done</button>
+      </div>
+    </div>
+  </div>
+  <script src="lib/voice-command-dispatch.js"></script>
+  <script src="lib/update-badge.js"></script>
+  <script src="lib/first-run-wizard.js"></script>
+  <script src="lib/transcript-panel.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
