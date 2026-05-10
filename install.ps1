@@ -6,7 +6,7 @@
   Installs Terminal Talk to %USERPROFILE%\.terminal-talk\.
   - Checks prerequisites (Python 3.10+, Node.js 18+).
   - Installs Python packages (pinned via requirements.txt).
-  - Runs npm install for Electron.
+  - Installs Electron runtime dependencies.
   - Copies app + hooks + config example.
   - Optionally registers Claude Code hooks in ~/.claude/settings.json.
   - Optionally registers Codex CLI lifecycle hooks in ~/.codex/hooks.json.
@@ -334,7 +334,7 @@ else { Write-Warn2 "Model download deferred to first use (first 'hey jarvis' may
 # 5. Node / Electron
 Write-Step "Installing Electron"
 Push-Location $appDir
-& npm install --silent --no-audit --no-fund 2>&1 | Out-Null
+& npm install --omit=dev --silent --no-audit --no-fund 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Write-Fail "npm install failed."

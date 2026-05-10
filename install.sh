@@ -158,7 +158,7 @@ step "Copying files"
 # passed --skip-npm-install — otherwise re-running install.sh to update
 # (e.g.) hook registrations would nuke the deployed Electron deps and
 # leave the toolbar unable to start until the user manually
-# `npm install`s the deployed app dir.
+# installs runtime npm dependencies into the deployed app dir.
 preserved_node_modules=''
 if [ "$install_npm_deps" -eq 0 ] && [ -d "$app_dir/node_modules" ]; then
   preserved_node_modules="$(dirname "$app_dir")/.tt-node_modules.$$"
@@ -219,7 +219,7 @@ if [ "$install_python_deps" -eq 1 ]; then
   fi
   if [ "$os_name" = "Darwin" ] && [ -f "$repo_root/requirements-mac.txt" ]; then
     "$app_root/.venv/bin/python" -m pip install -r "$repo_root/requirements-mac.txt"
-    say "   OK  macOS deps installed (Quartz / AppKit / psutil for key_helper.py)"
+    say "   OK  macOS deps installed (Quartz / AppKit / Speech / CoreAudio / psutil)"
   fi
   export TT_PYTHON_EXE="$app_root/.venv/bin/python"
   printf 'TT_PYTHON_EXE=%s\n' "$(shell_quote "$TT_PYTHON_EXE")" >> "$env_path"
@@ -231,8 +231,8 @@ fi
 
 step "Electron dependencies"
 if [ "$install_npm_deps" -eq 1 ]; then
-  (cd "$app_dir" && npm install)
-  say "   OK  npm install complete"
+  (cd "$app_dir" && npm install --omit=dev --no-audit --no-fund)
+  say "   OK  runtime npm dependencies installed"
 else
   say "   !!  Skipped npm install"
 fi
@@ -319,7 +319,8 @@ def set_key(lines, section, key, value):
     lines.insert(end, f'{key} = {value}')
     return lines
 
-lines = set_key(lines, 'features', 'codex_hooks', 'true')
+lines = [line for line in lines if line.split('=', 1)[0].strip() != 'codex_hooks']
+lines = set_key(lines, 'features', 'hooks', 'true')
 lines = set_key(lines, 'tui', 'terminal_title', '[]')
 path.write_text('\n'.join(lines).strip() + '\n', encoding='utf-8')
 PY

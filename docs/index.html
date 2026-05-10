@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Terminal Talk — Your coding agents speak back through one toolbar</title>
-<meta name="description" content="Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop speak back through one colour-coded toolbar, with session identity, transcripts, focus, and optional highlight-to-speak. Windows.">
+<meta name="description" content="Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop speak back through one colour-coded toolbar, with session identity, transcripts, focus, and optional highlight-to-speak. Windows and macOS.">
 <meta property="og:title" content="Terminal Talk — your coding agents speak back through one toolbar">
 <meta property="og:description" content="Auto-speaks Claude Code and Codex, keeps each session colour-coded, syncs identity into desktop coding apps, and lets highlighted text speak on demand. Free, offline wake-word, MIT.">
 <meta property="og:image" content="https://raw.githubusercontent.com/benfrancisburns-creator/terminal-talk/main/docs/assets/wallpaper/terminal-talk-wallpaper.png">
@@ -22,7 +22,7 @@
   "description": "Hands-free voice output for Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop. Speaks responses, tool progress, and selected text through one colour-coded toolbar with per-session identity, transcripts, focus, mute, and offline wake-word.",
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "VoiceProductivity",
-  "operatingSystem": "Windows 10, Windows 11",
+  "operatingSystem": "Windows 10, Windows 11, macOS",
   "url": "https://benfrancisburns-creator.github.io/terminal-talk/",
   "downloadUrl": "https://github.com/benfrancisburns-creator/terminal-talk/releases/latest",
   "softwareVersion": "0.6.0",
@@ -217,6 +217,63 @@ section { padding: 80px 24px; }
 .btn-ghost:hover { background: rgba(255,255,255,0.1); text-decoration: none; }
 .hero .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
 .hero .badges img { height: 22px; }
+.mascot-intro {
+  min-height: calc(100vh - 62px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0;
+  background: #04040a;
+  overflow: hidden;
+  transition: opacity .45s ease, transform .6s ease, max-height .65s ease, min-height .65s ease, padding .65s ease;
+}
+.mascot-intro iframe {
+  display: block;
+  width: 100vw;
+  height: calc(100vh - 62px);
+  min-height: 520px;
+  border: 0;
+  border-radius: 0;
+  background: #04040a;
+  box-shadow: none;
+}
+body.mascot-intro-pending .hero {
+  opacity: 0;
+  transform: translateY(34px);
+  visibility: hidden;
+  overflow: hidden;
+}
+body.mascot-intro-pending .mascot-intro ~ section,
+body.mascot-intro-pending .mascot-intro ~ footer {
+  visibility: hidden;
+  pointer-events: none;
+}
+body.mascot-intro-done .mascot-intro {
+  min-height: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  transform: translateY(-18px);
+  pointer-events: none;
+}
+.hero {
+  max-height: 1800px;
+  overflow: hidden;
+  transition: opacity .55s ease .1s, transform .65s ease .1s, max-height .75s ease, padding .65s ease;
+}
+@media (max-width: 760px) {
+  .mascot-intro { min-height: calc(100vh - 60px); padding: 0; }
+  .mascot-intro iframe {
+    height: calc(100vh - 60px);
+    min-height: 420px;
+    border-radius: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-intro,
+  .hero { transition: none; }
+}
 
 /* Section titles */
 .sec-kicker { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--copper); font-weight: 600; margin-bottom: 8px; }
@@ -617,36 +674,6 @@ section { padding: 80px 24px; }
   color: var(--text-dim);
   font-size: 14px;
 }
-.demo-grid {
-  max-width: 1040px;
-  margin: 0 auto;
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  text-align: left;
-}
-.demo-card {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-}
-.demo-card .demo-frame {
-  max-width: none;
-  margin: 0;
-  border-radius: 10px;
-}
-.demo-card h3 {
-  margin: 12px 2px 6px;
-  font-size: 16px;
-  font-weight: 650;
-}
-.demo-card p {
-  margin: 0 2px;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
 /* Install */
 .install-grid { display: grid; gap: 32px; grid-template-columns: 1fr 1fr; align-items: start; }
 @media (max-width: 760px) { .install-grid { grid-template-columns: 1fr; } }
@@ -673,6 +700,20 @@ section { padding: 80px 24px; }
 }
 .code-block .comment { color: var(--text-faint); }
 .code-block .prompt { color: var(--green); user-select: none; }
+.install-code-grid {
+  display: grid;
+  gap: 18px;
+}
+.install-panel h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.install-panel p {
+  margin: 10px 0 0;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.55;
+}
 .copy-btn {
   position: absolute; top: 10px; right: 10px;
   padding: 4px 10px; font-size: 11px; border-radius: 6px;
@@ -752,7 +793,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
 .chip .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 </style>
 </head>
-<body>
+<body class="mascot-intro-pending">
 
 <nav class="nav">
   <div class="nav-inner">
@@ -774,6 +815,13 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
   </div>
 </nav>
+
+<section class="mascot-intro" aria-label="Terminal Talk animated mascot intro">
+  <iframe
+    title="Terminal Talk animated mascot intro"
+    src="mascot-preview.html?embed=1&amp;once=1"
+    loading="eager"></iframe>
+</section>
 
 <header class="hero">
   <div class="hero-ascii">
@@ -818,8 +866,11 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <p class="lede">Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop become a colour-coded audio workstream you can follow without reading every terminal.</p>
   <p class="sub">Replies, tool progress, transcripts, focus, and session identity are built in. Optional highlight-to-speak is there when you want any selected text read aloud. Free by default. Offline wake-word detection. MIT licensed.</p>
   <div class="cta-row">
-    <a class="btn btn-primary" href="https://github.com/benfrancisburns-creator/terminal-talk/releases/latest">
-      ⬇ Download for Windows
+    <a class="btn btn-primary" href="#install-windows" onclick="copyInstallCommand('windows-install-command', this)">
+      Install on Windows
+    </a>
+    <a class="btn btn-ghost" href="#install-macos" onclick="copyInstallCommand('macos-install-command', this)">
+      Install on macOS
     </a>
     <a class="btn btn-ghost" href="https://github.com/benfrancisburns-creator/terminal-talk">
       View on GitHub
@@ -931,7 +982,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     <div class="sec-head">
       <div class="sec-kicker">See it in action</div>
       <h2 class="sec-title">Terminal Talk in motion</h2>
-      <p class="sec-intro">The videos show the existing workflow cuts. The screenshots above are the current UI reference; updated videos are next.</p>
+      <p class="sec-intro">This hero cut is the current motion reference. The interactive toolbar above is the live product UI for detailed feature exploration.</p>
     </div>
     <article class="demo-feature">
       <div class="demo-frame">
@@ -945,104 +996,6 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <p>A polished mascot-led overview of Terminal Talk as a hands-free command center for Claude Code and Codex.</p>
       <p class="demo-caption"><a href="videos/terminal-talk-command-center-ad.mp4?v=20260501-refresh">Open directly</a></p>
     </article>
-    <div class="demo-grid">
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-local-command-center-ad.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-local-command-center-ad.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Local command center</h3>
-        <p>A second mascot-led hero cut showing hooks, auto-prune, heartbeat state, fallback routing, and session identity.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-local-command-center-ad.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-user-hero.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-user-hero.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Feature hero cut</h3>
-        <p>A caption-led hero pass covering the spoken queue, session identity, shortcuts, fallback voices, and transcripts.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-user-hero.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-overview.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-overview.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Overview</h3>
-        <p>Claude Code and Codex replies become spoken clips, and the toolbar shows what is playing, queued, and already heard.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-overview.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-queue-jarvis.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-queue-jarvis.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Hey Jarvis</h3>
-        <p>Multiple sessions keep separate colours, while highlighted text can jump the queue as a priority clip.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-queue-jarvis.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-settings-sessions.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-settings-sessions.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Settings + sessions</h3>
-        <p>Cursor-guided walkthrough of playback, auto-collapse, auto-prune, OpenAI fallback, shortcuts, sessions, and speech rules.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-settings-sessions.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-openai-api-key.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-openai-api-key.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>OpenAI API key</h3>
-        <p>How Terminal Talk stores the OpenAI key, flips provider routing, keeps Edge as fallback, and tests premium voices.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-openai-api-key.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-session-sync-controls.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-session-sync-controls.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Session sync</h3>
-        <p>Claude Code and Codex share session identity, colours, labels, focus, mute, heartbeat overrides, and per-session voice controls.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-session-sync-controls.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-      <article class="demo-card">
-        <div class="demo-frame">
-          <video class="demo-video" controls playsinline preload="metadata" width="1280" height="720" poster="assets/wallpaper/terminal-talk-wallpaper.png">
-            <source src="videos/terminal-talk-transcript-spoken-original.mp4?v=20260501-refresh" type="video/mp4">
-            <source src="videos/terminal-talk-transcript-spoken-original.webm?v=20260501-refresh" type="video/webm">
-            Demo video unavailable. Open the video directly.
-          </video>
-        </div>
-        <h3>Transcript review</h3>
-        <p>Review recent clips, copy the spoken text, switch to original markdown, and filter the transcript by session.</p>
-        <p class="demo-caption"><a href="videos/terminal-talk-transcript-spoken-original.mp4?v=20260501-refresh">Open directly</a></p>
-      </article>
-    </div>
   </div>
 </section>
 
@@ -1083,22 +1036,38 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">Install</div>
-      <h2 class="sec-title">Three commands, under two minutes</h2>
+      <h2 class="sec-title">Choose Windows or macOS</h2>
     </div>
     <div class="install-grid">
       <ol class="install-steps">
         <li>Install Python 3.10+ and Node.js 18+ if you don't already have them.</li>
-        <li>Clone the repo and run <span class="mono">install.ps1</span> — installs deps, pre-downloads the wake-word model, adds Desktop/Start Menu shortcuts, and asks which hooks you want registered.</li>
+        <li>Copy the command for your platform, paste it into PowerShell or Terminal, then press Enter. Browsers cannot safely open a shell and run commands automatically.</li>
         <li>Open Claude Code, Codex CLI, Claude Desktop Code, or Codex Desktop. Assistant replies feed the same Terminal Talk queue where supported. Say <em>"hey jarvis"</em> over highlighted text to read it from any app.</li>
       </ol>
       <div>
-        <div class="code-block">
-<button class="copy-btn" onclick="navigator.clipboard.writeText('git clone https://github.com/benfrancisburns-creator/terminal-talk\ncd terminal-talk\n.\\install.ps1').then(() => { this.textContent = 'Copied'; setTimeout(() => this.textContent = 'Copy', 1600); })">Copy</button><pre style="margin:0"><span class="prompt">PS&gt;</span> git clone https://github.com/benfrancisburns-creator/terminal-talk
+        <div class="install-code-grid">
+          <div class="install-panel" id="install-windows">
+            <h3>Windows PowerShell</h3>
+            <div class="code-block">
+<button class="copy-btn" onclick="copyInstallCommand('windows-install-command', this)">Copy</button><pre id="windows-install-command" data-copy-text="git clone https://github.com/benfrancisburns-creator/terminal-talk&#10;cd terminal-talk&#10;.\install.ps1" style="margin:0"><span class="prompt">PS&gt;</span> git clone https://github.com/benfrancisburns-creator/terminal-talk
 <span class="prompt">PS&gt;</span> cd terminal-talk
 <span class="prompt">PS&gt;</span> .\install.ps1</pre>
+            </div>
+            <p>Windows 10/11. Installer adds shortcuts, dependencies, the wake-word model, and supported Claude/Codex hooks.</p>
+          </div>
+          <div class="install-panel" id="install-macos">
+            <h3>macOS Terminal</h3>
+            <div class="code-block">
+<button class="copy-btn" onclick="copyInstallCommand('macos-install-command', this)">Copy</button><pre id="macos-install-command" data-copy-text="brew install node python@3.12 portaudio&#10;git clone https://github.com/benfrancisburns-creator/terminal-talk&#10;cd terminal-talk&#10;bash ./install.sh" style="margin:0"><span class="prompt">$</span> brew install node python@3.12 portaudio
+<span class="prompt">$</span> git clone https://github.com/benfrancisburns-creator/terminal-talk
+<span class="prompt">$</span> cd terminal-talk
+<span class="prompt">$</span> bash ./install.sh</pre>
+            </div>
+            <p>macOS uses the source installer. First launch may request Accessibility and Microphone permissions.</p>
+          </div>
         </div>
-        <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows 10/11 · Python 3.10+ · Node 18+ · Microphone</span></div>
-        <div class="req-row"><strong>macOS</strong> works the same way via <span class="mono">install.sh</span> (Homebrew + <span class="mono">brew install node python@3.12 portaudio</span> first). Linux port still in progress; the Windows-only mic-watcher (auto-pause when another app dictates) no-ops on macOS today. Uninstall on Windows with <span class="mono">.\uninstall.ps1</span>.</div>
+        <div class="req-row"><span class="chip"><span class="chip-dot"></span>Windows · macOS · Python 3.10+ · Node 18+ · Microphone</span></div>
+        <div class="req-row">Linux port still in progress. Uninstall on Windows with <span class="mono">.\uninstall.ps1</span>.</div>
       </div>
     </div>
   </div>
@@ -1145,7 +1114,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       </details>
       <details>
         <summary>What about macOS and Linux?</summary>
-        <p><strong>macOS</strong> is supported. The synthetic-keystroke helper uses Quartz <span class="mono">CGEventCreateKeyboardEvent</span>, the foreground PID comes from <span class="mono">NSWorkspace.frontmostApplication</span>, and the process tree is walked with <span class="mono">psutil</span>. First launch prompts for Accessibility (synthetic Cmd+C) and Microphone (wake-word listener); both grants are one-time. The Windows-specific WMI mic-watcher (auto-pause when another app dictates) cleanly no-ops on macOS — that feature is the only one still Windows-only. <strong>Linux</strong> is next; POSIX install scaffolding and shared Python hooks (<span class="mono">install.sh</span>, <span class="mono">app/posix_hooks.py</span>) are already in the repo. PRs welcome.</p>
+        <p><strong>macOS</strong> is supported. The synthetic-keystroke helper uses Quartz <span class="mono">CGEventCreateKeyboardEvent</span>, the foreground PID comes from <span class="mono">NSWorkspace.frontmostApplication</span>, voice commands use Apple's Speech framework, the process tree is walked with <span class="mono">psutil</span>, and the mic auto-pause path uses CoreAudio where supported. First launch prompts for Accessibility (synthetic Cmd+C), Microphone (wake-word listener), and Speech Recognition (voice commands); those grants are one-time. <strong>Linux</strong> is next; POSIX install scaffolding and shared Python hooks (<span class="mono">install.sh</span>, <span class="mono">app/posix_hooks.py</span>) are already in the repo. PRs welcome.</p>
       </details>
       <details>
         <summary>Can I change the wake word from "hey jarvis"?</summary>
@@ -1190,6 +1159,43 @@ footer a { color: var(--text-dim); margin: 0 12px; }
   </div>
   <div style="margin-top: 16px;">Terminal Talk is open source. Built by <a href="https://github.com/benfrancisburns-creator">Ben Burns</a>.</div>
 </footer>
+
+<script>
+async function copyInstallCommand(commandId, trigger) {
+  const command = document.getElementById(commandId);
+  if (!command) return true;
+  const text = command.dataset.copyText || command.textContent;
+  if (!text) return true;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (trigger) {
+      const original = trigger.textContent;
+      trigger.textContent = 'Copied';
+      setTimeout(() => { trigger.textContent = original; }, 1600);
+    }
+  } catch {
+    command.focus();
+  }
+  return true;
+}
+</script>
+
+<script>
+(() => {
+  const revealHero = () => {
+    if (!document.body.classList.contains('mascot-intro-pending')) return;
+    document.body.classList.remove('mascot-intro-pending');
+    document.body.classList.add('mascot-intro-done');
+  };
+
+  window.addEventListener('message', (event) => {
+    if (!event || !event.data || event.data.type !== 'terminal-talk-mascot-preview-done') return;
+    revealHero();
+  });
+
+  setTimeout(revealHero, 40000);
+})();
+</script>
 
 <script>
 (() => {

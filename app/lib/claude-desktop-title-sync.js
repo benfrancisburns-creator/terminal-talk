@@ -80,12 +80,12 @@ function cleanExistingClaudeTitle(currentTitle, shortId = '') {
   title = title
     .replace(/^(?:\S+\s+)?TT\s+(?:Red|Orange|Yellow|Green|Blue|Magenta|Brown|White|Colour)(?:\s*\/\s*(?:Red|Orange|Yellow|Green|Blue|Magenta|Brown|White|Colour))?\s*(?:(?:[|·-]|Â·)\s*)?/i, '')
     .trim();
-  // Strip the current "<one-or-two colour markers> <separator>?" prefix.
+  // Strip the current "<colour/orientation marker> <separator>?" prefix.
   // The dot itself communicates the colour so we no longer need the
   // "TT Yellow" text. Markers come from palette-identity COLOUR_MARKERS:
-  // 🔴🟠🟡🟢🔵🟣🟤⚪. Split colours concatenate two markers.
+  // 🔴🟠🟡🟢🔵🟣🟤⚪, with ◓/◐ for split palette orientation.
   title = title
-    .replace(/^[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u{1F535}\u{1F7E3}\u{1F7E4}\u{26AA}]{1,2}\s*(?:(?:[|·-]|Â·)\s*)?/u, '')
+    .replace(/^(?:[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u{1F535}\u{1F7E3}\u{1F7E4}\u{26AA}]{1,2}|[↕↔◓◐])\s*(?:(?:[|·-]|Â·)\s*)?/u, '')
     .trim();
   const short = String(shortId || '').toLowerCase();
   for (;;) {

@@ -153,6 +153,7 @@ function createCodexIdentitySync(opts = {}) {
     diag = () => {},
     intervalMs = 60000,
     claudeIntervalMs = 1000,
+    terminalIdentitySyncEnabled = enabled,
     loadAssignments = null,
     saveAssignments = null,
     notifyQueue = null,
@@ -277,7 +278,7 @@ function createCodexIdentitySync(opts = {}) {
   function sync() {
     if (!enabled) return;
     syncDesktopNames();
-    if (testMode || running) return;
+    if (!terminalIdentitySyncEnabled || testMode || running) return;
     const script = path.join(appDir, 'codex-identify-live.ps1');
     if (!fs.existsSync(script)) {
       diag('codex identity sync skipped: codex-identify-live.ps1 missing');

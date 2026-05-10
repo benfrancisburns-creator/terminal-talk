@@ -545,6 +545,7 @@ let queue = [];
 let allQueuePaths = [];
 const playedPaths = new Set();
 const heardPaths = new Set();
+const manualPlayedPaths = new Set();
 const priorityPaths = new Set();
 const priorityQueue = [];
 let pendingQueue = [];
@@ -657,6 +658,7 @@ const UNPLAYED_EPHEMERAL_TTL_MS = 30000;
 function _removeClipFromQueuesAndState(p) {
   playedPaths.delete(p);
   heardPaths.delete(p);
+  manualPlayedPaths.delete(p);
   priorityPaths.delete(p);
   pendingQueue = pendingQueue.filter(x => x !== p);
   for (let i = priorityQueue.length - 1; i >= 0; i--) {
@@ -718,7 +720,7 @@ async function _attemptAutoDelete(p, ephemeral, attempt) {
   try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'attempt=' + attempt, 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
   let deleted = false;
   try {
-    deleted = await window.api.deleteFile(p) === true;
+    deleted = await window.api.deleteFile(p, ephemeral ? 'played-ephemeral' : 'played-auto-prune') === true;
   } catch (e) {
     try { console.warn('[scheduleAutoDelete] deleteFile failed', p.split(/[\\/]/).pop(), 'attempt=' + attempt, e && e.message); } catch {}
   }
@@ -905,6 +907,7 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   getHeardPaths: () => heardPaths,
   markPlayed: (p) => { playedPaths.add(p); },
   markHeard: (p) => { heardPaths.add(p); },
+  markManualPlayed: (p) => { manualPlayedPaths.add(p); },
   removePending: (p) => { pendingQueue = pendingQueue.filter((x) => x !== p); },
   fmt,
   fileUrl,
@@ -1068,6 +1071,7 @@ function renderDots() {
     currentPath: audioPlayer.getCurrentPath(),
     currentIsManual: typeof audioPlayer.isCurrentManual === 'function' ? audioPlayer.isCurrentManual() : false,
     heardPaths,
+    manualPlayedPaths,
     sessionAssignments,
     synthInProgress,
   });
@@ -1090,13 +1094,8 @@ function renderDots() {
   if (transcriptPanel) transcriptPanel.refresh();
 }
 
-function playPath(p, manual = false, userClick = false) {
-  return audioPlayer.playPath(p, manual, userClick);
-}
-
-function userPlay(p) {
-  audioPlayer.playPath(p, true, true);
-}
+function playPath(p, manual = false, userClick = false) { return audioPlayer.playPath(p, manual, userClick); }
+function userPlay(p) { audioPlayer.playPath(p, true, true); }
 
 async function deleteDot(p) {
   cancelAutoDelete(p);
@@ -1104,7 +1103,7 @@ async function deleteDot(p) {
     audioPlayer.abort();
   }
   pendingQueue = pendingQueue.filter(x => x !== p);
-  playedPaths.delete(p);
+  playedPaths.delete(p); heardPaths.delete(p); manualPlayedPaths.delete(p);
   queue = queue.filter(f => f.path !== p);
   allQueuePaths = allQueuePaths.filter(x => x !== p);
   renderDots();
@@ -1160,8 +1159,8 @@ function _undoClear() {
   _pendingClear = null;
   for (const e of restored) {
     queue.push({ path: e.path, mtime: e.mtime });
-    if (e.wasHeard) heardPaths.add(e.path);
-    if (e.wasPlayed) playedPaths.add(e.path);
+    if (e.wasHeard) heardPaths.add(e.path); if (e.wasPlayed) playedPaths.add(e.path);
+    if (e.wasManualPlayed) manualPlayedPaths.add(e.path);
   }
   renderDots();
 }
@@ -1200,14 +1199,14 @@ async function clearAllPlayed() {
     mtime: f.mtime,
     wasHeard: heardPaths.has(f.path),
     wasPlayed: playedPaths.has(f.path),
+    wasManualPlayed: manualPlayedPaths.has(f.path),
   }));
   const paths = entries.map((e) => e.path);
 
   // Remove from visible state immediately — user sees the UI react.
   for (const p of paths) {
     cancelAutoDelete(p);
-    heardPaths.delete(p);
-    playedPaths.delete(p);
+    heardPaths.delete(p); playedPaths.delete(p); manualPlayedPaths.delete(p);
   }
   queue = queue.filter((f) => !paths.includes(f.path));
   renderDots();
@@ -1298,7 +1297,11 @@ async function initialLoad() {
     .filter(f => f.mtime >= cutoff)
     .sort((a, b) => a.mtime - b.mtime);
   for (const f of files) {
-    if (f.mtime < cutoff) playedPaths.add(f.path);
+    if (f.mtime < cutoff) {
+      playedPaths.add(f.path);
+      heardPaths.add(f.path);
+      scheduleAutoDelete(f.path, true);
+    }
   }
   for (const f of unplayed) {
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);

@@ -692,6 +692,14 @@ _INLINE_PROSE_MAX_LEN = 30
 _INLINE_CODE_DISQUAL_RE = re.compile(
     r'[(){}]|=>|->(?![a-z])|::|;\s*\S|\s--?\w'
 )
+_INLINE_COMMAND_PREFIX = (
+    r'(?:npm|npx|yarn|pnpm|git|pip|pipx|python|python3|node|ruby|go|cargo|'
+    r'docker|podman|kubectl|helm|terraform|make|cmake|gcc|clang|launchctl|plutil)'
+)
+_INLINE_COMMAND_BULLET_RE = re.compile(
+    rf'^([ \t]*(?:[-*+]|\d+[.)])[ \t]+)(`+)(\s*{_INLINE_COMMAND_PREFIX}\b[^\n]*?)\2(.*)$',
+    re.IGNORECASE,
+)
 
 
 def _inline_looks_like_prose(content: str) -> bool:
@@ -705,6 +713,19 @@ def _inline_looks_like_prose(content: str) -> bool:
     if '\n' in trimmed:
         return False
     return not _INLINE_CODE_DISQUAL_RE.search(trimmed)
+
+
+def _unwrap_command_bullet_inline_code(text: str) -> str:
+    """Keep command-only validation/list bullets audible while inline_code is off."""
+    out = []
+    for line in str(text).split('\n'):
+        if _INLINE_COMMAND_BULLET_RE.match(line):
+            out.append(_INLINE_CODE_RE.sub(lambda m: m.group(2), line))
+        else:
+            out.append(line)
+    return '\n'.join(out)
+
+
 _URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
 _HEADING_LINE_RE = re.compile(r'^\s*#{1,6}\s*.*$', re.MULTILINE)
 # Triple-asterisk emphasis (bold-italic ***x***) must be stripped BEFORE
@@ -925,6 +946,7 @@ def sanitize(text: str, flags: dict) -> str:
     # them turns "press `Ctrl+R` to reload" into "press to reload".
     # With the GFM-balanced regex, group(2) is the content (group(1) is
     # the backtick run count used as the backreference).
+    t = _unwrap_command_bullet_inline_code(t)
     if flags.get('inline_code', False):
         t = _INLINE_CODE_RE.sub(lambda m: m.group(2), t)
     else:

@@ -54,6 +54,7 @@
         queue: [],
         currentPath: null,
         heardPaths: new Set(),
+        manualPlayedPaths: new Set(),
         sessionAssignments: {},
         synthInProgress: false,
       };
@@ -94,7 +95,7 @@
 
     _renderNow() {
       if (!this.root) return;
-      const { queue, currentPath, currentIsManual, heardPaths, sessionAssignments, synthInProgress } = this.state;
+      const { queue, currentPath, currentIsManual, heardPaths, manualPlayedPaths, sessionAssignments, synthInProgress } = this.state;
       this.root.innerHTML = '';
 
       // Muted sessions' clips are hidden entirely — no dot, no trace.
@@ -120,7 +121,7 @@
         prevShort = thisShort;
 
         this.root.appendChild(this._buildDot(f, fname, thisShort, {
-          currentPath, currentIsManual, heardPaths, sessionAssignments,
+          currentPath, currentIsManual, heardPaths, manualPlayedPaths, sessionAssignments,
         }));
       }
 
@@ -138,7 +139,7 @@
     }
 
     _buildDot(f, fname, short, viewState) {
-      const { currentPath, currentIsManual, heardPaths, sessionAssignments } = viewState;
+      const { currentPath, currentIsManual, heardPaths, manualPlayedPaths, sessionAssignments } = viewState;
       const dot = document.createElement('button');
       dot.className = 'dot';
       dot.setAttribute('role', 'listitem');
@@ -156,7 +157,10 @@
         dot.classList.add('clip');
         dot.textContent = 'J';
       }
-      if (heardPaths.has(f.path)) dot.classList.add('heard');
+      if (heardPaths.has(f.path)) {
+        dot.classList.add('heard');
+        dot.classList.add(manualPlayedPaths && manualPlayedPaths.has(f.path) ? 'played-manual' : 'played-auto');
+      }
       // D2-9 — data-palette drives both the non-heard background and the
       // heard ring colour via rules in app/lib/palette-classes.css.
       // Replaces the old dot.style.background / boxShadow writes so the

@@ -13,11 +13,11 @@
 //
 //   launchAssistantSessionMac(opts, ctx)
 //     macOS-specific: drives Terminal.app via osascript. Opens a new
-//     window in the project dir, sets the tab title, exec's claude /
-//     codex. No Windows Terminal tab-colour parity (Terminal.app's
-//     per-tab colour is profile-tied, not programmable inline) but
-//     the toolbar still colours the session correctly the moment the
-//     assistant fires its first hook.
+//     window in the project dir, pre-reserves a toolbar registry
+//     identity, exports TT_LAUNCH_* hints, sets the tab title, then
+//     exec's claude / codex. Terminal.app's per-tab colour is profile-
+//     tied, not programmable inline, but the toolbar identity now
+//     follows the same launch-token migration contract as Windows.
 //
 //   launchClaudeDesktopCodeSession(opts, ctx)
 //     Cross-platform: opens a `claude://code/new` deep link via
@@ -47,6 +47,8 @@ function createSessionLauncher({
   addClaudeDesktopLaunchIntent,
   getCFG = () => ({}),
   appDir,
+  loadAssignments = null,
+  saveAssignments = null,
 } = {}) {
   if (typeof spawn !== 'function') throw new Error('createSessionLauncher: spawn required');
   if (!crypto) throw new Error('createSessionLauncher: crypto required');
@@ -61,6 +63,94 @@ function createSessionLauncher({
   if (typeof addClaudeDesktopLaunchIntent !== 'function') throw new Error('createSessionLauncher: addClaudeDesktopLaunchIntent required');
   if (!appDir) throw new Error('createSessionLauncher: appDir required');
   const URLImpl = URLCtor || URL;
+  const registryPath = path.join(path.dirname(appDir), 'session-colours.json');
+  // sh-quote: wrap in single quotes, escape any embedded single quote.
+  const sh = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+
+  function toolbarLaunchShort(token) {
+    return crypto.createHash('sha1')
+      .update(`toolbar-launch:${String(token || '')}`)
+      .digest('hex')
+      .slice(0, 8);
+  }
+
+  function readAssignmentsForLaunch() {
+    if (typeof loadAssignments === 'function') {
+      const assignments = loadAssignments() || {};
+      return assignments && typeof assignments === 'object' ? { ...assignments } : {};
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+      const assignments = parsed && parsed.assignments;
+      return assignments && typeof assignments === 'object' ? assignments : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeAssignmentsForLaunch(assignments) {
+    if (typeof saveAssignments === 'function') {
+      return saveAssignments(assignments, 'toolbar-launch');
+    }
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    fs.writeFileSync(registryPath, JSON.stringify({ assignments }, null, 2), 'utf8');
+    return true;
+  }
+
+  function reserveToolbarLaunchIdentity({ kind, projectDir, title, index, launchToken }) {
+    const short = toolbarLaunchShort(launchToken);
+    const marker = `toolbar-launch:${launchToken}`;
+    const assignments = readAssignmentsForLaunch();
+    const now = Math.floor(Date.now() / 1000);
+    const sourceLabel = kind === 'codex' ? 'Codex' : 'Claude Code';
+    assignments[short] = {
+      ...(assignments[short] && typeof assignments[short] === 'object' ? assignments[short] : {}),
+      index,
+      session_id: `${kind}-toolbar-launch-${launchToken}`,
+      claude_pid: 0,
+      label: title,
+      pinned: true,
+      last_seen: now,
+      source_kind: 'toolbar-launch',
+      source_label: sourceLabel,
+      source_cwd: projectDir,
+      source_originator: marker,
+    };
+    writeAssignmentsForLaunch(assignments);
+    return { short, marker };
+  }
+
+  function formatTerminalTalkLaunchTitle({ kind, label, index }) {
+    const fallback = kind === 'codex' ? 'Codex' : 'Claude Code';
+    const identity = sanitiseLabel(label || '') || fallback;
+    const marker = colourMarkerForIndex(index);
+    const colour = colourNameForIndex(index);
+    const paletteIdentity = [marker, colour].filter(Boolean).join(' ');
+    return [paletteIdentity, identity].filter(Boolean).join(' · ');
+  }
+
+  function macTitleRefreshCommand(originator) {
+    const markers = JSON.stringify(Array.from({ length: 24 }, (_, i) => colourMarkerForIndex(i)));
+    const names = JSON.stringify(Array.from({ length: 24 }, (_, i) => colourNameForIndex(i)));
+    const py = [
+      'import json,sys',
+      'p,origin,markers_json,names_json=sys.argv[1:5]',
+      'markers=json.loads(markers_json)',
+      'names=json.loads(names_json)',
+      'data=json.load(open(p,encoding="utf-8"))',
+      'entries=(data.get("assignments") or {}).values()',
+      'entry=next((e for e in entries if isinstance(e,dict) and str(e.get("source_originator") or "")==origin),None)',
+      'idx=int(entry.get("index") or 0) if entry else 0',
+      'label=str(entry.get("label") or "").strip() if entry else ""',
+      'marker=markers[idx] if 0 <= idx < len(markers) else ""',
+      'name=names[idx] if 0 <= idx < len(names) else ""',
+      'prefix=(marker+" "+name).strip()',
+      'print((prefix+" · "+label).strip(" ·")) if label or prefix else None',
+    ].join(';');
+    const readTitle = `python3 -c ${sh(py)} ${sh(registryPath)} ${sh(originator)} ${sh(markers)} ${sh(names)}`;
+    const loop = `while :; do TT_TITLE=$(${readTitle} 2>/dev/null || true); if [ -n "$TT_TITLE" ]; then printf '\\033]0;%s\\007' "$TT_TITLE"; fi; sleep 3; done`;
+    return `( ${loop} ) & TT_TITLE_PID=$!; trap 'kill "$TT_TITLE_PID" 2>/dev/null || true' EXIT`;
+  }
 
   // macOS implementation of launchAssistantSession. Drives Terminal.app
   // via osascript: open a new window, cd into the project, set the tab
@@ -71,16 +161,24 @@ function createSessionLauncher({
   // the moment the assistant fires its first hook (UserPromptSubmit /
   // SessionStart), so the visual identity surfaces in the toolbar
   // even if the terminal tab itself stays default.
-  async function launchAssistantSessionMac({ kind, projectDir, title, launchMode, index }) {
+  async function launchAssistantSessionMac({ kind, projectDir, title, registryLabel = title, launchMode, index }) {
+    const launchToken = crypto.randomBytes(8).toString('hex');
+    const launchIdentity = reserveToolbarLaunchIdentity({ kind, projectDir, title: registryLabel, index, launchToken });
     const cmd = kind === 'codex'
       ? 'codex'
       : (launchMode === 'dangerous' ? 'claude --dangerously-skip-permissions' : 'claude');
-    // sh-quote: wrap in single quotes, escape any embedded single quote.
-    const sh = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
     // AppleScript double-quoted string escape: backslash and double quote.
     const apl = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const titleEsc = `printf '\\033]0;%s\\007' ${sh(title)}`;
-    const inner = `cd ${sh(projectDir)} && ${titleEsc} && ${cmd}`;
+    const env = [
+      `export TT_LAUNCH_KIND=${sh(kind)}`,
+      `export TT_LAUNCH_LABEL=${sh(registryLabel)}`,
+      `export TT_LAUNCH_INDEX=${sh(String(index))}`,
+      `export TT_LAUNCH_TOKEN=${sh(launchToken)}`,
+      `export TT_LAUNCH_MODE=${sh(launchMode || 'default')}`,
+    ].join(' && ');
+    const titleRefresh = macTitleRefreshCommand(launchIdentity.marker);
+    const inner = `cd ${sh(projectDir)} && ${env} && ${titleEsc} && ${titleRefresh} && ${cmd}`;
     const ascript = [
       'tell application "Terminal"',
       '  activate',
@@ -88,7 +186,7 @@ function createSessionLauncher({
       'end tell',
     ].join('\n');
 
-    diag(`launch-assistant-session mac: kind=${kind} project=${projectDir} title="${title}" mode=${launchMode}`);
+    diag(`launch-assistant-session mac: kind=${kind} project=${projectDir} title="${title}" mode=${launchMode} launch=${launchIdentity.short}`);
 
     return await new Promise((resolve, reject) => {
       const child = spawn('osascript', ['-e', ascript], {
@@ -116,7 +214,7 @@ function createSessionLauncher({
           return;
         }
         diag(`launch-assistant-session mac: launched ${kind} in ${projectDir}`);
-        resolve({ ok: true, kind, title, projectDir, index, pid: child.pid });
+        resolve({ ok: true, kind, title, projectDir, index, pid: child.pid, launchToken, launchShort: launchIdentity.short });
       });
     });
   }
@@ -153,7 +251,15 @@ function createSessionLauncher({
     const title = label ? `${titleBase} - ${label}` : titleBase;
 
     if (process.platform === 'darwin') {
-      return await launchAssistantSessionMac({ kind, projectDir, title, launchMode, index });
+      const terminalTitle = formatTerminalTalkLaunchTitle({ kind, label: label || title, index });
+      return await launchAssistantSessionMac({
+        kind,
+        projectDir,
+        title: terminalTitle,
+        registryLabel: title,
+        launchMode,
+        index,
+      });
     }
     if (process.platform !== 'win32') {
       throw new Error('Toolbar session launch is currently supported on Windows and macOS only.');

@@ -1936,6 +1936,8 @@ const _sessionLauncher = createSessionLauncher({
   addClaudeDesktopLaunchIntent,
   getCFG: () => CFG,
   appDir: __dirname,
+  loadAssignments,
+  saveAssignments,
 });
 const launchAssistantSession = _sessionLauncher.launchAssistantSession;
 
@@ -2059,7 +2061,7 @@ function isWakeWordAvailable() {
 // fragment is matched as a substring against the python child's
 // CommandLine, so 'wake-word-listener' catches our wake-word-listener.py
 // without false-positive on unrelated python tools.
-const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper'];
+const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper', 'mic_watcher_mac', 'synth_daemon'];
 
 // Military-grade safety net: sweep any orphan python helpers.
 // Matches only python.exe processes whose command line contains one of
@@ -2072,15 +2074,40 @@ const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper'];
 // surviving toolbar exit. Old name kept as an alias so existing call
 // sites + tests don't churn.
 function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
-  if (process.platform !== 'win32') return;
   if (!Array.isArray(scriptFragments) || scriptFragments.length === 0) return;
   try {
     const { execFileSync } = require('child_process');
+    const safe = scriptFragments.filter((s) => /^[a-zA-Z0-9_-]+$/.test(s));
+    if (safe.length === 0) return;
+    if (process.platform !== 'win32') {
+      const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,command='], {
+        timeout: 5000,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).split(/\n/);
+      const appDir = path.resolve(__dirname);
+      const killed = [];
+      for (const row of rows) {
+        const m = row.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
+        if (!m) continue;
+        const pid = Number(m[1]);
+        const ppid = Number(m[2]);
+        const cmd = m[3] || '';
+        if (!Number.isFinite(pid) || pid === process.pid || ppid === process.pid) continue;
+        if (!/python/i.test(cmd)) continue;
+        if (!cmd.includes(appDir)) continue;
+        if (!safe.some((fragment) => cmd.includes(fragment))) continue;
+        try {
+          process.kill(pid, 'SIGKILL');
+          killed.push(pid);
+        } catch {}
+      }
+      diag(`orphan python sweep ok — fragments=[${safe.join(',')}] killed=[${killed.join(',')}]`);
+      return;
+    }
     // Build a -or chain of CommandLine -like filters. Each fragment
     // hand-validated as alphanum + underscore + hyphen below so the
     // string interpolation can't smuggle PowerShell metachars.
-    const safe = scriptFragments.filter((s) => /^[a-zA-Z0-9_-]+$/.test(s));
-    if (safe.length === 0) return;
     const orChain = safe.map((s) => `$_.CommandLine -like '*${s}*'`).join(' -or ');
     const psCmd = `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { ${orChain} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
     execFileSync(POWERSHELL_EXE, ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCmd], {
@@ -2430,7 +2457,8 @@ const _codexSessionWatcher = createCodexSessionWatcher({
 });
 _codexIdentitySync = createCodexIdentitySync({
   appDir: __dirname,
-  enabled: platform.supportsCodexIdentitySync,
+  enabled: true,
+  terminalIdentitySyncEnabled: platform.supportsCodexIdentitySync,
   powershellExe: POWERSHELL_EXE,
   testMode: process.env.TT_TEST_MODE === '1',
   loadAssignments,
@@ -2444,7 +2472,7 @@ _codexIdentitySync = createCodexIdentitySync({
 // scraped text. Lives in the main app process because UIA hangs in the
 // hook process tree (inherited Claude-Code-CLI stdio/COM context).
 const _footerWatcher = createFooterWatcher({
-  enabled: platform.supportsFooterScrape,
+  enabled: platform.supportsWindowsFooterWatcher,
   appDir: __dirname,
   sessionsDir: SESSIONS_DIR,
   queueDir: QUEUE_DIR,

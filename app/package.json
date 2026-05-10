@@ -14,8 +14,10 @@
     "build:mac": "electron-builder --mac --arm64 --x64"
   },
   "license": "MIT",
+  "dependencies": {
+    "electron": "41.2.1"
+  },
   "devDependencies": {
-    "electron": "41.2.1",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -98,7 +100,8 @@
       "identity": null,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Terminal Talk listens for the wake word \"hey jarvis\" so it can read highlighted text aloud. Audio is processed locally by openWakeWord; no recordings leave your machine.",
-        "NSAppleEventsUsageDescription": "Terminal Talk synthesises a Cmd+C keystroke to copy the currently highlighted text when you press the speak-clipboard hotkey or fire the wake word."
+        "NSAppleEventsUsageDescription": "Terminal Talk synthesises a Cmd+C keystroke to copy the currently highlighted text when you press the speak-clipboard hotkey or fire the wake word.",
+        "NSSpeechRecognitionUsageDescription": "Terminal Talk uses macOS on-device Speech Recognition to understand voice commands such as play, pause, next, back, and stop after the wake word fires."
       }
     },
     "dmg": {

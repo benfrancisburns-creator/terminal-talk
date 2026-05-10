@@ -13,7 +13,8 @@
 #      (override with TT_CLONE_DIR=/somewhere/else).
 #   3. Runs `install.sh --unattended` so the whole flow is non-
 #      interactive — wake-word deps, hook registration, statusline,
-#      and the macOS-only Quartz/Cocoa deps all install in one pass.
+#      and the macOS-only Quartz/Cocoa/Speech/CoreAudio deps all install
+#      in one pass.
 #
 # Why no DMG / .pkg: this matches the audience (developers who already
 # use the CLI) and avoids the Apple-Developer-ID / Gatekeeper hoop the

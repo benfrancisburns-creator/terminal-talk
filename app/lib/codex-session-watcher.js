@@ -39,6 +39,7 @@ const FINAL_CHUNK_LEN = 900;
 const COMMENTARY_CHUNK_LEN = 1200;
 const DEFAULT_PLUGIN_CLEANUP_DELAY_MS = 120000;
 const PLUGIN_CLEANED_TOMBSTONE_MS = 30 * 60 * 1000;
+const STOP_MARKER_RE = /^([a-f0-9]{8})-codex-stop\.json$/;
 
 function parseSessionIdFromRolloutPath(filePath) {
   const m = String(filePath || '').match(ROLLOUT_SESSION_RE);
@@ -168,6 +169,31 @@ function formatQueueTimestamp(isoString) {
   );
 }
 
+function parseEventTimestampMs(value) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function humaniseDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  if (mins <= 0) return `${secs} second${secs === 1 ? '' : 's'}`;
+  if (secs === 0) return `${mins} minute${mins === 1 ? '' : 's'}`;
+  return `${mins} minute${mins === 1 ? '' : 's'} and ${secs} second${secs === 1 ? '' : 's'}`;
+}
+
+function humaniseFooterPhrase(footer) {
+  const m = String(footer || '').trim().match(/^([A-ZÀ-Ž][a-zà-ž]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s$/);
+  if (!m) return '';
+  const verb = m[1];
+  const mins = Number(m[2] || 0);
+  const secs = Number(m[3] || 0);
+  if (mins <= 0) return `${verb} for ${secs} second${secs === 1 ? '' : 's'}.`;
+  if (secs === 0) return `${verb} for ${mins} minute${mins === 1 ? '' : 's'}.`;
+  return `${verb} for ${mins} minute${mins === 1 ? '' : 's'} and ${secs} second${secs === 1 ? '' : 's'}.`;
+}
+
 function splitOversizeChunk(text, maxLen) {
   const parts = [];
   let rest = String(text || '').trim();
@@ -205,11 +231,14 @@ function chunkText(text, maxLen = DEFAULT_CHUNK_LEN) {
   return chunks;
 }
 
-function writeSpokenSidecar(audioPath, spoken, diag) {
+function writeSpokenSidecar(audioPath, spoken, diag, original = null) {
   try {
     const ext = path.extname(audioPath);
     const base = audioPath.slice(0, -ext.length);
     fs.writeFileSync(`${base}.txt`, spoken, 'utf8');
+    if (original && String(original).trim()) {
+      fs.writeFileSync(`${base}.original.txt`, String(original), 'utf8');
+    }
   } catch (e) {
     diag(`codex-session-watcher: sidecar write fail for ${path.basename(audioPath)}: ${e.message}`);
   }
@@ -531,6 +560,63 @@ function createCodexSessionWatcher(opts = {}) {
     return out;
   }
 
+  function _findRolloutPathForSession(sessionId) {
+    const sid = String(sessionId || '').toLowerCase();
+    if (!sid || !codexSessionsDir || !fsDep.existsSync(codexSessionsDir)) return null;
+    const candidates = _listCandidateFiles().filter((meta) => {
+      const parsed = parseSessionIdFromRolloutPath(meta.path);
+      return parsed && parsed.toLowerCase() === sid;
+    });
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return candidates.length ? candidates[0].path : null;
+  }
+
+  function _elapsedFromRolloutSession(sessionId, markerTimestampSec = 0) {
+    const rolloutPath = _findRolloutPathForSession(sessionId);
+    if (!rolloutPath) return 0;
+    let raw;
+    try { raw = fsDep.readFileSync(rolloutPath, 'utf8'); } catch { return 0; }
+    let turnStartMs = 0;
+    let turnEndMs = 0;
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let parsed;
+      try { parsed = JSON.parse(line); } catch { continue; }
+      const payload = parsed.payload || {};
+      const tsMs = parseEventTimestampMs(parsed.timestamp || payload.timestamp);
+      if (!tsMs) continue;
+      if (parsed.type === 'event_msg') {
+        if (payload.type === 'user_message' || payload.type === 'task_started') {
+          turnStartMs = tsMs;
+          turnEndMs = 0;
+        } else if (
+          (payload.type === 'agent_message' && (payload.phase === 'final' || payload.phase === 'final_answer'))
+          || payload.type === 'task_complete'
+          || payload.type === 'turn_aborted'
+        ) {
+          if (turnStartMs) turnEndMs = tsMs;
+        }
+      } else if (parsed.type === 'response_item') {
+        if (payload.type === 'message' && payload.role === 'user') {
+          turnStartMs = tsMs;
+          turnEndMs = 0;
+        } else if (
+          payload.type === 'message'
+          || payload.type === 'function_call'
+          || payload.type === 'custom_tool_call'
+          || payload.type === 'reasoning'
+        ) {
+          if (turnStartMs) turnEndMs = tsMs;
+        }
+      }
+    }
+    if (turnStartMs && !turnEndMs && markerTimestampSec > 0) {
+      turnEndMs = Number(markerTimestampSec) * 1000;
+    }
+    const elapsed = turnStartMs && turnEndMs ? Math.round((turnEndMs - turnStartMs) / 1000) : 0;
+    return elapsed > 0 ? elapsed : 0;
+  }
+
   function _resolveRouting(shortId) {
     const cfg = getCFG() || {};
     let entry = null;
@@ -642,7 +728,7 @@ function createCodexSessionWatcher(opts = {}) {
       }
       if (!produced) continue;
       producedCount += 1;
-      writeSpokenSidecar(produced, chunks[i], diag);
+      writeSpokenSidecar(produced, chunks[i], diag, event.message);
       try { notifyQueue(); } catch {}
     }
 
@@ -679,6 +765,83 @@ function createCodexSessionWatcher(opts = {}) {
     writeSpokenSidecar(produced, spoken, diag);
     try { notifyQueue(); } catch {}
     diag(`codex-session-watcher: spoke tool narration for ${state.shortId}: ${spoken}`);
+  }
+
+  async function _deliverStopCloser(shortId, marker) {
+    if (!SHORT_RE.test(shortId || '')) return false;
+    _touchAssignment(shortId, marker && marker.session_id ? String(marker.session_id) : shortId);
+    const routing = _resolveRouting(shortId);
+    if (routing.muted) {
+      diag(`codex-session-watcher: muted ${shortId}; skipping stop closer`);
+      return false;
+    }
+    const visibleFooter = humaniseFooterPhrase(marker && marker.footer);
+    const accurateElapsed = visibleFooter ? 0 : _elapsedFromRolloutSession(
+      marker && marker.session_id ? String(marker.session_id) : '',
+      marker && marker.timestamp ? Number(marker.timestamp) : 0
+    );
+    const elapsed = accurateElapsed || Math.max(0, Math.floor(Number(marker && marker.elapsed_sec) || 0));
+    const spoken = visibleFooter || (elapsed >= 1
+      ? `Codex worked for ${humaniseDuration(elapsed)}.`
+      : 'Codex finished.');
+    const turnTs = formatQueueTimestamp(
+      marker && marker.timestamp ? new Date(Number(marker.timestamp) * 1000).toISOString() : new Date().toISOString()
+    );
+    const stem = `${turnTs}-E-0000-${shortId}`;
+    const edgeOut = path.join(queueDir, `${stem}.mp3`);
+    const openaiOut = path.join(queueDir, `${stem}.wav`);
+    const produced = await _synthesizeChunk(spoken, routing, edgeOut, openaiOut);
+    if (!produced) return false;
+    writeSpokenSidecar(produced, spoken, diag);
+    try { notifyQueue(); } catch {}
+    const source = visibleFooter ? 'visible footer'
+      : accurateElapsed ? 'rollout elapsed'
+      : elapsed >= 1 ? 'hook elapsed fallback'
+      : 'no duration';
+    diag(`codex-session-watcher: spoke stop closer for ${shortId}: ${spoken} (${source})`);
+    return true;
+  }
+
+  function _findStateForStopMarker(shortId, marker) {
+    const markerSessionId = marker && marker.session_id ? String(marker.session_id).toLowerCase() : '';
+    for (const state of files.values()) {
+      if (!state) continue;
+      if (shortId && state.shortId === shortId) return state;
+      if (markerSessionId && String(state.sessionId || '').toLowerCase() === markerSessionId) return state;
+    }
+    return null;
+  }
+
+  function _processStopMarkers() {
+    if (!sessionsDir || !fsDep.existsSync(sessionsDir)) return;
+    let names;
+    try { names = fsDep.readdirSync(sessionsDir); } catch { return; }
+    for (const name of names) {
+      const m = name.match(STOP_MARKER_RE);
+      if (!m) continue;
+      const shortId = m[1];
+      const markerPath = path.join(sessionsDir, name);
+      let marker = null;
+      try {
+        marker = JSON.parse(fsDep.readFileSync(markerPath, 'utf8'));
+      } catch (e) {
+        diag(`codex-session-watcher: bad stop marker ${name}: ${e.message}`);
+      }
+      try { fsDep.unlinkSync(markerPath); } catch {}
+      if (!marker) continue;
+      const state = _findStateForStopMarker(shortId, marker);
+      if (state && state.tail && typeof state.tail.then === 'function') {
+        state.tail = state.tail
+          .then(() => _deliverStopCloser(shortId, marker))
+          .catch((e) => {
+            diag(`codex-session-watcher: stop closer fail ${shortId}: ${e.message}`);
+          });
+      } else {
+        _deliverStopCloser(shortId, marker).catch((e) => {
+          diag(`codex-session-watcher: stop closer fail ${shortId}: ${e.message}`);
+        });
+      }
+    }
   }
 
   function _rememberSignature(state, signature) {
@@ -853,6 +1016,7 @@ function createCodexSessionWatcher(opts = {}) {
     const candidates = _listCandidateFiles();
     const livePaths = new Set(candidates.map((f) => f.path));
     for (const meta of candidates) _processFile(meta);
+    _processStopMarkers();
     for (const state of files.values()) _flushExpiredToolContext(state);
     for (const tracked of Array.from(files.keys())) {
       if (!livePaths.has(tracked)) files.delete(tracked);
@@ -911,6 +1075,8 @@ module.exports = {
   extractCodexToolOutputEvent,
   isCodexTerminalSource,
   leadingToolVerb,
+  humaniseFooterPhrase,
+  humaniseDuration,
   narrateCodexToolCallPayload,
   naturalisePath,
   summariseShellCommand,

@@ -110,7 +110,7 @@ fi
 # ------------------------------------------------------------------
 hdr "3. Hooks"
 # ------------------------------------------------------------------
-for hook in speak-response.sh speak-notification.sh codex-mark-working.sh codex-on-tool.sh codex-session-start.sh; do
+for hook in speak-response.sh speak-notification.sh codex-session-start.sh codex-mark-working.sh codex-on-tool.sh codex-post-tool.sh codex-stop.sh; do
   hpath="$TT_HOME/hooks/$hook"
   if [ -f "$hpath" ]; then
     if [ -x "$hpath" ]; then
@@ -136,14 +136,27 @@ else
 fi
 
 CODEX_HOOKS="$HOME/.codex/hooks.json"
+CODEX_CONFIG="$HOME/.codex/config.toml"
 if [ -f "$CODEX_HOOKS" ]; then
   if grep -q "$TT_HOME/hooks" "$CODEX_HOOKS"; then
     ok "Codex hooks registered (~/.codex/hooks.json)"
+    warn "Codex may ask to review 5 Terminal Talk hooks on first run" \
+         "in Codex, open /hooks and approve the Terminal Talk commands so session status, tool activity, and stop events can reach the toolbar"
   else
     warn "~/.codex/hooks.json present but no Terminal Talk hooks"
   fi
 else
   warn "~/.codex/hooks.json missing" "Codex hooks won't fire — install Codex CLI or skip if you don't use it"
+fi
+if [ -f "$CODEX_CONFIG" ]; then
+  if grep -Eq '^[[:space:]]*hooks[[:space:]]*=[[:space:]]*true[[:space:]]*$' "$CODEX_CONFIG"; then
+    ok "Codex hooks feature enabled (~/.codex/config.toml)"
+  else
+    warn "Codex hooks feature not enabled" "run: codex features enable hooks"
+  fi
+  if grep -Eq '^[[:space:]]*codex_hooks[[:space:]]*=' "$CODEX_CONFIG"; then
+    warn "deprecated Codex hook flag present" "replace [features].codex_hooks with [features].hooks"
+  fi
 fi
 
 # ------------------------------------------------------------------
@@ -212,7 +225,7 @@ if [ -n "$TOOLBAR_PIDS" ]; then
   count=$(echo "$TOOLBAR_PIDS" | wc -l | tr -d ' ')
   ok "toolbar running ($count process(es))"
 else
-  warn "toolbar not running" "start with: bash $TT_HOME/scripts/start-toolbar.sh"
+  warn "toolbar not running" "start with: bash $TT_HOME/start-toolbar.sh"
 fi
 
 LISTENER_PIDS="$(pgrep -fl 'wake-word-listener.py' 2>/dev/null | grep -v grep || true)"

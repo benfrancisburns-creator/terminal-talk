@@ -192,7 +192,7 @@ const api = {
   // Returns { spoken: string, original: string } — both empty if the
   // sidecars don't exist (older clips, ephemerals, etc.).
   readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
-  deleteFile: (p) => ipcRenderer.invoke('delete-file', p),
+  deleteFile: (p, reason) => ipcRenderer.invoke('delete-file', p, reason),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   // Phase 6 (#30): first-run-wizard deep-links into macOS System
   // Settings via x-apple.systempreferences:// URLs. Main-side handler

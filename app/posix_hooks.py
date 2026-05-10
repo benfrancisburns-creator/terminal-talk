@@ -28,6 +28,7 @@ PALETTE_AUTO_ORDER = [
 LOCK_STALE_SEC = 3.0
 LOCK_TIMEOUT_SEC = 0.5
 PLUGIN_CLEANUP_DELAY_SEC = 120
+PID_MIGRATE_WINDOW_SEC = 600
 
 
 def default_tt_home() -> Path:
@@ -216,6 +217,110 @@ def allocate_palette(assignments: dict[str, Any], new_short: str) -> int:
     return sum(ord(ch) for ch in new_short) % 24
 
 
+def migrate_by_pid(
+    assignments: dict[str, Any],
+    short: str,
+    session_id: str,
+    pid: int,
+    now: int,
+    caller: str,
+) -> dict[str, Any] | None:
+    if pid <= 0:
+        return None
+    cutoff = now - PID_MIGRATE_WINDOW_SEC
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for key, entry in assignments.items():
+        if key == short or not isinstance(entry, dict):
+            continue
+        try:
+            entry_pid = int(entry.get('claude_pid') or 0)
+            last_seen = int(entry.get('last_seen') or 0)
+        except Exception:
+            continue
+        if entry_pid == pid and last_seen >= cutoff:
+            candidates.append((key, entry))
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda kv: (int(kv[1].get('last_seen') or 0), kv[0]), reverse=True)
+    old_short, migrated = candidates[0]
+    migrated['session_id'] = session_id
+    migrated['claude_pid'] = pid
+    migrated['last_seen'] = now
+    assignments[short] = migrated
+    assignments.pop(old_short, None)
+    log(caller, f'pid-migration {old_short}->{short} pid={pid}')
+    return migrated
+
+
+def _clean_launch_label(value: str) -> str:
+    return re.sub(r'[\r\n\t]+', ' ', str(value or '')).strip()[:60]
+
+
+def _launch_index(value: str) -> int:
+    try:
+        n = int(str(value or '').strip())
+    except Exception:
+        return -1
+    return max(0, min(23, n)) if n >= 0 else -1
+
+
+def launch_marker() -> str:
+    token = str(os.environ.get('TT_LAUNCH_TOKEN') or '').strip()
+    return f'toolbar-launch:{token}' if token else ''
+
+
+def migrate_by_launch_token(
+    assignments: dict[str, Any],
+    short: str,
+    session_id: str,
+    pid: int,
+    now: int,
+    caller: str,
+) -> dict[str, Any] | None:
+    marker = launch_marker()
+    if not marker:
+        return None
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for key, entry in assignments.items():
+        if key == short or not isinstance(entry, dict):
+            continue
+        if str(entry.get('source_originator') or '') == marker:
+            candidates.append((key, entry))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda kv: (int(kv[1].get('last_seen') or 0), kv[0]), reverse=True)
+    old_short, migrated = candidates[0]
+    migrated['session_id'] = session_id
+    migrated['claude_pid'] = pid
+    migrated['last_seen'] = now
+    assignments[short] = migrated
+    assignments.pop(old_short, None)
+    log(caller, f'launch-token-migration {old_short}->{short} marker={marker}')
+    return migrated
+
+
+def apply_toolbar_launch_intent(entry: dict[str, Any], assistant_label: str) -> None:
+    if not isinstance(entry, dict):
+        return
+    label = _clean_launch_label(os.environ.get('TT_LAUNCH_LABEL') or '')
+    idx = _launch_index(os.environ.get('TT_LAUNCH_INDEX') or '')
+    marker = launch_marker()
+    if not label and idx < 0 and not marker:
+        return
+    if label:
+        entry['label'] = label
+        entry.pop('auto_label', None)
+    if idx >= 0:
+        entry['index'] = idx
+    entry['pinned'] = True
+    entry['source_kind'] = 'toolbar-launch'
+    if assistant_label:
+        entry['source_label'] = assistant_label
+    if marker:
+        entry['source_originator'] = marker
+
+
 def touch_assignment(
     session_id: str,
     caller: str,
@@ -225,6 +330,7 @@ def touch_assignment(
     source_cwd: str = '',
     source: str = '',
     source_originator: str = '',
+    assistant_label: str = '',
 ) -> tuple[str, dict[str, Any] | None]:
     short = session_short(session_id)
     if not SHORT_RE.match(short):
@@ -240,15 +346,23 @@ def touch_assignment(
         entry = assignments.get(short)
         now = epoch()
         if not isinstance(entry, dict):
-            entry = {
-                'index': allocate_palette(assignments, short),
-                'session_id': session_id,
-                'claude_pid': pid,
-                'label': label or '',
-                'pinned': False,
-                'last_seen': now,
-            }
-            assignments[short] = entry
+            # Match the Windows session-registry.psm1 contract: Claude
+            # Code's /clear rotates session_id but keeps the CLI process.
+            # Re-key that terminal's existing entry so colour, label,
+            # voice, mute/focus, heartbeat and speech_includes survive.
+            entry = migrate_by_launch_token(assignments, short, session_id, pid, now, caller)
+            if not isinstance(entry, dict) and caller in ('speak-on-tool', 'speak-response'):
+                entry = migrate_by_pid(assignments, short, session_id, pid, now, caller)
+            if not isinstance(entry, dict):
+                entry = {
+                    'index': allocate_palette(assignments, short),
+                    'session_id': session_id,
+                    'claude_pid': pid,
+                    'label': label or '',
+                    'pinned': False,
+                    'last_seen': now,
+                }
+                assignments[short] = entry
         else:
             entry['session_id'] = session_id
             entry['claude_pid'] = pid
@@ -267,6 +381,7 @@ def touch_assignment(
             entry['source_originator'] = source_originator
         if label and source_kind == 'codex-plugin':
             entry.setdefault('source_label', label)
+        apply_toolbar_launch_intent(entry, assistant_label)
 
         save_registry(assignments, caller)
         return short, entry
@@ -297,6 +412,30 @@ def clear_working(short: str, caller: str) -> int:
     except FileNotFoundError:
         pass
     return elapsed
+
+
+def write_codex_stop_marker(short: str, session_id: str, elapsed: int, caller: str) -> None:
+    if not SHORT_RE.match(short):
+        return
+    try:
+        _ensure_dirs()
+        footer = ''
+        with contextlib.suppress(Exception):
+            sys.path.insert(0, str(APP_DIR))
+            from claude_footer_scrape import scrape_codex_footer_for_pid
+            footer = scrape_codex_footer_for_pid(os.getppid()) or ''
+        marker = {
+            'session_id': session_id,
+            'short': short,
+            'elapsed_sec': max(0, int(elapsed or 0)),
+            'footer': footer,
+            'timestamp': epoch(),
+        }
+        path = SESSIONS_DIR / f'{short}-codex-stop.json'
+        path.write_text(json.dumps(marker, separators=(',', ':')), encoding='utf-8')
+        log(caller, f'codex stop marker wrote for {short} elapsed={marker["elapsed_sec"]}s footer={footer!r}')
+    except Exception as exc:
+        log(caller, f'codex stop marker write failed for {short}: {exc}')
 
 
 SYNTH_DAEMON_SOCKET = TT_HOME / 'synth.sock'
@@ -412,7 +551,7 @@ def handle_claude_tool() -> int:
     if not session_id or not transcript or not transcript.exists():
         log(caller, f'transcript missing: {transcript}')
         return 0
-    short, _entry = touch_assignment(session_id, caller, pid=os.getppid())
+    short, _entry = touch_assignment(session_id, caller, pid=os.getppid(), assistant_label='Claude Code')
     if short:
         mark_working(short, caller)
     return spawn_synth(session_id, transcript, 'on-tool', caller)
@@ -427,7 +566,7 @@ def handle_claude_stop() -> int:
     if not session_id or not transcript or not transcript.exists():
         log(caller, f'transcript missing: {transcript}')
         return 0
-    short, _entry = touch_assignment(session_id, caller, pid=os.getppid())
+    short, _entry = touch_assignment(session_id, caller, pid=os.getppid(), assistant_label='Claude Code')
     elapsed = clear_working(short, caller) if short else 0
     return spawn_synth(session_id, transcript, 'on-stop', caller, elapsed_sec=elapsed)
 
@@ -644,6 +783,7 @@ def handle_codex(event: str) -> int:
         session_id, caller, pid=os.getppid(), label=label,
         source_kind=source_kind, source_cwd=cwd,
         source=source, source_originator=originator,
+        assistant_label='Codex',
     )
     if not short:
         return 0
@@ -652,7 +792,8 @@ def handle_codex(event: str) -> int:
     if source_kind == 'codex-plugin' and event == 'session-start' and entry:
         announce_plugin_start(short, session_id, entry, caller)
     if event == 'stop':
-        clear_working(short, caller)
+        elapsed = clear_working(short, caller)
+        write_codex_stop_marker(short, session_id, elapsed, caller)
         if source_kind == 'codex-plugin':
             schedule_plugin_cleanup(short, caller)
     return 0

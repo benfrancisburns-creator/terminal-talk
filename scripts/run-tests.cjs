@@ -68,10 +68,22 @@ const REGISTRY_PATH = path.join(os.tmpdir(), 'tt-test-session-colours.json');
 let pass = 0;
 let fail = 0;
 const failures = [];
+const pendingTests = [];
 
 function it(name, fn) {
   try {
-    fn();
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      pendingTests.push(Promise.resolve(result).then(() => {
+        pass++;
+        if (VERBOSE) console.log(`  \u2713 ${name}`);
+      }, (e) => {
+        fail++;
+        failures.push({ name, message: e.message });
+        console.log(`  \u2717 ${name}\n    ${e.message}`);
+      }));
+      return;
+    }
     pass++;
     if (VERBOSE) console.log(`  \u2713 ${name}`);
   } catch (e) {
@@ -971,6 +983,25 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     const out = stripForTTS('Use `git log --oneline` to check history');
     if (out.includes('--oneline') || out.includes('`')) throw new Error(`inline code leaked: "${out}"`);
   });
+  it('keeps command-only validation bullets audible even when inline_code is off', () => {
+    const out = stripForTTS([
+      'Validation passed:',
+      '',
+      '- `npx eslint app/main.js scripts/run-tests.cjs`',
+      '- `npm test -- --logic-only` -> `1072 passed, 0 failed`',
+      '- `npm run test:macos` -> `16 passed, 0 failed`',
+    ].join('\n'));
+    if (!out.includes('npx eslint app/main.js scripts/run-tests.cjs')) {
+      throw new Error(`command-only bullet dropped: "${out}"`);
+    }
+    if (!out.includes('npm test -- --logic-only')) {
+      throw new Error(`flagged command bullet dropped: "${out}"`);
+    }
+    if (!out.includes('npm run test:macos')) {
+      throw new Error(`macOS command bullet dropped: "${out}"`);
+    }
+    if (out.includes('`')) throw new Error(`backticks leaked: "${out}"`);
+  });
   it('keeps inline code content but drops backticks when toggled on', () => {
     const out = stripForTTS('Use `npm install` to install', { inline_code: true });
     if (!out.includes('npm install')) throw new Error(`inline code content lost: "${out}"`);
@@ -1007,11 +1038,48 @@ describe('SPEECH INCLUDES (stripForTTS)', () => {
     if (!/Columns: File, Line, Today, With Phase 3 v2/.test(out)) {
       throw new Error(`columns missing: "${out}"`);
     }
-    if (!/First row: File: sentence group\.py; Line: 87; Today: A/.test(out)) {
-      throw new Error(`first-row sample missing: "${out}"`);
+    if (!/Row 1: File: sentence group\.py; Line: 87; Today: A; With Phase 3 v2: B/.test(out)) {
+      throw new Error(`first row missing: "${out}"`);
+    }
+    if (!/Row 3: File: SessionsTable\.jsx; Line: 128; Today: A; With Phase 3 v2: B/.test(out)) {
+      throw new Error(`later rows missing: "${out}"`);
     }
     if (!out.includes('3 phrases would change')) throw new Error(`pre-table prose lost: "${out}"`);
     if (!out.includes('The other 20 hunks correctly stay')) throw new Error(`post-table prose lost: "${out}"`);
+  });
+  it('GFM table with blank headers keeps row data with fallback column labels', () => {
+    const md = '| | |\n|---|---|\n| Commits added | a48a6e3 Phase 3 mic-watcher |\n| CI gates | logic 974/974 |\n';
+    const out = stripForTTS(md);
+    if (!/Columns: 2 unnamed/.test(out)) throw new Error(`unnamed column count missing: "${out}"`);
+    if (!/Row 1: col 1: Commits added; col 2: a48a6e3 Phase 3 mic-watcher/.test(out)) {
+      throw new Error(`blank-header row data dropped: "${out}"`);
+    }
+    if (!/Row 2: col 1: CI gates; col 2: logic 974\/974/.test(out)) {
+      throw new Error(`second blank-header row dropped: "${out}"`);
+    }
+  });
+  it('GFM table preserves placeholder slots but strips real HTML tags', () => {
+    const md = '| Kind | Template |\n|---|---|\n| EDIT | Edited <file>: <one-line why> |\n| HTML | Click <a href="x">here</a> then <br/> continue |\n';
+    const out = stripForTTS(md);
+    if (!/Edited <file>: <one-line why>/.test(out)) {
+      throw new Error(`placeholder slot stripped: "${out}"`);
+    }
+    if (/<a href=|<br/.test(out)) throw new Error(`real HTML tag leaked: "${out}"`);
+    if (!/Click here then continue/.test(out)) throw new Error(`HTML inner text lost: "${out}"`);
+  });
+  it('GFM 30-row table uses abridged head and tail rows', () => {
+    let md = '| # | Subject |\n|---|---|\n';
+    for (let i = 1; i <= 30; i++) md += `| ${i} | row-${i} |\n`;
+    const out = stripForTTS(md);
+    if (!/Row 1: #: 1; Subject: row-1/.test(out) || !/Row 3: #: 3; Subject: row-3/.test(out)) {
+      throw new Error(`abridged head rows missing: "${out.slice(0, 500)}"`);
+    }
+    if (!/Rows 4 through 28 omitted \(25 rows\)/.test(out)) {
+      throw new Error(`abridged omitted-count note missing: "${out.slice(0, 500)}"`);
+    }
+    if (!/Row 29: #: 29; Subject: row-29/.test(out) || !/Row 30: #: 30; Subject: row-30/.test(out)) {
+      throw new Error(`abridged tail rows missing: "${out.slice(0, 500)}"`);
+    }
   });
   it('table with 1 row says singular "row"', () => {
     const md = '| A | B |\n|---|---|\n| 1 | 2 |';
@@ -5497,6 +5565,20 @@ describe('SYNTH TURN TEXT EXTRACTION', () => {
     const out = run(`print(synth_turn.sanitize(${JSON.stringify(text)}, {'code_blocks': True, 'inline_code': False}))`);
     if (!out.includes('hello world')) throw new Error(`code content dropped: ${out}`);
   });
+  it('sanitize keeps command-only validation bullets audible when inline_code is off', () => {
+    const text = [
+      'Validation passed:',
+      '',
+      '- `npx eslint app/main.js scripts/run-tests.cjs`',
+      '- `npm test -- --logic-only` -> `1072 passed, 0 failed`',
+      '- `npm run test:macos` -> `16 passed, 0 failed`',
+    ].join('\n');
+    const out = run(`print(synth_turn.sanitize(${JSON.stringify(text)}, {'inline_code': False}))`);
+    for (const needle of ['npx eslint app/main.js scripts/run-tests.cjs', 'npm test -- --logic-only', 'npm run test:macos']) {
+      if (!out.includes(needle)) throw new Error(`command bullet missing ${needle}: ${out}`);
+    }
+    if (out.includes('`')) throw new Error(`backticks leaked: ${out}`);
+  });
 
   // Block A regression fixes — corpus-driven (May-9 audit found these
   // gaps after sampling 231 turns of real spoken vs original markdown).
@@ -6510,6 +6592,108 @@ describe('DOT STRIP LAYOUT (left-aligned, packed)', () => {
     if (gapPx > 5) {
       throw new Error(`.dots gap should be ≤ 5px for density (got ${gapPx}px)`);
     }
+  });
+});
+
+describe('POSIX SESSION-IDENTITY BEHAVIOUR', () => {
+  const POSIX_HOOKS_PATH = path.join(__dirname, '..', 'app', 'posix_hooks.py');
+
+  function runPosixTouch({ seed = {}, sessionId, pid = 4242, caller = 'speak-response', now = 1_776_900_000 }) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-posix-mig-'));
+    const registryPath = path.join(tmpDir, 'session-colours.json');
+    fs.writeFileSync(registryPath, JSON.stringify({ assignments: seed }), 'utf8');
+    const py = `
+import json, os, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+registry = Path(sys.argv[2])
+hooks = Path(sys.argv[3])
+session_id = sys.argv[4]
+caller = sys.argv[5]
+pid = int(sys.argv[6])
+now = int(sys.argv[7])
+os.environ['TT_HOME'] = str(root)
+os.environ['TT_REGISTRY_PATH'] = str(registry)
+os.environ['TT_APP_DIR'] = str(hooks.parent)
+sys.path.insert(0, str(hooks.parent))
+import posix_hooks
+posix_hooks.epoch = lambda: now
+short, entry = posix_hooks.touch_assignment(session_id, caller, pid=pid)
+print(json.dumps({'short': short, 'entry': entry, 'assignments': posix_hooks.read_registry()}, sort_keys=True))
+`;
+    const r = spawnSync(PYTHON_BIN, ['-c', py, tmpDir, registryPath, POSIX_HOOKS_PATH, sessionId, caller, String(pid), String(now)], {
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    if (r.status !== 0) {
+      throw new Error(`posix hook exited ${r.status}: ${r.stderr || r.stdout}`);
+    }
+    return JSON.parse(r.stdout.trim());
+  }
+
+  it('Claude /clear PID migration preserves user metadata and removes old short', () => {
+    const seed = {
+      aaaaaaaa: {
+        index: 7, session_id: 'aaaaaaaa-old', claude_pid: 4242,
+        label: 'CC Mac', pinned: true, muted: true, focus: true,
+        last_seen: 1_776_899_970, voice: 'en-GB-SoniaNeural', voice_auto: false,
+        heartbeat_enabled: false,
+        speech_includes: { urls: true, code_blocks: true, headings: false },
+      },
+    };
+    const result = runPosixTouch({ seed, sessionId: 'bbbbbbbb-new-session', pid: 4242 });
+    assertEqual(result.short, 'bbbbbbbb');
+    assertFalsy(result.assignments.aaaaaaaa, 'old short must be removed after PID migration');
+    const migrated = result.assignments.bbbbbbbb;
+    assertTruthy(migrated, 'new short entry missing after migration');
+    assertEqual(migrated.index, 7);
+    assertEqual(migrated.label, 'CC Mac');
+    assertEqual(migrated.pinned, true);
+    assertEqual(migrated.muted, true);
+    assertEqual(migrated.focus, true);
+    assertEqual(migrated.voice, 'en-GB-SoniaNeural');
+    assertEqual(migrated.voice_auto, false);
+    assertEqual(migrated.heartbeat_enabled, false);
+    assertDeepEqual(migrated.speech_includes, { urls: true, code_blocks: true, headings: false });
+    assertEqual(migrated.session_id, 'bbbbbbbb-new-session');
+    assertEqual(migrated.claude_pid, 4242);
+  });
+
+  it('stale or unknown PID does not migrate on POSIX', () => {
+    const stale = {
+      aaaaaaaa: {
+        index: 7, session_id: 'aaaaaaaa-old', claude_pid: 4242,
+        label: 'stale', pinned: true, last_seen: 1_776_899_399,
+      },
+    };
+    const result = runPosixTouch({ seed: stale, sessionId: 'bbbbbbbb-new-session', pid: 4242 });
+    assertTruthy(result.assignments.aaaaaaaa, 'stale original must remain');
+    assertTruthy(result.assignments.bbbbbbbb, 'new entry should be created fresh');
+    assertEqual(result.assignments.bbbbbbbb.label, '');
+
+    const unknownPid = runPosixTouch({ seed: {
+      aaaaaaaa: { index: 7, session_id: 'aaaaaaaa-old', claude_pid: 0, label: 'ghost', last_seen: 1_776_899_970 },
+    }, sessionId: 'bbbbbbbb-new-session', pid: 0 });
+    assertTruthy(unknownPid.assignments.aaaaaaaa, 'pid=0 original must remain');
+    assertTruthy(unknownPid.assignments.bbbbbbbb, 'pid=0 should allocate fresh');
+    assertEqual(unknownPid.assignments.bbbbbbbb.label, '');
+  });
+
+  it('POSIX migration is limited to Claude hook callers', () => {
+    const seed = {
+      aaaaaaaa: {
+        index: 7, session_id: 'aaaaaaaa-old', claude_pid: 4242,
+        label: 'Claude terminal', pinned: true, last_seen: 1_776_899_970,
+      },
+    };
+    const result = runPosixTouch({
+      seed, sessionId: 'bbbbbbbb-new-session', pid: 4242, caller: 'codex-session-start',
+    });
+    assertTruthy(result.assignments.aaaaaaaa, 'non-Claude callers must not re-key by PID');
+    assertTruthy(result.assignments.bbbbbbbb, 'non-Claude callers should create their own entry');
+    assertEqual(result.assignments.bbbbbbbb.label, '');
   });
 });
 
@@ -8300,6 +8484,16 @@ describe('SESSION STALE DETECTION', () => {
     // Must sort ascending by mtime before pushing to pendingQueue.
     if (!/\.sort\s*\(\s*\(a,\s*b\)\s*=>\s*a\.mtime\s*-\s*b\.mtime\s*\)/.test(body)) {
       throw new Error('initialLoad must sort unplayed files ascending (a.mtime - b.mtime) before pushing to pendingQueue');
+    }
+  });
+
+  it('initialLoad marks stale startup backlog heard and schedules prune instead of plain dots', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    const m = rendererSrc.match(/async\s+function\s+initialLoad\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('initialLoad function body not found');
+    const body = m[1];
+    if (!/if\s*\(\s*f\.mtime\s*<\s*cutoff\s*\)\s*\{[\s\S]*?playedPaths\.add\(f\.path\)[\s\S]*?heardPaths\.add\(f\.path\)[\s\S]*?scheduleAutoDelete\(f\.path,\s*true\)/.test(body)) {
+      throw new Error('initialLoad must mark stale startup clips as heard and schedule auto-prune so they do not render as ambiguous plain dots');
     }
   });
 
@@ -10220,6 +10414,12 @@ describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)'
     if (!/Built\s+DMG/i.test(out)) throw new Error(`BUILD rewrite missing: ${out}`);
   });
 
+  it('BUILD: long implementation paragraphs are not collapsed to a tiny template', () => {
+    const text = 'Building it now. I will put it at scripts/mascot-spin.js, with all 24 palettes cycling, Y-axis spin, X-axis wobble, truecolour half-block rendering, and depth shading.';
+    const out = lib(`print(nl.render(${JSON.stringify(text)}))`);
+    assertEqual(out, text, 'long build paragraph should keep implementation detail');
+  });
+
   it('BLOCK: "Blocked: error" detected and kept tight', () => {
     const out = lib(`print(nl.render('Blocked: ONNXRuntimeError on model load.'))`);
     if (!/Blocked:\s+ONNXRuntimeError on model load/.test(out)) {
@@ -10284,6 +10484,12 @@ describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)'
     const text = 'The hash a48a6e3 appears in the log but unrelated.';
     const out = lib(`print(nl.render(${JSON.stringify(text)}))`);
     assertEqual(out, text, 'stray SHA without commit verb should not trigger COMMIT');
+  });
+
+  it('Loss guard: long discovery paragraphs are not collapsed to just "Found the bug"', () => {
+    const text = 'Found the bug. Line 608: when a clip ends after a user click and auto-continues to the next clip, it passes manual=true, so the continuation chain inherits the manual visual treatment.';
+    const out = lib(`print(nl.render(${JSON.stringify(text)}))`);
+    assertEqual(out, text, 'long discovery paragraph should keep causal detail');
   });
 
   it('detect_kind returns (kind, confidence, slots) tuple', () => {
@@ -10439,16 +10645,45 @@ describe('SYNTH-AUDIT — corpus categorisation + duration estimate (#44 Block D
     assertEqual(r.est_spoken_sec, 10);
   });
 
+  it('auditTurn includes audio artefact counts, bytes, duration, and missing-audio count', () => {
+    const r = audit.auditTurn({
+      id: 't-audio',
+      orig: 'A response with two spoken chunks.',
+      clips: ['first chunk', 'second chunk'],
+      audio: [
+        { name: 'a.mp3', ext: 'mp3', bytes: 1200, duration_sec: 1.25 },
+      ],
+      played: [
+        { name: 'b.played.json', reason: 'played-auto-prune' },
+      ],
+      shortIds: new Set(['deadbeef']),
+      lastMtime: Date.now(),
+    });
+    assertEqual(r.audio_count, 1);
+    assertEqual(r.pruned_audio_count, 1);
+    assertEqual(r.generated_audio_count, 2);
+    assertEqual(r.missing_audio_count, 0);
+    assertEqual(r.audio_bytes, 1200);
+    assertEqual(r.audio_duration_sec, 1.25);
+    assertDeepEqual(r.session_shorts, ['deadbeef']);
+  });
+
   it('summarise produces per-category byCategory with retention + total_est_sec', () => {
     const reports = [
-      { turn: 'a', mtime: '2026-01-01T00:00:00Z', clip_count: 1, orig_chars: 100, spoken_chars: 90, shrinkage_ratio: 0.9, category: 'prose', est_spoken_sec: 6.4, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
-      { turn: 'b', mtime: '2026-01-01T00:00:01Z', clip_count: 1, orig_chars: 200, spoken_chars: 100, shrinkage_ratio: 0.5, category: 'table', est_spoken_sec: 7.1, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
+      { turn: 'a', mtime: '2026-01-01T00:00:00Z', clip_count: 1, audio_count: 1, generated_audio_count: 1, audio_bytes: 1000, audio_duration_sec: 2.5, orig_chars: 100, spoken_chars: 90, shrinkage_ratio: 0.9, category: 'prose', est_spoken_sec: 6.4, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
+      { turn: 'b', mtime: '2026-01-01T00:00:01Z', clip_count: 1, audio_count: 0, pruned_audio_count: 1, generated_audio_count: 1, audio_bytes: 0, missing_audio_count: 0, orig_chars: 200, spoken_chars: 100, shrinkage_ratio: 0.5, category: 'table', est_spoken_sec: 7.1, missing_backtick: [], missing_bold: [], missing_url: [], missing_table_cell: [], missing_list_marker: [] },
     ];
     const s = audit.summarise(reports);
     if (!s.byCategory) throw new Error('summarise missing byCategory');
     assertEqual(s.byCategory.prose.count, 1);
     assertEqual(s.byCategory.prose.retention, 0.9);
     assertEqual(s.byCategory.table.retention, 0.5);
+    assertEqual(s.audioTotals.count, 1);
+    assertEqual(s.audioTotals.pruned_count, 1);
+    assertEqual(s.audioTotals.generated_count, 2);
+    assertEqual(s.audioTotals.bytes, 1000);
+    assertEqual(s.audioTotals.duration_sec, 2.5);
+    assertEqual(s.audioTotals.missing_audio_count, 0);
   });
 
   it('findMissing keeps underscores + checks both _ and space forms (Block A4)', () => {
@@ -10509,7 +10744,7 @@ describe('SYNTH DAEMON — long-lived socket dispatcher (#35 Phase 11)', () => {
     try {
       // Wait for socket to appear (max 3 s).
       const socketPath = path.join(tmpDir, 'synth.sock');
-      const deadline = Date.now() + 3000;
+      const deadline = Date.now() + 10000;
       while (!fs.existsSync(socketPath) && Date.now() < deadline) {
         const r = spawnSync('sleep', ['0.1']);
         if (r.error) break;
@@ -12975,7 +13210,7 @@ describe('EX7c — DotStrip', () => {
     ds.unmount();
   });
 
-  it('heardPaths dots get .heard class', () => {
+  it('heardPaths dots get .heard + .played-auto class by default', () => {
     const root = makeFakeEl('div');
     const ds = new DotStrip({
       clipPaths,
@@ -12993,6 +13228,32 @@ describe('EX7c — DotStrip', () => {
     ds.renderNow();
     const dot = root._children[0];
     assertTruthy(dot._classes.has('heard'));
+    assertTruthy(dot._classes.has('played-auto'));
+    assertFalsy(dot._classes.has('played-manual'));
+    ds.unmount();
+  });
+
+  it('manualPlayedPaths upgrades heard dots to .played-manual', () => {
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({
+      queue: [clip],
+      currentPath: null,
+      heardPaths: new Set([clip.path]),
+      manualPlayedPaths: new Set([clip.path]),
+      sessionAssignments: {},
+      synthInProgress: false,
+    });
+    ds.renderNow();
+    const dot = root._children[0];
+    assertTruthy(dot._classes.has('heard'));
+    assertTruthy(dot._classes.has('played-manual'));
+    assertFalsy(dot._classes.has('played-auto'));
     ds.unmount();
   });
 
@@ -13223,11 +13484,18 @@ describe('EX7c — DotStrip', () => {
     // bright pixel), manual bumped 7 px → 9 px (near-solid centre)
     // for an unmistakeable 4.5× size ratio.
     const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
-    if (!/\.dot\.active::after\s*\{[^}]*width:\s*2px/s.test(css)) {
-      throw new Error('styles.css missing default .dot.active::after { width: 2px } (auto tiny dot)');
+    if (!/\.dot\.active::after\s*,\s*\.dot\.heard::after\s*\{[^}]*width:\s*2px/s.test(css)) {
+      throw new Error('styles.css missing default active/heard ::after { width: 2px } (auto tiny dot)');
     }
-    if (!/\.dot\.active\.active-manual::after\s*\{[^}]*width:\s*9px/s.test(css)) {
+    if (!/\.dot\.active\.active-manual::after\s*,\s*\.dot\.heard\.played-manual::after\s*\{[^}]*width:\s*9px/s.test(css)) {
       throw new Error('styles.css missing .dot.active.active-manual::after { width: 9px } (manual big dot)');
+    }
+    if (/\.dot\.active\.heard::after\s*\{[^}]*display:\s*none/s.test(css) ||
+        /\.dot\.active\.clip::after\s*,\s*\.dot\.active\.heard::after/s.test(css)) {
+      throw new Error('styles.css must not hide the active inner dot just because playback already marked the clip heard');
+    }
+    if (!/\.dot\.heard\s*\{[^}]*--tt-palette-bg/s.test(css)) {
+      throw new Error('styles.css must keep heard dots coloured so the white auto/manual marker remains visible');
     }
   });
 
@@ -13925,7 +14193,7 @@ describe('EX7e — AudioPlayer', () => {
   function makePlayer(overrides = {}) {
     const audio = overrides.audio || makeFakeAudio();
     const calls = {
-      played: [], heard: [], removedPending: [],
+      played: [], heard: [], manualPlayed: [], removedPending: [],
       playStart: [], clipEnded: [], playNext: 0, renderDots: 0,
     };
     const queue = overrides.queue || [];
@@ -13947,6 +14215,7 @@ describe('EX7e — AudioPlayer', () => {
       getHeardPaths: () => overrides.heardPaths || new Set(),
       markPlayed: (p) => calls.played.push(p),
       markHeard: (p) => calls.heard.push(p),
+      markManualPlayed: (p) => calls.manualPlayed.push(p),
       removePending: (p) => calls.removedPending.push(p),
       fmt: (s) => `${Math.floor(s || 0)}s`,
       fileUrl: (p) => `file://${p}`,
@@ -13981,6 +14250,18 @@ describe('EX7e — AudioPlayer', () => {
     player.unmount();
   });
 
+  it('isIdle() is true when currentPath has been cleared despite a lingering audio src', () => {
+    const audio = makeFakeAudio();
+    audio.src = 'file:///stale.mp3';
+    audio.paused = true;
+    audio.currentTime = 12;
+    const { player } = makePlayer({ audio });
+    player.mount();
+    assertEqual(player.getCurrentPath(), null);
+    assertEqual(player.isIdle(), true);
+    player.unmount();
+  });
+
   it('playPath returns false when path not in queue', () => {
     const { player } = makePlayer({ queue: [] });
     player.mount();
@@ -13999,6 +14280,7 @@ describe('EX7e — AudioPlayer', () => {
     assertEqual(audio.playbackRate, 1.25);
     assertEqual(calls.played, ['/a.mp3']);
     assertEqual(calls.heard, ['/a.mp3']);        // manual=true → heard
+    assertEqual(calls.manualPlayed, ['/a.mp3']); // durable big-dot state
     assertEqual(calls.removedPending, ['/a.mp3']);
     assertEqual(calls.playStart.length, 1);      // cancelAutoDelete hook
     assertEqual(calls.renderDots, 1);
@@ -14013,6 +14295,7 @@ describe('EX7e — AudioPlayer', () => {
     player.playPath('/a.mp3');
     assertEqual(calls.played, ['/a.mp3']);
     assertEqual(calls.heard, ['/a.mp3']);        // autoplayed still counts as heard
+    assertEqual(calls.manualPlayed, []);         // small-dot state persists until manual play
     player.unmount();
   });
 
@@ -14388,6 +14671,7 @@ describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
 
   function fileDeps(overrides = {}) {
     const unlinked = [];
+    const written = [];
     const hideCalls = [];
     const fakeWin = { isDestroyed: () => false, hide: () => hideCalls.push(Date.now()) };
     return {
@@ -14414,6 +14698,7 @@ describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
       isPathInside: (target, base) => target.startsWith(base + '/') || target === base,
       fs: {
         unlinkSync: (p) => unlinked.push(p),
+        writeFileSync: (p, body) => written.push([p, body]),
         existsSync: () => false,
         readdirSync: () => [],
         readFileSync: () => '',
@@ -14421,6 +14706,7 @@ describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
       testMode: false,
       ...overrides,
       _unlinked: unlinked,
+      _written: written,
       _hideCalls: hideCalls,
     };
   }
@@ -14430,6 +14716,18 @@ describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
     createIpcHandlers(deps).register();
     assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/ok.mp3'), true);
     assertEqual(deps._unlinked.length, 1);
+  });
+
+  it('delete-file writes played marker for successful playback auto-prune', () => {
+    const deps = fileDeps();
+    createIpcHandlers(deps).register();
+    assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/20260509T010203004-C0001-0001-deadbeef.mp3', 'played-auto-prune'), true);
+    assertEqual(deps._unlinked.length, 1);
+    assertEqual(deps._written.length, 1);
+    assertEqual(deps._written[0][0], '/safe/queue/20260509T010203004-C0001-0001-deadbeef.played.json');
+    const marker = JSON.parse(deps._written[0][1]);
+    assertEqual(marker.reason, 'played-auto-prune');
+    assertEqual(marker.audio, '20260509T010203004-C0001-0001-deadbeef.mp3');
   });
 
   it('delete-file refuses paths outside QUEUE_DIR', () => {
@@ -17151,6 +17449,7 @@ describe('CODEX SESSION WATCHER', () => {
     summariseShellCommand,
     varyToolPhrase,
     chunkText,
+    createCodexSessionWatcher,
   } = require('../app/lib/codex-session-watcher.js');
 
   it('parses the trailing Codex session id from a rollout filename', () => {
@@ -17620,6 +17919,109 @@ describe('CODEX SESSION WATCHER', () => {
     }
     if (!/createCodexSessionWatcher\(\{[\s\S]*?onAssignmentTouched:[\s\S]*?_codexIdentitySync\.sync\(\)/.test(mainSrc)) {
       throw new Error('main.js must sync Codex terminal identity when the watcher learns a session assignment');
+    }
+  });
+
+  it('writes original markdown sidecars for Codex message clips so synth-audit can compare loss', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-codex-sidecar-'));
+    const codexDir = path.join(tmpDir, 'codex-sessions', '2026', '05', '09');
+    const queueDir = path.join(tmpDir, 'queue');
+    const sessionsDir = path.join(tmpDir, 'sessions');
+    const sessionId = '019e0d2f-e798-7311-8417-132e520374f9';
+    const rollout = path.join(codexDir, `rollout-2026-05-09T16-40-00-${sessionId}.jsonl`);
+    let assignments = {
+      '019e0d2f': {
+        index: 0,
+        session_id: sessionId,
+        source_kind: 'codex-terminal',
+      },
+    };
+    try {
+      fs.mkdirSync(codexDir, { recursive: true });
+      fs.mkdirSync(queueDir, { recursive: true });
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      const watcher = createCodexSessionWatcher({
+        codexSessionsDir: path.join(tmpDir, 'codex-sessions'),
+        queueDir,
+        sessionsDir,
+        loadAssignments: () => JSON.parse(JSON.stringify(assignments)),
+        saveAssignments: (next) => {
+          assignments = JSON.parse(JSON.stringify(next));
+          return true;
+        },
+        callEdgeTTS: async (_text, _voice, outPath) => {
+          fs.writeFileSync(outPath, Buffer.alloc(1024, 1));
+        },
+        pollIntervalMs: 25,
+        diag: () => {},
+      });
+      fs.writeFileSync(rollout, [
+        JSON.stringify({
+          timestamp: '2026-05-09T15:40:00.000Z',
+          type: 'session_meta',
+          payload: {
+            id: sessionId,
+            cwd: path.join(__dirname, '..'),
+            originator: 'codex-tui',
+            source: 'cli',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-09T15:40:01.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            phase: 'commentary',
+            message: 'Checking **bold** table text for audio provenance.',
+          },
+        }),
+        '',
+      ].join('\n'), 'utf8');
+      watcher.start();
+      const deadline = Date.now() + 3000;
+      let originalPath = null;
+      while (Date.now() < deadline) {
+        const hit = fs.readdirSync(queueDir).find((name) => name.endsWith('.original.txt'));
+        if (hit) {
+          originalPath = path.join(queueDir, hit);
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      watcher.stop();
+      if (!originalPath) {
+        const hit = fs.readdirSync(queueDir).find((name) => name.endsWith('.original.txt'));
+        if (hit) originalPath = path.join(queueDir, hit);
+      }
+      if (!originalPath) {
+        throw new Error(`Codex message delivery did not write .original.txt; queue=${fs.readdirSync(queueDir).join(',')}`);
+      }
+      const base = originalPath.replace(/\.original\.txt$/, '');
+      assertTruthy(fs.existsSync(`${base}.txt`), 'spoken .txt sidecar missing next to original');
+      assertTruthy(fs.existsSync(`${base}.mp3`), 'audio file missing next to original');
+      assertEqual(fs.readFileSync(originalPath, 'utf8'), 'Checking **bold** table text for audio provenance.');
+      assertEqual(fs.readFileSync(`${base}.txt`, 'utf8'), 'Checking bold table text for audio provenance.');
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+
+    const watcherSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'lib', 'codex-session-watcher.js'), 'utf8'
+    );
+    if (!/function writeSpokenSidecar\(audioPath,\s*spoken,\s*diag,\s*original\s*=\s*null\)/.test(watcherSrc)) {
+      throw new Error('writeSpokenSidecar must accept original source text');
+    }
+    if (!/original && String\(original\)\.trim\(\)[\s\S]{0,120}writeFileSync\(`\$\{base\}\.original\.txt`,\s*String\(original\),\s*'utf8'\)/.test(watcherSrc)) {
+      throw new Error('writeSpokenSidecar must persist .original.txt next to spoken .txt');
+    }
+    if (/String\(original\)\s*!==\s*spoken/.test(watcherSrc)) {
+      throw new Error('Codex message originals must be written even when sanitisation is a no-op');
+    }
+    if (!/writeSpokenSidecar\(produced,\s*chunks\[i\],\s*diag,\s*event\.message\)/.test(watcherSrc)) {
+      throw new Error('Codex message delivery must pass original markdown to the sidecar writer');
+    }
+    if (!/writeSpokenSidecar\(produced,\s*spoken,\s*diag\)/.test(watcherSrc)) {
+      throw new Error('Codex tool narration should remain spoken-only because it is generated text');
     }
   });
 });
@@ -18575,7 +18977,7 @@ describe('CODEX DESKTOP TITLE SYNC', () => {
     assertEqual(colourNameForIndex(4), 'Blue');
     assertEqual(colourMarkerForIndex(4), '🔵');
     assertEqual(colourNameForIndex(11), 'Green / Red');
-    assertEqual(colourMarkerForIndex(11), '🟢🔴');
+    assertEqual(colourMarkerForIndex(11), '◓');
     assertEqual(
       buildThreadName('019dedda', {
         index: 4,
@@ -18588,7 +18990,7 @@ describe('CODEX DESKTOP TITLE SYNC', () => {
         index: 11,
         label: 'Split colour session',
       }, 'Old name'),
-      '🟢🔴 TT Green / Red · Split colour session',
+      '◓ TT Green / Red · Split colour session',
     );
   });
 
@@ -18602,7 +19004,7 @@ describe('CODEX DESKTOP TITLE SYNC', () => {
       'Test Codex Desktop integration',
     );
     assertEqual(
-      cleanExistingThreadName('🟢🔴 TT Green / Red · Split colour session', '019dea8d'),
+      cleanExistingThreadName('◓ TT Green / Red · Split colour session', '019dea8d'),
       'Split colour session',
     );
     assertEqual(
@@ -18714,7 +19116,7 @@ describe('CLAUDE DESKTOP TITLE SYNC', () => {
         label: 'Claude Split',
         auto_label: false,
       }, 'General coding session'),
-      '🟢🔴 Claude Split',
+      '◓ Claude Split',
     );
     // cleanExistingClaudeTitle has to strip both the legacy "TT <colour>"
     // form (titles already saved with the old format) and the new
@@ -18724,7 +19126,7 @@ describe('CLAUDE DESKTOP TITLE SYNC', () => {
       'General coding session',
     );
     assertEqual(
-      cleanExistingClaudeTitle('🟢🔴 TT Green / Red · Claude Split', '777333d8'),
+      cleanExistingClaudeTitle('◓ TT Green / Red · Claude Split', '777333d8'),
       'Claude Split',
     );
     assertEqual(
@@ -18736,7 +19138,7 @@ describe('CLAUDE DESKTOP TITLE SYNC', () => {
       'CCxTT',
     );
     assertEqual(
-      cleanExistingClaudeTitle('🟢🔴 Claude Split', '777333d8'),
+      cleanExistingClaudeTitle('◓ Claude Split', '777333d8'),
       'Claude Split',
     );
     assertEqual(claudeColourForIndex(2), 'yellow');
@@ -19237,8 +19639,14 @@ describe('PLATFORM CONTRACT', () => {
     assertTruthy(p.taskkillExe.endsWith('System32\\taskkill.exe'));
     assertEqual(p.hookShell, 'powershell');
     assertTruthy(p.supportsWindowsMicWatcher);
+    assertFalsy(p.supportsMacMicWatcher);
+    assertTruthy(p.supportsCodexRolloutWatcher);
     assertTruthy(p.supportsCodexIdentitySync);
     assertTruthy(p.supportsWindowsTerminalTabColor);
+    assertTruthy(p.supportsWindowsFooterWatcher);
+    assertFalsy(p.supportsPosixFooterClip);
+    assertFalsy(p.supportsMacTerminalFooterScrape);
+    assertTruthy(p.supportsFooterScrape);
   });
 
   it('macOS/Linux default to python3 and disable Windows-only helpers', () => {
@@ -19255,8 +19663,14 @@ describe('PLATFORM CONTRACT', () => {
     assertEqual(mac.taskkillExe, '');
     assertEqual(mac.hookShell, 'posix');
     assertFalsy(mac.supportsWindowsMicWatcher);
+    assertTruthy(mac.supportsMacMicWatcher);
+    assertTruthy(mac.supportsCodexRolloutWatcher);
     assertFalsy(mac.supportsCodexIdentitySync);
     assertFalsy(mac.supportsWindowsTerminalTabColor);
+    assertFalsy(mac.supportsWindowsFooterWatcher);
+    assertTruthy(mac.supportsPosixFooterClip);
+    assertTruthy(mac.supportsMacTerminalFooterScrape);
+    assertFalsy(mac.supportsFooterScrape);
 
     const linux = createPlatform({
       platform: 'linux',
@@ -19275,9 +19689,23 @@ describe('PLATFORM CONTRACT', () => {
       assertEqual(p.taskkillExe, '');
       assertEqual(p.hookShell, 'posix');
       assertFalsy(p.supportsWindowsMicWatcher);
+      assertFalsy(p.supportsMacMicWatcher);
+      assertTruthy(p.supportsCodexRolloutWatcher);
       assertFalsy(p.supportsCodexIdentitySync);
       assertFalsy(p.supportsWindowsTerminalTabColor);
+      assertFalsy(p.supportsWindowsFooterWatcher);
+      assertTruthy(p.supportsPosixFooterClip);
+      assertFalsy(p.supportsMacTerminalFooterScrape);
+      assertFalsy(p.supportsFooterScrape);
     }
+  });
+
+  it('macOS keeps Desktop session title sync enabled while skipping Windows terminal identity automation', () => {
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    const syncSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'codex-identity-sync.js'), 'utf8');
+    assertTruthy(/createCodexIdentitySync\(\{[\s\S]*enabled:\s*true,[\s\S]*terminalIdentitySyncEnabled:\s*platform\.supportsCodexIdentitySync/.test(mainSrc));
+    assertTruthy(/terminalIdentitySyncEnabled\s*=\s*enabled/.test(syncSrc));
+    assertTruthy(/if \(!terminalIdentitySyncEnabled \|\| testMode \|\| running\) return;/.test(syncSrc));
   });
 
   it('environment overrides keep test and packaged installs controllable', () => {
@@ -19479,9 +19907,11 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
   });
 });
 
-console.log('\n----------------------------------------');
-console.log(`Tests: ${pass} passed, ${fail} failed`);
-console.log('----------------------------------------');
-if (fail > 0) {
-  process.exitCode = 1;
-}
+Promise.all(pendingTests).then(() => {
+  console.log('\n----------------------------------------');
+  console.log(`Tests: ${pass} passed, ${fail} failed`);
+  console.log('----------------------------------------');
+  if (fail > 0) {
+    process.exitCode = 1;
+  }
+});

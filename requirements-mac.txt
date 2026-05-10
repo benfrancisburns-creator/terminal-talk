@@ -6,8 +6,10 @@
 # Speech is the SFSpeechRecognizer framework that drives the macOS
 # voice-command recogniser (analogue of System.Speech on Windows) —
 # triggers a one-time Speech Recognition permission prompt the first
-# time the wake-word listener fires the recogniser.
+# time the wake-word listener fires the recogniser. CoreAudio lets the
+# mac mic watcher distinguish live external input from Terminal Talk output.
 pyobjc-framework-Quartz>=10
 pyobjc-framework-Cocoa>=10
 pyobjc-framework-Speech>=10
+pyobjc-framework-CoreAudio>=10
 psutil>=5.9

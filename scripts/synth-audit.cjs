@@ -28,7 +28,124 @@ const os = require('node:os');
 const QUEUE_DIR = process.env.TT_QUEUE_DIR
   || path.join(os.homedir(), '.terminal-talk', 'queue');
 
-const TURN_RE = /^(\d{8}T\d{6}\d{3})-(?:[A-Z]-)?(\d{4})-([a-f0-9]{8})\.(?:original\.)?txt$/;
+const ARTIFACT_RE = /^(\d{8}T\d{6}\d{3})-(?:(?:[A-Z]-)?(\d{4})|[A-Z]\d{4}-(\d{4}))-([a-f0-9]{8})\.(?:(original)\.)?(txt|mp3|wav)$/i;
+const PLAYED_MARKER_RE = /^(\d{8}T\d{6}\d{3})-(?:(?:[A-Z]-)?(\d{4})|[A-Z]\d{4}-(\d{4}))-([a-f0-9]{8})\.played\.json$/i;
+
+function parseQueueArtifact(name) {
+  const m = name.match(ARTIFACT_RE);
+  if (!m) return null;
+  return {
+    turnId: m[1],
+    seq: Number(m[2] || m[3] || 0),
+    shortId: m[4].toLowerCase(),
+    isOrig: !!m[5],
+    ext: m[6].toLowerCase(),
+  };
+}
+
+function parsePlayedMarker(name) {
+  const m = name.match(PLAYED_MARKER_RE);
+  if (!m) return null;
+  return {
+    turnId: m[1],
+    seq: Number(m[2] || m[3] || 0),
+    shortId: m[4].toLowerCase(),
+  };
+}
+
+function estimateWavDurationSec(buf) {
+  if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+    return null;
+  }
+  let byteRate = 0;
+  let dataBytes = 0;
+  let off = 12;
+  while (off + 8 <= buf.length) {
+    const id = buf.toString('ascii', off, off + 4);
+    const size = buf.readUInt32LE(off + 4);
+    const body = off + 8;
+    if (id === 'fmt ' && body + 16 <= buf.length) byteRate = buf.readUInt32LE(body + 8);
+    if (id === 'data') {
+      dataBytes = size;
+      break;
+    }
+    off = body + size + (size % 2);
+  }
+  if (!byteRate || !dataBytes) return null;
+  return Number((dataBytes / byteRate).toFixed(2));
+}
+
+function mp3BitrateKbps(versionBits, layerBits, bitrateIdx) {
+  if (bitrateIdx <= 0 || bitrateIdx >= 15) return null;
+  const mpeg1 = versionBits === 3;
+  const table = mpeg1
+    ? {
+        3: [null, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
+        2: [null, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
+        1: [null, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+      }
+    : {
+        3: [null, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
+        2: [null, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+        1: [null, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+      };
+  return table[layerBits] ? table[layerBits][bitrateIdx] : null;
+}
+
+function mp3SampleRate(versionBits, sampleRateIdx) {
+  if (sampleRateIdx >= 3) return null;
+  const base = [44100, 48000, 32000][sampleRateIdx];
+  if (versionBits === 3) return base;
+  if (versionBits === 2) return base / 2;
+  if (versionBits === 0) return base / 4;
+  return null;
+}
+
+function estimateMp3DurationSec(buf) {
+  let off = 0;
+  let duration = 0;
+  let frames = 0;
+  while (off + 4 <= buf.length) {
+    if (buf[off] === 0x49 && buf.toString('ascii', off, off + 3) === 'ID3' && off + 10 <= buf.length) {
+      const size = ((buf[off + 6] & 0x7f) << 21) | ((buf[off + 7] & 0x7f) << 14) | ((buf[off + 8] & 0x7f) << 7) | (buf[off + 9] & 0x7f);
+      off += 10 + size;
+      continue;
+    }
+    if (buf[off] !== 0xff || (buf[off + 1] & 0xe0) !== 0xe0) {
+      off += 1;
+      continue;
+    }
+    const versionBits = (buf[off + 1] >> 3) & 0x03;
+    const layerBits = (buf[off + 1] >> 1) & 0x03;
+    const bitrateIdx = (buf[off + 2] >> 4) & 0x0f;
+    const sampleRateIdx = (buf[off + 2] >> 2) & 0x03;
+    const padding = (buf[off + 2] >> 1) & 0x01;
+    const bitrate = mp3BitrateKbps(versionBits, layerBits, bitrateIdx);
+    const sampleRate = mp3SampleRate(versionBits, sampleRateIdx);
+    if (!bitrate || !sampleRate || !layerBits || versionBits === 1) {
+      off += 1;
+      continue;
+    }
+    const samples = layerBits === 3 ? 384 : (versionBits === 3 ? 1152 : 576);
+    const frameLen = layerBits === 3
+      ? Math.floor(((12 * bitrate * 1000) / sampleRate + padding) * 4)
+      : Math.floor((versionBits === 3 ? 144 : 72) * bitrate * 1000 / sampleRate + padding);
+    if (frameLen <= 4) {
+      off += 1;
+      continue;
+    }
+    duration += samples / sampleRate;
+    frames += 1;
+    off += frameLen;
+  }
+  return frames > 0 ? Number(duration.toFixed(2)) : null;
+}
+
+function estimateAudioDurationSec(filePath, ext) {
+  let buf;
+  try { buf = fs.readFileSync(filePath); } catch { return null; }
+  return ext === 'wav' ? estimateWavDurationSec(buf) : estimateMp3DurationSec(buf);
+}
 
 function loadTurns(maxAgeSec = 86400) {
   const turns = new Map();
@@ -41,27 +158,44 @@ function loadTurns(maxAgeSec = 86400) {
   }
   for (const name of entries) {
     if (name.startsWith('_')) continue;
-    const m = name.match(TURN_RE);
-    if (!m) continue;
+    const playedMeta = parsePlayedMarker(name);
+    const meta = playedMeta || parseQueueArtifact(name);
+    if (!meta) continue;
     const full = path.join(QUEUE_DIR, name);
     let stat;
     try { stat = fs.statSync(full); } catch { continue; }
     if (now - stat.mtimeMs / 1000 > maxAgeSec) continue;
-    const turnId = m[1];
-    const isOrig = name.endsWith('.original.txt');
+    const turnId = meta.turnId;
     let entry = turns.get(turnId);
     if (!entry) {
-      entry = { id: turnId, orig: '', clips: [], lastMtime: 0 };
+      entry = { id: turnId, orig: '', clips: [], audio: [], played: [], shortIds: new Set(), lastMtime: 0 };
       turns.set(turnId, entry);
     }
-    let text;
-    try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
-    if (isOrig) {
+    entry.shortIds.add(meta.shortId);
+    if (playedMeta) {
+      let played = { name, seq: meta.seq };
+      try {
+        played = { ...played, ...JSON.parse(fs.readFileSync(full, 'utf8')) };
+      } catch {}
+      entry.played.push(played);
+    } else if (meta.ext === 'txt') {
+      let text;
+      try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
       // All clips in a turn share the same .original.txt content; the
       // first one we find is good enough.
-      if (!entry.orig) entry.orig = text;
+      if (meta.isOrig) {
+        if (!entry.orig) entry.orig = text;
+      } else {
+        entry.clips.push(text);
+      }
     } else {
-      entry.clips.push(text);
+      entry.audio.push({
+        name,
+        ext: meta.ext,
+        seq: meta.seq,
+        bytes: stat.size,
+        duration_sec: estimateAudioDurationSec(full, meta.ext),
+      });
     }
     entry.lastMtime = Math.max(entry.lastMtime, stat.mtimeMs);
   }
@@ -135,6 +269,9 @@ function auditTurn(entry) {
   const orig = entry.orig;
   const spokenBlob = entry.clips.join(' ').toLowerCase();
   const spokenChars = entry.clips.reduce((n, s) => n + s.length, 0);
+  const audio = entry.audio || [];
+  const played = entry.played || [];
+  const audioDurationSec = audio.reduce((n, a) => n + (Number.isFinite(a.duration_sec) ? a.duration_sec : 0), 0);
   const ratio = spokenChars / orig.length;
 
   // Pattern extractors.
@@ -164,6 +301,13 @@ function auditTurn(entry) {
     turn: entry.id,
     mtime: new Date(entry.lastMtime).toISOString(),
     clip_count: entry.clips.length,
+    audio_count: audio.length,
+    pruned_audio_count: played.length,
+    generated_audio_count: audio.length + played.length,
+    missing_audio_count: Math.max(0, entry.clips.length - audio.length - played.length),
+    audio_bytes: audio.reduce((n, a) => n + (a.bytes || 0), 0),
+    audio_duration_sec: audioDurationSec > 0 ? Number(audioDurationSec.toFixed(2)) : null,
+    session_shorts: entry.shortIds ? [...entry.shortIds] : [],
     orig_chars: orig.length,
     spoken_chars: spokenChars,
     shrinkage_ratio: Number(ratio.toFixed(3)),
@@ -195,6 +339,7 @@ function summarise(reports) {
   // alone. Calculated from total-orig / total-spoken char ratios per
   // bucket so a single tiny prose turn doesn't skew prose-heavy.
   const catBuckets = {};
+  const audioTotals = { count: 0, pruned_count: 0, generated_count: 0, bytes: 0, duration_sec: 0, missing_audio_count: 0 };
   for (const r of reports) {
     const cat = r.category || 'prose';
     if (!catBuckets[cat]) catBuckets[cat] = { count: 0, orig: 0, spoken: 0, est_sec: 0 };
@@ -202,6 +347,12 @@ function summarise(reports) {
     catBuckets[cat].orig += r.orig_chars;
     catBuckets[cat].spoken += r.spoken_chars;
     catBuckets[cat].est_sec += r.est_spoken_sec || 0;
+    audioTotals.count += r.audio_count || 0;
+    audioTotals.pruned_count += r.pruned_audio_count || 0;
+    audioTotals.generated_count += r.generated_audio_count || r.audio_count || 0;
+    audioTotals.bytes += r.audio_bytes || 0;
+    audioTotals.duration_sec += r.audio_duration_sec || 0;
+    audioTotals.missing_audio_count += r.missing_audio_count || 0;
   }
   const byCategory = {};
   for (const cat of Object.keys(catBuckets)) {
@@ -212,7 +363,8 @@ function summarise(reports) {
       total_est_sec: Number(b.est_sec.toFixed(1)),
     };
   }
-  return { ranked, totalDropped, byCategory, count: reports.length };
+  audioTotals.duration_sec = Number(audioTotals.duration_sec.toFixed(2));
+  return { ranked, totalDropped, byCategory, audioTotals, count: reports.length };
 }
 
 function fmtPct(n) {
@@ -230,6 +382,18 @@ function renderText(reports, summary, mostShrunkLimit = 10) {
   lines.push(`  table cells:        ${summary.totalDropped.table_cell}`);
   lines.push(`  list markers:       ${summary.totalDropped.list_marker}`);
   lines.push('');
+  if (summary.audioTotals) {
+    lines.push('Audio artefacts:');
+    lines.push(`  clips with audio:   ${summary.audioTotals.count}`);
+    lines.push(`  pruned after play:  ${summary.audioTotals.pruned_count || 0}`);
+    lines.push(`  generated or seen:  ${summary.audioTotals.generated_count || summary.audioTotals.count}`);
+    lines.push(`  missing audio:      ${summary.audioTotals.missing_audio_count}`);
+    lines.push(`  total bytes:        ${summary.audioTotals.bytes}`);
+    if (summary.audioTotals.duration_sec > 0) {
+      lines.push(`  parsed duration:    ${summary.audioTotals.duration_sec.toFixed(1)} s`);
+    }
+    lines.push('');
+  }
   // Block D2: per-category retention so we can see if one bucket
   // (table-heavy / list-heavy / prose-heavy / code-heavy) is moving
   // while another stays flat — useful for measuring Block A's effect
@@ -244,7 +408,8 @@ function renderText(reports, summary, mostShrunkLimit = 10) {
   }
   lines.push(`Most-shrunk turns (worst content / size ratio):`);
   for (const r of summary.ranked.slice(0, mostShrunkLimit)) {
-    lines.push(`  ${r.turn}  ratio=${fmtPct(r.shrinkage_ratio)}  orig=${r.orig_chars}c spoken=${r.spoken_chars}c clips=${r.clip_count}`);
+    const audioPart = r.audio_duration_sec ? ` audio=${r.audio_duration_sec.toFixed(1)}s` : '';
+    lines.push(`  ${r.turn}  ratio=${fmtPct(r.shrinkage_ratio)}  orig=${r.orig_chars}c spoken=${r.spoken_chars}c clips=${r.clip_count}/${r.audio_count || 0}${audioPart}`);
     if (r.missing_backtick.length) {
       lines.push(`    missing backticks: ${r.missing_backtick.join(', ')}`);
     }

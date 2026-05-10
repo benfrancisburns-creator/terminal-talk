@@ -76,7 +76,7 @@ function colourNameForIndex(index) {
 function colourMarkerForIndex(index) {
   const pair = pairForIndex(index);
   if (pair.kind === 'solid' || pair.primary === pair.secondary) return pair.primaryMarker;
-  return `${pair.primaryMarker}${pair.secondaryMarker}`;
+  return pair.kind === 'hsplit' ? '◓' : '◐';
 }
 
 module.exports = {

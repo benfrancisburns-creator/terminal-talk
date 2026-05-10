@@ -40,6 +40,9 @@ import sys
 _FOOTER_RE = re.compile(
     r'\b([A-ZÀ-Ž][a-zà-ž]+)\s+for\s+(?:(\d+)m\s*)?(\d+)s\b'
 )
+_CODEX_FOOTER_LINE_RE = re.compile(
+    r'^\s*─+\s*([A-ZÀ-Ž][a-zà-ž]+\s+for\s+(?:(?:\d+)m\s*)?(?:\d+)s)\s*─+\s*$'
+)
 
 
 def _tty_for_pid(pid: int) -> str:
@@ -182,6 +185,32 @@ def scrape_footer_for_claude_pid(claude_pid: int) -> str:
     # last match is the just-finished turn's footer.
     m = matches[-1]
     return m.group(0)
+
+
+def scrape_codex_footer_for_pid(codex_pid: int) -> str:
+    """Return Codex CLI's literal visible footer line for a terminal PID.
+
+    Codex prints a divider footer such as:
+
+        ─ Worked for 3m 13s ─────────────────────────────
+
+    We require the divider shape so assistant text that merely quotes
+    "Worked for 3m 13s" cannot be mistaken for the terminal footer.
+    """
+    if sys.platform != 'darwin':
+        return ''
+    tty = _tty_for_pid(codex_pid)
+    if not tty:
+        return ''
+    history = _read_terminal_history(tty)
+    if not history:
+        return ''
+    matches = []
+    for line in history.splitlines():
+        m = _CODEX_FOOTER_LINE_RE.match(line)
+        if m:
+            matches.append(m.group(1))
+    return matches[-1] if matches else ''
 
 
 if __name__ == '__main__':

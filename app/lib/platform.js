@@ -57,13 +57,15 @@ function createPlatform(opts = {}) {
     hookShell: isWindows ? 'powershell' : 'posix',
     supportsWindowsMicWatcher: isWindows,
     supportsMacMicWatcher: isMac,
+    supportsCodexRolloutWatcher: true,
     supportsCodexIdentitySync: isWindows,
     supportsWindowsTerminalTabColor: isWindows,
-    // The footer-audio "Worked for X" watcher scrapes Windows Terminal's
-    // buffer via UIA + scrape-footer.ps1. There's no equivalent on macOS
-    // / Linux because the feature is fundamentally a Windows Terminal
-    // automation. The watcher cleanly no-ops on platforms where this
-    // is false, no PowerShell spawn attempts.
+    supportsWindowsFooterWatcher: isWindows,
+    supportsPosixFooterClip: !isWindows,
+    supportsMacTerminalFooterScrape: isMac,
+    // Main-process footer watcher is Windows-only because it scrapes
+    // Windows Terminal via UIA. POSIX footer clips are generated inside
+    // synth_turn.py; macOS can also scrape Terminal.app/iTerm2 there.
     supportsFooterScrape: isWindows,
   };
 }

@@ -968,12 +968,26 @@ function createIpcHandlers(deps) {
     // a compromised renderer can forge file paths; isPathInside uses
     // path.resolve to block ..-segment escapes that startsWith alone
     // would let through.
-    ipcMain.handle('delete-file', (_e, filePath) => {
+    ipcMain.handle('delete-file', (_e, filePath, reason = '') => {
       if (!allowMutation('delete-file')) return null;
       try {
         if (typeof filePath !== 'string' || filePath.length > 4096) return false;
         if (!isPathInside(filePath, QUEUE_DIR)) return false;
-        fs.unlinkSync(path.resolve(filePath));
+        const resolved = path.resolve(filePath);
+        fs.unlinkSync(resolved);
+        const why = typeof reason === 'string' ? reason : '';
+        if (/^(?:played-auto-prune|played-ephemeral)$/.test(why) && /\.(?:mp3|wav)$/i.test(resolved)) {
+          const markerPath = resolved.replace(/\.(?:mp3|wav)$/i, '.played.json');
+          try {
+            fs.writeFileSync(markerPath, JSON.stringify({
+              audio: path.basename(resolved),
+              reason: why,
+              deleted_at: new Date().toISOString(),
+            }) + '\n', 'utf8');
+          } catch (e) {
+            diag(`delete-file: played marker write failed for ${path.basename(resolved)}: ${e.message}`);
+          }
+        }
         return true;
       } catch {}
       return false;

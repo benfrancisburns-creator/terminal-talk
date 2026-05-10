@@ -79,6 +79,7 @@
         // Queue state mutators
         markPlayed = () => {},
         markHeard = () => {},
+        markManualPlayed = () => {},
         removePending = () => {},
 
         // Pure helpers
@@ -125,6 +126,7 @@
       this._getHeardPaths = getHeardPaths;
       this._markPlayed = markPlayed;
       this._markHeard = markHeard;
+      this._markManualPlayed = markManualPlayed;
       this._removePending = removePending;
 
       this._fmt = fmt;
@@ -214,6 +216,7 @@
     isIdle() {
       const a = this._audio;
       if (!a) return true;
+      if (!this._currentPath) return !a.src || a.ended || a.paused;
       return !a.src || a.ended || (a.paused && a.currentTime === 0);
     }
 
@@ -344,6 +347,7 @@
       // Manual/user-click state is still tracked separately for
       // auto-continue semantics.
       this._markHeard(p);
+      if (manual) this._markManualPlayed(p);
       this._removePending(p);
       this._onRenderDots();
       const failStarted = (e) => {

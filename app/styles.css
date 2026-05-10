@@ -645,11 +645,11 @@ body.demo-settings-mode * {
    coloured session dot. Size differs by trigger source so the user can tell
    at a glance whether the toolbar is following the queue (small dot) or
    reading something they explicitly asked for (big dot):
-     active-auto    → 4px small dot   (autoplay-from-queue)
-     active-manual  → 7px bigger dot  (hey jarvis / Ctrl+Shift+S / click on dot)
-   Hidden on .clip dots (those carry the J letter and would clash) and on
-   .heard dots (heard styling already turns the whole dot white). */
-.dot.active::after {
+     active-auto    → 2px tiny dot    (autoplay-from-queue)
+     active-manual  → 9px bigger dot  (hey jarvis / Ctrl+Shift+S / click on dot)
+   Hidden on .clip dots (those carry the J letter and would clash). */
+.dot.active::after,
+.dot.heard::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -663,13 +663,14 @@ body.demo-settings-mode * {
   box-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
   animation: activeInnerPulse 1.6s ease-in-out infinite;
 }
-.dot.active.active-manual::after {
+.dot.active.active-manual::after,
+.dot.heard.played-manual::after {
   width: 9px;
   height: 9px;
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.85);
 }
 .dot.active.clip::after,
-.dot.active.heard::after { display: none; }
+.dot.heard.clip::after { display: none; }
 @keyframes activeInnerPulse {
   0%, 100% { opacity: 0.85; }
   50%      { opacity: 1; }
@@ -678,9 +679,10 @@ body.demo-settings-mode * {
   .dot.active::after { animation: none; }
 }
 
-/* Heard: played by either autoplay or user click -> fades to white, then auto-deletes */
+/* Heard clips keep their session colour and retain the playback-source marker:
+   auto-played = small white dot, manually played = larger white dot. */
 .dot.heard {
-  background: rgba(255, 255, 255, 0.9) !important;
+  background: var(--tt-palette-bg, rgba(255, 255, 255, 0.18)) !important;
   box-shadow: none;
   animation: none;
 }
@@ -697,6 +699,14 @@ body.demo-settings-mode * {
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
+}
+
+.dot.active.heard {
+  background: var(--tt-palette-bg, rgba(255, 255, 255, 0.18)) !important;
+}
+
+.dot.active.heard::before {
+  display: none;
 }
 
 /* R6.3: placeholder dot while speakClipboard is synthesising -- tells

@@ -438,6 +438,15 @@ def render(paragraph: str, threshold: float = THRESHOLD) -> str:
     if not renderer:
         return paragraph
     try:
-        return renderer(slots)
+        rendered = renderer(slots)
     except Exception:
         return paragraph
+    # The library is allowed to tighten common action phrases, but it
+    # must not erase a content-rich paragraph. The May-9 queue audit
+    # caught long "Building it..." and "Found the bug..." paragraphs
+    # collapsing to "Built it now." / "Found the bug.", dropping the
+    # actual file, setting, and rationale. Short action statements still
+    # benefit from templates; long, detail-heavy paragraphs stay intact.
+    if len(paragraph) >= 120 and len(rendered) < len(paragraph) * 0.45:
+        return paragraph
+    return rendered

@@ -41,7 +41,7 @@ function stripForTTS(text, includes) {
 
   function tableCellSummary(cell) {
     return String(cell || '')
-      .replace(/<[^>]+>/g, ' ')
+      .replace(/<[^>]*[="/][^>]*>/g, ' ')
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/`+([^`\n]+?)`+/g, '$1')
       .replace(/[*_~|]+/g, ' ')
@@ -49,31 +49,66 @@ function stripForTTS(text, includes) {
       .trim();
   }
 
+  function tableRowPhrase(headerCells, cells) {
+    const pairs = [];
+    const maxCells = Math.min(headerCells.length, cells.length);
+    for (let i = 0; i < maxCells; i++) {
+      if (!cells[i]) continue;
+      const label = headerCells[i] || `col ${i + 1}`;
+      pairs.push(`${label}: ${cells[i]}`);
+    }
+    return pairs.join('; ');
+  }
+
   // GFM markdown tables → speakable summary line. Without this transform
   // the raw `| col | col |` lines pass through and edge-tts refuses the
   // resulting clip (rc=1, size=0) — listener loses the whole table
-  // silently. Speak the shape and first row so the listener gets both
-  // the section context and a small sample without reading every cell.
+  // silently. Small tables are read row-by-row so status/checklist tables
+  // keep their actual content; larger tables use an abridged head/tail
+  // summary to avoid turning massive inventories into minutes of audio.
   // Mirror in app/synth_turn.py.
   t = t.replace(
     /^[ \t]*\|(.+)\|[ \t]*\r?\n^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*\r?\n((?:^[ \t]*\|.+\|[ \t]*\r?\n?)+)/gm,
     (_full, header, rowsBlock) => {
-      const headerCells = header.split('|').map(tableCellSummary).filter(Boolean);
+      const headerCells = header.split('|').map(tableCellSummary);
       const rows = rowsBlock
         .split(/\r?\n/)
         .filter((line) => /^\s*\|/.test(line))
         .map((line) => line.replace(/^\s*\||\|\s*$/g, '').split('|').map(tableCellSummary));
       const rowCount = rows.length;
-      if (headerCells.length === 0) return `Table with ${rowCount} rows.\n`;
+      const nonEmptyHeaders = headerCells.filter(Boolean);
       const plural = rowCount === 1 ? 'row' : 'rows';
-      const firstRow = rows[0] || [];
-      const pairs = [];
-      const maxCells = Math.min(headerCells.length, firstRow.length, 3);
-      for (let i = 0; i < maxCells; i++) {
-        if (headerCells[i] && firstRow[i]) pairs.push(`${headerCells[i]}: ${firstRow[i]}`);
+      const cols = nonEmptyHeaders.length ? nonEmptyHeaders.join(', ') : `${headerCells.length} unnamed`;
+
+      const bodyParts = [`Table with ${rowCount} ${plural}.`, `Columns: ${cols}.`];
+      if (rowCount <= 25) {
+        rows.forEach((cells, idx) => {
+          const phrase = tableRowPhrase(headerCells, cells);
+          if (phrase) bodyParts.push(`Row ${idx + 1}: ${phrase}.`);
+        });
+        return `${bodyParts.join(' ')}\n`;
       }
-      const sample = pairs.length ? ` First row: ${pairs.join('; ')}.` : '';
-      return `Table with ${rowCount} ${plural}. Columns: ${headerCells.join(', ')}.${sample}\n`;
+
+      if (rowCount <= 50) {
+        rows.slice(0, 3).forEach((cells, idx) => {
+          const phrase = tableRowPhrase(headerCells, cells);
+          if (phrase) bodyParts.push(`Row ${idx + 1}: ${phrase}.`);
+        });
+        const omitted = rowCount - 5;
+        if (omitted > 0) {
+          bodyParts.push(`Rows 4 through ${rowCount - 2} omitted (${omitted} ${omitted === 1 ? 'row' : 'rows'}).`);
+        }
+        rows.slice(-2).forEach((cells, offset) => {
+          const idx = rowCount - 1 + offset;
+          const phrase = tableRowPhrase(headerCells, cells);
+          if (phrase) bodyParts.push(`Row ${idx}: ${phrase}.`);
+        });
+        return `${bodyParts.join(' ')}\n`;
+      }
+
+      const firstRow = rows[0] || [];
+      const sample = tableRowPhrase(headerCells, firstRow.slice(0, 3));
+      return `Table with ${rowCount} ${plural}. Columns: ${cols}.${sample ? ` First row: ${sample}.` : ''}\n`;
     },
   );
 
@@ -273,6 +308,7 @@ function stripForTTS(text, includes) {
   // language operators, multi-statement `;`, shell-flag patterns.
   const INLINE_PROSE_MAX = 30;
   const INLINE_CODE_DISQUAL = /[(){}]|=>|->(?![a-z])|::|;\s*\S|\s--?\w/;
+  const INLINE_COMMAND_PREFIX = '(?:npm|npx|yarn|pnpm|git|pip|pipx|python|python3|node|ruby|go|cargo|docker|podman|kubectl|helm|terraform|make|cmake|gcc|clang|launchctl|plutil)';
   function looksLikeInlineProse(content) {
     if (!content) return false;
     const t = content.trim();
@@ -280,6 +316,17 @@ function stripForTTS(text, includes) {
     if (t.indexOf('\n') >= 0) return false;
     return !INLINE_CODE_DISQUAL.test(t);
   }
+  function unwrapCommandBulletInlineCode(input) {
+    const commandBulletRe = new RegExp(
+      `^([ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+)(\`+)(\\s*${INLINE_COMMAND_PREFIX}\\b[^\\n]*?)\\2(.*)$`,
+      'i',
+    );
+    return String(input).split('\n').map((line) => {
+      if (!commandBulletRe.test(line)) return line;
+      return line.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => content);
+    }).join('\n');
+  }
+  t = unwrapCommandBulletInlineCode(t);
   if (inc.inline_code) {
     t = t.replace(/(`+)([^\n]+?)\1/g, (_m, _ticks, content) => content);
   } else {
