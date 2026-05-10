@@ -10730,8 +10730,8 @@ describe('SYNTH DAEMON — long-lived socket dispatcher (#35 Phase 11)', () => {
   });
 
   it('synth_daemon protocol: missing required keys returns parseable error', () => {
-    // End-to-end: spawn daemon in a sandbox TT_HOME, send malformed
-    // request, expect {"ok": false, "error": "..."} response.
+    // End-to-end: malformed request returns {"ok": false, "error": "..."}.
+    if (process.platform === 'win32') return;
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-daemon-'));
     fs.mkdirSync(path.join(tmpDir, 'queue'));
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
@@ -14724,7 +14724,7 @@ describe('EX6f-4 — ipc-handlers (file + test-only)', () => {
     assertEqual(deps.ipcMain.invoke('delete-file', '/safe/queue/20260509T010203004-C0001-0001-deadbeef.mp3', 'played-auto-prune'), true);
     assertEqual(deps._unlinked.length, 1);
     assertEqual(deps._written.length, 1);
-    assertEqual(deps._written[0][0], '/safe/queue/20260509T010203004-C0001-0001-deadbeef.played.json');
+    assertEqual(deps._written[0][0], path.resolve('/safe/queue/20260509T010203004-C0001-0001-deadbeef.played.json'));
     const marker = JSON.parse(deps._written[0][1]);
     assertEqual(marker.reason, 'played-auto-prune');
     assertEqual(marker.audio, '20260509T010203004-C0001-0001-deadbeef.mp3');

@@ -85,7 +85,7 @@
           stepDotsEl.appendChild(d);
         }
       }
-      if (closeBtn) closeBtn.style.display = stepIdx === STEPS.length - 1 ? '' : 'none';
+      if (closeBtn) closeBtn.classList[stepIdx === STEPS.length - 1 ? 'remove' : 'add']('frw-hidden');
     }
 
     function show() {
