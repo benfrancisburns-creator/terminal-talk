@@ -1094,13 +1094,8 @@ function renderDots() {
   if (transcriptPanel) transcriptPanel.refresh();
 }
 
-function playPath(p, manual = false, userClick = false) {
-  return audioPlayer.playPath(p, manual, userClick);
-}
-
-function userPlay(p) {
-  audioPlayer.playPath(p, true, true);
-}
+function playPath(p, manual = false, userClick = false) { return audioPlayer.playPath(p, manual, userClick); }
+function userPlay(p) { audioPlayer.playPath(p, true, true); }
 
 async function deleteDot(p) {
   cancelAutoDelete(p);
@@ -1108,9 +1103,7 @@ async function deleteDot(p) {
     audioPlayer.abort();
   }
   pendingQueue = pendingQueue.filter(x => x !== p);
-  playedPaths.delete(p);
-  heardPaths.delete(p);
-  manualPlayedPaths.delete(p);
+  playedPaths.delete(p); heardPaths.delete(p); manualPlayedPaths.delete(p);
   queue = queue.filter(f => f.path !== p);
   allQueuePaths = allQueuePaths.filter(x => x !== p);
   renderDots();
@@ -1166,8 +1159,7 @@ function _undoClear() {
   _pendingClear = null;
   for (const e of restored) {
     queue.push({ path: e.path, mtime: e.mtime });
-    if (e.wasHeard) heardPaths.add(e.path);
-    if (e.wasPlayed) playedPaths.add(e.path);
+    if (e.wasHeard) heardPaths.add(e.path); if (e.wasPlayed) playedPaths.add(e.path);
     if (e.wasManualPlayed) manualPlayedPaths.add(e.path);
   }
   renderDots();
@@ -1214,9 +1206,7 @@ async function clearAllPlayed() {
   // Remove from visible state immediately — user sees the UI react.
   for (const p of paths) {
     cancelAutoDelete(p);
-    heardPaths.delete(p);
-    playedPaths.delete(p);
-    manualPlayedPaths.delete(p);
+    heardPaths.delete(p); playedPaths.delete(p); manualPlayedPaths.delete(p);
   }
   queue = queue.filter((f) => !paths.includes(f.path));
   renderDots();
