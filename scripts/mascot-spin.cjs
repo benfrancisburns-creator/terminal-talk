@@ -150,7 +150,7 @@ const SCALE_Y = WALK ? 1 : 2;
 // SCREEN_CY independently of GROUND_HALF.
 const SCREEN_CY = WALK ? Math.round(HALF_ROWS * 0.50) : HALF_ROWS / 2;
 const GROUND_HALF = WALK ? Math.round(HALF_ROWS * 0.30) : -1;
-const GROUND_ROW = WALK ? Math.floor(GROUND_HALF / 2) : -1;
+const _GROUND_ROW = WALK ? Math.floor(GROUND_HALF / 2) : -1;
 
 // Voxel-space centres (model spans x[0..23], y[0..14], z[2..11])
 const CX_MODEL = 11.5;
@@ -287,7 +287,7 @@ const STORY_UFO_EVENTS = [
 // motion (ground items, UFOs) is generated on the fly from walk-clock time.
 const PAT_LEN = 240;
 
-const SKY_STAR_COLOUR = [200, 200, 240];
+const _SKY_STAR_COLOUR = [200, 200, 240];
 
 // Hiking-trail ground field. Items live in true world coordinates (worldX,
 // worldZ) — `worldX` is lateral distance from the trail centreline (positive
@@ -297,8 +297,8 @@ const SKY_STAR_COLOUR = [200, 200, 240];
 // edges. Items spawn close to the camera (large, near the bottom edge) and
 // recede toward the horizon — the parallax of items backing into the
 // distance is what sells the "walking forward through the woods" cue.
-const GROUND_ITEM_COUNT  = 36;
-const GROUND_CYCLE_MS    = 7000;
+const _GROUND_ITEM_COUNT = 36;
+const _GROUND_CYCLE_MS = 7000;
 const GROUND_SIDE_SPREAD = 4.5;       // max world-x offset beyond the trail margin
 
 // Trail (the path the mascot walks). World half-width 1.2; camera height 4
@@ -320,9 +320,9 @@ const TRAIL_DIRT_CENTRE     = [120, 95, 65];
 const TRAIL_DIRT_EDGE       = [85,  68, 48];
 
 // UFO drift in the sky region. Keeps the original receding-particle scheme.
-const UFO_ITEM_COUNT  = 5;
-const UFO_CYCLE_MS    = 14000;
-const UFO_LATERAL_SPREAD = 1.1;
+const _UFO_ITEM_COUNT = 5;
+const _UFO_CYCLE_MS = 14000;
+const _UFO_LATERAL_SPREAD = 1.1;
 
 // ---- Blocky voxel landscape (Minecraft / Roblox style) -------------------
 // World coords: +x right of trail, +y up from ground, +z forward into scene.
@@ -347,8 +347,8 @@ const BLOCK_SCROLL_BLOCKS_PER_STEP = 1.2; // how many wz-blocks per walk-step cy
 const BLOCK_TRAIL_HALF = 1.5;
 // Side band ranges (used to pick block surface kind).
 const BLOCK_GRASS_BAND   = 5.5;
-const BLOCK_FOREST_BAND  = 12;
-const BLOCK_MOUNTAIN_BAND = 16;
+const _BLOCK_FOREST_BAND = 12;
+const _BLOCK_MOUNTAIN_BAND = 16;
 // Lateral half-extent of the rendered terrain (blocks left+right of trail).
 const BLOCK_VIEW_HALF_X  = 16;
 
@@ -697,7 +697,7 @@ function fogShade(colour, wz) {
 
 // Paint a mountain column — UNUSED in the current scene (mountains removed).
 // Kept inert here as a stub; if you ever re-add mountains, implement this.
-function paintMountainColumn() { return; }
+function _paintMountainColumn() { return; }
 
 
 // Per-cell shape mask. Returns whether (xt, yt) — both in [0, 1] over the
@@ -1315,7 +1315,7 @@ function paintBlockyLandscape(fb, depth, walkTimeMs, horizon) {
 // Each item's depth, lateral angle, and (if a kind table is supplied) kind
 // are pure functions of the walk clock, so the field is reproducible and
 // stateless across frames.
-function getRecedeItems(walkTimeMs, count, cycleMs, lateralSpread, kindTable) {
+function _getRecedeItems(walkTimeMs, count, cycleMs, lateralSpread, kindTable) {
   const items = [];
   for (let i = 0; i < count; i++) {
     const offsetMs = (i / count) * cycleMs;
@@ -1371,15 +1371,15 @@ function makeStarMap(len, density) {
   return positions;
 }
 
-const MOUNTAIN_HEIGHTS = WALK ? makeMountainHeights(0.0, PAT_LEN, 4.5, 2.5, 1.5, 3.0) : null;
-const STAR_MAP         = WALK ? makeStarMap(PAT_LEN, 0.06) : null;
+const _MOUNTAIN_HEIGHTS = WALK ? makeMountainHeights(0.0, PAT_LEN, 4.5, 2.5, 1.5, 3.0) : null;
+const _STAR_MAP = WALK ? makeStarMap(PAT_LEN, 0.06) : null;
 
 // Paint the hiking trail — a soft brown corridor receding to a vanishing
 // point at the horizon. The corridor's screen-space half-width at each row
 // equals the world half-width times the row's perspective scale, so the two
 // edges automatically converge. A subtle dirt-centre → darker-edge fade
 // keeps it from reading as a road with hard kerbs.
-function paintTrail(fb, horizon) {
+function _paintTrail(fb, horizon) {
   const groundExtent = HALF_ROWS - horizon;
   const cx = COLS / 2;
   for (let pixOff = 0; pixOff < groundExtent; pixOff++) {
@@ -1403,7 +1403,7 @@ function paintTrail(fb, horizon) {
 // at which the item's base sits. localT advances the pixOff from NEAR (close
 // to camera, big item at the bottom) to FAR (small item at the horizon),
 // then wraps with a fresh randomization so every cycle reseeds the field.
-function getTrailSideItems(walkTimeMs, count, cycleMs, kindTable) {
+function _getTrailSideItems(walkTimeMs, count, cycleMs, kindTable) {
   const items = [];
   const range = TRAIL_PIXOFF_NEAR - TRAIL_PIXOFF_FAR;
   for (let i = 0; i < count; i++) {
@@ -1428,7 +1428,7 @@ function getTrailSideItems(walkTimeMs, count, cycleMs, kindTable) {
 // scale as the trail. Items in the foreground (large pixOff) render bigger
 // and brighter; items near the horizon shrink toward a single speck and
 // darken into the haze. Aliens swap to the detailed sprite when close enough.
-function paintTrailSideItem(fb, item, horizon) {
+function _paintTrailSideItem(fb, item, horizon) {
   const groundExtent = HALF_ROWS - horizon;
   if (groundExtent <= 0) return;
   if (item.pixOff < TRAIL_PIXOFF_FAR || item.pixOff > TRAIL_PIXOFF_NEAR) return;

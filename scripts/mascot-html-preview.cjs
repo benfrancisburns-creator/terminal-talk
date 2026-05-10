@@ -12,7 +12,7 @@ const path = require('path');
 
 const FRAMES  = Number(process.argv[2] || 90);
 const OUTFILE = process.argv[3] || '/tmp/mascot-preview.html';
-const FPS     = 30;
+const FPS     = 30, ESC = String.fromCharCode(27);
 
 console.error(`Capturing ${FRAMES} frames @ ${FPS}fps from mascot-spin --walk ...`);
 
@@ -29,12 +29,12 @@ if (result.status !== 0) { console.error('mascot-spin exited with status', resul
 
 let stdout = result.stdout;
 // Strip leading hide-cursor + clear-screen.
-stdout = stdout.replace(/^\x1b\[\?25l\x1b\[2J/, '');
+stdout = stdout.replace(new RegExp(`^${ESC}\\[\\?25l${ESC}\\[2J`), '');
 // Strip trailing show-cursor + reset.
-stdout = stdout.replace(/\x1b\[\?25h\x1b\[0m\n?$/, '');
+stdout = stdout.replace(new RegExp(`${ESC}\\[\\?25h${ESC}\\[0m\\n?$`), '');
 
-// Each rendered frame begins with cursor-home (\x1b[H). Split on it.
-const rawFrames = stdout.split('\x1b[H').filter(s => s.length > 100);
+// Each rendered frame begins with cursor-home. Split on it.
+const rawFrames = stdout.split(`${ESC}[H`).filter(s => s.length > 100);
 console.error(`Captured ${rawFrames.length} frames`);
 
 function escapeHtml(ch) {
@@ -68,8 +68,8 @@ function ansiFrameToHtml(ansi) {
   }
 
   while (i < ansi.length) {
-    if (ansi[i] === '\x1b') {
-      const m = /^\x1b\[([0-9;?]*)([a-zA-Z])/.exec(ansi.slice(i));
+    if (ansi[i] === ESC) {
+      const m = new RegExp(`^${ESC}\\[([0-9;?]*)([a-zA-Z])`).exec(ansi.slice(i));
       if (!m) { i++; continue; }
       if (m[2] !== 'm') { i += m[0].length; continue; }   // skip cursor moves etc
       const codes = m[1].split(';');

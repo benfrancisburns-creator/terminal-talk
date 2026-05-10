@@ -40,7 +40,13 @@
     "app/lib/sessions-table.js",
     "app/lib/settings-form.js",
     "app/lib/audio-player.js",
-    "app/lib/transcript-panel.js"
+    "app/lib/transcript-panel.js",
+    "app/lib/first-run-wizard.js",
+    "app/lib/update-badge.js",
+    "app/lib/voice-command-dispatch.js",
+    "scripts/mascot-flicker-report.cjs",
+    "scripts/mascot-html-preview.cjs",
+    "scripts/mascot-spin.cjs"
   ],
   "project": [
     "app/**/*.js",
@@ -55,6 +61,6 @@
     "electron"
   ],
   "rules": {
-    "exports": "warn"
+    "exports": "off"
   }
 }

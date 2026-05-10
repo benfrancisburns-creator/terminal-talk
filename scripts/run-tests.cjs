@@ -17955,9 +17955,10 @@ describe('CODEX SESSION WATCHER', () => {
         pollIntervalMs: 25,
         diag: () => {},
       });
+      watcher.start(); await new Promise((resolve) => setTimeout(resolve, 50));
       fs.writeFileSync(rollout, [
         JSON.stringify({
-          timestamp: '2026-05-09T15:40:00.000Z',
+          timestamp: new Date(Date.now() - 1000).toISOString(),
           type: 'session_meta',
           payload: {
             id: sessionId,
@@ -17967,7 +17968,7 @@ describe('CODEX SESSION WATCHER', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-05-09T15:40:01.000Z',
+          timestamp: new Date().toISOString(),
           type: 'event_msg',
           payload: {
             type: 'agent_message',
@@ -17977,9 +17978,8 @@ describe('CODEX SESSION WATCHER', () => {
         }),
         '',
       ].join('\n'), 'utf8');
-      watcher.start();
-      const deadline = Date.now() + 3000;
-      let originalPath = null;
+      fs.utimesSync(rollout, new Date(), new Date());
+      const deadline = Date.now() + 3000; let originalPath = null;
       while (Date.now() < deadline) {
         const hit = fs.readdirSync(queueDir).find((name) => name.endsWith('.original.txt'));
         if (hit) {

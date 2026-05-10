@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTFILE = process.argv[2] || '/tmp/flicker-report.txt';
-const FPS = 30;
+const FPS = 30, ESC = String.fromCharCode(27);
 const NUM_FRAMES = 60;                     // 2 seconds of frames
 const INTERVAL_MS = Math.round(1000 / FPS);
 
@@ -30,8 +30,8 @@ function parseCells(ansi) {
     const cells = [];
     let i = 0;
     while (i < line.length) {
-      if (line[i] === '\x1b') {
-        const m = /^\x1b\[([0-9;?]*)([a-zA-Z])/.exec(line.slice(i));
+      if (line[i] === ESC) {
+        const m = new RegExp(`^${ESC}\\[([0-9;?]*)([a-zA-Z])`).exec(line.slice(i));
         if (m) {
           if (m[2] === 'm') {
             const codes = m[1].split(';');
@@ -80,7 +80,7 @@ console.error(`Grid: ${numRows} char-rows × ${numCols} cols`);
 const totalChanges = new Map();           // region → sum of changes across all transitions
 const cellChanges = Array.from({length:numRows}, () => Array(numCols).fill(0));
 let totalCellsChanged = 0;
-let totalTransitions = NUM_FRAMES - 1;
+const totalTransitions = NUM_FRAMES - 1;
 
 for (let f = 1; f < NUM_FRAMES; f++) {
   const a = frames[f-1], b = frames[f];
