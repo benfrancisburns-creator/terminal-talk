@@ -1115,7 +1115,7 @@ function helperRequest(cmd, timeoutMs = 500) {
 }
 
 async function sendCtrlC() { await helperRequest('ctrlc', 200); }
-async function sendStartDictation() { await helperRequest('start-dictation', 2000); }
+async function sendStartDictation() { return helperRequest('start-dictation', 2000); }
 
 async function startDictation() {
   diag('startDictation: TRIGGERED');
@@ -1123,8 +1123,8 @@ async function startDictation() {
     try { win.webContents.send('pause-playback-only'); } catch {}
   }
   try {
-    await sendStartDictation();
-    diag('startDictation: helper OK');
+    const result = await sendStartDictation();
+    diag(`startDictation: helper OK (${result || 'ok'})`);
   } catch (e) {
     diag(`startDictation: helper fail: ${e && e.message ? e.message : e}`);
   }

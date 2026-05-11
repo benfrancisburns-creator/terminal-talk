@@ -117,6 +117,9 @@ The installer creates a venv at `~/.terminal-talk/.venv`, pip-installs the same 
 
 - **Accessibility** — the Cmd+C used by highlight-to-speak. Triggered the first time you press the speak-clipboard hotkey or fire "hey jarvis". Without it the wake-word listener still hears you, but synthesised keystrokes silently no-op.
 - **Microphone** — the wake-word listener. Triggered the first time the listener opens an audio stream (i.e. on first toolbar launch, unless you ran with `--skip-python-deps` and pre-flagged wake-word as unavailable).
+- **Automation / Apple Events** — the foreground-app menu automation used by the start-dictation hotkey before it falls back to the keyboard shortcut route.
+
+Apple Dictation itself must be enabled separately in **System Settings → Keyboard → Dictation** for `Ctrl+Shift+D` to feel like Windows voice typing.
 
 The macOS hotkey defaults stay as `Control+Shift+S` / `Control+Shift+A` etc. — they avoid Cmd+Shift+S, which collides with system Save As and the screenshot-save dialog. The settings panel renders the bindings using HIG glyphs (⌃⇧S etc.). Right-click on a clip dot deletes it; if your trackpad's secondary click isn't enabled, **Ctrl+click** works as a permanent fallback.
 
@@ -422,7 +425,7 @@ Key fields worth calling out:
 - **`playback.tts_fallback_provider`** (`"edge"` | `"openai"` | `"none"`, default `"edge"`) — which provider to try if the primary fails. The default keeps fallback free; set to `"openai"` only when you intentionally want paid fallback and are tracking OpenAI credits.
 - **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the dot strip.
 - **`heartbeat_enabled`** (default `true`) — during the silent gap while Claude Code or Codex is working, play short spinner-verb + thinking-phrase clips every ~8 s so you know the assistant is alive, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins. Individual sessions can override this with `heartbeat_enabled` in `session-colours.json`.
-- **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start Dictation** menu when available, with a Fn/Fn fallback.
+- **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start/Stop Dictation** menu when available, with a Fn/Fn fallback.
 - **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice`, optional `heartbeat_enabled`, and an optional `speech_includes` partial:

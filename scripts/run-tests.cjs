@@ -745,8 +745,11 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
     if (!/_VK_LWIN\s*=\s*0x5B/.test(helper) || !/_VK_H\s*=\s*0x48/.test(helper)) {
       throw new Error('Windows start_dictation must send Win+H for voice typing');
     }
-    if (!/Start Dictation/.test(helper) || !/_KC_FN\s*=\s*0x3F/.test(helper)) {
-      throw new Error('macOS start_dictation must use Start Dictation menu with Fn fallback');
+    if (!/Start Dictation/.test(helper) || !/Stop Dictation/.test(helper) || !/_KC_FN\s*=\s*0x3F/.test(helper)) {
+      throw new Error('macOS start_dictation must use Start/Stop Dictation menu with Fn fallback');
+    }
+    if (!/ok \{result\}/.test(helper)) {
+      throw new Error('start-dictation helper replies must include the selected macOS/Windows route for diagnostics');
     }
   });
 
@@ -10069,11 +10072,11 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
     return { modal, buttons, titleEl, blurbEl, dotsEl };
   }
 
-  it('exports STEPS array with 3 entries (Accessibility, Mic, Speech)', () => {
+  it('exports STEPS array with 4 entries (Accessibility, Mic, Speech, Dictation)', () => {
     if (!Array.isArray(wizardModule.STEPS)) throw new Error('STEPS must be an array');
-    assertEqual(wizardModule.STEPS.length, 3);
+    assertEqual(wizardModule.STEPS.length, 4);
     const keys = wizardModule.STEPS.map((s) => s.key);
-    assertEqual(keys.join(','), 'accessibility,microphone,speech');
+    assertEqual(keys.join(','), 'accessibility,microphone,speech,dictation');
   });
 
   it('STEPS each have settingsURL with x-apple.systempreferences scheme', () => {
@@ -10122,7 +10125,8 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
     assertEqual(w.isShowing(), true);
     buttons.granted._click();  // step 1 → 2
     buttons.granted._click();  // step 2 → 3
-    buttons.granted._click();  // step 3 → finish
+    buttons.granted._click();  // step 3 → 4
+    buttons.granted._click();  // step 4 → finish
     assertEqual(completedCount, 1);
     assertEqual(w.isShowing(), false);
   });
@@ -10134,6 +10138,7 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
       modalEl: modal,
     });
     w.show();
+    buttons.skip._click();
     buttons.skip._click();
     buttons.skip._click();
     buttons.skip._click();

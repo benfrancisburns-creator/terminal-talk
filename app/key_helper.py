@@ -5,7 +5,7 @@ Reads lines from stdin; executes commands; writes one response line per command.
 Commands:
   ctrlc                 Send the OS "copy" shortcut to the foreground window
                         (Ctrl+C on Windows/Linux, Cmd+C on macOS).
-  start-dictation       Ask the OS dictation surface to start in the
+  start-dictation       Ask the OS dictation surface to toggle in the
                         foreground app (Win+H on Windows; macOS Dictation
                         menu/fallback on macOS).
   fgtree                Return JSON { fg_pid, descendants } -- the foreground
@@ -181,7 +181,7 @@ if IS_WINDOWS:
             # blocked. Raise so the caller logs `err`.
             raise RuntimeError(f'SendInput inserted {n}/4 events')
 
-    def start_dictation() -> None:
+    def start_dictation() -> str:
         """Open Windows voice typing for the focused app."""
         events = (_INPUT * 4)(
             _press(_VK_LWIN, False),
@@ -192,6 +192,7 @@ if IS_WINDOWS:
         n = _SendInput(4, events, ctypes.sizeof(_INPUT))
         if n != 4:
             raise RuntimeError(f'SendInput inserted {n}/4 events')
+        return 'win+h'
 
     # Process-tree snapshot via CreateToolhelp32Snapshot.
     TH32CS_SNAPPROCESS = 0x00000002
@@ -276,46 +277,62 @@ elif IS_MAC:
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
 
-    def _start_dictation_from_menu() -> None:
+    def _toggle_dictation_from_menu() -> str:
         script = r'''
 tell application "System Events"
   set frontApp to first application process whose frontmost is true
   tell frontApp
+    set editMenu to menu "Edit" of menu bar 1
     try
-      click menu item "Start Dictation" of menu "Edit" of menu bar 1
-      return
+      click menu item "Stop Dictation" of editMenu
+      return "menu:stop"
     end try
     try
-      click menu item "Start Dictation..." of menu "Edit" of menu bar 1
-      return
+      click menu item "Stop Dictation..." of editMenu
+      return "menu:stop"
     end try
-    click menu item "Start Dictation…" of menu "Edit" of menu bar 1
+    try
+      click menu item "Stop Dictation…" of editMenu
+      return "menu:stop"
+    end try
+    try
+      click menu item "Start Dictation" of editMenu
+      return "menu:start"
+    end try
+    try
+      click menu item "Start Dictation..." of editMenu
+      return "menu:start"
+    end try
+    click menu item "Start Dictation…" of editMenu
+    return "menu:start"
   end tell
 end tell
 '''
-        subprocess.run(
+        proc = subprocess.run(
             ['osascript', '-e', script],
             check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             timeout=2.0,
         )
+        return (proc.stdout or 'menu').strip() or 'menu'
 
-    def start_dictation() -> None:
-        """Start macOS Dictation in the foreground app.
+    def start_dictation() -> str:
+        """Toggle macOS Dictation in the foreground app.
 
-        The menu path works in most text-entry apps and respects the user's
-        configured macOS Dictation settings. Fn/Fn is kept as a fallback for
-        apps that expose no Edit > Start Dictation menu item.
+        The menu path is the preferred route because it exposes both Start and
+        Stop Dictation and does not guess the user's configured shortcut.
+        Fn/Fn is a fallback for apps that expose no Edit > Dictation menu item.
         """
         try:
-            _start_dictation_from_menu()
-            return
+            return _toggle_dictation_from_menu()
         except Exception:
             pass
         _post_key(_KC_FN)
         time.sleep(0.08)
         _post_key(_KC_FN)
+        return 'keyboard-fallback'
 
     def get_foreground_pid() -> int:
         # NSWorkspace.frontmostApplication is the lightest path to "what
@@ -359,7 +376,7 @@ else:
     def ctrlc() -> None:
         raise RuntimeError(f'ctrlc not implemented on {sys.platform}')
 
-    def start_dictation() -> None:
+    def start_dictation() -> str:
         raise RuntimeError(f'start-dictation not implemented on {sys.platform}')
 
     def get_foreground_pid() -> int:
@@ -421,8 +438,8 @@ def main() -> int:
                 ctrlc()
                 sys.stdout.write('ok\n')
             elif cmd == 'start-dictation':
-                start_dictation()
-                sys.stdout.write('ok\n')
+                result = start_dictation()
+                sys.stdout.write(f'ok {result}\n')
             elif cmd == 'fgtree':
                 sys.stdout.write(fgtree_payload() + '\n')
             elif cmd == 'fgtree-bump':

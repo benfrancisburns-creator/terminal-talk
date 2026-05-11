@@ -3,7 +3,7 @@
 // served. The kit demo's `../../app/index.html` fetch resolved on a
 // local http-server (repo root as web root) but 404'd on Pages.
 //
-// Fix: mirror the six product files the kit consumes into
+// Fix: mirror the product files the kit consumes into
 // docs/app-mirror/. This script is the single source of the mirror;
 // `--check` mode fails CI if the mirror drifts from app/, so a product
 // change can't silently break the online kit demo.
@@ -33,6 +33,7 @@ const FILES = [
   // the kit tries to boot.
   'lib/clip-paths.js',
   'lib/component.js',
+  'lib/first-run-wizard.js',
   'lib/heartbeat.js',
   'lib/stale-session-poller.js',
   'lib/dot-strip.js',
@@ -81,5 +82,5 @@ if (check) {
     for (const f of drift) console.error(`  - ${f}`);
     process.exit(1);
   }
-  console.log('[sync-app-mirror] in sync (6 files)');
+  console.log(`[sync-app-mirror] in sync (${FILES.length} files)`);
 }

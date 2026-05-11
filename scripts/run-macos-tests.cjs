@@ -63,6 +63,8 @@ test('Electron mac plist declares every macOS privacy prompt Terminal Talk uses'
   }
   assert(/on-device Speech Recognition/i.test(info.NSSpeechRecognitionUsageDescription),
     'speech permission text should explain on-device recognition');
+  assert(/Dictation/i.test(info.NSAppleEventsUsageDescription),
+    'Apple Events permission text should mention the start-dictation automation path');
 });
 
 test('mac helper Python files are included in asarUnpack for direct execution', () => {
