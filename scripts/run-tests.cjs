@@ -723,11 +723,11 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
     }
   });
 
-  it('key_helper supports all four commands in its protocol', () => {
-    // Protocol contract: ctrlc / fgtree / fgtree-bump / exit.
+  it('key_helper supports every command in its protocol', () => {
+    // Protocol contract: ctrlc / start-dictation / fgtree / fgtree-bump / exit.
     // Adding new commands is fine; removing any of these breaks the
     // Electron-side preload bindings that depend on them.
-    for (const cmd of ['ctrlc', 'fgtree', 'fgtree-bump', 'exit']) {
+    for (const cmd of ['ctrlc', 'start-dictation', 'fgtree', 'fgtree-bump', 'exit']) {
       // Commands are compared as strings in the helper's dispatcher.
       // Quoted string match keeps us from matching substrings in
       // function names (e.g. "exit" vs sys.exit).
@@ -735,6 +735,18 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
       if (!re.test(helper)) {
         throw new Error(`key_helper.py missing "${cmd}" in command dispatcher — protocol break`);
       }
+    }
+  });
+
+  it('key_helper maps native dictation trigger on Windows and macOS', () => {
+    if (!/def\s+start_dictation\s*\(\s*\)/.test(helper)) {
+      throw new Error('key_helper.py must expose start_dictation() for the native dictation hotkey');
+    }
+    if (!/_VK_LWIN\s*=\s*0x5B/.test(helper) || !/_VK_H\s*=\s*0x48/.test(helper)) {
+      throw new Error('Windows start_dictation must send Win+H for voice typing');
+    }
+    if (!/Start Dictation/.test(helper) || !/_KC_FN\s*=\s*0x3F/.test(helper)) {
+      throw new Error('macOS start_dictation must use Start Dictation menu with Fn fallback');
     }
   });
 
@@ -18120,6 +18132,29 @@ describe('SETTINGS PANEL LAYOUT', () => {
     }
     if (!/class="about-guide"/.test(aboutSection) || !/class="about-card/.test(aboutSection)) {
       throw new Error('About should use compact guide cards');
+    }
+  });
+
+  it('exposes the native dictation shortcut across defaults, Settings, and registration', () => {
+    const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8');
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/start_dictation:\s*['"]Control\+Shift\+D['"]/.test(mainSrc)) {
+      throw new Error('main.js DEFAULTS.hotkeys must include start_dictation');
+    }
+    if (!/registerAndLog\(CFG\.hotkeys\.start_dictation,\s*startDictation,\s*['"]start_dictation['"]\)/.test(mainSrc)) {
+      throw new Error('main.js must register the start_dictation global shortcut');
+    }
+    if (!/webContents\.send\(['"]pause-playback-only['"]\)/.test(mainSrc) || !/helperRequest\(['"]start-dictation['"]/.test(mainSrc)) {
+      throw new Error('startDictation must pause playback and call the helper start-dictation command');
+    }
+    if (!/start_dictation:\s*['"]Control\+Shift\+D['"]/.test(settingsSrc)) {
+      throw new Error('SettingsForm HOTKEY_DEFAULTS must include start_dictation');
+    }
+    if (!/id:\s*['"]hotkeyStartDictation['"][\s\S]{0,80}start dictation/.test(settingsSrc)) {
+      throw new Error('SettingsForm HOTKEY_FIELDS must include hotkeyStartDictation');
+    }
+    if (!/id="hotkeyStartDictation"/.test(indexHtmlSrc)) {
+      throw new Error('Shortcuts tab must render the Start dictation hotkey input');
     }
   });
 });

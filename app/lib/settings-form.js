@@ -43,6 +43,7 @@
     toggle_listening: 'Control+Shift+J',
     pause_resume: 'Control+Shift+P',
     pause_only: 'Control+Shift+O',
+    start_dictation: 'Control+Shift+D',
   });
   const HOTKEY_FIELDS = Object.freeze([
     { key: 'toggle_window', id: 'hotkeyToggleWindow', label: 'show / hide toolbar' },
@@ -50,6 +51,7 @@
     { key: 'toggle_listening', id: 'hotkeyToggleListening', label: 'mic listener' },
     { key: 'pause_resume', id: 'hotkeyPauseResume', label: 'pause / resume' },
     { key: 'pause_only', id: 'hotkeyPauseOnly', label: 'pause only' },
+    { key: 'start_dictation', id: 'hotkeyStartDictation', label: 'start dictation' },
   ]);
   const MODIFIER_KEYS = new Set(['Control', 'Ctrl', 'Shift', 'Alt', 'Meta', 'Command', 'Cmd', 'Option']);
 

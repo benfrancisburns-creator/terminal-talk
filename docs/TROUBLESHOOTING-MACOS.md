@@ -141,6 +141,26 @@ auto-pause feature won't work — there's no fallback path.
 
 ---
 
+## Start dictation hotkey doesn't open Apple Dictation
+
+Terminal Talk's `Ctrl+Shift+D` shortcut pauses playback and asks macOS to start
+Dictation in the currently focused app.
+
+**Check 1**: Make sure dictation is enabled in **System Settings > Keyboard >
+Dictation**.
+
+**Check 2**: Grant Accessibility permission to Terminal Talk. The bridge uses
+the foreground app's **Edit > Start Dictation** menu first, then falls back to
+the macOS dictation keyboard shortcut path.
+
+**Check 3**: Some apps do not expose an Edit menu item for Dictation. Focus a
+plain text field in TextEdit or Terminal and try again.
+
+**Check 4**: `tail ~/.terminal-talk/queue/_toolbar.log` and look for
+`startDictation: helper OK` or a helper failure.
+
+---
+
 ## Custom wake word doesn't load
 
 **Check**: `~/.terminal-talk/config.json` syntax. The `wake_words`

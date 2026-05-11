@@ -24,7 +24,8 @@
         "speak_clipboard":  { "type": "string", "maxLength": 64 },
         "toggle_listening": { "type": "string", "maxLength": 64 },
         "pause_resume":     { "type": "string", "maxLength": 64 },
-        "pause_only":       { "type": "string", "maxLength": 64 }
+        "pause_only":       { "type": "string", "maxLength": 64 },
+        "start_dictation":  { "type": "string", "maxLength": 64 }
       }
     },
     "playback": {

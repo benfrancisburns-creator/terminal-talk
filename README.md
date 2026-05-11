@@ -204,6 +204,7 @@ For an interactive walkthrough of every control, see the [live UI kit](#try-it-l
 - **Claude Desktop Code and Codex Desktop users** who want persistent desktop chats to keep the same Terminal Talk identity, colour, voice, and transcript history as their terminal workflow.
 - **Anyone** who wants a fast "select text, hear it" keystroke — no agent required.
 - **Voice-first workflows** — combine with a speech-to-text tool and you barely touch the keyboard. See [Companion dictation tools](#companion-dictation-tools-optional) near the bottom.
+- **Native dictation trigger** — `Ctrl+Shift+D` pauses Terminal Talk and opens the OS dictation surface for the focused app: Windows voice typing on Windows, Apple Dictation on macOS.
 
 ---
 
@@ -384,7 +385,8 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "speak_clipboard":  "Control+Shift+S",
     "toggle_listening": "Control+Shift+J",
     "pause_resume":     "Control+Shift+P",
-    "pause_only":       "Control+Shift+O"
+    "pause_only":       "Control+Shift+O",
+    "start_dictation":  "Control+Shift+D"
   },
   "playback": {
     "speed":                     1.25,
@@ -420,6 +422,7 @@ Key fields worth calling out:
 - **`playback.tts_fallback_provider`** (`"edge"` | `"openai"` | `"none"`, default `"edge"`) — which provider to try if the primary fails. The default keeps fallback free; set to `"openai"` only when you intentionally want paid fallback and are tracking OpenAI credits.
 - **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the dot strip.
 - **`heartbeat_enabled`** (default `true`) — during the silent gap while Claude Code or Codex is working, play short spinner-verb + thinking-phrase clips every ~8 s so you know the assistant is alive, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins. Individual sessions can override this with `heartbeat_enabled` in `session-colours.json`.
+- **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start Dictation** menu when available, with a Fn/Fn fallback.
 - **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice`, optional `heartbeat_enabled`, and an optional `speech_includes` partial:

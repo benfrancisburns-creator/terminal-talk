@@ -73,7 +73,11 @@ const DEFAULTS = {
     // this and nothing was playing (or it was already paused), nothing
     // unexpected happens. Bind via PowerToys / AutoHotkey / Wispr Flow
     // macro so pressing your dictation trigger stops TTS gracefully.
-    pause_only: 'Control+Shift+O'
+    pause_only: 'Control+Shift+O',
+    // Native dictation trigger. Windows opens voice typing (Win+H);
+    // macOS opens Apple Dictation in the foreground app. We pause first
+    // so Terminal Talk never talks over the dictated prompt.
+    start_dictation: 'Control+Shift+D'
   },
   playback: {
     speed: 1.25,
@@ -1111,6 +1115,20 @@ function helperRequest(cmd, timeoutMs = 500) {
 }
 
 async function sendCtrlC() { await helperRequest('ctrlc', 200); }
+async function sendStartDictation() { await helperRequest('start-dictation', 2000); }
+
+async function startDictation() {
+  diag('startDictation: TRIGGERED');
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send('pause-playback-only'); } catch {}
+  }
+  try {
+    await sendStartDictation();
+    diag('startDictation: helper OK');
+  } catch (e) {
+    diag(`startDictation: helper fail: ${e && e.message ? e.message : e}`);
+  }
+}
 
 async function getForegroundTree() {
   const line = await helperRequest('fgtree', 500);
@@ -2597,6 +2615,9 @@ app.whenReady().then(() => {
         try { win.webContents.send('pause-playback-only'); } catch {}
       }
     }, 'pause_only');
+  }
+  if (CFG.hotkeys.start_dictation) {
+    registerAndLog(CFG.hotkeys.start_dictation, startDictation, 'start_dictation');
   }
   // Push failed-registration detail to the renderer so settings-form
   // can show a banner. Renderer subscribes via api.onHotkeyRegistration;

@@ -13,6 +13,7 @@ first; macOS should match user-facing behaviour wherever the OS allows it.
 | Wake word | openWakeWord plus local command recognition | openWakeWord plus SFSpeechRecognizer command recognition | Equivalent, different recognizer |
 | Voice commands | SAPI recognizer | macOS Speech recognizer, on-device required | Equivalent grammar |
 | Mic auto-pause | Windows mic watcher | CoreAudio process-input watcher on macOS 14+ | Equivalent on supported macOS |
+| Native dictation trigger | Terminal Talk hotkey pauses TTS then opens Windows voice typing via Win+H | Terminal Talk hotkey pauses TTS then opens Apple Dictation via foreground Edit menu, with Fn/Fn fallback | Equivalent intent, OS UI differs |
 | End-of-reply footer | Windows Terminal UIA scrape via main-process watcher | `synth_turn.py` POSIX footer clip; Terminal.app/iTerm2 AppleScript scrape, JSONL fallback | Equivalent UX in supported terminals |
 | Create session | Windows Terminal bridge, title, tab colour, provisional-to-real binding | Terminal.app `osascript`, title only, registry binds after hooks/rollout | Partial: tab colour is Windows-only |
 | Codex terminal identity surface | Windows Terminal title sync plus registry | Terminal.app launch title plus registry/rollout identity | Partial: no tab colour/title resync API |
@@ -42,4 +43,3 @@ platform flag, docs, install/doctor checks, and a macOS test if the behaviour is
 implemented differently. When a behaviour cannot be identical because the OS
 surface differs, document the user-visible substitute and keep the toolbar,
 queue, transcript, and registry semantics identical.
-

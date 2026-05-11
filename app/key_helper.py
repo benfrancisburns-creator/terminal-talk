@@ -5,6 +5,9 @@ Reads lines from stdin; executes commands; writes one response line per command.
 Commands:
   ctrlc                 Send the OS "copy" shortcut to the foreground window
                         (Ctrl+C on Windows/Linux, Cmd+C on macOS).
+  start-dictation       Ask the OS dictation surface to start in the
+                        foreground app (Win+H on Windows; macOS Dictation
+                        menu/fallback on macOS).
   fgtree                Return JSON { fg_pid, descendants } -- the foreground
                         window's process ID plus every descendant PID in its
                         process tree. Used by speakClipboard to map hey-jarvis
@@ -109,7 +112,9 @@ if IS_WINDOWS:
     _k32 = ctypes.windll.kernel32
 
     _VK_CONTROL = 0x11
+    _VK_LWIN = 0x5B
     _VK_C = 0x43
+    _VK_H = 0x48
     _KEYEVENTF_KEYUP = 0x0002
     _INPUT_KEYBOARD = 1
 
@@ -176,6 +181,18 @@ if IS_WINDOWS:
             # blocked. Raise so the caller logs `err`.
             raise RuntimeError(f'SendInput inserted {n}/4 events')
 
+    def start_dictation() -> None:
+        """Open Windows voice typing for the focused app."""
+        events = (_INPUT * 4)(
+            _press(_VK_LWIN, False),
+            _press(_VK_H, False),
+            _press(_VK_H, True),
+            _press(_VK_LWIN, True),
+        )
+        n = _SendInput(4, events, ctypes.sizeof(_INPUT))
+        if n != 4:
+            raise RuntimeError(f'SendInput inserted {n}/4 events')
+
     # Process-tree snapshot via CreateToolhelp32Snapshot.
     TH32CS_SNAPPROCESS = 0x00000002
 
@@ -224,6 +241,8 @@ if IS_WINDOWS:
 # macOS backend
 # ---------------------------------------------------------------------------
 elif IS_MAC:
+    import subprocess
+
     import psutil
     import Quartz
     from AppKit import NSWorkspace
@@ -234,6 +253,7 @@ elif IS_MAC:
     # set. This is the documented modern path; CGPostKeyboardEvent is
     # deprecated.
     _KC_C = 0x08
+    _KC_FN = 0x3F
 
     def ctrlc() -> None:
         """Send the OS "copy" shortcut. On macOS that's Cmd+C; the
@@ -249,6 +269,53 @@ elif IS_MAC:
         # a first-run prompt to send the user to System Settings.
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    def _post_key(key_code: int) -> None:
+        down = Quartz.CGEventCreateKeyboardEvent(None, key_code, True)
+        up = Quartz.CGEventCreateKeyboardEvent(None, key_code, False)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    def _start_dictation_from_menu() -> None:
+        script = r'''
+tell application "System Events"
+  set frontApp to first application process whose frontmost is true
+  tell frontApp
+    try
+      click menu item "Start Dictation" of menu "Edit" of menu bar 1
+      return
+    end try
+    try
+      click menu item "Start Dictation..." of menu "Edit" of menu bar 1
+      return
+    end try
+    click menu item "Start Dictation…" of menu "Edit" of menu bar 1
+  end tell
+end tell
+'''
+        subprocess.run(
+            ['osascript', '-e', script],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+        )
+
+    def start_dictation() -> None:
+        """Start macOS Dictation in the foreground app.
+
+        The menu path works in most text-entry apps and respects the user's
+        configured macOS Dictation settings. Fn/Fn is kept as a fallback for
+        apps that expose no Edit > Start Dictation menu item.
+        """
+        try:
+            _start_dictation_from_menu()
+            return
+        except Exception:
+            pass
+        _post_key(_KC_FN)
+        time.sleep(0.08)
+        _post_key(_KC_FN)
 
     def get_foreground_pid() -> int:
         # NSWorkspace.frontmostApplication is the lightest path to "what
@@ -291,6 +358,9 @@ else:
 
     def ctrlc() -> None:
         raise RuntimeError(f'ctrlc not implemented on {sys.platform}')
+
+    def start_dictation() -> None:
+        raise RuntimeError(f'start-dictation not implemented on {sys.platform}')
 
     def get_foreground_pid() -> int:
         return 0
@@ -349,6 +419,9 @@ def main() -> int:
         try:
             if cmd == 'ctrlc':
                 ctrlc()
+                sys.stdout.write('ok\n')
+            elif cmd == 'start-dictation':
+                start_dictation()
                 sys.stdout.write('ok\n')
             elif cmd == 'fgtree':
                 sys.stdout.write(fgtree_payload() + '\n')
