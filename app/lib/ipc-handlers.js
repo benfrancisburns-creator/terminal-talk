@@ -851,6 +851,7 @@ function createIpcHandlers(deps) {
           voices: { ...cur.voices, ...(partial.voices || {}) },
           hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
           playback: { ...cur.playback, ...(partial.playback || {}) },
+          dictation: { ...cur.dictation, ...(partial.dictation || {}) },
           speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
           panels: { ...(cur.panels || {}), ...(partial.panels || {}) },
           heartbeat_enabled: keepScalar('heartbeat_enabled'),

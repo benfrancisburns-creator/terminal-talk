@@ -114,8 +114,10 @@
           <span id="transcriptCount" class="transcript-count" aria-live="polite"></span>
         </button>
         <button id="transcriptViewToggle" type="button" class="transcript-view-toggle" aria-label="View mode: spoken" title="Toggle between spoken (TTS-cleaned) and original (markdown source) text">Spoken</button>
+        <button id="dictationRecordBtn" type="button" class="transcript-view-toggle" aria-label="Record dictation" title="Record one local Whisper dictation and keep it in this panel">Dictate</button>
       </div>
       <div id="transcriptList" class="transcript-list" role="list" aria-label="Recent clip transcripts"></div>
+      <div id="dictationList" class="dictation-list" role="list" aria-label="Recent dictations"></div>
     </div>
   </div>
   <div class="panel" id="panel">
@@ -311,6 +313,14 @@
           <input type="text" id="hotkeyToggleListening" class="hotkey-input" readonly value="Ctrl+Shift+J" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
         </div>
         <div class="row hotkey-row">
+          <label for="hotkeyDictatePaste">Dictate and paste</label>
+          <input type="text" id="hotkeyDictatePaste" class="hotkey-input" readonly value="Ctrl+Alt+Space" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
+          <label for="hotkeyDictateToggle">Hands-free dictation</label>
+          <input type="text" id="hotkeyDictateToggle" class="hotkey-input" readonly value="Ctrl+Shift+Space" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
+        </div>
+        <div class="row hotkey-row">
           <label for="hotkeyPauseResume">Pause / resume</label>
           <input type="text" id="hotkeyPauseResume" class="hotkey-input" readonly value="Ctrl+Shift+P" autocomplete="off" spellcheck="false" title="Click, then press the replacement shortcut.">
         </div>
@@ -325,7 +335,7 @@
         <div class="row">
           <label>Status</label>
           <span id="hotkeyStatus" class="hotkey-status" aria-live="polite"></span>
-          <button type="button" id="hotkeyResetDefaults" class="text-btn" title="Restore the six global shortcuts to Control+Shift+A/S/J/P/O/D. Does not reset per-session toggles (those each have their own controls).">Reset hotkeys</button>
+          <button type="button" id="hotkeyResetDefaults" class="text-btn" title="Restore the global shortcuts to Control+Shift+A/S/J/P/O/D plus Control+Alt+Space and Control+Shift+Space. Does not reset per-session toggles (those each have their own controls).">Reset hotkeys</button>
         </div>
       </section>
 
@@ -474,6 +484,7 @@
   <script src="lib/update-badge.js"></script>
   <script src="lib/first-run-wizard.js"></script>
   <script src="lib/transcript-panel.js"></script>
+  <script src="lib/dictation-panel.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

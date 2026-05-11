@@ -37,6 +37,13 @@ const RULES = [
   // hidden OpenAI spend when Edge has a transient wobble.
   { path: 'playback.tts_provider', type: 'string', maxLen: 16 },
   { path: 'playback.tts_fallback_provider', type: 'string', maxLen: 16 },
+  { path: 'dictation', type: 'object' },
+  { path: 'dictation.cleanup', type: 'boolean' },
+  { path: 'dictation.cleanup_provider', type: 'string', maxLen: 16 },
+  { path: 'dictation.cleanup_model', type: 'string', maxLen: 80 },
+  { path: 'dictation.cleanup_timeout_sec', type: 'number', min: 3, max: 60 },
+  { path: 'dictation.keep_audio', type: 'boolean' },
+  { path: 'dictation.save_timing', type: 'boolean' },
   { path: 'speech_includes', type: 'object' },
   // F2 (#11): every sub-key in DEFAULTS.speech_includes (main.js) now
   // has a corresponding validator rule. Prior to this the parent object

@@ -41,7 +41,11 @@ const FILES = [
   'lib/sessions-table.js',
   'lib/settings-form.js',
   'lib/audio-player.js',
+  'lib/voice-command-dispatch.js',
+  'lib/update-badge.js',
+  'lib/first-run-wizard.js',
   'lib/transcript-panel.js',
+  'lib/dictation-panel.js',
 ];
 
 const check = process.argv.includes('--check');

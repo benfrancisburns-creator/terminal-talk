@@ -222,6 +222,8 @@ All hotkeys are **global** — they work from any app. Nothing is captured from 
 | `Ctrl+Shift+A` | Show / hide the toolbar (your recovery hotkey) |
 | `Ctrl+Shift+S` | Read the currently highlighted text |
 | `Ctrl+Shift+J` | Toggle wake-word listening (chime confirms on/off) |
+| `Ctrl+Alt+Space` | Hold to dictate with local Whisper; release to paste into the active app |
+| `Ctrl+Shift+Space` | Toggle hands-free dictation; press again to stop and paste |
 | `Ctrl+Shift+P` | Pause / resume playback |
 | `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
 | `Ctrl+R` | Reload toolbar (same as Settings › Reload button) — use if the UI ever looks stuck |
@@ -387,6 +389,8 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "toggle_window":    "Control+Shift+A",
     "speak_clipboard":  "Control+Shift+S",
     "toggle_listening": "Control+Shift+J",
+    "dictate_paste":    "Control+Alt+Space",
+    "dictate_toggle":   "Control+Shift+Space",
     "pause_resume":     "Control+Shift+P",
     "pause_only":       "Control+Shift+O",
     "start_dictation":  "Control+Shift+D"
@@ -401,6 +405,14 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "palette_variant":           "default",
     "tts_provider":              "edge",
     "tts_fallback_provider":     "edge"
+  },
+  "dictation": {
+    "cleanup":             true,
+    "cleanup_provider":    "local",
+    "cleanup_model":       "gpt-5.4-mini",
+    "cleanup_timeout_sec": 20,
+    "keep_audio":          false,
+    "save_timing":         true
   },
   "speech_includes": {
     "code_blocks":    false,
@@ -423,6 +435,10 @@ Key fields worth calling out:
 - **`playback.palette_variant`** (`"default"` | `"cb"`, default `"default"`) — swaps the 8-colour session palette for Paul Tol's "muted" scheme under deutan / protan / tritan colour-blindness.
 - **`playback.tts_provider`** (`"edge"` | `"openai"`, default `"edge"`) — which TTS provider to try first. Setting this to `"openai"` needs a saved OpenAI key.
 - **`playback.tts_fallback_provider`** (`"edge"` | `"openai"` | `"none"`, default `"edge"`) — which provider to try if the primary fails. The default keeps fallback free; set to `"openai"` only when you intentionally want paid fallback and are tracking OpenAI credits.
+- **`dictation.cleanup`** (default `true`) — cleans raw Whisper output before paste, removing filler sounds and converting spoken commands like _"new paragraph"_, _"bullet point"_, and _"full stop"_ into text formatting.
+- **`dictation.cleanup_provider`** (`"local"` | `"openai"`, default `"local"`) — local cleanup is free and offline. `"openai"` is explicit opt-in; it sends the dictated text to OpenAI for a Wispr-style cleanup pass and falls back to local cleanup if unavailable.
+- **`dictation.keep_audio`** (default `false`) — saves the recorded WAV beside each transcript so you can compare audio with the output while tuning dictation.
+- **`dictation.save_timing`** (default `true`) — saves Whisper segment and word-pause metadata beside each transcript for pause-based paragraph tuning.
 - **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the dot strip.
 - **`heartbeat_enabled`** (default `true`) — during the silent gap while Claude Code or Codex is working, play short spinner-verb + thinking-phrase clips every ~8 s so you know the assistant is alive, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins. Individual sessions can override this with `heartbeat_enabled` in `session-colours.json`.
 - **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start/Stop Dictation** menu when available, with a Fn/Fn fallback.
@@ -601,11 +617,52 @@ dictation tool. A few options, ranked by free-tier generosity:
 
 | Tool | Free tier | Paid | Platform | Notes |
 |---|---|---|---|---|
+| **Local Whisper in Terminal Talk** | Unlimited | Free after model download | Win now | Hold `Ctrl+Alt+Space`, speak, release to paste into the active app and store a transcript row. |
 | **[Wispr Flow](https://wisprflow.ai/)** | 2,000 words/wk | $12/mo | Mac, Win, iOS, Android | Best polish. Cloud only. |
 | **Windows Speech Recognition** | Unlimited | Free | Windows | Built-in, no signup. Basic quality. |
 | **Apple Dictation** | Unlimited | Free | Mac, iOS | Built-in. Decent on M1+. |
 
-For light use (a few prompts/day) any free tier works. For heavy daily use you'll want one of the paid options or the OS built-ins.
+Local Whisper setup:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -Install
+.\scripts\whisper-dictate.ps1 -Warmup
+```
+
+Transcribe an existing audio file:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -AudioPath "C:\path\to\message.wav"
+```
+
+Dictate into the active app:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -Record -Paste
+```
+
+Inside Terminal Talk, hold `Ctrl+Alt+Space` from your terminal or any text field:
+recording starts while the keys are held, then Terminal Talk transcribes locally
+and pastes the result into the active app when you release. The transcript is
+copied to the clipboard. File transcriptions also write a `.transcript.txt`
+sidecar beside the audio file; live dictation writes under
+`~\.terminal-talk\dictation\` and appears in the transcript panel with copy/delete
+controls. The transcript-panel **Dictate** button records one clip and stops on
+the next click. `Ctrl+Shift+Space` is the hands-free shortcut: press once to start
+recording, press again to stop, transcribe, and paste.
+
+Wake-word control uses the same voice-command chain as playback controls. With
+listening enabled, say _"hey jarvis dictate"_ to start hands-free dictation and
+_"hey jarvis stop dictation"_ to stop it. If the dictated text ends with _"press
+enter"_, Terminal Talk removes that phrase, pastes the text, and sends Enter.
+
+Raw Whisper output is cleaned before paste by default: filler sounds are removed,
+common spoken formatting commands become punctuation/paragraphs/bullets, and
+spacing/capitalisation is normalised. For a stronger Wispr-style cleanup pass,
+set `dictation.cleanup_provider` to `"openai"` after saving an OpenAI key in the
+Settings panel; this is opt-in because it can spend API credits.
+
+For light use (a few prompts/day) any free tier works. For heavy daily use you'll want local Whisper, one of the paid options, or the OS built-ins.
 
 Not affiliated with any of these.
 

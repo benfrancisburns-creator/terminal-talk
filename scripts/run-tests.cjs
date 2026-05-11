@@ -2033,6 +2033,7 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     voices:          { edge_response: 'en-GB-RyanNeural' },
     hotkeys:         {},
     playback:        { speed: 1.25, collapse_delay_sec: 3, tts_provider: 'edge', tts_fallback_provider: 'edge' },
+    dictation:       { cleanup: true, cleanup_provider: 'local', cleanup_model: 'gpt-5.4-mini', cleanup_timeout_sec: 20 },
     speech_includes: { code_blocks: false },
     panels:          { transcript_expanded: false, transcript_view: 'spoken' },
     heartbeat_enabled: true,
@@ -2813,7 +2814,7 @@ describe('SETTINGS PANEL ↔ VALIDATOR COVERAGE (#11)', () => {
     // Parent-only rules (object-typed, top-level) are inherently
     // structural — skip them, since their "consumer" is the nested
     // merge in config-store + ipc-handlers.
-    const skipPaths = new Set(['voices', 'hotkeys', 'playback', 'speech_includes']);
+    const skipPaths = new Set(['voices', 'hotkeys', 'playback', 'dictation', 'speech_includes']);
     const dead = [];
     for (const rule of RULES) {
       if (skipPaths.has(rule.path)) continue;
@@ -17399,6 +17400,7 @@ ${body}
     // keeps the test authoritative if the set drifts.
     const whitelist = new Set([
       'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
+      'dictation_start', 'dictation_stop',
     ]);
     const rejectCases = ['clear', 'delete', 'rm', '', null, 'PLAY', 'play;echo'];
     for (const a of rejectCases) {
@@ -17406,7 +17408,7 @@ ${body}
         throw new Error(`whitelist accepted bad action: ${JSON.stringify(a)}`);
       }
     }
-    const acceptCases = ['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel'];
+    const acceptCases = ['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel', 'dictation_start', 'dictation_stop'];
     for (const a of acceptCases) {
       if (!whitelist.has(a)) {
         throw new Error(`whitelist rejected good action: ${JSON.stringify(a)}`);
@@ -18895,6 +18897,15 @@ describe('CODEX TERMINAL IDENTITY', () => {
     if (!/terminal_title[\s\S]*\[\]/.test(installSrc)) {
       throw new Error('install.ps1 must set [tui].terminal_title = [] so Codex does not overwrite TT titles');
     }
+    if (!/Set-TomlSectionKey[\s\S]*-Section 'features'[\s\S]*-Key 'hooks'[\s\S]*-Value 'true'/.test(installSrc)) {
+      throw new Error('install.ps1 must enable the current [features].hooks Codex flag');
+    }
+    if (/Set-TomlSectionKey[\s\S]*-Section 'features'[\s\S]*-Key 'codex_hooks'/.test(installSrc)) {
+      throw new Error('install.ps1 must not write the deprecated [features].codex_hooks flag');
+    }
+    if (!/codex_hooks\\s\*=/.test(installSrc)) {
+      throw new Error('install.ps1 must remove stale deprecated [features].codex_hooks entries');
+    }
     if (!/SessionStart/.test(installSrc) || !/UserPromptSubmit/.test(installSrc) || !/PreToolUse/.test(installSrc) || !/PostToolUse/.test(installSrc) || !/Stop/.test(installSrc)) {
       throw new Error('install.ps1 must register the full Codex lifecycle hook set');
     }
@@ -19833,11 +19844,11 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
   });
 
   it('tt-doctor.sh runs end-to-end and exits cleanly with --no-net (smoke)', () => {
-    // Doesn't assert specific check outcomes (those depend on the
-    // runner's environment); just asserts the script doesn't crash
-    // mid-run and produces the summary line. Covers shell-syntax
-    // regressions like unbound-variable typos under set -u.
-    const r = spawnSync('bash', [path.join(__dirname, '..', 'scripts', 'tt-doctor.sh'), '--no-net'],
+    const doctorPath = path.join(__dirname, '..', 'scripts', 'tt-doctor.sh')
+      .replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+    const r = spawnSync('bash', process.platform === 'win32'
+      ? ['-c', `tr -d "\\r" < '${doctorPath.replace(/'/g, "'\\''")}' | bash -s -- --no-net`]
+      : [doctorPath, '--no-net'],
       { encoding: 'utf8', timeout: 30000, env: { ...process.env, TERM: 'dumb' } });
     if (r.status === null) {
       throw new Error(`tt-doctor.sh did not return a status: ${r.error}`);
@@ -19913,7 +19924,8 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
       'codex-on-tool.sh',
       'codex-post-tool.sh',
       'codex-stop.sh',
-      'codex_hooks',
+      "set_key(lines, 'features', 'hooks', 'true')",
+      "line.split('=', 1)[0].strip() != 'codex_hooks'",
       'terminal_title',
       'XDG_STATE_HOME',
       'XDG_DATA_HOME',

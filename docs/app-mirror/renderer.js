@@ -992,11 +992,9 @@ function fetchSidecarsForRecent() {
   }
 }
 
-const transcriptPanelEl = document.getElementById('transcriptPanel');
-const transcriptToggleBtn = document.getElementById('transcriptToggle');
-const transcriptViewToggleBtn = document.getElementById('transcriptViewToggle');
-const transcriptListEl = document.getElementById('transcriptList');
-const transcriptCountEl = document.getElementById('transcriptCount');
+const transcriptPanelEl = document.getElementById('transcriptPanel'), transcriptToggleBtn = document.getElementById('transcriptToggle');
+const transcriptViewToggleBtn = document.getElementById('transcriptViewToggle'), transcriptListEl = document.getElementById('transcriptList');
+const transcriptCountEl = document.getElementById('transcriptCount'), dictationRecordBtn = document.getElementById('dictationRecordBtn'), dictationListEl = document.getElementById('dictationList');
 
 let transcriptPanel = null;
 if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
@@ -1008,16 +1006,9 @@ if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
     countEl: transcriptCountEl,
     getQueue: () => queue,
     getCurrentPath: () => audioPlayer.getCurrentPath(),
-    getHeardPaths: () => heardPaths,
-    // Session-tab filter — re-uses the same selectedTab the dot strip
-    // and tabs row gate on, so the panel always agrees with whichever
-    // session view the user is currently on.
     getSelectedTab: () => selectedTab,
     clipPaths: window.TT_CLIP_PATHS,
     readSidecar: (audioPath) => transcriptSidecarCache.get(audioPath) || null,
-    // Initial state from config (panels.transcript_*); persisted via
-    // window.api.updateConfig on user toggle so the panel remembers
-    // across reloads.
     getInitialExpanded: () => false,  // wired up after first config load
     getInitialView: () => 'spoken',   // same
     setPersistedFlag: (key, value) => {
@@ -1035,6 +1026,14 @@ if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
   });
   transcriptPanel.mount();
 }
+
+let dictationPanel = window.TT_DICTATION_PANEL && dictationListEl
+  ? window.TT_DICTATION_PANEL.createDictationPanel({
+      api: window.api, recordBtn: dictationRecordBtn, listEl: dictationListEl,
+      showStatus: (...args) => _showStatusToast(...args),
+    })
+  : null;
+if (dictationPanel) dictationPanel.mount();
 
 function renderDots() {
   // Defensive fallback: if the persisted selectedTab no longer appears in
@@ -2695,6 +2694,8 @@ if (window.api.onMicReleased) {
 if (window.api.onVoiceCommand && window.TT_VOICE_COMMAND_DISPATCH) {
   window.api.onVoiceCommand(window.TT_VOICE_COMMAND_DISPATCH.createVoiceCommandDispatch({
     audioPlayer,
+    startDictation: () => window.api.startDictation?.({ paste: true, manualStop: true, source: 'voice-command' }),
+    stopDictation: () => window.api.stopDictation?.('voice-command'),
     onUnknown: (a) => { try { window.api?.logRendererError?.({ at: 'voice-command-unknown', message: `unknown action: ${a}` }); } catch {} },
     onError: (_a, e) => { try { window.api?.logRendererError?.({ at: 'voice-command-dispatch', message: String((e && e.message) || e) }); } catch {} },
   }));

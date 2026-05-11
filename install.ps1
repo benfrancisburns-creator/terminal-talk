@@ -157,7 +157,8 @@ function Update-CodexConfigToml {
     $parent = Split-Path -Parent $Path
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
     $lines = if (Test-Path $Path) { @(Get-Content $Path -Encoding utf8) } else { @() }
-    $lines = Set-TomlSectionKey -Lines $lines -Section 'features' -Key 'codex_hooks' -Value 'true'
+    $lines = @($lines | Where-Object { $_ -notmatch '^\s*codex_hooks\s*=' })
+    $lines = Set-TomlSectionKey -Lines $lines -Section 'features' -Key 'hooks' -Value 'true'
     $lines = Set-TomlSectionKey -Lines $lines -Section 'tui' -Key 'terminal_title' -Value '[]'
     Set-Content -Path $Path -Value $lines -Encoding utf8
 }

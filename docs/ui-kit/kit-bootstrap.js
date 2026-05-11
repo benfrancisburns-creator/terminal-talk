@@ -21,8 +21,7 @@
 //   4. load tokens-window.js → voices-window.js → mock-ipc.js → renderer.js
 //      in strict sequence (each awaited before the next)
 //
-// Any failure at step 1 or 2 falls back to console.error + keeps the
-// demo shell visible rather than a silent blank page.
+// Failures fall back to console.error + keep the demo shell visible.
 
 (async function bootstrap() {
   const APP_INDEX = '../app-mirror/index.html';
@@ -92,6 +91,7 @@
     await loadScript('../app-mirror/lib/update-badge.js');
     await loadScript('../app-mirror/lib/first-run-wizard.js');
     await loadScript('../app-mirror/lib/transcript-panel.js');
+    await loadScript('../app-mirror/lib/dictation-panel.js');
     await loadScript('mock-ipc.js');
     await loadScript('../app-mirror/renderer.js');
   } catch (e) {

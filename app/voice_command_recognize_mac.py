@@ -51,6 +51,12 @@ PHRASE_TO_ACTION = {
     'stop talking': 'stop',
     'shut up': 'stop',
     'silence': 'stop',
+    'dictate': 'dictation_start',
+    'start dictation': 'dictation_start',
+    'begin dictation': 'dictation_start',
+    'stop dictation': 'dictation_stop',
+    'dictation stop': 'dictation_stop',
+    'finish dictation': 'dictation_stop',
 }
 
 # Confidence floor matches the Windows path's MIN_CONFIDENCE in

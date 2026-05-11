@@ -26,6 +26,7 @@ try { nativeTheme.themeSource = 'dark'; } catch {}
 // TT_INSTALL_DIR pins a legacy/sandbox root.
 const INSTALL_DIR = platform.installDir;
 const QUEUE_DIR = path.join(INSTALL_DIR, 'queue');
+const DICTATION_DIR = path.join(INSTALL_DIR, 'dictation');
 const CONFIG_PATH = platform.configPath;
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
 const WAKE_WORD_UNAVAILABLE_FILE = path.join(INSTALL_DIR, 'wake-word-unavailable.flag');
@@ -39,7 +40,7 @@ process.env.TT_HOME = process.env.TT_HOME || INSTALL_DIR;
 process.env.TT_CONFIG_PATH = process.env.TT_CONFIG_PATH || CONFIG_PATH;
 process.env.TT_APP_DIR = process.env.TT_APP_DIR || __dirname;
 
-for (const dir of [INSTALL_DIR, QUEUE_DIR, platform.configDir]) {
+for (const dir of [INSTALL_DIR, QUEUE_DIR, DICTATION_DIR, platform.configDir]) {
   try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch {}
 }
 
@@ -66,6 +67,8 @@ const DEFAULTS = {
     toggle_window: 'Control+Shift+A',
     speak_clipboard: 'Control+Shift+S',
     toggle_listening: 'Control+Shift+J',
+    dictate_paste: 'Control+Alt+Space',
+    dictate_toggle: 'Control+Shift+Space',
     // Toggle: pause if playing, resume if paused. Use for manual control.
     pause_resume: 'Control+Shift+P',
     // Pause-only: pauses the current clip if it's playing; NEVER resumes.
@@ -110,6 +113,7 @@ const DEFAULTS = {
     tts_provider: 'edge',
     tts_fallback_provider: 'edge'
   },
+  dictation: { cleanup: true, cleanup_provider: 'local', cleanup_model: 'gpt-5.4-mini', cleanup_timeout_sec: 20 },
   speech_includes: {
     code_blocks: false,
     inline_code: false,
@@ -1885,6 +1889,16 @@ function isPathInside(target, base) {
   } catch { return false; }
 }
 
+const { createDictationController } = require('./lib/dictation');
+const { createDictationHotkeyHook } = require('./lib/dictation-hotkey-hook');
+function sendRenderer(channel) { if (win && !win.isDestroyed()) { try { win.webContents.send(channel); } catch {} } }
+const _dictation = createDictationController({ spawn, fs, path, platform: process.platform, powershellExe: POWERSHELL_EXE, appDir: __dirname, installDir: INSTALL_DIR, getWin: () => win, diag, getConfig: () => CFG, getApiKey: () => loadApiKey(), sendMicCaptured: () => sendRenderer('mic-captured-elsewhere'), sendResumePlayback: () => sendRenderer('mic-released') });
+function toggleHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.isBusy() ? _dictation.stop(source) : startHandsFreeDictation(source); }
+function startHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.start({ paste: true, source, externalStop: true, maxSeconds: 1200 }); }
+const _dictationHookOpts = { enabled: process.platform === 'win32', spawn, pythonExe: PYTHON_EXE, scriptPath: path.join(__dirname, 'dictation-hotkey-hook.py'), diag };
+const _dictationHoldHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_paste, onStart: () => _dictation.start({ paste: true, source: 'keyboard-hook', externalStop: true }), onStop: () => _dictation.stop('hotkey-release') });
+const _dictationToggleHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_toggle, onStart: () => toggleHandsFreeDictation('toggle-hotkey'), onStop: () => {} });
+
 // EX6f — IPC handlers migrated out of main.js into app/lib/ipc-handlers.js
 // arrive as a single register() call. Placed at the end of the IPC block
 // so every dep (including late-declared ones like validShort / saveAssignments)
@@ -2061,6 +2075,13 @@ ipcMain.handle('demo-start-ready', () => {
 // (e.g. Wispr Flow already owns Ctrl+Shift+A) and no signal about why.
 let hotkeyRegistrationStatus = { failed: [], at: 0 };
 ipcMain.handle('get-hotkey-registration', () => hotkeyRegistrationStatus);
+ipcMain.handle('start-dictation', (_event, opts = {}) => {
+  const source = opts && opts.source ? String(opts.source).slice(0, 40) : (opts && opts.paste ? 'renderer-paste' : 'renderer');
+  return _dictation.start({ paste: !!(opts && opts.paste), source, externalStop: !!(opts && opts.manualStop), maxSeconds: opts && opts.manualStop ? 1200 : 0 });
+});
+ipcMain.handle('stop-dictation', (_event, reason = 'renderer') => _dictation.stop(String(reason || 'renderer').slice(0, 80)));
+ipcMain.handle('get-dictations', (_event, limit = 20) => _dictation.list(limit));
+ipcMain.handle('delete-dictation', (_event, filePath) => _dictation.remove(filePath));
 
 let voiceProc = null;
 function isListeningEnabled() {
@@ -2269,9 +2290,7 @@ const stopOpenaiInvalidWatcher = _openaiInvalidWatcher.stop;
 // existing tests asserting on `app/main.js VOICE_COMMAND_ALLOWED`
 // (#27 invariant) keep finding it.
 const VOICE_COMMAND_PATH = path.join(INSTALL_DIR, 'voice-command.json');
-const VOICE_COMMAND_ALLOWED = new Set([
-  'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
-]);
+const VOICE_COMMAND_ALLOWED = new Set(['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel', 'dictation_start', 'dictation_stop']);
 const _voiceCommandWatcher = createVoiceCommandWatcher({
   commandPath: VOICE_COMMAND_PATH,
   allowed: VOICE_COMMAND_ALLOWED,
@@ -2602,6 +2621,11 @@ app.whenReady().then(() => {
   registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
   registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
   registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
+  if (process.platform !== 'win32') {
+    registerAndLog(CFG.hotkeys.dictate_paste, () => _dictation.start({ paste: true, source: 'hotkey', holdAccelerator: CFG.hotkeys.dictate_paste }), 'dictate_paste'); registerAndLog(CFG.hotkeys.dictate_toggle, () => toggleHandsFreeDictation('toggle-hotkey'), 'dictate_toggle');
+  } else {
+    diag(`globalShortcut dictate_paste skipped on Windows; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on Windows; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
+  }
   if (CFG.hotkeys.pause_resume) {
     registerAndLog(CFG.hotkeys.pause_resume, () => {
       if (win && !win.isDestroyed()) {
@@ -2619,6 +2643,8 @@ app.whenReady().then(() => {
   if (CFG.hotkeys.start_dictation) {
     registerAndLog(CFG.hotkeys.start_dictation, startDictation, 'start_dictation');
   }
+  _dictationHoldHotkeyHook.start();
+  _dictationToggleHotkeyHook.start();
   // Push failed-registration detail to the renderer so settings-form
   // can show a banner. Renderer subscribes via api.onHotkeyRegistration;
   // delivery is fire-and-forget — if the renderer isn't ready yet, the
@@ -2689,6 +2715,7 @@ app.on('will-quit', () => {
   stopOpenaiInvalidWatcher();
   stopVoiceCommandWatcher();
   stopUpdateChecker();
+  _dictationHoldHotkeyHook.stop(); _dictationToggleHotkeyHook.stop();
   stopSynthDaemon();
 });
 

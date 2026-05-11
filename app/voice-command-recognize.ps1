@@ -46,6 +46,12 @@ $phraseToAction = @{
     'previous' = 'back'
     'stop'     = 'stop'
     'cancel'   = 'cancel'
+    'dictate'          = 'dictation_start'
+    'start dictation'  = 'dictation_start'
+    'begin dictation'  = 'dictation_start'
+    'stop dictation'   = 'dictation_stop'
+    'dictation stop'   = 'dictation_stop'
+    'finish dictation' = 'dictation_stop'
 }
 
 try {

@@ -54,6 +54,7 @@ function createConfigStore({ configPath, defaults, validator, logger }) {
       voices: { ...defaults.voices, ...(parsed.voices || {}) },
       hotkeys: { ...defaults.hotkeys, ...(parsed.hotkeys || {}) },
       playback: { ...defaults.playback, ...(parsed.playback || {}) },
+      dictation: { ...defaults.dictation, ...(parsed.dictation || {}) },
       speech_includes: { ...defaults.speech_includes, ...(parsed.speech_includes || {}) },
       panels: { ...defaults.panels, ...(parsed.panels || {}) },
       window: parsed.window && typeof parsed.window === 'object' ? parsed.window : null,

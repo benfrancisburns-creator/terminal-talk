@@ -5,6 +5,7 @@ package-lock.json
 # Python
 __pycache__/
 *.pyc
+.codex-transcribe-*/
 
 # electron-builder output (Windows installer + portable .exe artefacts)
 dist/
