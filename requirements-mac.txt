@@ -10,6 +10,6 @@
 # mac mic watcher distinguish live external input from Terminal Talk output.
 pyobjc-framework-Quartz>=10
 pyobjc-framework-Cocoa>=10
-pyobjc-framework-Speech>=10
+pyobjc-framework-Speech>=12.1
 pyobjc-framework-CoreAudio>=10
 psutil>=5.9
