@@ -1892,10 +1892,10 @@ function isPathInside(target, base) {
 const { createDictationController } = require('./lib/dictation');
 const { createDictationHotkeyHook } = require('./lib/dictation-hotkey-hook');
 function sendRenderer(channel) { if (win && !win.isDestroyed()) { try { win.webContents.send(channel); } catch {} } }
-const _dictation = createDictationController({ spawn, fs, path, platform: process.platform, powershellExe: POWERSHELL_EXE, appDir: __dirname, installDir: INSTALL_DIR, getWin: () => win, diag, getConfig: () => CFG, getApiKey: () => loadApiKey(), sendMicCaptured: () => sendRenderer('mic-captured-elsewhere'), sendResumePlayback: () => sendRenderer('mic-released') });
+const _dictation = createDictationController({ spawn, fs, path, platform: process.platform, powershellExe: POWERSHELL_EXE, pythonExe: PYTHON_EXE, appDir: __dirname, installDir: INSTALL_DIR, getWin: () => win, diag, getConfig: () => CFG, getApiKey: () => loadApiKey(), sendMicCaptured: () => sendRenderer('mic-captured-elsewhere'), sendResumePlayback: () => sendRenderer('mic-released') });
 function toggleHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.isBusy() ? _dictation.stop(source) : startHandsFreeDictation(source); }
 function startHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.start({ paste: true, source, externalStop: true, maxSeconds: 1200 }); }
-const _dictationHookOpts = { enabled: process.platform === 'win32', spawn, pythonExe: PYTHON_EXE, scriptPath: path.join(__dirname, 'dictation-hotkey-hook.py'), diag };
+const _dictationHookOpts = { enabled: process.platform === 'win32' || process.platform === 'darwin', spawn, pythonExe: PYTHON_EXE, scriptPath: path.join(__dirname, 'dictation-hotkey-hook.py'), diag };
 const _dictationHoldHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_paste, onStart: () => _dictation.start({ paste: true, source: 'keyboard-hook', externalStop: true }), onStop: () => _dictation.stop('hotkey-release') });
 const _dictationToggleHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_toggle, onStart: () => toggleHandsFreeDictation('toggle-hotkey'), onStop: () => {} });
 
@@ -2621,10 +2621,10 @@ app.whenReady().then(() => {
   registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
   registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
   registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' && process.platform !== 'darwin') {
     registerAndLog(CFG.hotkeys.dictate_paste, () => _dictation.start({ paste: true, source: 'hotkey', holdAccelerator: CFG.hotkeys.dictate_paste }), 'dictate_paste'); registerAndLog(CFG.hotkeys.dictate_toggle, () => toggleHandsFreeDictation('toggle-hotkey'), 'dictate_toggle');
   } else {
-    diag(`globalShortcut dictate_paste skipped on Windows; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on Windows; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
+    diag(`globalShortcut dictate_paste skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
   }
   if (CFG.hotkeys.pause_resume) {
     registerAndLog(CFG.hotkeys.pause_resume, () => {

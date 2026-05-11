@@ -617,12 +617,12 @@ dictation tool. A few options, ranked by free-tier generosity:
 
 | Tool | Free tier | Paid | Platform | Notes |
 |---|---|---|---|---|
-| **Local Whisper in Terminal Talk** | Unlimited | Free after model download | Win now | Hold `Ctrl+Alt+Space`, speak, release to paste into the active app and store a transcript row. |
+| **Local Whisper in Terminal Talk** | Unlimited | Free after model download | Windows, macOS | Hold `Ctrl+Alt+Space`, speak, release to paste into the active app and store a transcript row. |
 | **[Wispr Flow](https://wisprflow.ai/)** | 2,000 words/wk | $12/mo | Mac, Win, iOS, Android | Best polish. Cloud only. |
 | **Windows Speech Recognition** | Unlimited | Free | Windows | Built-in, no signup. Basic quality. |
 | **Apple Dictation** | Unlimited | Free | Mac, iOS | Built-in. Decent on M1+. |
 
-Local Whisper setup:
+Local Whisper setup on Windows from the repo:
 
 ```powershell
 .\scripts\whisper-dictate.ps1 -Install
@@ -641,9 +641,14 @@ Dictate into the active app:
 .\scripts\whisper-dictate.ps1 -Record -Paste
 ```
 
-Inside Terminal Talk, hold `Ctrl+Alt+Space` from your terminal or any text field:
-recording starts while the keys are held, then Terminal Talk transcribes locally
-and pastes the result into the active app when you release. The transcript is
+On macOS, `install.sh` installs the local Whisper package into
+`~/.terminal-talk/.codex-transcribe-pkgs` when possible. The first local
+dictation downloads the Whisper model into `~/.terminal-talk/.codex-transcribe-cache`.
+
+Inside Terminal Talk on Windows and macOS, hold `Ctrl+Alt+Space` from your
+terminal or any text field: recording starts while the keys are held, then
+Terminal Talk transcribes locally and pastes the result into the active app when
+you release. The transcript is
 copied to the clipboard. File transcriptions also write a `.transcript.txt`
 sidecar beside the audio file; live dictation writes under
 `~\.terminal-talk\dictation\` and appears in the transcript panel with copy/delete

@@ -78,6 +78,8 @@
       "**/posix_hooks.py",
       "**/statusline.py",
       "**/claude_footer_scrape.py",
+      "**/whisper-dictate.py",
+      "**/dictation-hotkey-hook.py",
       "**/voice_command_recognize_mac.py",
       "**/mic_watcher_mac.py"
     ],
@@ -99,8 +101,8 @@
       "gatekeeperAssess": false,
       "identity": null,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Terminal Talk listens for the wake word \"hey jarvis\" so it can read highlighted text aloud. Audio is processed locally by openWakeWord; no recordings leave your machine.",
-        "NSAppleEventsUsageDescription": "Terminal Talk uses Apple Events for foreground-app automation: copying highlighted text for speak-clipboard and opening the focused app's Dictation menu when you press the start-dictation hotkey.",
+        "NSMicrophoneUsageDescription": "Terminal Talk listens for the wake word \"hey jarvis\" and records local Whisper dictation when you press the dictation hotkey. Audio is processed locally; no recordings leave your machine unless you opt into OpenAI dictation cleanup.",
+        "NSAppleEventsUsageDescription": "Terminal Talk uses Apple Events for foreground-app automation: copying highlighted text for speak-clipboard, pasting local Whisper dictation, and opening the focused app's Dictation menu when you press the start-dictation hotkey.",
         "NSSpeechRecognitionUsageDescription": "Terminal Talk uses macOS on-device Speech Recognition to understand voice commands such as play, pause, next, back, and stop after the wake word fires."
       }
     },

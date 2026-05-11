@@ -1,4 +1,8 @@
-"""Windows low-level push-to-talk hook for Terminal Talk dictation."""
+"""Low-level push-to-talk hook for Terminal Talk dictation.
+
+Windows uses a WH_KEYBOARD_LL hook. macOS uses a Quartz event tap so
+Ctrl+Alt+Space can stop recording as soon as the user releases the chord.
+"""
 from __future__ import annotations
 
 import argparse
@@ -25,6 +29,21 @@ NORMALIZE_VK = {
     0xA4: 0x12, 0xA5: 0x12,  # left/right alt/menu
     0x5B: 0x5B, 0x5C: 0x5B,  # left/right Windows
 }
+MODIFIER_NAMES = {"CONTROL", "CTRL", "SHIFT", "ALT", "OPTION", "WIN", "WINDOWS", "SUPER", "COMMAND", "CMD"}
+DARWIN_KEY_CODES = {
+    "A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7,
+    "C": 8, "V": 9, "B": 11, "Q": 12, "W": 13, "E": 14, "R": 15,
+    "Y": 16, "T": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22,
+    "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "O": 31, "U": 32,
+    "I": 34, "P": 35, "L": 37, "J": 38, "K": 40, "N": 45, "M": 46,
+    "TAB": 48, "SPACE": 49, "ENTER": 36, "RETURN": 36, "ESC": 53, "ESCAPE": 53,
+    "BACKSPACE": 51, "DELETE": 117, "HOME": 115, "END": 119, "PAGEUP": 116,
+    "PAGEDOWN": 121, "LEFT": 123, "RIGHT": 124, "DOWN": 125, "UP": 126,
+}
+DARWIN_KEY_CODES.update({
+    "F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96, "F6": 97,
+    "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111,
+})
 
 
 def parse_accelerator(value: str) -> frozenset[int]:
@@ -41,18 +60,36 @@ def parse_accelerator(value: str) -> frozenset[int]:
     return frozenset(keys)
 
 
+def parse_accelerator_names(value: str) -> tuple[frozenset[str], str]:
+    modifiers: set[str] = set()
+    normal_key = ""
+    for part in value.split("+"):
+        key = part.strip().replace(" ", "").upper()
+        if key in ("COMMANDORCONTROL", "CMDORCTRL"):
+            key = "CONTROL"
+        if key == "OPTION":
+            key = "ALT"
+        if key == "CMD":
+            key = "COMMAND"
+        if key in MODIFIER_NAMES:
+            modifiers.add(key)
+            continue
+        if normal_key:
+            raise SystemExit(f"Only one non-modifier key is supported on macOS: {value}")
+        normal_key = key
+    if not normal_key:
+        raise SystemExit(f"macOS dictation hotkey needs one non-modifier key: {value}")
+    if normal_key not in DARWIN_KEY_CODES:
+        raise SystemExit(f"Unsupported macOS hotkey key: {normal_key}")
+    return frozenset(modifiers), normal_key
+
+
 def emit(line: str) -> None:
     print(line, flush=True)
 
 
-def main() -> int:
-    if sys.platform != "win32":
-        raise SystemExit("dictation-hotkey-hook is Windows-only")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--accelerator", required=True)
-    args = parser.parse_args()
-    chord = parse_accelerator(args.accelerator)
+def main_windows(accelerator: str) -> int:
+    chord = parse_accelerator(accelerator)
 
     user32 = ctypes.windll.user32
 
@@ -132,6 +169,98 @@ def main() -> int:
     finally:
         user32.UnhookWindowsHookEx(hook)
     return 0
+
+
+def main_darwin(accelerator: str) -> int:
+    try:
+        import Quartz
+        import CoreFoundation
+    except ImportError as exc:
+        raise SystemExit("Missing PyObjC Quartz/CoreFoundation packages for macOS dictation hotkey hook.") from exc
+
+    modifiers, normal_key = parse_accelerator_names(accelerator)
+    target_key_code = DARWIN_KEY_CODES[normal_key]
+    required_flags = 0
+    if "CONTROL" in modifiers or "CTRL" in modifiers:
+        required_flags |= Quartz.kCGEventFlagMaskControl
+    if "SHIFT" in modifiers:
+        required_flags |= Quartz.kCGEventFlagMaskShift
+    if "ALT" in modifiers or "OPTION" in modifiers:
+        required_flags |= Quartz.kCGEventFlagMaskAlternate
+    if "COMMAND" in modifiers or "CMD" in modifiers:
+        required_flags |= Quartz.kCGEventFlagMaskCommand
+
+    active = False
+
+    def has_required_flags(event) -> bool:
+        flags = Quartz.CGEventGetFlags(event)
+        return (flags & required_flags) == required_flags
+
+    def callback(proxy, event_type, event, refcon):
+        del proxy, refcon
+        nonlocal active
+        if event_type == Quartz.kCGEventTapDisabledByTimeout:
+            Quartz.CGEventTapEnable(tap, True)
+            return event
+        if event_type == Quartz.kCGEventFlagsChanged:
+            if active and not has_required_flags(event):
+                active = False
+                emit("DICTATE_STOP")
+                return None
+            return event
+        if event_type not in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp):
+            return event
+        key_code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+        if key_code != target_key_code:
+            return event
+        if event_type == Quartz.kCGEventKeyDown and has_required_flags(event):
+            if not active:
+                active = True
+                emit("DICTATE_START")
+            return None
+        if event_type == Quartz.kCGEventKeyUp and active:
+            active = False
+            emit("DICTATE_STOP")
+            return None
+        return event
+
+    mask = (
+        (1 << Quartz.kCGEventKeyDown)
+        | (1 << Quartz.kCGEventKeyUp)
+        | (1 << Quartz.kCGEventFlagsChanged)
+        | (1 << Quartz.kCGEventTapDisabledByTimeout)
+    )
+    tap = Quartz.CGEventTapCreate(
+        Quartz.kCGSessionEventTap,
+        Quartz.kCGHeadInsertEventTap,
+        Quartz.kCGEventTapOptionDefault,
+        mask,
+        callback,
+        None,
+    )
+    if not tap:
+        raise SystemExit("Could not create macOS dictation event tap. Grant Terminal Talk Accessibility permission.")
+    run_loop_source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+    CoreFoundation.CFRunLoopAddSource(
+        CoreFoundation.CFRunLoopGetCurrent(),
+        run_loop_source,
+        CoreFoundation.kCFRunLoopCommonModes,
+    )
+    Quartz.CGEventTapEnable(tap, True)
+    emit("DICTATE_HOOK_READY")
+    CoreFoundation.CFRunLoopRun()
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--accelerator", required=True)
+    args = parser.parse_args()
+    if sys.platform == "win32":
+        return main_windows(args.accelerator)
+    if sys.platform == "darwin":
+        return main_darwin(args.accelerator)
+    raise SystemExit("dictation-hotkey-hook is only supported on Windows and macOS")
 
 
 if __name__ == "__main__":

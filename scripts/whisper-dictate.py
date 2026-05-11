@@ -646,6 +646,39 @@ def copy_to_clipboard(text: str) -> None:
             return
 
 
+def paste_into_active_app(*, press_enter: bool) -> None:
+    if sys.platform == "darwin":
+        subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down'],
+            check=False,
+        )
+        if press_enter:
+            time.sleep(0.08)
+            subprocess.run(
+                ["osascript", "-e", 'tell application "System Events" to key code 36'],
+                check=False,
+            )
+        return
+    if os.name == "nt":
+        return
+    with contextlib.suppress(FileNotFoundError):
+        subprocess.run(["xdotool", "key", "ctrl+v"], check=False)
+        if press_enter:
+            time.sleep(0.08)
+            subprocess.run(["xdotool", "key", "Return"], check=False)
+
+
+def strip_terminal_dictation_commands(text: str) -> tuple[str, bool]:
+    press_enter = False
+    enter_pattern = re.compile(r"(?is)\s*(?:press\s+enter|send\s+it|submit\s+that)[.!?]*\s*$")
+    stop_pattern = re.compile(r"(?is)\s*(?:hey\s+jarvis\s+)?(?:dictation\s+stop|stop\s+dictation|finish\s+dictation)[.!?]*\s*$")
+    if enter_pattern.search(text):
+        press_enter = True
+        text = enter_pattern.sub("", text).strip()
+    text = stop_pattern.sub("", text).strip()
+    return text, press_enter
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Local Whisper transcription")
     source = parser.add_mutually_exclusive_group(required=True)
@@ -655,6 +688,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-dir", type=Path, default=repo_root() / ".codex-transcribe-cache")
     parser.add_argument("--language", default="en")
     parser.add_argument("--copy", action="store_true", help="Copy transcript to clipboard")
+    parser.add_argument("--paste", action="store_true", help="Paste transcript into the active app after copying")
+    parser.add_argument("--json", action="store_true", help="Emit a compact JSON status object")
     parser.add_argument("--out", type=Path, help="Write transcript to this file")
     parser.add_argument("--keep-wav", type=Path, help="When recording, save the captured WAV here")
     parser.add_argument("--segments-out", type=Path, help="Write Whisper timing metadata to this JSON file")
@@ -704,6 +739,9 @@ def main() -> int:
         cleanup_model=args.cleanup_model,
         cleanup_timeout=args.cleanup_timeout,
     )
+    press_enter = False
+    if args.paste or args.json:
+        transcript, press_enter = strip_terminal_dictation_commands(transcript)
     if args.segments_out:
         write_timing_metadata(args.segments_out, timing_result, formatted_transcript, transcript)
 
@@ -711,10 +749,26 @@ def main() -> int:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(transcript + "\n", encoding="utf-8")
 
-    if args.copy:
+    if args.copy or args.paste:
         copy_to_clipboard(transcript)
+    if args.paste:
+        time.sleep(0.15)
+        if transcript:
+            paste_into_active_app(press_enter=press_enter)
 
-    print(transcript)
+    if args.json:
+        print(json.dumps({
+            "ok": True,
+            "transcript": transcript,
+            "path": str(args.out or ""),
+            "audio_path": str(args.keep_wav or ""),
+            "timing_path": str(args.segments_out or ""),
+            "pasted": bool(args.paste),
+            "enter_pressed": bool(args.paste and press_enter),
+            "copied": bool(args.copy or args.paste),
+        }, separators=(",", ":")))
+    else:
+        print(transcript)
     return 0
 
 

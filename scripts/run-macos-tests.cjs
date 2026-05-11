@@ -80,6 +80,8 @@ test('mac helper Python files are included in asarUnpack for direct execution', 
     '**/voice_command_recognize_mac.py',
     '**/statusline.py',
     '**/claude_footer_scrape.py',
+    '**/whisper-dictate.py',
+    '**/dictation-hotkey-hook.py',
   ]) {
     assert(unpack.includes(rel), `asarUnpack missing ${rel}`);
   }
@@ -223,6 +225,27 @@ test('wake-word listener dispatches to the mac Speech recognizer under sys.execu
   }
 });
 
+test('local Whisper dictation is wired on macOS instead of Windows-only', () => {
+  const src = read('app/lib/dictation.js');
+  const py = read('app/whisper-dictate.py');
+  assertNotIncludes(src, 'Local dictation is Windows-only in this build', 'Windows-only dictation guard');
+  assertIncludes(src, "platform === 'win32' ? 'whisper-dictate.ps1' : 'whisper-dictate.py'", 'platform-specific dictation script');
+  assertIncludes(src, 'command = pythonExe', 'mac dictation should spawn Python directly');
+  assertIncludes(src, "'--json'", 'mac dictation JSON status');
+  assertIncludes(src, "'--paste'", 'mac paste flag');
+  assertIncludes(py, 'pbcopy', 'mac clipboard support');
+  assertIncludes(py, 'System Events', 'mac paste automation');
+  assertIncludes(py, '--json', 'Python JSON mode');
+  assertIncludes(py, '--paste', 'Python paste mode');
+  const main = read('app/main.js');
+  const hook = read('app/dictation-hotkey-hook.py');
+  assertIncludes(main, "process.platform === 'darwin'", 'mac low-level dictation hook enabled');
+  assertIncludes(main, "process.platform !== 'win32' && process.platform !== 'darwin'", 'mac dictation hotkeys owned by hook');
+  assertIncludes(hook, 'CGEventTapCreate', 'mac dictation hook uses Quartz event tap');
+  assertIncludes(hook, 'DICTATE_START', 'mac dictation hook emits start');
+  assertIncludes(hook, 'DICTATE_STOP', 'mac dictation hook emits stop');
+});
+
 section('POSIX hooks and installer');
 
 test('all macOS/POSIX hook wrappers delegate to the shared runner', () => {
@@ -294,6 +317,9 @@ test('install.sh enables current Codex hooks feature and does not write deprecat
   const src = read('install.sh');
   assertIncludes(src, "set_key(lines, 'features', 'hooks', 'true')", 'features.hooks writer');
   assertIncludes(src, "line.split('=', 1)[0].strip() != 'codex_hooks'", 'deprecated flag cleanup');
+  assertIncludes(src, '.codex-transcribe-pkgs', 'local Whisper package target');
+  assertIncludes(src, 'openai-whisper', 'local Whisper dependency install');
+  assertIncludes(src, 'dictation-unavailable.flag', 'local Whisper install failure marker');
   assertNotIncludes(src, "set_key(lines, 'features', 'codex_hooks'", 'deprecated codex_hooks writer');
   for (const hook of [
     'codex-session-start.sh',

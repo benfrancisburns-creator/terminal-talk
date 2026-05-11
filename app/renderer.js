@@ -1027,7 +1027,7 @@ if (transcriptPanelEl && transcriptToggleBtn && transcriptListEl) {
   transcriptPanel.mount();
 }
 
-let dictationPanel = window.TT_DICTATION_PANEL && dictationListEl
+const dictationPanel = window.TT_DICTATION_PANEL && dictationListEl
   ? window.TT_DICTATION_PANEL.createDictationPanel({
       api: window.api, recordBtn: dictationRecordBtn, listEl: dictationListEl,
       showStatus: (...args) => _showStatusToast(...args),

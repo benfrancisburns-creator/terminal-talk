@@ -18164,6 +18164,37 @@ describe('SETTINGS PANEL LAYOUT', () => {
       throw new Error('Shortcuts tab must render the Start dictation hotkey input');
     }
   });
+
+  it('local Whisper dictation has a macOS Python runner path', () => {
+    const { EventEmitter } = require('events');
+    const { createDictationController } = require('../app/lib/dictation');
+    const calls = [];
+    const fakeSpawn = (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = () => {};
+      return proc;
+    };
+    const controller = createDictationController({
+      spawn: fakeSpawn,
+      platform: 'darwin',
+      pythonExe: '/venv/bin/python',
+      appDir: path.join(__dirname, '..', 'app'),
+      installDir: path.join(os.tmpdir(), 'tt-dictation-test'),
+      getConfig: () => ({ dictation: { cleanup: true, cleanup_provider: 'local', save_timing: true, keep_audio: true } }),
+    });
+    const started = controller.start({ paste: true, source: 'test', externalStop: true, maxSeconds: 1200 });
+    assertTruthy(started.ok, started.error || 'dictation did not start');
+    assertEqual(calls.length, 1, 'mac dictation should spawn one Python process');
+    assertEqual(calls[0].cmd, '/venv/bin/python', 'mac dictation must use the configured Python executable');
+    for (const needle of ['whisper-dictate.py', '--record', '--json', '--paste', '--stop-file', '--no-silence-stop', '--segments-out', '--keep-wav']) {
+      if (!calls[0].args.some((arg) => String(arg).includes(needle))) {
+        throw new Error(`mac dictation args missing ${needle}: ${JSON.stringify(calls[0].args)}`);
+      }
+    }
+  });
 });
 
 describe('CODEX TERMINAL IDENTITY', () => {

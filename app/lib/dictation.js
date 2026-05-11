@@ -7,6 +7,7 @@ function createDictationController(deps = {}) {
     path = require('node:path'),
     platform = process.platform,
     powershellExe = 'powershell.exe',
+    pythonExe = 'python3',
     appDir,
     installDir,
     getWin = () => null,
@@ -32,7 +33,7 @@ function createDictationController(deps = {}) {
     } catch {}
   }
 
-  function findScript(name = 'whisper-dictate.ps1') {
+  function findScript(name = platform === 'win32' ? 'whisper-dictate.ps1' : 'whisper-dictate.py') {
     const candidates = [
       path.join(appDir, name),
       path.resolve(appDir, '..', 'scripts', name),
@@ -43,6 +44,12 @@ function createDictationController(deps = {}) {
       } catch {}
     }
     return null;
+  }
+
+  function timestamp() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
 
   function parseJson(stdout) {
@@ -126,11 +133,6 @@ function createDictationController(deps = {}) {
       sendStatus({ state: 'busy' });
       return { ok: false, error: 'Dictation is already running.' };
     }
-    if (platform !== 'win32') {
-      const error = 'Local dictation is Windows-only in this build.';
-      sendStatus({ state: 'error', error });
-      return { ok: false, error };
-    }
     const script = findScript();
     if (!script) {
       const error = 'Dictation script is missing.';
@@ -138,7 +140,7 @@ function createDictationController(deps = {}) {
       return { ok: false, error };
     }
 
-    const releaseScript = holdAccelerator ? findScript('watch-hotkey-release.ps1') : null;
+    const releaseScript = platform === 'win32' && holdAccelerator ? findScript('watch-hotkey-release.ps1') : null;
     const holdMode = !!(externalStop || (holdAccelerator && releaseScript));
     if (holdAccelerator && !releaseScript) diag('dictation: release watcher missing; falling back to silence stop');
 
@@ -146,37 +148,68 @@ function createDictationController(deps = {}) {
     sendStatus({ state: 'recording', paste, source, externalStop: !!externalStop });
     sendMicCaptured();
 
-    const args = [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      script,
-      '-Record',
-      '-Json',
-      paste ? '-Paste' : '-Copy',
-    ];
+    let command = powershellExe;
+    const args = platform === 'win32'
+      ? [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          script,
+          '-Record',
+          '-Json',
+          paste ? '-Paste' : '-Copy',
+        ]
+      : [
+          script,
+          '--record',
+          '--json',
+          paste ? '--paste' : '--copy',
+          '--model-dir',
+          path.resolve(appDir, '..', '.codex-transcribe-cache'),
+        ];
+    if (platform !== 'win32') command = pythonExe;
     const cleanupCfg = dictationConfig();
-    args.push(
-      '-Cleanup',
-      cleanupCfg.cleanup,
-      '-CleanupProvider',
-      cleanupCfg.provider,
-      '-CleanupModel',
-      cleanupCfg.model,
-      '-CleanupTimeout',
-      String(cleanupCfg.timeout),
-    );
-    if (cleanupCfg.keepAudio) args.push('-KeepWav');
-    if (cleanupCfg.saveTiming) args.push('-SaveTiming');
+    if (platform === 'win32') {
+      args.push(
+        '-Cleanup',
+        cleanupCfg.cleanup,
+        '-CleanupProvider',
+        cleanupCfg.provider,
+        '-CleanupModel',
+        cleanupCfg.model,
+        '-CleanupTimeout',
+        String(cleanupCfg.timeout),
+      );
+      if (cleanupCfg.keepAudio) args.push('-KeepWav');
+      if (cleanupCfg.saveTiming) args.push('-SaveTiming');
+    } else {
+      const stamp = timestamp();
+      const outPath = path.join(dictationDir, `dictation-${stamp}.txt`);
+      args.push(
+        '--out',
+        outPath,
+        '--cleanup',
+        cleanupCfg.cleanup,
+        '--cleanup-provider',
+        cleanupCfg.provider,
+        '--cleanup-model',
+        cleanupCfg.model,
+        '--cleanup-timeout',
+        String(cleanupCfg.timeout),
+      );
+      if (cleanupCfg.keepAudio) args.push('--keep-wav', path.join(dictationDir, `dictation-${stamp}.wav`));
+      if (cleanupCfg.saveTiming) args.push('--segments-out', path.join(dictationDir, `dictation-${stamp}.segments.json`));
+    }
     if (holdMode) {
       try { fs.mkdirSync(dictationDir, { recursive: true }); } catch {}
       stopFilePath = path.join(dictationDir, `dictation-stop-${Date.now()}-${process.pid}.flag`);
       try { fs.unlinkSync(stopFilePath); } catch {}
-      args.push('-StopFile', stopFilePath, '-NoSilenceStop');
+      if (platform === 'win32') args.push('-StopFile', stopFilePath, '-NoSilenceStop');
+      else args.push('--stop-file', stopFilePath, '--no-silence-stop');
     }
     const boundedMaxSeconds = Math.max(0, Math.min(1200, Number(maxSeconds) || 0));
-    if (boundedMaxSeconds > 0) args.push('-MaxSeconds', String(boundedMaxSeconds));
+    if (boundedMaxSeconds > 0) args.push(platform === 'win32' ? '-MaxSeconds' : '--max-seconds', String(boundedMaxSeconds));
 
     const childEnv = { ...process.env };
     if (cleanupCfg.provider === 'openai' && cleanupCfg.cleanup !== 'off') {
@@ -187,7 +220,7 @@ function createDictationController(deps = {}) {
     let stdout = '';
     let stderr = '';
     let sentTranscribing = false;
-    const child = spawn(powershellExe, args, {
+    const child = spawn(command, args, {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: childEnv,
