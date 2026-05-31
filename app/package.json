@@ -82,8 +82,6 @@
       "**/dictation-hotkey-hook.py",
       "**/voice_command_recognize_mac.py",
       "**/mic_watcher_mac.py",
-      "**/whisper-dictate.py",
-      "**/dictation-hotkey-hook.py",
       "**/*.ps1"
     ],
     "win": {

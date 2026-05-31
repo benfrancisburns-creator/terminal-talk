@@ -513,16 +513,23 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
     assertFalsy(h.ctl.isBusy());
   });
 
-  it('refuses to run off win32', () => {
+  it('runs via the python whisper runner on non-win32 (macOS parity)', () => {
+    // macOS parity (4d405be) made dictation cross-platform: off win32 it
+    // spawns pythonExe with whisper-dictate.py instead of powershell + .ps1.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-mac-'));
-    fs.writeFileSync(path.join(dir, 'whisper-dictate.ps1'), '# stub');
+    fs.writeFileSync(path.join(dir, 'whisper-dictate.py'), '# stub');
+    const calls = [];
+    const children = [];
     const ctl = createDictationController({
-      spawn: () => { throw new Error('should not spawn'); },
-      fs, path, platform: 'darwin', appDir: dir, installDir: dir,
+      spawn: (exe, args) => { calls.push({ exe, args }); const c = makeFakeChild(); children.push(c); return c; },
+      fs, path, platform: 'darwin', pythonExe: '/usr/bin/python3', appDir: dir, installDir: dir,
+      getWin: () => ({ isDestroyed: () => false, webContents: { send: () => {} } }),
+      getConfig: () => ({ dictation: {} }),
     });
-    const r = ctl.start({});
-    assertEqual(r.ok, false);
-    assertTruthy(/Windows-only/.test(r.error));
+    assertEqual(ctl.start({}).ok, true);
+    assertEqual(calls[0].exe, '/usr/bin/python3');
+    assertTruthy(calls[0].args.some((a) => /whisper-dictate\.py$/.test(String(a))), 'should spawn the .py runner');
+    children[0].emit('exit', 0);  // clear the hard-timeout timer so node can exit
   });
 
   it('errors when the whisper script is missing', () => {

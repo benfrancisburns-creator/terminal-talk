@@ -172,8 +172,8 @@ def main_windows(accelerator: str) -> int:
 
 def main_darwin(accelerator: str) -> int:
     try:
-        import Quartz
         import CoreFoundation
+        import Quartz
     except ImportError as exc:
         raise SystemExit("Missing PyObjC Quartz/CoreFoundation packages for macOS dictation hotkey hook.") from exc
 
