@@ -138,6 +138,18 @@
       }
     }
 
+    // A single physical right-click fires BOTH `mousedown` (button 2) and
+    // `contextmenu`. Worse: the first delete calls renderDots() synchronously,
+    // which rebuilds the whole strip — so the second event lands on a DIFFERENT
+    // dot and deletes IT too ("two deletes at once"). Collapse both events of
+    // one gesture into a single delete with a short instance-level time guard.
+    _handleDeleteGesture(path) {
+      const now = Date.now();
+      if (now - (this._lastDeleteGestureAt || 0) < 300) return;
+      this._lastDeleteGestureAt = now;
+      if (this._onDelete) this._onDelete(path);
+    }
+
     _buildDot(f, fname, short, viewState) {
       const { currentPath, currentIsManual, heardPaths, manualPlayedPaths, sessionAssignments } = viewState;
       const dot = document.createElement('button');
@@ -194,7 +206,7 @@
         if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
           e.preventDefault();
           e.stopPropagation();
-          if (this._onDelete) this._onDelete(f.path);
+          this._handleDeleteGesture(f.path);
         }
       });
       dot.addEventListener('click', (e) => {
@@ -206,7 +218,7 @@
       });
       dot.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (this._onDelete) this._onDelete(f.path);
+        this._handleDeleteGesture(f.path);
       });
       return dot;
     }
