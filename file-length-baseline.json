@@ -4,7 +4,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 20356,
+    "scripts/run-tests.cjs": 20363,
     "app/renderer.js": 2724,
     "app/main.js": 2722,
     "scripts/mascot-spin.cjs": 2269,
