@@ -552,6 +552,7 @@ let pendingQueue = [];
 const deleteTimers = new Map();
 const unplayedEphemeralTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
+const AUTOPLAY_DRAIN_INTERVAL_MS = 1500;
 // Auto-prune delay is user-configurable via the Playback settings panel.
 // The value is a single seconds count that applies to both manual and
 // auto plays — keeping one number avoids the "which timer did that use?"
@@ -943,9 +944,7 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   onPlaybackStop: (p) => {
     clearCollapsedPlaybackSignal(p);
   },
-  onPlayNextPending: () => {
-    if (shouldAutoplayQueue()) playNextPending();
-  },
+  onPlayNextPending: () => drainAutoplayQueue(),
   onRenderDots: () => renderDots(),
 });
 audioPlayer.mount();
@@ -1219,6 +1218,7 @@ async function clearAllPlayed() {
 }
 
 function playNextPending() {
+  if (!audioPlayer.isIdle() || audioPlayer.isSystemAutoPaused()) return;
   // 1. Priority (hey-jarvis highlight-to-speak) — always plays regardless
   //    of mute or focus; the user explicitly asked for it.
   while (priorityQueue.length > 0) {
@@ -1276,6 +1276,11 @@ function playNextPending() {
   }
 }
 
+function drainAutoplayQueue() {
+  if (!shouldAutoplayQueue() || !audioPlayer.isIdle() || audioPlayer.isSystemAutoPaused()) return;
+  playNextPending();
+}
+const autoplayDrainTimer = setInterval(drainAutoplayQueue, AUTOPLAY_DRAIN_INTERVAL_MS); autoplayDrainTimer?.unref?.();
 async function initialLoad() {
   const resp = await window.api.getQueue();
   const files = Array.isArray(resp) ? resp : (resp && resp.files) || [];
@@ -1314,9 +1319,7 @@ async function initialLoad() {
   // Capture-only transcript demos need the seeded clips to stay in the
   // queue so the panel can show spoken/original rows while the external
   // narration runs. Normal app boots and other demos keep autoplay.
-  if (audioPlayer.isIdle() && shouldAutoplayQueue()) {
-    playNextPending();
-  }
+  drainAutoplayQueue();
 }
 
 window.api.onQueueUpdated((payload) => {
@@ -1380,9 +1383,7 @@ window.api.onQueueUpdated((payload) => {
   }
   renderDots();
 
-  if (audioPlayer.isIdle() && shouldAutoplayQueue()) {
-    playNextPending();
-  }
+  drainAutoplayQueue();
 });
 
 // Generic transient toast for status messages (separate from the
@@ -1475,9 +1476,8 @@ window.api.onPriorityPlay((paths) => {
   const aborted = audioPlayer.abortIfAutoPlayed();
   if (aborted) playedPaths.delete(aborted);
   renderDots();
-  if (audioPlayer.isIdle() && shouldAutoplayQueue()) playNextPending();
+  drainAutoplayQueue();
 });
-
 
 window.api.onListeningState((on) => audioPlayer.playToggleTone(on));
 

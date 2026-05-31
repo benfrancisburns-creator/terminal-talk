@@ -1,43 +1,7 @@
-// EX7e — audio playback surface extracted from app/renderer.js. Final
-// component in the v0.4 renderer refactor.
-//
-// Owns:
-//   - the <audio> element lifecycle (play/pause/ended/error/stalled/
-//     waiting/playing/canplay/seeking/timeupdate/loadedmetadata);
-//   - play/pause/back10/fwd10 button wiring;
-//   - the scrubber mascot (position, walking class, Jarvis-mode swap);
-//   - the scrubber rAF tick loop + spinner verb-cloud trail;
-//   - scrub-direction detection (forward / backward mascot swap);
-//   - stall recovery (skip to next clip if 3 s of no forward progress);
-//   - device-change re-binding;
-//   - Web Audio pause tone (toggle listening audible cue).
-//
-// Behaviour preserved byte-for-byte from the module-level code that
-// used to live around lines 401-1060 of renderer.js. The ended-handler
-// continuation logic (user-click forward-in-time vs priority drain vs
-// playNextPending fallback) keeps every condition. Stall recovery
-// still fires exactly one sweep per hang — _stallRecoveryTimer gate
-// preserved.
-//
-// State ownership:
-//   - currentPath, currentIsManual, currentIsUserClick, userScrubbing:
-//     lived as renderer module globals; now instance state. Exposed
-//     read-only via getCurrentPath / isIdle / isUserScrubbing for the
-//     few external readers (DotStrip, deleteDot, onPriorityPlay).
-//   - Shared collections (queue, playedPaths, heardPaths, pendingQueue)
-//     stay in renderer.js because playNextPending also reads/mutates
-//     them. The component reads them via getters and mutates them via
-//     callbacks (markPlayed / markHeard / removePending).
-//
-// External call points exposed by this component:
-//   - playPath(p, manual?, userClick?) → boolean
-//   - abort() → void  (unconditional pause + clear currentPath)
-//   - abortIfAutoPlayed() → previousPath | null
-//   - getCurrentPath() → string | null
-//   - isIdle() → boolean
-//   - isUserScrubbing() → boolean
-//   - playToggleTone(on) → void
-//   - positionScrubberMascot() → void  (called on initial load + resize)
+// Audio playback component extracted from renderer.js. Owns the <audio>
+// lifecycle, scrubber controls/animation, stall recovery, device rebinding,
+// media-session pause handoff, and the public playback-control methods used
+// by toolbar buttons and voice commands.
 
 (function (root, factory) {
   'use strict';
@@ -58,6 +22,7 @@
 
   const MASCOT_W = 20;
   const STALL_RECOVERY_MS = 3000;
+  const PLAY_START_TIMEOUT_MS = 5000;
 
   class AudioPlayer extends Component {
     constructor(deps = {}) {
@@ -154,25 +119,8 @@
       this._currentIsManual = false;
       this._currentIsUserClick = false;
       this._userScrubbing = false;
-      // TWO orthogonal "suppress playback" flags, each owned by exactly
-      // one source. Playback (and heartbeat) is suppressed while EITHER
-      // is set. Previously a single _systemAutoPaused was shared between
-      // both sources; Chromium's audio-focus subsystem fires spurious
-      // mediaSession 'play' actions during Wispr Flow dictation that
-      // would clear the shared flag while the mic was still captured →
-      // heartbeat fired audibly over the dictation. Splitting makes
-      // each source authoritative for its own state. (#30 regression
-      // 2026-04-25; original HB4 fix described this design but only
-      // the comments shipped, not the code.)
-      //
-      //   _micCaptured       — set by mic-watcher via systemAutoPause,
-      //                        cleared by mic-watcher via systemAutoResume.
-      //                        mediaSession handlers never touch this.
-      //   _systemAutoPaused  — set by MediaSession 'pause' action (OS
-      //                        media key, audio-focus pause), cleared by
-      //                        'play' action. mic-watcher never touches
-      //                        this. isSystemAutoPaused() reports the
-      //                        union.
+      // Separate mic-capture and media-session pause flags; each source
+      // clears only its own flag. isSystemAutoPaused() reports their union.
       this._micCaptured = false;
       this._systemAutoPaused = false;
 
@@ -189,6 +137,8 @@
       this._lastScrubberValue = 0;
       this._scrubDirTimer = null;
       this._stallRecoveryTimer = null;
+      this._playStartTimer = null;
+      this._playStartPath = null;
     }
 
     // Surface play() rejections instead of swallowing them. play() can
@@ -217,7 +167,12 @@
       const a = this._audio;
       if (!a) return true;
       if (!this._currentPath) return !a.src || a.ended || a.paused;
-      return !a.src || a.ended || (a.paused && a.currentTime === 0);
+      // Once a clip has been selected, treat it as busy until it ends,
+      // errors, is aborted, or play() rejects. During Chromium's local
+      // file load gap `paused` can still be true at currentTime=0; calling
+      // this idle let renderer queue updates start another clip, producing
+      // active-dot flashes with no audible playback.
+      return !a.src || a.ended;
     }
 
     isUserScrubbing() { return this._userScrubbing; }
@@ -247,26 +202,13 @@
       }
     }
 
-    // System-initiated pause — call when another app grabs the mic
-    // (Wispr Flow, Windows Voice Access, VoIP, etc.) via the main-side
-    // mic-watcher. Sets _systemAutoPaused so systemAutoResume() later
-    // knows to pick playback back up from the exact same point AND
-    // so the heartbeat timer / playPath guard can see the capture.
-    //
-    // The flag represents "external app is using the mic", NOT "we
-    // paused something". Those are related but distinct — on a silent
-    // stretch there's nothing playing to pause, but heartbeat + any
-    // inbound clip must still be suppressed. Previous version (pre-
-    // 2026-04-24) only set the flag when there was a live audio
-    // element to pause, so heartbeat fired over Wispr Flow dictation
-    // during response-silence windows. Observed live 2026-04-23:
-    //   22:59:12 MIC_CAPTURED Wispr Flow
-    //   22:59:15 heartbeat: "Working"     ← race: flag never set
-    //   22:59:23 MIC_RELEASED
+    // Another app has the mic. Suppress new playback even if nothing is
+    // currently playing, and pause any in-flight clip.
     systemAutoPause() {
       // mic-watcher source — owns _micCaptured exclusively. Don't touch
       // _systemAutoPaused (that's mediaSession territory).
       this._micCaptured = true;
+      this._clearPlayStartTimeout();
       // Pause the in-flight clip if there is one. Guarded because
       // pausing an ended / src-less <audio> is a no-op in Chromium
       // but pause() throws NotAllowedError mid-teardown in rare races.
@@ -275,13 +217,8 @@
       try { this._audio.pause(); } catch {}
     }
 
-    // System-initiated resume — call when the external mic-grabber
-    // releases. Only resumes if WE paused via systemAutoPause (flag
-    // guard); a user-initiated pause in the meantime stays paused.
-    // After clearing the paused flag we ALSO trigger playNextPending
-    // so any clips that arrived in the queue during the dictation
-    // window (which playPath refused while _systemAutoPaused was true)
-    // now start playing in order.
+    // Mic released: resume the paused clip or drain clips that arrived
+    // while playback was suppressed.
     systemAutoResume() {
       // mic-watcher source — clears its own flag only. If mediaSession
       // independently paused us during the mic window, leave that state
@@ -291,9 +228,12 @@
       if (this._systemAutoPaused) return;  // OS pause still active — respect it
       if (this._audio && this._audio.src && this._audio.paused && !this._audio.ended) {
         try {
+          const p = this._currentPath;
+          this._armPlayStartTimeout(p);
           const r = this._audio.play();
           if (r && typeof r.then === 'function') {
-            r.catch((e) => this._handlePlayError(this._currentPath, e));
+            r.then(() => this._clearPlayStartTimeout(p))
+              .catch((e) => this._handlePlayError(p, e));
           }
         } catch (e) { this._handlePlayError(this._currentPath, e); }
       } else {
@@ -307,13 +247,13 @@
       const queue = this._getQueue();
       const idx = queue.findIndex((f) => f.path === p);
       if (idx < 0) return false;
-      // HB4 — external app (Wispr Flow / Voice Access / VoIP) is
-      // currently using the mic. systemAutoPause() already pauses
-      // any playing clip, but without this guard a new clip arriving
-      // in the queue would be playPath'd and .play()'d over the
-      // pause, talking over the user's dictation. EXCEPTION: manual
-      // user-clicks override — if the user explicitly clicks a dot
-      // while dictating, respect their intent.
+      if (userClick) {
+        // A real user action should unstick a stale OS/media-session pause.
+        // Mic capture remains authoritative via _micCaptured.
+        this._systemAutoPaused = false;
+      }
+      // Suppress passive arrivals while another app owns audio focus; an
+      // explicit user click still wins.
       if ((this._micCaptured || this._systemAutoPaused) && !userClick) {
         return false;
       }
@@ -335,24 +275,18 @@
         && typeof this._clipPaths.isHeartbeatClip === 'function'
         && this._clipPaths.isHeartbeatClip(fn);
       this._audio.volume = (isHeartbeat ? 0.45 : 1.0) * this._masterVolume;
-      // Mark played/heard synchronously: callers (and tests) rely on
-      // this state being visible the moment playPath() returns. If
-      // play() later rejects (autoplay-blocked, AbortError on rapid
-      // src-change, NotAllowedError mid-teardown), failStarted logs
-      // the cause and — only if we're still the active clip — advances
-      // the queue so a stuck reject can't deadlock playback.
+      // Mark heard synchronously so dots update the moment playback is requested.
       this._markPlayed(p);
-      // Any clip that starts playback has been heard by the user,
-      // whether it started automatically or from an explicit click.
-      // Manual/user-click state is still tracked separately for
-      // auto-continue semantics.
       this._markHeard(p);
       if (manual) this._markManualPlayed(p);
       this._removePending(p);
       this._onRenderDots();
       const failStarted = (e) => {
+        this._clearPlayStartTimeout(p);
         this._handlePlayError(p, e);
         if (this._currentPath === p) {
+          try { this._audio.pause(); } catch {}
+          try { this._audio.src = ''; } catch {}
           this._currentPath = null;
           this._currentIsManual = false;
           this._currentIsUserClick = false;
@@ -360,9 +294,12 @@
           try { this._onPlayNextPending(); } catch {}
         }
       };
+      this._armPlayStartTimeout(p);
       const playPromise = this._audio.play();
       if (playPromise && typeof playPromise.then === 'function') {
-        playPromise.catch(failStarted);
+        playPromise
+          .then(() => this._clearPlayStartTimeout(p))
+          .catch(failStarted);
       }
       this._updateScrubberMode();
       return true;
@@ -370,6 +307,7 @@
 
     abort() {
       const was = this._currentPath;
+      this._clearPlayStartTimeout();
       try { this._audio.pause(); } catch {}
       this._audio.src = '';
       this._currentPath = null;
@@ -381,6 +319,7 @@
     abortIfAutoPlayed() {
       if (!this._currentPath || this._currentIsManual) return null;
       const was = this._currentPath;
+      this._clearPlayStartTimeout();
       try { this._audio.pause(); } catch {}
       this._audio.src = '';
       this._currentPath = null;
@@ -397,6 +336,7 @@
     // and safe to invoke when nothing is playing.
 
     pause() {
+      this._clearPlayStartTimeout();
       if (this._audio.src && !this._audio.paused) {
         try { this._audio.pause(); } catch {}
       }
@@ -404,9 +344,13 @@
 
     resume() {
       if (this._audio.src && this._audio.paused && !this._audio.ended) {
+        this._systemAutoPaused = false;
+        const p = this._currentPath;
+        this._armPlayStartTimeout(p);
         const r = this._audio.play();
         if (r && typeof r.then === 'function') {
-          r.catch((e) => this._handlePlayError(this._currentPath, e));
+          r.then(() => this._clearPlayStartTimeout(p))
+            .catch((e) => this._handlePlayError(p, e));
         }
         return;
       }
@@ -462,7 +406,7 @@
         .filter((f) => !heard.has(f.path))
         .sort((a, b) => a.mtime - b.mtime);
       const target = unheard[0] || queue[0];
-      if (target) this.playPath(target.path, true);
+      if (target) this.playPath(target.path, true, true);
     }
 
     // Wraps the native AudioContext to emit a two-tone cue on listening
@@ -521,6 +465,7 @@
         clearTimeout(this._stallRecoveryTimer);
         this._stallRecoveryTimer = null;
       }
+      this._clearPlayStartTimeout();
       if (this._scrubDirTimer) {
         clearTimeout(this._scrubDirTimer);
         this._scrubDirTimer = null;
@@ -552,8 +497,45 @@
     }
 
     _wireAudioPlayState() {
-      this._on(this._audio, 'play',  () => this._setPlayPauseIcons(true));
+      this._on(this._audio, 'play',  () => {
+        this._clearPlayStartTimeout(this._currentPath);
+        this._setPlayPauseIcons(true);
+      });
+      this._on(this._audio, 'playing', () => this._clearPlayStartTimeout(this._currentPath));
       this._on(this._audio, 'pause', () => this._setPlayPauseIcons(false));
+    }
+
+    _clearPlayStartTimeout(path = null) {
+      if (path && this._playStartPath && this._playStartPath !== path) return;
+      if (this._playStartTimer) {
+        clearTimeout(this._playStartTimer);
+        this._playStartTimer = null;
+      }
+      this._playStartPath = null;
+    }
+
+    _armPlayStartTimeout(p) {
+      if (!p) return;
+      this._clearPlayStartTimeout();
+      this._playStartPath = p;
+      this._playStartTimer = setTimeout(() => {
+        this._playStartTimer = null;
+        this._playStartPath = null;
+        if (this._currentPath !== p) return;
+        if (!this._audio || !this._audio.src || this._audio.ended) return;
+        if (!this._audio.paused || this._audio.currentTime > 0) return;
+        this._handlePlayError(p, new Error(`playback did not start within ${PLAY_START_TIMEOUT_MS}ms`));
+        try { this._audio.pause(); } catch {}
+        try { this._audio.src = ''; } catch {}
+        this._currentPath = null;
+        this._currentIsManual = false;
+        this._currentIsUserClick = false;
+        this._onRenderDots();
+        this._updateScrubberMode();
+        try { this._onPlaybackStop(p, { reason: 'play-start-timeout' }); } catch {}
+        try { this._onPlayNextPending(); } catch {}
+      }, PLAY_START_TIMEOUT_MS);
+      if (typeof this._playStartTimer.unref === 'function') this._playStartTimer.unref();
     }
 
     // ---- End / error / stall -----------------------------------------
@@ -564,6 +546,7 @@
         const justPlayed = this._currentPath;
         const wasManual = this._currentIsManual;
         const wasUserClick = this._currentIsUserClick;
+        this._clearPlayStartTimeout(justPlayed);
         this._currentPath = null;
         this._currentIsManual = false;
         this._currentIsUserClick = false;
@@ -637,6 +620,9 @@
       this._on(this._audio, 'error', () => {
         this._setPlayPauseIcons(false);
         const failed = this._currentPath;
+        this._clearPlayStartTimeout(failed);
+        try { this._audio.pause(); } catch {}
+        try { this._audio.src = ''; } catch {}
         this._currentPath = null;
         this._currentIsManual = false;
         this._currentIsUserClick = false;
@@ -677,6 +663,7 @@
         // made forward progress.
         if (this._audio.src && this._audio.paused === false && this._audio.readyState < 3) {
           const p = this._currentPath;
+          this._clearPlayStartTimeout(p);
           try { this._audio.pause(); } catch {}
           this._audio.src = '';
           this._currentPath = null;
@@ -752,6 +739,7 @@
           navigator.mediaSession.setActionHandler('pause', () => {
             if (!this._audio.src || this._audio.ended || this._audio.paused) return;
             this._systemAutoPaused = true;
+            this._clearPlayStartTimeout();
             try { this._audio.pause(); } catch {}
           });
           navigator.mediaSession.setActionHandler('play', () => {
@@ -762,9 +750,12 @@
             if (!this._audio.src || !this._audio.paused) return;
             this._systemAutoPaused = false;
             try {
+              const p = this._currentPath;
+              this._armPlayStartTimeout(p);
               const r = this._audio.play();
               if (r && typeof r.then === 'function') {
-                r.catch((e) => this._handlePlayError(this._currentPath, e));
+                r.then(() => this._clearPlayStartTimeout(p))
+                  .catch((e) => this._handlePlayError(p, e));
               }
             } catch (e) { this._handlePlayError(this._currentPath, e); }
           });
