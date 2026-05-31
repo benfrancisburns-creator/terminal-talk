@@ -977,6 +977,10 @@ function createIpcHandlers(deps) {
         const resolved = path.resolve(filePath);
         fs.unlinkSync(resolved);
         const why = typeof reason === 'string' ? reason : '';
+        // Diagnostic: every actual file deletion funnels through here. Logging
+        // the filename + reason lets us see, in _toolbar.log, whether one user
+        // delete produces one unlink or two (the "deletes two at once" report).
+        diag(`delete-file: reason=${why || 'manual'} file=${path.basename(resolved)}`);
         if (/^(?:played-auto-prune|played-ephemeral)$/.test(why) && /\.(?:mp3|wav)$/i.test(resolved)) {
           const markerPath = resolved.replace(/\.(?:mp3|wav)$/i, '.played.json');
           try {

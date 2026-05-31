@@ -20238,8 +20238,12 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
   });
 
   it('tt-doctor.sh runs end-to-end and exits cleanly with --no-net (smoke)', () => {
+    // MSYS/Git Bash (what `bash` resolves to on windows-latest and locally)
+    // maps `C:` to `/c/`, NOT the WSL `/mnt/c/`. Using /mnt/c made `tr` fail
+    // to open the file -> empty stdin -> bash ran nothing -> "did not reach
+    // Summary". /c/ is the correct drive-letter convention here.
     const doctorPath = path.join(__dirname, '..', 'scripts', 'tt-doctor.sh')
-      .replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+      .replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`);
     const r = spawnSync('bash', process.platform === 'win32'
       ? ['-c', `tr -d "\\r" < '${doctorPath.replace(/'/g, "'\\''")}' | bash -s -- --no-net`]
       : [doctorPath, '--no-net'],

@@ -4,13 +4,13 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 20363,
+    "scripts/run-tests.cjs": 20367,
     "app/renderer.js": 2724,
     "app/main.js": 2722,
     "scripts/mascot-spin.cjs": 2269,
     "app/synth_turn.py": 2171,
     "app/tool_narration.py": 1851,
-    "app/lib/ipc-handlers.js": 1236,
+    "app/lib/ipc-handlers.js": 1240,
     "app/lib/codex-session-watcher.js": 1086,
     "app/lib/codex-tool-narration.js": 1020,
     "app/lib/audio-player.js": 987,
