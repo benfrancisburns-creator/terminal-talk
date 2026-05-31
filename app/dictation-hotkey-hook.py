@@ -10,7 +10,6 @@ import ctypes
 import sys
 from ctypes import wintypes
 
-
 KEYS = {
     "CONTROL": 0x11, "CTRL": 0x11, "SHIFT": 0x10, "ALT": 0x12,
     "OPTION": 0x12, "WIN": 0x5B, "WINDOWS": 0x5B, "SUPER": 0x5B,

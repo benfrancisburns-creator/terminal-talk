@@ -28,7 +28,6 @@ import wave
 from collections import deque
 from pathlib import Path
 
-
 SAMPLE_RATE = 16_000
 CHUNK_SAMPLES = 1_280
 DEFAULT_MODEL = "base.en"
@@ -423,10 +422,7 @@ def apply_backtrack_commands(text: str) -> str:
         prefix = text[: command.start()].rstrip()
         suffix = text[command.end() :].lstrip(" ,.;:-")
         cut_at = max(prefix.rfind("."), prefix.rfind("?"), prefix.rfind("!"), prefix.rfind("\n"))
-        if cut_at >= 0:
-            text = (prefix[: cut_at + 1] + " " + suffix).strip()
-        else:
-            text = suffix.strip()
+        text = (prefix[: cut_at + 1] + " " + suffix).strip() if cut_at >= 0 else suffix.strip()
         command = re.search(r"(?i)\b(?:scratch that|delete that|ignore that|backtrack)\b", text)
     return text
 

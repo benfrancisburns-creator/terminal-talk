@@ -357,6 +357,296 @@ describe('PRUNE LIB (#29 sub-2000 extract)', () => {
   });
 });
 
+describe('DICTATION CONTROLLER (local Whisper)', () => {
+  const { EventEmitter } = require('events');
+  const { createDictationController } = require('../app/lib/dictation');
+
+  // A fake child process whose stdout/stderr/exit/error events we drive
+  // synchronously from the test, mirroring how the real PowerShell whisper
+  // process streams progress then emits a final JSON line + exit code.
+  function makeFakeChild() {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.kill = () => { child.killed = true; };
+    return child;
+  }
+
+  // Builds a controller with a temp install/app dir (so findScript() finds a
+  // stub whisper-dictate.ps1) and a fake spawn that records its invocations.
+  // Returns the controller plus capture buffers for assertions.
+  function makeController(configDict = {}, { apiKey = null, withScript = true } = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-'));
+    if (withScript) fs.writeFileSync(path.join(dir, 'whisper-dictate.ps1'), '# stub');
+    const spawnCalls = [];
+    const children = [];
+    const statuses = [];
+    let micCaptured = 0;
+    let resumed = 0;
+    const fakeSpawn = (exe, args, opts) => {
+      const child = makeFakeChild();
+      children.push(child);
+      spawnCalls.push({ exe, args, opts });
+      return child;
+    };
+    const win = {
+      isDestroyed: () => false,
+      webContents: { send: (_channel, payload) => statuses.push(payload) },
+    };
+    const ctl = createDictationController({
+      spawn: fakeSpawn,
+      fs,
+      path,
+      platform: 'win32',
+      appDir: dir,
+      installDir: dir,
+      getWin: () => win,
+      getConfig: () => ({ dictation: configDict }),
+      getApiKey: () => apiKey,
+      sendMicCaptured: () => { micCaptured++; },
+      sendResumePlayback: () => { resumed++; },
+    });
+    return {
+      ctl, dir, spawnCalls, children, statuses,
+      micCaptured: () => micCaptured,
+      resumed: () => resumed,
+      lastCall: () => spawnCalls[spawnCalls.length - 1],
+      // Resolve a started recording so its internal hard-timeout timer is
+      // cleared (otherwise a pending 5-min timer would keep node alive).
+      complete: (i = 0, { code = 0, stdout = '', stderr = '' } = {}) => {
+        const child = children[i];
+        if (stderr) child.stderr.emit('data', stderr);
+        if (stdout) child.stdout.emit('data', stdout);
+        child.emit('exit', code);
+      },
+    };
+  }
+
+  // argValue('-CleanupModel', args) -> the token after the flag, or undefined.
+  function argValue(flag, args) {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  }
+
+  it('passes local-cleanup defaults through to the whisper script args', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.start({ paste: true }).ok, true);
+    const args = h.lastCall().args;
+    assertEqual(argValue('-Cleanup', args), 'local');
+    assertEqual(argValue('-CleanupProvider', args), 'local');
+    assertEqual(argValue('-CleanupModel', args), 'gpt-5.4-mini');
+    assertEqual(argValue('-CleanupTimeout', args), '20');
+    assertTruthy(args.includes('-Paste'), 'paste:true should add -Paste');
+    assertTruthy(args.includes('-SaveTiming'), 'save_timing defaults on');
+    assertFalsy(args.includes('-KeepWav'), 'keep_audio defaults off');
+    assertEqual(h.micCaptured(), 1);
+    h.complete(0, { stdout: '{"ok":true,"transcript":"hi"}' });
+  });
+
+  it('emits -Copy (not -Paste) when paste is false', () => {
+    const h = makeController({});
+    h.ctl.start({ paste: false });
+    assertTruthy(h.lastCall().args.includes('-Copy'));
+    assertFalsy(h.lastCall().args.includes('-Paste'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":"x"}' });
+  });
+
+  it('cleanup:false disables cleanup; openai provider becomes smart', () => {
+    const off = makeController({ cleanup: false });
+    off.ctl.start({});
+    assertEqual(argValue('-Cleanup', off.lastCall().args), 'off');
+    off.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const smart = makeController({ cleanup_provider: 'openai' }, { apiKey: 'sk-test' });
+    smart.ctl.start({});
+    const args = smart.lastCall().args;
+    assertEqual(argValue('-Cleanup', args), 'smart');
+    assertEqual(argValue('-CleanupProvider', args), 'openai');
+    assertEqual(smart.lastCall().opts.env.OPENAI_API_KEY, 'sk-test',
+      'openai cleanup should inject the API key into the child env');
+    smart.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('clamps cleanup timeout to 3..60 and trims/falls back the model', () => {
+    const hi = makeController({ cleanup_timeout_sec: 500, cleanup_model: '  custom-model  ' });
+    hi.ctl.start({});
+    assertEqual(argValue('-CleanupTimeout', hi.lastCall().args), '60');
+    assertEqual(argValue('-CleanupModel', hi.lastCall().args), 'custom-model');
+    hi.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const lo = makeController({ cleanup_timeout_sec: 1, cleanup_model: '   ' });
+    lo.ctl.start({});
+    assertEqual(argValue('-CleanupTimeout', lo.lastCall().args), '3');
+    assertEqual(argValue('-CleanupModel', lo.lastCall().args), 'gpt-5.4-mini');
+    lo.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('keep_audio adds -KeepWav and save_timing:false drops -SaveTiming', () => {
+    const h = makeController({ keep_audio: true, save_timing: false });
+    h.ctl.start({});
+    assertTruthy(h.lastCall().args.includes('-KeepWav'));
+    assertFalsy(h.lastCall().args.includes('-SaveTiming'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('bounds maxSeconds to 1200 and omits the flag for non-positive values', () => {
+    const big = makeController({});
+    big.ctl.start({ maxSeconds: 5000 });
+    assertEqual(argValue('-MaxSeconds', big.lastCall().args), '1200');
+    big.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const none = makeController({});
+    none.ctl.start({ maxSeconds: -3 });
+    assertFalsy(none.lastCall().args.includes('-MaxSeconds'));
+    none.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('rejects a second start while busy and reports a busy status', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.start({}).ok, true);
+    assertTruthy(h.ctl.isBusy());
+    const second = h.ctl.start({});
+    assertEqual(second.ok, false);
+    assertTruthy(h.statuses.some((s) => s.state === 'busy'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+    assertFalsy(h.ctl.isBusy());
+  });
+
+  it('refuses to run off win32', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-mac-'));
+    fs.writeFileSync(path.join(dir, 'whisper-dictate.ps1'), '# stub');
+    const ctl = createDictationController({
+      spawn: () => { throw new Error('should not spawn'); },
+      fs, path, platform: 'darwin', appDir: dir, installDir: dir,
+    });
+    const r = ctl.start({});
+    assertEqual(r.ok, false);
+    assertTruthy(/Windows-only/.test(r.error));
+  });
+
+  it('errors when the whisper script is missing', () => {
+    const h = makeController({}, { withScript: false });
+    const r = h.ctl.start({});
+    assertEqual(r.ok, false);
+    assertTruthy(/missing/i.test(r.error));
+    assertEqual(h.spawnCalls.length, 0);
+  });
+
+  it('reports done with the parsed transcript on a clean exit', () => {
+    const h = makeController({});
+    h.ctl.start({ paste: true });
+    h.complete(0, {
+      stderr: 'progress...\nCaptured 4 seconds\n',
+      stdout: 'loading model\n{"ok":true,"transcript":"hello world","pasted":true}\n',
+    });
+    assertTruthy(h.statuses.some((s) => s.state === 'transcribing'),
+      '"Captured N" on stderr should flip status to transcribing');
+    const done = h.statuses.find((s) => s.state === 'done');
+    assertTruthy(done, 'expected a done status');
+    assertEqual(done.text, 'hello world');
+    assertEqual(done.pasted, true);
+    assertFalsy(h.ctl.isBusy());
+    assertEqual(h.resumed(), 1);
+  });
+
+  it('surfaces the first useful stderr line on a failed exit, skipping progress', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.complete(0, { code: 3, stderr: '42%|####\nNo microphone detected\n' });
+    const err = h.statuses.find((s) => s.state === 'error');
+    assertTruthy(err, 'expected an error status');
+    assertEqual(err.error, 'No microphone detected');
+  });
+
+  it('reports a spawn error and clears busy', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.children[0].emit('error', new Error('spawn ENOENT'));
+    assertTruthy(h.statuses.some((s) => s.state === 'error' && /ENOENT/.test(s.error)));
+    assertFalsy(h.ctl.isBusy());
+  });
+
+  it('stop() writes the stop flag in hold mode and refuses when idle', () => {
+    const idle = makeController({});
+    assertEqual(idle.ctl.stop().ok, false);
+
+    const h = makeController({});
+    h.ctl.start({ externalStop: true });
+    const args = h.lastCall().args;
+    assertTruthy(args.includes('-NoSilenceStop'), 'hold mode disables silence stop');
+    const stopFile = argValue('-StopFile', args);
+    assertTruthy(stopFile, 'hold mode should pass a -StopFile path');
+    assertEqual(h.ctl.stop('release').ok, true);
+    assertTruthy(fs.existsSync(stopFile), 'stop() should write the flag file');
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('list() returns matching transcripts newest-first and ignores junk', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    const older = path.join(ddir, 'dictation-20260101-120000.txt');
+    const newer = path.join(ddir, 'dictation-20260102-120000.txt');
+    fs.writeFileSync(older, 'first');
+    fs.writeFileSync(newer, 'second');
+    fs.writeFileSync(path.join(ddir, 'notes.txt'), 'ignore me');
+    fs.writeFileSync(path.join(ddir, 'dictation-20260103-120000.txt'), '');
+    const past = Date.now() / 1000 - 100;
+    fs.utimesSync(older, past, past);
+    const entries = h.ctl.list();
+    assertEqual(entries.length, 2);
+    assertEqual(entries[0].text, 'second');
+    assertEqual(entries[1].text, 'first');
+  });
+
+  it('remove() deletes inside the dictation dir but rejects path traversal', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    const target = path.join(ddir, 'dictation-20260101-120000.txt');
+    fs.writeFileSync(target, 'bye');
+    fs.writeFileSync(path.join(ddir, 'dictation-20260101-120000.wav'), 'audio');
+    assertEqual(h.ctl.remove(path.join(h.dir, '..', 'escape.txt')).ok, false);
+    assertEqual(h.ctl.remove(target).ok, true);
+    assertFalsy(fs.existsSync(target));
+    assertFalsy(fs.existsSync(path.join(ddir, 'dictation-20260101-120000.wav')),
+      'remove() should also clean the sibling .wav');
+  });
+
+  it('list() returns [] when no dictation dir exists yet', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.list(), []);
+  });
+
+  it('list() skips entries it cannot read', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    // A directory whose name matches the transcript pattern: readFileSync
+    // throws (EISDIR), so the entry maps to null and is filtered out.
+    fs.mkdirSync(path.join(ddir, 'dictation-20260104-120000.txt'));
+    assertEqual(h.ctl.list(), []);
+  });
+
+  it('falls back to silence-stop when the release watcher script is missing', () => {
+    const h = makeController({});
+    h.ctl.start({ holdAccelerator: 'Control+Alt+Space' });
+    // No watch-hotkey-release.ps1 stub -> not hold mode, so no -StopFile.
+    assertFalsy(h.lastCall().args.includes('-StopFile'));
+    assertFalsy(h.lastCall().args.includes('-NoSilenceStop'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('uses an exit-code fallback message when there is no useful output', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.complete(0, { code: 7 });
+    const err = h.statuses.find((s) => s.state === 'error');
+    assertTruthy(err && /code 7/.test(err.error), 'expected a code-7 fallback message');
+  });
+});
+
 describe('STATUSLINE ASSIGNMENT', () => {
   {
     it('assigns the first spread-order free index to a new session', () => {
@@ -882,6 +1172,25 @@ print('WAKE_WORDS', ','.join(load_wake_words()))
 const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
 
 describe('SPEECH INCLUDES (stripForTTS)', () => {
+  it('strips decoration emoji so edge-tts does not speak Unicode names ("white heavy check mark")', () => {
+    const cases = [
+      { in: 'Build status: ✅ Done', forbid: '✅' },
+      { in: 'Test ❌ failed', forbid: '❌' },
+      { in: 'Heavy check ✔ ok', forbid: '✔' },
+      { in: 'Pass ✓ fail ✗ done', forbid: ['✓', '✗'] },
+      { in: 'Shipping 🚀 today', forbid: '🚀' }, // rocket
+      { in: 'Heart ❤️ attached', forbid: ['❤', '️'] },
+    ];
+    for (const c of cases) {
+      const out = stripForTTS(c.in);
+      const forbids = Array.isArray(c.forbid) ? c.forbid : [c.forbid];
+      for (const f of forbids) {
+        if (out.includes(f)) {
+          throw new Error(`emoji not stripped: in=${JSON.stringify(c.in)} -> out=${JSON.stringify(out)} (forbid ${JSON.stringify(f)})`);
+        }
+      }
+    }
+  });
   it('D1 (#19): looksLikeCode counts ALL pattern matches — untagged fence with repeated shell commands strips', () => {
     // Pre-parity, the 'shell-command-at-line-start' pattern only contributed 1 hit
     // regardless of how many times it matched in the body. Two `npm ...` lines
@@ -8487,6 +8796,29 @@ describe('SESSION STALE DETECTION', () => {
     }
   });
 
+  it('playNextPending does not consume queue entries while audio is active or system-paused', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    const m = rendererSrc.match(/function\s+playNextPending\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('playNextPending function body not found');
+    const body = m[1];
+    if (!/audioPlayer\.isIdle\(\)/.test(body)) {
+      throw new Error('playNextPending must not drain while a clip is loading, paused, or playing');
+    }
+    if (!/audioPlayer\.isSystemAutoPaused\(\)/.test(body)) {
+      throw new Error('playNextPending must not drop pending clips while system/mic pause is active');
+    }
+  });
+
+  it('renderer keeps an autoplay drain watchdog for missed media/fs events', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (!/function\s+drainAutoplayQueue\s*\(/.test(rendererSrc)) {
+      throw new Error('renderer must expose a shared drainAutoplayQueue helper');
+    }
+    if (!/setInterval\s*\(\s*drainAutoplayQueue\s*,\s*AUTOPLAY_DRAIN_INTERVAL_MS\s*\)/.test(rendererSrc)) {
+      throw new Error('renderer must periodically retry autoplay drain');
+    }
+  });
+
   it('initialLoad populates pendingQueue oldest-first (v0.3.4 kit regression)', () => {
     // main.js returns queue newest-first; pendingQueue.shift() must yield
     // oldest so playback walks the dot strip left-to-right. Without an
@@ -10529,7 +10861,11 @@ describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)'
   });
 });
 
-describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () => {
+describe('NARRATION REWRITES — pacing + pronunciation aliases (#45 Block B; plain-text)', () => {
+  // History: this module originally emitted SSML, but edge_tts.Communicate
+  // XML-escapes its input and wraps it in its own <speak> envelope, so
+  // the outer namespace URL was being read aloud at the start of every
+  // clip. The rewrites are now plain text — same substitutions, no tags.
   const appDirRepo = path.join(__dirname, '..', 'app');
 
   function py(code) {
@@ -10557,68 +10893,51 @@ describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () =
     assertEqual(py(`print(ns.needs_ssml('- alpha\\n- bravo\\n- charlie'))`), 'True');
   });
 
-  it('build: commit hash wrapped in <say-as interpret-as="characters">', () => {
+  it('build: never emits a <speak> envelope (the namespace-leak bug)', () => {
     const out = py(`print(ns.build('Committed a48a6e3 on main.'))`);
-    if (!/<say-as interpret-as="characters">a48a6e3<\/say-as>/.test(out)) {
-      throw new Error(`SHA spell-out missing: ${out}`);
-    }
-    if (!/<speak/.test(out)) throw new Error(`speak envelope missing: ${out}`);
+    if (/<speak/i.test(out)) throw new Error(`speak envelope must not appear: ${out}`);
+    if (/xmlns/i.test(out)) throw new Error(`xmlns must not appear: ${out}`);
+    if (/synthesis/i.test(out)) throw new Error(`synthesis URL must not appear: ${out}`);
   });
 
-  it('build: dev acronyms get <sub alias=...> wrappers', () => {
+  it('build: commit hash gets spaced characters for letter-by-letter readback', () => {
+    const out = py(`print(ns.build('Committed a48a6e3 on main.'))`);
+    if (!/a 4 8 a 6 e 3/.test(out)) {
+      throw new Error(`SHA spell-out missing (expected "a 4 8 a 6 e 3"): ${out}`);
+    }
+  });
+
+  it('build: dev acronyms substituted to spoken-letter form', () => {
     const out = py(`print(ns.build('npm build using IPC + JSON.'))`);
-    if (!/<sub alias="N P M">npm<\/sub>/i.test(out)) {
-      throw new Error(`npm alias missing: ${out}`);
-    }
-    if (!/<sub alias="I P C">ipc<\/sub>/i.test(out)) {
-      throw new Error(`IPC alias missing: ${out}`);
-    }
+    if (!/\bN P M\b/.test(out)) throw new Error(`npm alias missing: ${out}`);
+    if (!/\bI P C\b/.test(out)) throw new Error(`IPC alias missing: ${out}`);
+    if (!/jay son/.test(out)) throw new Error(`JSON alias missing: ${out}`);
   });
 
-  it('build: file extensions get "dot X" alias', () => {
+  it('build: file extensions substituted to "dot X" form', () => {
     const out = py(`print(ns.build('Edited app/main.py and lib/text.js.'))`);
-    if (!/<sub alias="dot py">\.py<\/sub>/.test(out)) {
-      throw new Error(`.py alias missing: ${out}`);
-    }
-    if (!/<sub alias="dot J S">\.js<\/sub>/.test(out)) {
-      throw new Error(`.js alias missing: ${out}`);
-    }
+    if (!/\bdot py\b/.test(out)) throw new Error(`.py alias missing: ${out}`);
+    if (!/\bdot J S\b/.test(out)) throw new Error(`.js alias missing: ${out}`);
   });
 
-  it('build: bullet list gets <break time="200ms"/> between items', () => {
+  it('build: lines without terminating punctuation get a period appended', () => {
     const out = py(`print(ns.build('- alpha\\n- bravo\\n- charlie'))`);
-    const breakCount = (out.match(/<break time="200ms"\/>/g) || []).length;
-    if (breakCount < 2) {
-      throw new Error(`expected 2+ <break time="200ms"/> between bullets; got ${breakCount}: ${out}`);
+    // Edge-tts pauses naturally on `.` `,` `;` `\n`. We just need
+    // each non-punctuated line to end with one so segments don't run
+    // together. \r?\n handles Windows CRLF in test stdout.
+    if (!/alpha\.\r?\n/.test(out)) {
+      throw new Error(`expected period after "alpha" between bullets; got: ${JSON.stringify(out)}`);
+    }
+    if (!/bravo\.\r?\n/.test(out)) {
+      throw new Error(`expected period after "bravo" between bullets; got: ${JSON.stringify(out)}`);
     }
   });
 
-  it('build: idempotent — already-SSML input returns unchanged', () => {
-    const out = py(`a = ns.build('Committed a48a6e3.'); b = ns.build(a); print('SAME' if a == b else 'DIFF')`);
-    assertEqual(out, 'SAME');
+  it('build: empty input returns empty', () => {
+    assertEqual(py(`print(repr(ns.build('')))`), `''`);
   });
 
-  it('build: XML-escapes user content (& < > preserved as entities)', () => {
-    const out = py(`print(ns.build('Mix of & < > chars'))`);
-    if (!/&amp;/.test(out) || !/&lt;/.test(out) || !/&gt;/.test(out)) {
-      throw new Error(`XML escaping incomplete: ${out}`);
-    }
-  });
-
-  it('edge_tts_speak.py has SSML detection + plain-text fallback path', () => {
-    const src = fs.readFileSync(path.join(appDirRepo, 'edge_tts_speak.py'), 'utf8');
-    if (!/_strip_ssml\b/.test(src)) {
-      throw new Error('edge_tts_speak.py must define _strip_ssml for the fallback path');
-    }
-    if (!/is_ssml\s*=.*startswith\(['"]<speak/.test(src)) {
-      throw new Error('edge_tts_speak.py must detect SSML by leading <speak prefix');
-    }
-    if (!/SSML attempts exhausted/.test(src)) {
-      throw new Error('edge_tts_speak.py must log when falling back from SSML to plain text');
-    }
-  });
-
-  it('synth_turn.py wraps sentences via _maybe_ssml_wrap before edge_tts call', () => {
+  it('synth_turn.py applies the rewrite via _maybe_ssml_wrap before edge_tts call', () => {
     const src = fs.readFileSync(path.join(appDirRepo, 'synth_turn.py'), 'utf8');
     if (!/def\s+_maybe_ssml_wrap/.test(src)) {
       throw new Error('synth_turn.py must define _maybe_ssml_wrap helper');
@@ -13391,6 +13710,31 @@ describe('EX7c — DotStrip', () => {
     ds.unmount();
   });
 
+  it('a single right-click gesture (mousedown button 2 + contextmenu) deletes ONCE, not twice', () => {
+    // Regression: a physical right-click fires both mousedown(button=2) AND
+    // contextmenu. Both used to call onDelete, and because the first delete
+    // re-renders the strip, the second event landed on a different dot and
+    // deleted it too. The instance-level gesture guard must collapse them.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({ queue: [clip], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dot = root._children[0];
+    const md = dot._listeners.find((l) => l.ev === 'mousedown');
+    const ctx = dot._listeners.find((l) => l.ev === 'contextmenu');
+    md.fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    ctx.fn({ preventDefault: () => {} });
+    assertEqual(deletes, [clip.path]);  // exactly one delete for one gesture
+    ds.unmount();
+  });
+
   it('update() schedules a single rAF regardless of call count', () => {
     _rafQueue.length = 0;
     const root = makeFakeEl('div');
@@ -14264,6 +14608,16 @@ describe('EX7e — AudioPlayer', () => {
     audio.paused = false;
     const { player } = makePlayer({ audio });
     player.mount();
+    assertEqual(player.isIdle(), false);
+    player.unmount();
+  });
+
+  it('isIdle() is false while a newly requested clip is still starting', () => {
+    const { player } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3', false, false);
     assertEqual(player.isIdle(), false);
     player.unmount();
   });
@@ -15720,9 +16074,11 @@ describe('PHASE 4 #1 — stripForTTS vulnerability pass', () => {
     assertTruthy(out.includes('你好'), 'CJK characters must not be stripped');
   });
 
-  it('emoji pass through unchanged', () => {
+  it('decoration emoji are stripped (edge-tts reads codepoint names) — surrounding prose preserved', () => {
     const out = stripForTTS('Click the 🚀 button');
-    assertTruthy(out.includes('🚀'), 'emoji must not be stripped');
+    if (out.includes('🚀')) throw new Error(`emoji must be stripped (edge-tts speaks "rocket" otherwise): "${out}"`);
+    if (!out.includes('Click the')) throw new Error(`surrounding prose must survive: "${out}"`);
+    if (!out.includes('button')) throw new Error(`surrounding prose must survive: "${out}"`);
   });
 
   it('RTL text (Arabic) passes through without corruption', () => {
