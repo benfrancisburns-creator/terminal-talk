@@ -88,7 +88,7 @@
     "app/whisper-dictate.ps1": 171,
     "scripts/whisper-dictate.ps1": 171,
     "scripts/build-ai-video-upload-bundle.ps1": 170,
-    "tests/e2e/settings.spec.ts": 164,
+    "tests/e2e/settings.spec.ts": 165,
     "scripts/fetch-sonar-findings.cjs": 163,
     "scripts/terminal-talk-video-state.ps1": 162,
     "hooks/speak-on-tool.ps1": 162,
