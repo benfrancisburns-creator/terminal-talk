@@ -1070,6 +1070,28 @@ def sanitize(text: str, flags: dict) -> str:
     # makes it clear. User-reported.
     t = t.replace('~', '')
 
+    # Decoration emoji — edge-tts reads each codepoint by its Unicode
+    # name when it doesn't know the glyph, e.g. ✅ -> "white heavy
+    # check mark", ❌ -> "cross mark", \U0001F680 -> "rocket". On
+    # most LLM responses these are pure decoration and listeners hear
+    # the Unicode name dozens of times per turn. Strip the common
+    # ranges (Misc Symbols + Dingbats, Misc Pictographs, Emoticons,
+    # Transport, Supplemental, Extended-A) and any trailing VS16
+    # (U+FE0F) emoji-presentation variation selector. Mirror in
+    # app/lib/text.js stripForTTS.
+    t = re.sub(
+        '['
+        '☀-➿'
+        '\U0001F300-\U0001F5FF'
+        '\U0001F600-\U0001F64F'
+        '\U0001F680-\U0001F6FF'
+        '\U0001F900-\U0001F9FF'
+        '\U0001FA70-\U0001FAFF'
+        ']️?',
+        '',
+        t,
+    )
+
     # "live" at sentence end is ambiguous to TTS and can be pronounced
     # like "I live in a house". For Terminal Talk status/deploy phrasing,
     # rewrite only the current/running sense to unambiguous words.
@@ -1358,19 +1380,19 @@ def _run_say_fallback(sentence: str, out_path: Path, edge_voice: str | None = No
 
 
 def _maybe_ssml_wrap(sentence: str) -> str:
-    """Block B (#45): wrap the sentence in SSML when its content
-    benefits from pauses / pronunciation aliases. Pure prose stays
-    plain-text so the synth fast-path skips the wrapper. Failures
-    in the SSML pipeline never break audio — _run_edge_tts retries
-    with the original on subprocess error, and edge_tts_speak.py
-    has its own SSML→plain-text fallback as a second line of
-    defence (Block B4)."""
+    """Apply pronunciation + pacing rewrites when the sentence has
+    SHAs / acronyms / bulleted or tabular structure. Returns plain
+    text — the rewrites bake spaced characters, alias text, and
+    sentence-terminating punctuation directly into the string. Name
+    kept for historical reasons; an earlier version emitted SSML
+    but edge_tts.Communicate XML-escapes its input, so the namespace
+    URL was read aloud verbatim by the Azure endpoint."""
     try:
         from narration_ssml import build, needs_ssml
         if needs_ssml(sentence):
             return build(sentence)
     except Exception as e:
-        _log(f'ssml wrap failed: {type(e).__name__}: {e}; using plain text')
+        _log(f'narration rewrite failed: {type(e).__name__}: {e}; using plain text')
     return sentence
 
 
@@ -1387,10 +1409,12 @@ def _run_edge_tts(sentence: str, voice: str, out_path: Path, attempts: int = 3) 
     the user can see exactly what was lost. Total worst-case overhead:
     ~1.5 s of sleep per lost sentence — far preferable to a silent gap.
 
-    Block B (#45): the sentence is wrapped in SSML when the content
-    benefits from pauses / pronunciation. edge_tts_speak.py detects
-    the `<speak` prefix and feeds it to edge_tts.Communicate as
-    SSML; on persistent failure it strips the tags and retries plain.
+    The sentence is rewritten in-place with pronunciation/pacing
+    substitutions when its content benefits (commit hashes spaced
+    out, acronyms aliased to spoken letters, line endings padded
+    with sentence-terminating punctuation). edge_tts_speak.py
+    receives plain text — passing SSML is not viable because
+    edge_tts.Communicate XML-escapes its input.
     """
     import subprocess
     payload = _maybe_ssml_wrap(sentence)
