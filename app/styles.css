@@ -425,6 +425,39 @@ body.demo-settings-mode * {
 .tab-overflow {
   opacity: 0.75;
 }
+/* Per-session bin in the tab corner. Hidden until the tab is hovered,
+   selected, or the bin itself is focused — keeps the strip uncluttered
+   when you're just glancing at sessions. Turns red on hover/focus so a
+   destructive click reads as destructive. role="button" span (not a
+   nested <button>, which is invalid inside the tab <button>). */
+.tab-bin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin: 0 -3px 0 1px;   /* tuck into the chip's right padding */
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.tab:hover .tab-bin,
+.tab.selected .tab-bin,
+.tab-bin:focus-visible {
+  opacity: 1;
+}
+.tab-bin:hover {
+  color: #ff6b6b;
+  background: rgba(255, 255, 255, 0.14);
+}
+.tab-bin:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+  color: #ff6b6b;
+}
 .tab:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: 1px;
@@ -792,6 +825,62 @@ body.demo-settings-mode * {
 .dot.clip.heard {
   color: rgba(0, 0, 0, 0.8);
 }
+
+/* --- MASCOT DOTS --------------------------------------------------------
+   Assistant-session clips render a miniature of the scrubber mascot instead
+   of a plain circle (dot-strip.js stamps MASCOT_SVG and adds .mascot). The
+   body/ear/leg rects recolour from --mascot-* vars set by
+   palette-classes.css `.dot.mascot[data-palette="NN"]`, so a dot matches its
+   session's solid / top-bottom / left-right arrangement — same scheme as the
+   #scrubberMascot. Lifecycle uses "fade on heard":
+     queued           → bright full-colour mascot   (unheard pops)
+     auto-played      → same mascot, faded back     (heard, nothing to action)
+     manually-played  → all-white mascot + session-colour ring (you asked for it)
+     active (playing) → full presence + pulsing halo (the existing .dot.active)
+   J-clips (.dot.clip) are untouched and keep the round badge. -------------- */
+.dot.mascot {
+  border-radius: 50%;
+  background: transparent;
+}
+/* Beat the generated [data-palette="NN"]{background} AND the
+   .dot.heard{background …!important} circle rules — the mascot supplies the
+   colour; the button is just a transparent hit-target. */
+.dot.mascot[data-palette] { background: transparent; }
+.dot.mascot.heard { background: transparent !important; }
+
+.dot.mascot .dot-mascot {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;   /* halo / ring can extend past the 14px box */
+}
+
+/* The circle-era inner white pip is meaningless on a mascot — fade + halo
+   carry the state instead. Kills the .dot.active::after / .dot.heard::after
+   pips for mascots only. */
+.dot.mascot::after { display: none !important; }
+
+/* markHeard/markPlayed fire at play START (audio-player.js), so the
+   currently-playing dot is active + heard + played-* all at once. The
+   heard treatments below are therefore scoped :not(.active) so the clip
+   playing right now always shows full session colour + the pulsing halo
+   (the existing .dot.active box-shadow), then settles into its heard look
+   once playback moves on. */
+
+/* Auto-played: heard via the queue → recede so unheard clips stand out.
+   :not(.stale) so a closed-session clip doesn't get faded twice — .dot.stale
+   already drops the <button> to 0.4 and CSS opacity compounds down the tree
+   (0.4 × 0.4 ≈ 0.16 → near-invisible). Stale keeps its own dim + desaturate. */
+.dot.mascot.heard.played-auto:not(.active):not(.stale) .dot-mascot { opacity: 0.4; }
+
+/* Manually-played: whole mascot goes white (eyes + smile stay dark so the
+   character still reads); the session colour shows as the ring. */
+.dot.mascot.played-manual:not(.active) .dot-mascot .dm-region { fill: #fff; }
+/* Ring is the existing .dot.heard::before (var(--dot-ring-bg) carries solid
+   OR split colour). Off for plain auto-played; on for manually-played once
+   it's no longer the active clip. */
+.dot.mascot.heard::before { display: none; }
+.dot.mascot.played-manual:not(.active)::before { display: block; }
 
 .divider {
   width: 1px;

@@ -842,6 +842,9 @@ const tabs = new window.TT_TABS({
     persistTabsState();
     renderDots();
   },
+  // Per-session bin in the tab corner — soft-clears that session's clips
+  // (played or not) with the same undo window as the toolbar bin.
+  onDeleteSession: (shortId) => clearSessionClips(shortId),
 });
 tabs.mount(tabsEl);
 
@@ -1100,12 +1103,17 @@ async function deleteDot(p) {
   if (audioPlayer.getCurrentPath() === p) {
     audioPlayer.abort();
   }
-  pendingQueue = pendingQueue.filter(x => x !== p);
-  playedPaths.delete(p); heardPaths.delete(p); manualPlayedPaths.delete(p);
-  queue = queue.filter(f => f.path !== p);
+  // Route through the canonical removal so a manually-deleted clip is purged
+  // from EVERY queue/Set — including priorityPaths + priorityQueue, which the
+  // old hand-rolled removal here missed. A priority ("hey jarvis") clip
+  // deleted by right-click otherwise lingered in priorityQueue and the next
+  // autoplay drain tried to play a file that no longer exists on disk.
+  _removeClipFromQueuesAndState(p);
   allQueuePaths = allQueuePaths.filter(x => x !== p);
   renderDots();
-  await window.api.deleteFile(p);
+  // Pass an explicit reason so the _toolbar.log delete-file diagnostic
+  // attributes this unlink to a user action rather than auto-prune.
+  await window.api.deleteFile(p, 'manual');
 }
 
 // EX4 — undo-clear state. clearAllPlayed now soft-deletes: the clips
@@ -1115,27 +1123,45 @@ async function deleteDot(p) {
 // Undo cancels the timer and restores the removed entries to the
 // queue + heardPaths + playedPaths.
 const UNDO_CLEAR_WINDOW_MS = 10_000;
-let _pendingClear = null;  // { entries, timer, toastEl }
+let _pendingClear = null;  // { entries, paths:Set, reason, timer, toastEl }
 
-function _finaliseClear() {
+async function _finaliseClear() {
   if (!_pendingClear) return;
-  const paths = _pendingClear.entries.map((e) => e.path);
+  const paths = Array.from(_pendingClear.paths || []);
+  const reason = _pendingClear.reason || 'manual-clear';
   _pendingClear = null;
-  for (const p of paths) {
-    // Surface delete failures to the diagnostic log instead of swallowing
-    // silently — a clear-played that quietly leaves files on disk would
-    // be invisible to the user but corrupt the queue's heard/unheard state.
-    window.api.deleteFile(p).catch((err) => {
-      try {
-        if (window.api && window.api.logRendererError) {
-          window.api.logRendererError({
-            type: 'unhandledrejection',
-            message: `deleteFile failed for ${p}: ${err && err.message ? err.message : String(err)}`,
-            stack: err && err.stack ? err.stack : '',
-          });
-        }
-      } catch {}
-    });
+  if (!paths.length) return;
+  // ONE batched IPC, not one-per-file. The per-handler IPC rate limiter
+  // (burst 30, 20/s) was silently dropping all-but-~30 of a 50-clip clear
+  // (delete-file returned null past the burst, not even an error), so those
+  // files stayed on disk and reloaded on the next scan — the "deleted 50,
+  // 20 jumped back" report. The batch handler does a SINGLE rate-limit
+  // check + ENOENT-tolerant unlink and reports anything it truly couldn't
+  // remove, which we surface so a failed delete is never silent.
+  try {
+    const res = window.api.deleteFiles
+      ? await window.api.deleteFiles(paths, reason)
+      : null;
+    const failedCount = res && Array.isArray(res.failed) ? res.failed.length
+      : (res && res.rateLimited) ? paths.length
+      : res ? 0 : paths.length;
+    if (failedCount > 0) {
+      _showStatusToast(
+        `Couldn't delete ${failedCount} clip${failedCount === 1 ? '' : 's'} — they may be locked or the app was busy. Click the bin again to retry.`,
+        6000, 'warning',
+      );
+    }
+  } catch (err) {
+    _showStatusToast('Clip delete failed — see logs, then try the bin again.', 6000, 'warning');
+    try {
+      if (window.api && window.api.logRendererError) {
+        window.api.logRendererError({
+          type: 'unhandledrejection',
+          message: `deleteFiles failed: ${err && err.message ? err.message : String(err)}`,
+          stack: err && err.stack ? err.stack : '',
+        });
+      }
+    } catch {}
   }
 }
 
@@ -1179,42 +1205,83 @@ function _showClearToast(count) {
   return toast;
 }
 
-async function clearAllPlayed() {
+// Soft-clear a set of queued clips with a 10 s undo window. Shared by the
+// toolbar bin (every clip except the one playing) and the per-tab session
+// bins (one session's clips). Callers always exclude the currently-playing
+// clip so playback never has its file pulled out from under it.
+function _beginSoftClear(paths, reason) {
   // If a prior clear is still pending, finalise it immediately before
   // opening a new undo window. Otherwise two in-flight clears would
-  // race on the deleteFile calls.
+  // race on the deleteFiles call.
   if (_pendingClear) {
     clearTimeout(_pendingClear.timer);
     _removeToast();
     _finaliseClear();
   }
 
-  const toDelete = queue.filter((f) => heardPaths.has(f.path) && f.path !== audioPlayer.getCurrentPath());
-  if (toDelete.length === 0) return;
+  const list = Array.from(new Set((paths || []).filter(Boolean)));
+  if (list.length === 0) return;
+  const pathSet = new Set(list);
 
-  const entries = toDelete.map((f) => ({
+  // Snapshot the VISIBLE clips for instant undo-restore. Overflow clips
+  // (on disk beyond MAX_FILES, never in the in-memory queue) aren't
+  // snapshotted — on undo they reappear naturally via the next queue
+  // re-scan, because the deferred batch delete is cancelled before it runs.
+  const entries = queue.filter((f) => pathSet.has(f.path)).map((f) => ({
     path: f.path,
     mtime: f.mtime,
     wasHeard: heardPaths.has(f.path),
     wasPlayed: playedPaths.has(f.path),
     wasManualPlayed: manualPlayedPaths.has(f.path),
   }));
-  const paths = entries.map((e) => e.path);
 
   // Remove from visible state immediately — user sees the UI react.
-  for (const p of paths) {
+  // Route through the canonical removal so priorityPaths/priorityQueue/
+  // pendingQueue are cleared too; a cleared clip left in priorityQueue
+  // would otherwise be shifted off on the next autoplay drain and fail
+  // to load (its file is gone). The onQueueUpdated filter hides the WHOLE
+  // pathSet (incl. overflow) during the window so nothing flashes back.
+  for (const p of list) {
     cancelAutoDelete(p);
-    heardPaths.delete(p); playedPaths.delete(p); manualPlayedPaths.delete(p);
+    _removeClipFromQueuesAndState(p);
   }
-  queue = queue.filter((f) => !paths.includes(f.path));
   renderDots();
 
-  const toastEl = _showClearToast(paths.length);
+  const toastEl = _showClearToast(list.length);
   const timer = setTimeout(() => {
     _removeToast();
     _finaliseClear();
   }, UNDO_CLEAR_WINDOW_MS);
-  _pendingClear = { entries, timer, toastEl };
+  _pendingClear = { entries, paths: pathSet, reason: reason || 'manual-clear', timer, toastEl };
+}
+
+// Build the full on-disk clip set: allQueuePaths is the UNCAPPED list main
+// ships alongside the MAX_FILES-capped `queue`. Clearing only `queue` left
+// the overflow on disk to reload the moment the visible 50 were gone — the
+// "deleted 50, 20 jumped back" bug. Union with queue paths in case a build
+// predates allPaths. Always excludes the currently-playing clip.
+function _allClipPathsExceptPlaying() {
+  const cur = audioPlayer.getCurrentPath();
+  return [...allQueuePaths, ...queue.map((f) => f.path)].filter((p) => p && p !== cur);
+}
+
+// Toolbar bin: clear EVERY clip on disk — heard or not — except the one
+// currently playing. Undo restores them. Widened from "played only"
+// (2026-06-03) so a multi-session backlog clears in one click.
+function clearAllClips() {
+  _beginSoftClear(_allClipPathsExceptPlaying(), 'clear-all');
+}
+
+// Per-session bin (tab corner): clear one session's clips — heard or not —
+// except the one currently playing. Lets the user drop a noisy session's
+// backlog without binning the sessions they still want to hear.
+function clearSessionClips(shortId) {
+  if (!shortId) return;
+  _beginSoftClear(
+    _allClipPathsExceptPlaying().filter((p) =>
+      extractSessionShort(p.split(/[\\/]/).pop()) === shortId),
+    'clear-session',
+  );
 }
 
 function playNextPending() {
@@ -1336,10 +1403,11 @@ window.api.onQueueUpdated((payload) => {
   // played" briefly removes clips, then they pop back, then disappear
   // again — Ben hit this on 2026-05-09. The soft-deleted set lives on
   // the renderer side because main has no notion of "pending undo".
-  if (_pendingClear && _pendingClear.entries) {
-    const pendingClearPaths = new Set(_pendingClear.entries.map((e) => e.path));
-    files = files.filter((f) => !pendingClearPaths.has(f.path));
-    nextAllPaths = nextAllPaths.filter((p) => !pendingClearPaths.has(p));
+  if (_pendingClear && _pendingClear.paths) {
+    // Hide the WHOLE cleared set (visible + on-disk overflow) for the undo
+    // window, so neither pops back during the 10 s before the batch unlink.
+    files = files.filter((f) => !_pendingClear.paths.has(f.path));
+    nextAllPaths = nextAllPaths.filter((p) => !_pendingClear.paths.has(p));
   }
   allQueuePaths = nextAllPaths;
   const prevPaths = new Set(queue.map(f => f.path));
@@ -1482,7 +1550,7 @@ window.api.onPriorityPlay((paths) => {
 window.api.onListeningState((on) => audioPlayer.playToggleTone(on));
 
 closeBtn.addEventListener('click', () => window.api.hideWindow());
-clearPlayedBtn.addEventListener('click', () => clearAllPlayed());
+clearPlayedBtn.addEventListener('click', () => clearAllClips());
 
 document.addEventListener('contextmenu', (e) => {
   if (!e.target.classList || !e.target.classList.contains('dot')) {

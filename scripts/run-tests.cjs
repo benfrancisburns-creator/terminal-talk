@@ -326,6 +326,53 @@ describe('PRUNE LIB (#29 sub-2000 extract)', () => {
     fs.rmSync(t.dir, { recursive: true, force: true });
   });
 
+  it('pruneOldFiles removes .played.json markers + .txt sidecars past the 1-day window, keeps recent', () => {
+    // .played.json tombstones (no prune rule originally) AND .txt/.original.txt
+    // sidecars (14-day retention originally) bloated the queue dir to 77k+ files.
+    // Ben's call: 1-day retention keeps the hot dir small so readdirSync stays fast.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-marker-'));
+    const oldMarker = path.join(dir, '20260510T101010001-0001-deadbeef.played.json');
+    const freshMarker = path.join(dir, '20260601T101010001-0001-deadbeef.played.json');
+    const oldTxt = path.join(dir, '20260510T101010001-0001-deadbeef.txt');
+    const oldOrig = path.join(dir, '20260510T101010001-0001-deadbeef.original.txt');
+    const freshTxt = path.join(dir, '20260601T101010001-0001-deadbeef.txt');
+    for (const f of [oldMarker, freshMarker, oldTxt, oldOrig, freshTxt]) fs.writeFileSync(f, '{}');
+    const twoDaysAgo = (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000;
+    const oneHourAgo = (Date.now() - 60 * 60 * 1000) / 1000;
+    for (const f of [oldMarker, oldTxt, oldOrig]) fs.utimesSync(f, twoDaysAgo, twoDaysAgo);
+    for (const f of [freshMarker, freshTxt]) fs.utimesSync(f, oneHourAgo, oneHourAgo);
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(oldMarker), '.played.json older than 1 day must be unlinked');
+    assertFalsy(fs.existsSync(oldTxt), '.txt sidecar older than 1 day must be unlinked');
+    assertFalsy(fs.existsSync(oldOrig), '.original.txt sidecar older than 1 day must be unlinked');
+    assertTruthy(fs.existsSync(freshMarker), '.played.json within 1 day must survive');
+    assertTruthy(fs.existsSync(freshTxt), '.txt sidecar within 1 day must survive');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('pruneOldFiles removes synth-spawn .err markers past the 1-day window, keeps recent + underscore logs', () => {
+    // synth-spawn-<hash>.err breadcrumbs had NO prune rule and grew unbounded
+    // (100+ in the field). Sweep past the same 1-day window as the other
+    // breadcrumbs; never touch underscore-prefixed _*.log diagnostic files.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-err-'));
+    const oldErr = path.join(dir, 'synth-spawn-deadbeef.err');
+    const freshErr = path.join(dir, 'synth-spawn-cafef00d.err');
+    const underscoreErr = path.join(dir, '_keep.err');
+    for (const f of [oldErr, freshErr, underscoreErr]) fs.writeFileSync(f, '');
+    const twoDaysAgo = (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000;
+    const oneHourAgo = (Date.now() - 60 * 60 * 1000) / 1000;
+    fs.utimesSync(oldErr, twoDaysAgo, twoDaysAgo);
+    fs.utimesSync(underscoreErr, twoDaysAgo, twoDaysAgo);
+    fs.utimesSync(freshErr, oneHourAgo, oneHourAgo);
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(oldErr), '.err marker older than 1 day must be unlinked');
+    assertTruthy(fs.existsSync(freshErr), '.err marker within 1 day must survive');
+    assertTruthy(fs.existsSync(underscoreErr), 'underscore-prefixed _*.err must never be swept');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('pruneOldFiles tolerates missing queueDir + read errors', () => {
     const dir = path.join(os.tmpdir(), 'tt-prune-nope-' + Date.now());
     const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
@@ -2728,9 +2775,17 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     if (!saveMatch || !/_guardUserIntent\(all,\s*caller\)/.test(saveMatch[0])) {
       throw new Error('saveAssignments must call _guardUserIntent(all, caller) — see #8 guard');
     }
+    // writeAssignments now delegates its body to _writeAssignmentsLocked so
+    // ensureAssignmentsForFiles can reuse it while already holding the lock
+    // (atomic read-modify-write — the "colours change on their own" fix). The
+    // guard lives in _writeAssignmentsLocked; writeAssignments must route to it.
     const writeMatch = mainJsSrc.match(/function\s+writeAssignments\s*\(all,\s*opts\)[\s\S]*?\n\}/);
-    if (!writeMatch || !/_guardUserIntent\(all,\s*caller\)/.test(writeMatch[0])) {
-      throw new Error('writeAssignments must call _guardUserIntent(all, caller) — see #8 guard');
+    if (!writeMatch || !/_writeAssignmentsLocked\(all,\s*opts\)/.test(writeMatch[0])) {
+      throw new Error('writeAssignments must delegate to _writeAssignmentsLocked — see #8 guard');
+    }
+    const lockedMatch = mainJsSrc.match(/function\s+_writeAssignmentsLocked\s*\(all,\s*opts\)[\s\S]*?\n\}/);
+    if (!lockedMatch || !/_guardUserIntent\(all,\s*caller\)/.test(lockedMatch[0])) {
+      throw new Error('_writeAssignmentsLocked must call _guardUserIntent(all, caller) — see #8 guard');
     }
   });
 
@@ -2995,12 +3050,15 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
   it('PS — statusline / hooks skip save when Enter-RegistryLock fails (#8 root cause)', () => {
     // Critical root-cause fix. Prior to this, an unlocked fall-through
     // allowed the race that dropped other sessions' entries. Each of
-    // the 3 PS callers must now branch on $locked and only do
-    // Read-Update-Save when the lock was acquired.
+    // the PS callers must now branch on $locked and only do
+    // Read-Update-Save when the lock was acquired. codex-identify-live.ps1
+    // was originally MISSING from this list — it kept doing an
+    // unconditional Read-Update-Save and was a confirmed clobber source.
     const files = [
-      { path: 'app/statusline.ps1',       caller: 'statusline' },
-      { path: 'hooks/speak-on-tool.ps1',  caller: 'speak-on-tool' },
-      { path: 'hooks/speak-response.ps1', caller: 'speak-response' },
+      { path: 'app/statusline.ps1',          caller: 'statusline' },
+      { path: 'hooks/speak-on-tool.ps1',     caller: 'speak-on-tool' },
+      { path: 'hooks/speak-response.ps1',    caller: 'speak-response' },
+      { path: 'app/codex-identify-live.ps1', caller: 'codex-identify-live' },
     ];
     for (const { path: relPath, caller } of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', relPath), 'utf8');
@@ -7052,17 +7110,22 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
   // rather than -Command. Windows arg-quoting for -Command mangles
   // backslashes inside paths ("C:\Users\..." becomes "C:Users..." before
   // PowerShell parses it), which silently empties the registry read.
-  function runUpdate({ seed = {}, short, sessionId, claudePid, now }) {
+  function runUpdate({ seed = {}, short, sessionId, claudePid, now, isPidAlive }) {
     const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const regPath    = path.join(os.tmpdir(), `tt-test-mig-${nonce}.json`);
     const scriptPath = path.join(os.tmpdir(), `tt-test-mig-${nonce}.ps1`);
     fs.writeFileSync(regPath, JSON.stringify({ assignments: seed }), 'utf8');
     const psEscape = (s) => String(s).replace(/'/g, "''");
+    // Inject a deterministic IsPidAlive stub when the test specifies one, so
+    // the pid-alive migration widening doesn't depend on whether the seeded
+    // (fake) pid happens to be a live process on the test machine. Omitting
+    // it falls back to the real Get-Process probe (production default).
+    const aliveArg = isPidAlive === undefined ? '' : ` -IsPidAlive { ${isPidAlive ? '$true' : '$false'} }`;
     const script = [
       `Import-Module '${psEscape(MODULE_PATH)}' -Force`,
       `$p = '${psEscape(regPath)}'`,
       `$a = Read-Registry -RegistryPath $p`,
-      `$idx = Update-SessionAssignment -Assignments $a -Short '${psEscape(short)}' -SessionId '${psEscape(sessionId)}' -ClaudePid ${Number(claudePid) | 0} -Now ${Number(now)}`,
+      `$idx = Update-SessionAssignment -Assignments $a -Short '${psEscape(short)}' -SessionId '${psEscape(sessionId)}' -ClaudePid ${Number(claudePid) | 0} -Now ${Number(now)}${aliveArg}`,
       `Save-Registry -RegistryPath $p -Assignments $a`,
       `Write-Output $idx`,
       '',
@@ -7121,10 +7184,11 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(migrated.claude_pid, 1234);             // pid carried forward
   });
 
-  it('stale pid (last_seen outside the 600 s freshness window) does NOT migrate', () => {
+  it('stale pid (last_seen outside the 600 s window AND pid dead) does NOT migrate', () => {
     // If Windows reuses a pid hours/days later, the claim of "same
     // terminal" is no longer credible. We fall through to fresh
     // allocation rather than inherit a stranger's colour + label.
+    // isPidAlive:false makes this deterministic (the seeded pid is dead).
     const seed = {
       'oldshort': {
         index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
@@ -7133,7 +7197,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       }
     };
     const { returnedIndex, assignments } = runUpdate({
-      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW,
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW, isPidAlive: false,
     });
     // oldshort keeps its slot (it's pinned), newshort gets the first spread-order free
     // slot that isn't 7. That's 0.
@@ -7142,6 +7206,33 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertTruthy(assignments['newshort'], 'new entry created fresh');
     assertEqual(assignments['newshort'].label, '');
     assertEqual(assignments['newshort'].pinned, false);
+  });
+
+  it('/clear after a long idle still migrates when the pid is ALIVE (last_seen stale)', () => {
+    // Ben's report: stepping away >10 min then /clear gave a fresh colour.
+    // The 600 s freshness window expired, but the SAME terminal process is
+    // still running — a live pid can't be OS-reused, so it must migrate and
+    // keep the colour/label/voice. This is the headline /clear fix.
+    const seed = {
+      'oldshort': {
+        index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
+        label: 'MATE.AIN brain', pinned: true, voice: 'en-GB-RyanNeural',
+        last_seen: STALE,  // idled well past the 600 s window
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW, isPidAlive: true,
+    });
+    assertEqual(returnedIndex, 7);  // same colour preserved
+    if (assignments['oldshort']) throw new Error('old short must be removed after live-pid migration');
+    const migrated = assignments['newshort'];
+    if (!migrated) throw new Error('new short entry missing after live-pid migration');
+    assertEqual(migrated.index, 7);
+    assertEqual(migrated.label, 'MATE.AIN brain');
+    assertEqual(migrated.pinned, true);
+    assertEqual(migrated.voice, 'en-GB-RyanNeural');
+    assertEqual(migrated.session_id, 'newshort-uuid');
+    assertEqual(migrated.claude_pid, 1234);
   });
 
   it('claude_pid=0 never triggers migration (blocks ghost-entry pollution)', () => {
@@ -8480,6 +8571,44 @@ describe('REGISTRY LOCK SKIP-ON-FAIL (#26)', () => {
     }
   });
 
+  it('writeAssignments source acquires the lock + skips the write when held=false (was UNLOCKED)', () => {
+    // writeAssignments (ensureAssignmentsForFiles queue-scan + backup-recovery)
+    // used to write the registry with NO lock, racing the PS hooks +
+    // saveAssignments — a confirmed clobber source (blank labels, reshuffled
+    // colours). It must now use the same withRegistryLock + skip-on-fail
+    // discipline as saveAssignments.
+    const m = mainJs.match(/function\s+writeAssignments\s*\(\s*all\s*,\s*opts[\s\S]+?\r?\n\}/);
+    if (!m) throw new Error('writeAssignments function body not found');
+    const body = m[0];
+    if (!/withRegistryLock\([^,]+,\s*\(held\)/.test(body)) {
+      throw new Error('writeAssignments must wrap its write in withRegistryLock((held)=>...) — clobber fix');
+    }
+    if (!/if\s*\(\s*!held\s*\)/.test(body)) {
+      throw new Error('writeAssignments must branch on !held and skip — clobber fix');
+    }
+    if (!/write-registry skip from=\$\{caller\} reason=lock-timeout/.test(body)) {
+      throw new Error('writeAssignments must emit "write-registry skip from=<caller> reason=lock-timeout" — clobber fix');
+    }
+  });
+
+  it('loadAssignments retries a failed parse before archiving as corrupt (torn-read tolerance)', () => {
+    // A concurrent atomic rename can make one read throw / see a partial file;
+    // _parseRegistryFile reports that as null. Treating the single transient
+    // as corruption archived 23 false positives AND triggered colour-changing
+    // backup recovery. loadAssignments must retry before archiveCorruptRegistry.
+    const m = mainJs.match(/function\s+loadAssignments\s*\(\s*\)[\s\S]+?\n\}/);
+    if (!m) throw new Error('loadAssignments function body not found');
+    const body = m[0];
+    const retryIdx = body.search(/for\s*\([^)]*primary\s*===\s*null[^)]*\)/);
+    if (retryIdx === -1) {
+      throw new Error('loadAssignments must retry the parse while primary === null before archiving — torn-read fix');
+    }
+    const archiveIdx = body.indexOf('archiveCorruptRegistry');
+    if (archiveIdx !== -1 && retryIdx > archiveIdx) {
+      throw new Error('loadAssignments retry loop must come BEFORE archiveCorruptRegistry — torn-read fix');
+    }
+  });
+
   it('back-compat: callbacks that ignore held argument still work', () => {
     // Existing tests + hypothetical future callers that don't care
     // about held (`() => 42`) must continue to function.
@@ -9300,8 +9429,9 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     }
     // Must be called on JSON.parse failure AND on shape mismatch.
     // Capture window bumped 1500 → 2500 after the rolling-backup
-    // recovery code landed in loadAssignments on 2026-04-23.
-    const load = src.match(/function loadAssignments[\s\S]{0,2500}\n\}/);
+    // recovery code landed (2026-04-23), then → 3500 after the
+    // torn-read retry loop landed (2026-06-02).
+    const load = src.match(/function loadAssignments[\s\S]{0,3500}\n\}/);
     if (!load) throw new Error('loadAssignments block not found');
     if (!/archiveCorruptRegistry\(.{0,100}JSON\.parse/i.test(load[0])) {
       throw new Error('loadAssignments must archive on JSON.parse failure');
@@ -9369,6 +9499,316 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     const src = fs.readFileSync(mainPath, 'utf8');
     if (!/\.corrupt-.{0,40}\$\{ts\}/.test(src) && !/\.corrupt-\$\{ts\}/.test(src)) {
       throw new Error('archive filename should embed ISO timestamp (.corrupt-<ts>.json)');
+    }
+  });
+});
+
+// =============================================================================
+// MASCOT DOTS — each assistant-session clip renders a miniature of the
+// scrubber mascot instead of a plain circle, recoloured by the same
+// data-palette scheme so a dot matches its session. Lifecycle is System A
+// ("fade on heard"): queued = bright, auto-played = faded, manually-played =
+// white mascot + session-colour ring, active = full presence + pulsing halo.
+// J-clips keep the round "J" badge (mascot = assistant, J = manual read).
+// =============================================================================
+describe('MASCOT DOTS — session mascot replaces the queued circle', () => {
+  const dotStripSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8');
+  const stylesSrc   = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+  const paletteCss  = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'palette-classes.css'), 'utf8');
+
+  it('dot-strip stamps the mascot on assistant clips and keeps the J badge for clips', () => {
+    if (!/classList\.add\('mascot'\)/.test(dotStripSrc)) {
+      throw new Error("dot-strip.js should add the 'mascot' class to assistant-session dots");
+    }
+    if (!/class="dot-mascot"/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should stamp a .dot-mascot svg into mascot dots');
+    }
+    if (!/dm-region/.test(dotStripSrc) || !/dm-face/.test(dotStripSrc)) {
+      throw new Error('mascot svg should tag body/ear/leg as .dm-region and eyes/smile as .dm-face');
+    }
+    if (!/classList\.add\('clip'\)[\s\S]{0,80}textContent\s*=\s*'J'/.test(dotStripSrc)) {
+      throw new Error("dot-strip.js should still render the round 'J' badge for clip files");
+    }
+  });
+
+  it('mascot svg shares the scrubber geometry + renders smooth to stay crisp at 14px', () => {
+    if (!/viewBox="0 0 140 120"/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should use the 140×120 mascot viewBox (matches #scrubberMascot)');
+    }
+    if (!/shape-rendering="geometricPrecision"/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should render geometricPrecision so the legs/smile stay crisp');
+    }
+    if (!/--mascot-body-top-left/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should fill from --mascot-* vars (same recolour scheme as scrubber)');
+    }
+  });
+
+  it('styles.css implements System A: transparent bg, fade-on-heard, white+ring manual, no pip', () => {
+    if (!/\.dot\.mascot[\s\S]{0,160}background:\s*transparent/.test(stylesSrc)) {
+      throw new Error('.dot.mascot should be transparent — the mascot supplies the colour');
+    }
+    if (!/\.dot\.mascot\.heard\s*\{\s*background:\s*transparent\s*!important/.test(stylesSrc)) {
+      throw new Error('.dot.mascot.heard must beat the !important heard background');
+    }
+    if (!/\.dot\.mascot\.heard\.played-auto:not\(\.active\)[\s\S]{0,60}opacity:\s*0?\.4/.test(stylesSrc)) {
+      throw new Error('auto-played mascot should fade (opacity) when it is not the active clip');
+    }
+    if (!/\.dot\.mascot\.played-manual:not\(\.active\)[\s\S]{0,80}\.dm-region\s*\{\s*fill:\s*#fff/.test(stylesSrc)) {
+      throw new Error('manually-played mascot should turn white via .dm-region fill');
+    }
+    if (!/\.dot\.mascot\.played-manual:not\(\.active\)::before\s*\{\s*display:\s*block/.test(stylesSrc)) {
+      throw new Error('manually-played mascot should show the session-colour ring (::before)');
+    }
+    if (!/\.dot\.mascot::after\s*\{\s*display:\s*none\s*!important/.test(stylesSrc)) {
+      throw new Error('mascot dots should suppress the circle-era inner pip (::after)');
+    }
+  });
+
+  it('palette-classes.css recolours .dot.mascot per session, preserving split orientation', () => {
+    if (!/\.dot\.mascot\[data-palette="04"\]\s*\{[^}]*--mascot-body-top-left:\s*#60a5fa/.test(paletteCss)) {
+      throw new Error('.dot.mascot solid palette should recolour the body');
+    }
+    if (!/\.dot\.mascot\[data-palette="08"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-bottom-left:\s*#4ade80;[^}]*--mascot-leg-left:\s*#4ade80/.test(paletteCss)) {
+      throw new Error('.dot.mascot must preserve top/bottom split orientation (08)');
+    }
+    if (!/\.dot\.mascot\[data-palette="16"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-top-right:\s*#60a5fa;[^}]*--mascot-leg-right:\s*#60a5fa/.test(paletteCss)) {
+      throw new Error('.dot.mascot must preserve left/right split orientation (16)');
+    }
+  });
+
+  it('mascot dot region geometry stays byte-identical to the #scrubberMascot rects', () => {
+    // The dot mascot must read as the SAME character as the scrubber. Body/ear/
+    // leg rect coords are duplicated in two files; this guards against silent
+    // drift if someone nudges one. Face rects (dm-face) are excluded — their
+    // fill intentionally differs (#1a1c22 dot vs #3a3a3a scrubber, for 14px
+    // legibility) while coords still match.
+    const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+    const block = /id="scrubberMascot"[\s\S]*?<\/svg>/.exec(indexHtml);
+    if (!block) throw new Error('could not locate #scrubberMascot svg in app/index.html');
+    const quad = (s) => `${s[1]},${s[2]},${s[3]},${s[4]}`;
+    const scrubberQuads = new Set();
+    const rectRe = /x="(\d+)"\s+y="(\d+)"\s+width="(\d+)"\s+height="(\d+)"/g;
+    let r; while ((r = rectRe.exec(block[0]))) scrubberQuads.add(quad(r));
+    const regionRe = /class="dm-region"\s+x="(\d+)"\s+y="(\d+)"\s+width="(\d+)"\s+height="(\d+)"/g;
+    const dotRegions = [];
+    let d; while ((d = regionRe.exec(dotStripSrc))) dotRegions.push(quad(d));
+    if (dotRegions.length !== 12) {
+      throw new Error(`expected 12 mascot region rects (4 body + 4 ear + 4 leg) in dot-strip.js, found ${dotRegions.length}`);
+    }
+    for (const q of dotRegions) {
+      if (!scrubberQuads.has(q)) {
+        throw new Error(`mascot dot region rect [${q}] drifted from #scrubberMascot — keep the dot + scrubber geometry in sync`);
+      }
+    }
+  });
+});
+
+// =============================================================================
+// CLIP DELETION — the toolbar bin clears EVERY clip (heard or not) and each
+// session tab gets its own corner bin. Both soft-delete through the shared
+// 10 s undo window so a mis-click is recoverable. Lets the user drop a
+// multi-session backlog without right-clicking each dot.
+// =============================================================================
+describe('CLIP DELETION — toolbar clear-all + per-session tab bins', () => {
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+  const tabsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tabs.js'), 'utf8');
+  const stylesSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+
+  it('toolbar bin clears EVERY clip ON DISK (allQueuePaths, not the MAX_FILES-capped queue)', () => {
+    if (!/function clearAllClips\(\)/.test(rendererSrc)) {
+      throw new Error('renderer.js should define clearAllClips()');
+    }
+    const body = /function clearAllClips\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!body) throw new Error('could not parse clearAllClips body');
+    if (/heardPaths\.has/.test(body[0])) {
+      throw new Error('clearAllClips must NOT gate on heardPaths — it clears played AND unheard clips');
+    }
+    // Cap-bug fix: clearing only the capped `queue` left the on-disk overflow
+    // to reload ("deleted 50, 20 jumped back"). The full set comes from the
+    // uncapped allQueuePaths via _allClipPathsExceptPlaying().
+    const helper = /function _allClipPathsExceptPlaying\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!helper) throw new Error('renderer.js should define _allClipPathsExceptPlaying() (cap-bug fix)');
+    if (!/allQueuePaths/.test(helper[0])) {
+      throw new Error('_allClipPathsExceptPlaying must read allQueuePaths (uncapped) so overflow clips clear too');
+    }
+    if (!/getCurrentPath\(\)/.test(helper[0])) {
+      throw new Error('_allClipPathsExceptPlaying must exclude the currently-playing clip');
+    }
+    if (!/_allClipPathsExceptPlaying\(\)/.test(body[0])) {
+      throw new Error('clearAllClips must clear the full on-disk set via _allClipPathsExceptPlaying()');
+    }
+    if (!/clearPlayedBtn\.addEventListener\('click',\s*\(\)\s*=>\s*clearAllClips\(\)\)/.test(rendererSrc)) {
+      throw new Error('the toolbar bin button must call clearAllClips()');
+    }
+  });
+
+  it('bulk clear deletes in ONE batched IPC (rate-limit safe) and surfaces failures', () => {
+    const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8');
+    const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+    if (!/ipcMain\.handle\('delete-files'/.test(ipcSrc)) {
+      throw new Error("ipc-handlers should register a 'delete-files' batch handler");
+    }
+    const handler = /ipcMain\.handle\('delete-files'[\s\S]*?\n {4}\}\);/.exec(ipcSrc);
+    if (!handler) throw new Error('could not parse delete-files handler');
+    if ((handler[0].match(/allowMutation\(/g) || []).length !== 1) {
+      throw new Error('delete-files must do exactly ONE allowMutation check for the whole batch (not per file) — otherwise the rate limiter shreds a bulk clear');
+    }
+    if (!/ENOENT/.test(handler[0])) {
+      throw new Error('delete-files must treat ENOENT (already gone) as success, not a failure');
+    }
+    if (!/deleteFiles:\s*\(paths,\s*reason\)\s*=>\s*ipcRenderer\.invoke\('delete-files'/.test(preloadSrc)) {
+      throw new Error('preload should expose deleteFiles -> delete-files');
+    }
+    const fin = /async function _finaliseClear\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!fin) throw new Error('renderer _finaliseClear should be async (awaits the batch delete)');
+    if (!/deleteFiles\(/.test(fin[0])) {
+      throw new Error('_finaliseClear must use the batched deleteFiles, not one deleteFile per clip');
+    }
+    if (!/_showStatusToast/.test(fin[0])) {
+      throw new Error('_finaliseClear must surface a visible error if any clip fails to delete');
+    }
+  });
+
+  it('per-session clear filters by session and reuses the soft-clear/undo path', () => {
+    if (!/function clearSessionClips\(shortId\)/.test(rendererSrc)) {
+      throw new Error('renderer.js should define clearSessionClips(shortId)');
+    }
+    const body = /function clearSessionClips\(shortId\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!body) throw new Error('could not parse clearSessionClips body');
+    if (!/extractSessionShort/.test(body[0])) {
+      throw new Error('clearSessionClips must filter clips by session shortId');
+    }
+    if (!/_beginSoftClear/.test(body[0])) {
+      throw new Error('clearSessionClips must route through _beginSoftClear (shared undo window)');
+    }
+    if (!/onDeleteSession:\s*\(shortId\)\s*=>\s*clearSessionClips\(shortId\)/.test(rendererSrc)) {
+      throw new Error('Tabs must be wired with onDeleteSession -> clearSessionClips');
+    }
+    if (!/function _beginSoftClear\(/.test(rendererSrc)) {
+      throw new Error('renderer.js should define the shared _beginSoftClear()');
+    }
+  });
+
+  it('delete-files handler batch-unlinks real files, tolerates ENOENT, honours one rate-limit gate', () => {
+    const { createIpcHandlers } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-delfiles-'));
+    const a = path.join(tmp, 'a.mp3');
+    const b = path.join(tmp, 'b.mp3');
+    const gone = path.join(tmp, 'gone.mp3');   // never created → ENOENT on unlink
+    fs.writeFileSync(a, 'x');
+    fs.writeFileSync(b, 'x');
+    function build(allow) {
+      const handlers = {};
+      createIpcHandlers({
+        ipcMain: { handle: (n, fn) => { handlers[n] = fn; } },
+        diag: () => {}, callEdgeTTS: () => {}, getAppVersion: () => '0', getCFG: () => ({}),
+        loadAssignments: () => ({}), getQueueFiles: () => [], getQueueAllPaths: () => [],
+        ensureAssignmentsForFiles: () => {}, shortFromFile: () => null, isPidAlive: () => false,
+        computeStaleSessions: () => [], SESSIONS_DIR: os.tmpdir(), getWin: () => null,
+        saveAssignments: () => true, notifyQueue: () => {}, allowMutation: () => allow,
+        validShort: () => true, validVoice: () => true, sanitiseLabel: (s) => s,
+        ALLOWED_INCLUDE_KEYS: new Set(), setCFG: () => {}, saveConfig: () => true,
+        apiKeyStore: { set: () => {}, get: () => null }, redactForLog: (x) => x, setApplyingDock: () => {},
+        testMode: true, QUEUE_DIR: tmp, isPathInside: (p) => typeof p === 'string' && p.startsWith(tmp),
+        getWatchdog: () => null, getWatchdogIntervalMs: () => 0,
+      }).register();
+      return handlers;
+    }
+    // Gate closed → nothing deleted, files survive, rateLimited flagged.
+    const blocked = build(false)['delete-files'](null, [a, b], 'clear-all');
+    assertTruthy(blocked.rateLimited, 'delete-files must flag rateLimited when the mutation gate is closed');
+    assertEqual(blocked.deleted, 0, 'rate-limited batch must delete nothing');
+    assertTruthy(fs.existsSync(a), 'rate-limited batch must not unlink anything');
+    // Gate open → a + b unlinked; missing `gone` counts as deleted (ENOENT); no failures.
+    const ok = build(true)['delete-files'](null, [a, b, gone], 'clear-all');
+    assertEqual(ok.deleted, 3, 'batch must count a + b + already-gone (ENOENT) as deleted');
+    assertEqual(ok.failed.length, 0, 'no genuine failures expected for in-dir files');
+    assertFalsy(fs.existsSync(a), 'a.mp3 must be unlinked');
+    assertFalsy(fs.existsSync(b), 'b.mp3 must be unlinked');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('tabs render a per-session bin (never on [All]) wired to onDeleteSession with stopPropagation', () => {
+    if (!/this\._onDeleteSession/.test(tabsSrc)) {
+      throw new Error('tabs.js should accept + use onDeleteSession');
+    }
+    if (!/'tab-bin'/.test(tabsSrc)) {
+      throw new Error('tabs.js should build a .tab-bin element');
+    }
+    if (!/id !== 'all'[\s\S]{0,400}_onDeleteSession/.test(tabsSrc)) {
+      throw new Error('the per-session bin must be skipped for the [All] tab');
+    }
+    if (!/stopPropagation/.test(tabsSrc)) {
+      throw new Error('the bin click must stopPropagation so it does not also select the tab');
+    }
+    if (!/\.tab-bin\b/.test(stylesSrc)) {
+      throw new Error('styles.css missing .tab-bin rule');
+    }
+  });
+
+  it('toolbar bin button is relabelled to clear-all (keeps title + aria-label)', () => {
+    const m = /id="clearPlayed"[^>]*>/.exec(indexHtml);
+    if (!m) throw new Error('#clearPlayed button missing');
+    if (!/aria-label="Clear all clips"/.test(m[0])) {
+      throw new Error('#clearPlayed aria-label should be "Clear all clips"');
+    }
+    if (!/title="[^"]*clips/i.test(m[0])) {
+      throw new Error('#clearPlayed title should describe clearing all clips');
+    }
+  });
+});
+
+// =============================================================================
+// HOTKEYS — self-healing re-registration. A transient startup collision
+// (another process momentarily holding a chord) must not leave a global
+// shortcut dead until the next full app restart. Registration is idempotent
+// + retried (delayed + on focus) + re-runnable on demand from Settings.
+// =============================================================================
+describe('HOTKEYS — self-healing re-registration', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+  const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+
+  it('registration is idempotent + re-callable (unregisterAll then re-grab)', () => {
+    if (!/function registerGlobalHotkeys\(\)/.test(mainSrc)) {
+      throw new Error('main.js should wrap global-shortcut registration in registerGlobalHotkeys()');
+    }
+    const body = /function registerGlobalHotkeys\(\)\s*\{[\s\S]*?\n {2}\}/.exec(mainSrc);
+    if (!body) throw new Error('could not parse registerGlobalHotkeys body');
+    if (!/globalShortcut\.unregisterAll\(\)/.test(body[0])) {
+      throw new Error('registerGlobalHotkeys must unregisterAll() first so a retry re-acquires cleanly');
+    }
+    if (!/globalShortcut\.register\(/.test(body[0])) {
+      throw new Error('registerGlobalHotkeys must (re-)register the chords');
+    }
+    if (!/_reregisterHotkeys\s*=\s*registerGlobalHotkeys/.test(mainSrc)) {
+      throw new Error('main.js must expose registerGlobalHotkeys via _reregisterHotkeys for the IPC');
+    }
+  });
+
+  it('auto-retries on a delayed timer + on window focus while chords remain unclaimed', () => {
+    if (!/registerGlobalHotkeys\(\);\s*\}, 10_?000\)/.test(mainSrc)) {
+      throw new Error('main.js should retry registration ~10s after startup if any chord failed');
+    }
+    if (!/'browser-window-focus'[\s\S]{0,140}registerGlobalHotkeys\(\)/.test(mainSrc)) {
+      throw new Error('main.js should re-register on window focus while chords remain unclaimed');
+    }
+  });
+
+  it('exposes a manual re-register path: IPC + preload + Settings button', () => {
+    if (!/ipcMain\.handle\('reregister-hotkeys'/.test(mainSrc)) {
+      throw new Error("main.js should register the 'reregister-hotkeys' IPC");
+    }
+    if (!/reregisterHotkeys:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('reregister-hotkeys'\)/.test(preloadSrc)) {
+      throw new Error('preload should expose reregisterHotkeys -> reregister-hotkeys');
+    }
+    if (!/id="hotkeyReregister"/.test(indexHtml)) {
+      throw new Error('index.html should add a #hotkeyReregister button in Settings → Shortcuts');
+    }
+    if (!/reregisterHotkeys\(\)/.test(settingsSrc)) {
+      throw new Error('settings-form should call reregisterHotkeys() when the button is clicked');
     }
   });
 });
@@ -10708,8 +11148,8 @@ describe('CLEAR-PLAYED UNDO RACE (#47)', () => {
     if (!/_pendingClear/.test(handler)) {
       throw new Error('onQueueUpdated must consult _pendingClear to filter soft-deleted clips');
     }
-    if (!/pendingClearPaths/.test(handler)) {
-      throw new Error('onQueueUpdated must build a Set of pending-clear paths to filter');
+    if (!/_pendingClear\.paths/.test(handler)) {
+      throw new Error('onQueueUpdated must filter against the _pendingClear.paths set (the full cleared set, incl. on-disk overflow)');
     }
     if (!/files\s*=\s*files\.filter/.test(handler)) {
       throw new Error('onQueueUpdated must filter the incoming `files` array (not just downstream)');
@@ -13739,6 +14179,63 @@ describe('EX7c — DotStrip', () => {
     md.fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
     ctx.fn({ preventDefault: () => {} });
     assertEqual(deletes, [clip.path]);  // exactly one delete for one gesture
+    ds.unmount();
+  });
+
+  it('rapid right-clicks (mousedown button 2) on different dots each delete — none swallowed', () => {
+    // The earlier instance-wide 300 ms time guard swallowed every delete
+    // within 300 ms of the previous one, so clearing several dots quickly
+    // dropped most ("delete isn't reliable, doesn't delete at once").
+    // mousedown is the authoritative trigger and is never suppressed, so
+    // each distinct dot must delete.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const a = makeClip('aabbccdd', 1);
+    const b = makeClip('eeff0011', 2);
+    ds.update({ queue: [b, a], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dots = root._children.filter((c) => c._listeners && c._listeners.some((l) => l.ev === 'mousedown'));
+    assertEqual(dots.length, 2);
+    for (const dot of dots) {
+      dot._listeners.find((l) => l.ev === 'mousedown').fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    }
+    assertEqual(deletes.length, 2);
+    assertTruthy(deletes.includes(a.path) && deletes.includes(b.path), 'both distinct dots must delete');
+    ds.unmount();
+  });
+
+  it('one right-click deletes ONCE even if the strip re-renders and contextmenu lands on a DIFFERENT dot', () => {
+    // The "deleted 2 with one click" regression: a single right-click fires
+    // mousedown (deletes dot A) and then contextmenu; on a busy main thread
+    // the strip rebuilds in between, so the trailing contextmenu lands on the
+    // adjacent dot B. Gating by event role (mousedown authoritative, the
+    // paired contextmenu suppressed) must prevent B's deletion regardless of
+    // the path/timing mismatch.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const a = makeClip('aabbccdd', 1);
+    const b = makeClip('eeff0011', 2);
+    ds.update({ queue: [b, a], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dots = root._children.filter((c) => c._listeners && c._listeners.some((l) => l.ev === 'mousedown'));
+    assertEqual(dots.length, 2);
+    // mousedown on dot A, then the paired contextmenu lands on dot B (rebuild).
+    dots[0]._listeners.find((l) => l.ev === 'mousedown').fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    dots[1]._listeners.find((l) => l.ev === 'contextmenu').fn({ preventDefault: () => {} });
+    assertEqual(deletes.length, 1);  // trailing contextmenu suppressed
+    assertEqual(deletes[0], a.path);  // only the mousedown's dot deleted
     ds.unmount();
   });
 
@@ -17277,6 +17774,51 @@ describe('VOICE COMMAND (Phase 1)', () => {
   const repoApp = path.join(__dirname, '..', 'app');
   const recognizerPath = path.join(repoApp, 'voice-command-recognize.ps1');
 
+  function synthesizeVoiceCommandWav(text, wavPath) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const scriptPath = path.join(os.tmpdir(), `tt-sapi-synth-${nonce}.ps1`);
+    fs.writeFileSync(scriptPath, [
+      'param(',
+      '  [Parameter(Mandatory = $true)] [string]$OutPath,',
+      '  [Parameter(Mandatory = $true)] [string]$Text',
+      ')',
+      "$ErrorActionPreference = 'Stop'",
+      'Add-Type -AssemblyName System.Speech',
+      '$synth = $null',
+      'try {',
+      '  $format = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo -ArgumentList 16000, ([System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen), ([System.Speech.AudioFormat.AudioChannel]::Mono)',
+      '  $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      '  $synth.SetOutputToWaveFile($OutPath, $format)',
+      '  $null = $synth.Speak($Text)',
+      '} finally {',
+      '  if ($synth -ne $null) { $synth.Dispose() }',
+      '}',
+      'if (!(Test-Path -LiteralPath $OutPath)) { throw "SAPI did not create WAV: $OutPath" }',
+      '$length = (Get-Item -LiteralPath $OutPath).Length',
+      'if ($length -le 44) { throw "SAPI produced empty WAV: $length bytes" }',
+      'Write-Output "SYNTH_OK length=$length"',
+      '',
+    ].join('\r\n'), 'utf8');
+
+    try {
+      const synth = spawnSync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File',
+        scriptPath, wavPath, text,
+      ], { encoding: 'utf8', timeout: 20000 });
+      const exists = fs.existsSync(wavPath);
+      const size = exists ? fs.statSync(wavPath).size : 0;
+      if (synth.status !== 0 || !/\bSYNTH_OK\b/.test(synth.stdout || '') || size <= 44) {
+        throw new Error(
+          `synth fail: status=${synth.status} signal=${synth.signal || ''} ` +
+          `error=${synth.error ? synth.error.message : ''} size=${size} ` +
+          `stdout=${synth.stdout || ''} stderr=${synth.stderr || ''}`
+        );
+      }
+    } finally {
+      try { fs.unlinkSync(scriptPath); } catch {}
+    }
+  }
+
   it('recognizer script exists', () => {
     if (!fs.existsSync(recognizerPath)) {
       throw new Error(`voice-command-recognize.ps1 missing at ${recognizerPath}`);
@@ -17355,17 +17897,8 @@ describe('VOICE COMMAND (Phase 1)', () => {
     // synthesized speech; the Python listener may apply a stricter live
     // confidence gate before dispatching a command.
     const wavPath = path.join(os.tmpdir(), `tt-voice-play-${process.pid}-${Date.now()}.wav`);
-    const synth = spawnSync('powershell.exe', [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-      `Add-Type -AssemblyName System.Speech; ` +
-      `$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ` +
-      `$s.SetOutputToWaveFile('${wavPath.replace(/'/g, "''")}'); ` +
-      `$s.Speak('play'); $s.Dispose(); Write-Output 'SYNTH_OK'`,
-    ], { encoding: 'utf8', timeout: 20000 });
-    if (synth.status !== 0 || !synth.stdout.includes('SYNTH_OK')) {
-      throw new Error(`synth fail: stdout=${synth.stdout} stderr=${synth.stderr}`);
-    }
     try {
+      synthesizeVoiceCommandWav('play', wavPath);
       const r = spawnSync('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
         recognizerPath, wavPath,
@@ -20238,16 +20771,21 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
   });
 
   it('tt-doctor.sh runs end-to-end and exits cleanly with --no-net (smoke)', () => {
-    // MSYS/Git Bash (what `bash` resolves to on windows-latest and locally)
-    // maps `C:` to `/c/`, NOT the WSL `/mnt/c/`. Using /mnt/c made `tr` fail
-    // to open the file -> empty stdin -> bash ran nothing -> "did not reach
-    // Summary". /c/ is the correct drive-letter convention here.
-    const doctorPath = path.join(__dirname, '..', 'scripts', 'tt-doctor.sh')
-      .replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`);
+    // Pipe the script body into bash instead of passing a filesystem path.
+    // Windows machines can resolve `bash` to Git Bash, MSYS, or WSL; each maps
+    // `C:\...` differently. Feeding stdin avoids that platform split entirely
+    // while still exercising the script end-to-end.
+    const doctorPath = path.join(__dirname, '..', 'scripts', 'tt-doctor.sh');
+    const doctorBody = fs.readFileSync(doctorPath, 'utf8').replace(/\r/g, '');
     const r = spawnSync('bash', process.platform === 'win32'
-      ? ['-c', `tr -d "\\r" < '${doctorPath.replace(/'/g, "'\\''")}' | bash -s -- --no-net`]
+      ? ['-s', '--', '--no-net']
       : [doctorPath, '--no-net'],
-      { encoding: 'utf8', timeout: 30000, env: { ...process.env, TERM: 'dumb' } });
+      {
+        encoding: 'utf8',
+        input: process.platform === 'win32' ? doctorBody : undefined,
+        timeout: 30000,
+        env: { ...process.env, TERM: 'dumb' },
+      });
     if (r.status === null) {
       throw new Error(`tt-doctor.sh did not return a status: ${r.error}`);
     }

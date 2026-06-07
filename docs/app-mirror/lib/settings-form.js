@@ -132,6 +132,7 @@
         openaiTestResult: document.getElementById('openaiTestResult'),
         hotkeyInputs: {},
         hotkeyStatus: document.getElementById('hotkeyStatus'),
+        hotkeyReregister: document.getElementById('hotkeyReregister'),
         hotkeyResetDefaults: document.getElementById('hotkeyResetDefaults'),
         // Speech-includes checkboxes follow a consistent naming scheme.
         // tool_calls (#24 / Ben B-2) — global on/off for tool-call
@@ -396,6 +397,30 @@
             this.update({ cfg: merged });
           }
           await this._refreshHotkeyStatus('Default shortcuts restored.');
+        });
+      }
+
+      // Re-register: re-run global-shortcut registration on demand. Self-heals
+      // a transient startup collision (another app briefly held a chord) that
+      // the one-shot startup register left dead — no full app restart needed.
+      const rereg = this._el.hotkeyReregister;
+      if (rereg && this._api.reregisterHotkeys) {
+        this._on(rereg, 'click', async () => {
+          this._setHotkeyStatus('Re-registering shortcuts...', 'busy');
+          try {
+            const status = await this._api.reregisterHotkeys();
+            const failed = (status && status.failed) || [];
+            if (failed.length) {
+              this._setHotkeyStatus(
+                `Still blocked: ${failed.map((f) => f.name).join(', ')}. Close the app that owns the chord, then retry.`,
+                'err',
+              );
+            } else {
+              this._setHotkeyStatus('All shortcuts registered.', 'ok');
+            }
+          } catch {
+            this._setHotkeyStatus('Re-register failed — see logs.', 'err');
+          }
         });
       }
     }

@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal Talk Carousel Prototype</title>
+<style>
+:root {
+  --red: #ff5e5e;
+  --orange: #ffa726;
+  --yellow: #ffd93d;
+  --green: #4ade80;
+  --blue: #60a5fa;
+  --purple: #c084fc;
+  --copper: #c97b50;
+  --bone: #e0e0e0;
+  --bg: #0e0f13;
+  --panel: rgba(24,26,32,0.9);
+  --border: rgba(255,255,255,0.12);
+  --text: #fff;
+  --text-dim: rgba(255,255,255,0.72);
+  --text-faint: rgba(255,255,255,0.48);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 18% 18%, rgba(96,165,250,0.18), transparent 34%),
+    radial-gradient(circle at 82% 80%, rgba(192,132,252,0.16), transparent 38%),
+    var(--bg);
+}
+main {
+  width: min(1180px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 34px 0 54px;
+}
+.prototype-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.prototype-head h1 {
+  margin: 0 0 6px;
+  font-size: clamp(28px, 4vw, 44px);
+  letter-spacing: 0;
+}
+.prototype-head p {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 720px;
+}
+.status {
+  flex: 0 0 auto;
+  border: 1px solid rgba(74,222,128,0.3);
+  color: #b6f6c9;
+  background: rgba(74,222,128,0.08);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.carousel {
+  --index: 0;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  overflow: hidden;
+  background: rgba(17,19,27,0.86);
+  box-shadow: 0 28px 90px rgba(0,0,0,0.32);
+}
+.carousel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.counter {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.controls { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.arrow {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+}
+.slides {
+  display: flex;
+  transform: translateX(calc(var(--index) * -100%));
+  transition: transform .42s cubic-bezier(.2,.8,.2,1);
+}
+.slide {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr);
+  gap: 24px;
+  align-items: center;
+  padding: 22px;
+}
+.stage {
+  position: relative;
+  min-height: 390px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  background: #10131c;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.stage img {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.stage-diagram {
+  display: block;
+  padding: 26px;
+}
+.source-stack {
+  position: absolute;
+  left: 28px;
+  top: 28px;
+  display: grid;
+  gap: 10px;
+  width: 220px;
+}
+.source-card,
+.surface-card,
+.queue-card,
+.bind-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.68);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 16px 34px rgba(0,0,0,0.24);
+}
+.source-card {
+  transform: translateX(-10px);
+  opacity: .62;
+  animation: sourceFeed 6s ease-in-out infinite;
+}
+.source-card:nth-child(2) { animation-delay: .45s; }
+.source-card:nth-child(3) { animation-delay: .9s; }
+.source-card:nth-child(4) { animation-delay: 1.35s; }
+.source-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+}
+.source-detail {
+  display: block;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.queue-target {
+  position: absolute;
+  left: 278px;
+  right: 34px;
+  bottom: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.74);
+  border: 1px solid rgba(255,255,255,0.14);
+}
+.queue-target strong {
+  margin-right: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.queue-dot-demo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,0.18);
+}
+.queue-dot-demo.speaking {
+  animation: activeDot 1.6s ease-in-out infinite;
+}
+.queue-dot-demo.auto::after {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
+.identity-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(720px, 100%);
+}
+.surface-card {
+  min-height: 112px;
+  align-items: flex-start;
+  flex-direction: column;
+}
+.surface-card .surface-top {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.surface-card h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.surface-card p {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.surface-sample {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-dim);
+  padding: 9px 10px;
+  font-size: 13px;
+}
+.surface-card.pulse-surface {
+  animation: surfacePulse 4.8s ease-in-out infinite;
+}
+.surface-card:nth-child(2) { animation-delay: .25s; }
+.surface-card:nth-child(3) { animation-delay: .5s; }
+.surface-card:nth-child(4) { animation-delay: .75s; }
+.focus-demo {
+  width: min(700px, 100%);
+  display: grid;
+  gap: 18px;
+}
+.focus-lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.queue-card {
+  min-height: 146px;
+  align-items: flex-start;
+  flex-direction: column;
+}
+.queue-card h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.queue-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+.queue-token {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+.queue-token.red { background: var(--red); }
+.queue-token.green { background: var(--green); }
+.queue-token.yellow { background: var(--yellow); }
+.queue-token.jump {
+  animation: queueJump 3.8s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.18);
+}
+.focus-star {
+  color: #ffd76a;
+  font-size: 30px;
+  text-shadow: 0 0 22px rgba(255,217,61,0.55);
+}
+.collapsed-stack {
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+}
+.letterbox-demo {
+  width: 300px;
+  height: 54px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#111722, #111722) padding-box,
+    linear-gradient(90deg, var(--blue) 0 50%, var(--orange) 50% 100%) border-box;
+  position: relative;
+  box-shadow: 0 0 0 4px rgba(96,165,250,0.15), 0 18px 46px rgba(0,0,0,0.38);
+  overflow: hidden;
+}
+.letterbox-demo.vertical {
+  background:
+    linear-gradient(#111722, #111722) padding-box,
+    linear-gradient(180deg, var(--green) 0 50%, var(--red) 50% 100%) border-box;
+}
+.letterbox-wave {
+  position: absolute;
+  inset: 13px 22px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 8px, rgba(255,255,255,0.85) 8px 11px, transparent 11px 18px);
+  clip-path: polygon(0 50%,6% 38%,12% 64%,18% 25%,24% 72%,30% 31%,36% 64%,42% 44%,48% 60%,54% 25%,60% 74%,66% 35%,72% 62%,78% 30%,84% 68%,90% 40%,96% 58%,100% 50%,100% 100%,0 100%);
+  opacity: .9;
+  animation: waveBars 1.8s ease-in-out infinite;
+}
+.transcript-callout {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 11%;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mini-button {
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  padding: 8px 11px;
+  font-weight: 700;
+  font-size: 12px;
+  animation: surfacePulse 3.4s ease-in-out infinite;
+}
+.bind-flow {
+  width: min(710px, 100%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+.bind-card {
+  min-height: 150px;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.bind-card strong {
+  display: block;
+  font-size: 16px;
+}
+.bind-card span:not(.palette-mark) {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.copy .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--copper);
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+.copy .kicker::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 18px rgba(74,222,128,0.42);
+}
+.copy h2 {
+  margin: 0 0 12px;
+  font-size: clamp(25px, 3vw, 38px);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+.copy p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+.takeaways {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+.takeaway {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.takeaway b {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(201,123,80,0.18);
+  color: #ffc49f;
+  font-size: 12px;
+}
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  padding: 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.dot {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  background: rgba(255,255,255,0.24);
+}
+.dot.active {
+  background: var(--copper);
+  box-shadow: 0 0 0 5px rgba(201,123,80,0.16);
+}
+.label-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid rgba(255,255,255,0.15);
+  font-weight: 700;
+  font-size: 13px;
+  animation: floatIn 4.8s ease-in-out infinite;
+}
+.palette-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.18);
+}
+.split-lr { background: linear-gradient(90deg, var(--blue) 0 50%, var(--orange) 50% 100%); }
+.split-tb { background: linear-gradient(180deg, var(--green) 0 50%, var(--red) 50% 100%); }
+.pulse-ring {
+  position: absolute;
+  border: 2px solid rgba(96,165,250,0.88);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 0 28px rgba(96,165,250,0.42);
+  animation: explainPulse 2.2s ease-in-out infinite;
+}
+.route-line {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--red), var(--blue), var(--green));
+  transform-origin: left;
+  animation: routeLine 4.8s ease-in-out infinite;
+}
+.wave-overlay {
+  position: absolute;
+  width: 260px;
+  height: 56px;
+  border-radius: 999px;
+  border: 2px solid var(--blue);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 11px, rgba(96,165,250,0.9) 11px 14px, transparent 14px 22px),
+    rgba(0,0,0,0.72);
+  box-shadow: 0 0 0 4px rgba(96,165,250,0.14), 0 16px 40px rgba(0,0,0,0.45);
+  animation: waveBreathe 1.7s ease-in-out infinite;
+}
+@keyframes explainPulse {
+  0%, 100% { opacity: .15; transform: scale(.96); }
+  48% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes routeLine {
+  0%, 15%, 100% { transform: scaleX(0); opacity: .1; }
+  35%, 78% { transform: scaleX(1); opacity: 1; }
+}
+@keyframes floatIn {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes waveBreathe {
+  0%, 100% { transform: scaleX(.96); box-shadow: 0 0 0 5px rgba(96,165,250,0.12), 0 16px 40px rgba(0,0,0,0.45); }
+  50% { transform: scaleX(1.04); box-shadow: 0 0 0 2px rgba(96,165,250,0.3), 0 16px 40px rgba(0,0,0,0.45); }
+}
+@keyframes sourceFeed {
+  0%, 100% { opacity: .52; transform: translateX(-10px); }
+  25%, 55% { opacity: 1; transform: translateX(0); }
+}
+@keyframes activeDot {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255,255,255,0.16), 0 0 0 0 rgba(255,255,255,0); }
+  50% { box-shadow: 0 0 0 3px rgba(255,255,255,0.78), 0 0 26px rgba(255,255,255,0.32); }
+}
+@keyframes surfacePulse {
+  0%, 100% { border-color: rgba(255,255,255,0.12); transform: translateY(0); }
+  50% { border-color: rgba(96,165,250,0.5); transform: translateY(-2px); }
+}
+@keyframes queueJump {
+  0%, 100% { transform: translateX(0); }
+  45%, 70% { transform: translateX(-42px); }
+}
+@keyframes waveBars {
+  0%, 100% { transform: scaleY(.72); }
+  50% { transform: scaleY(1.28); }
+}
+@media (max-width: 860px) {
+  main { width: min(100vw - 24px, 1180px); }
+  .prototype-head { align-items: start; flex-direction: column; }
+  .slide { grid-template-columns: 1fr; }
+  .copy { order: -1; }
+  .stage { min-height: 260px; }
+  .identity-grid,
+  .focus-lanes,
+  .bind-flow { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header class="prototype-head">
+    <div>
+      <h1>Landing carousel prototype</h1>
+      <p>This isolated page is for sign-off only. It lets us build the six-slide Terminal Talk story before touching the real landing page.</p>
+    </div>
+    <div class="status">Live reload preview</div>
+  </header>
+
+  <section class="carousel" data-carousel>
+    <div class="carousel-top">
+      <span class="counter"><span data-current>1</span> / <span data-total>6</span></span>
+      <div class="controls">
+        <button class="arrow" type="button" data-prev aria-label="Previous slide">&#8249;</button>
+        <button class="arrow" type="button" data-next aria-label="Next slide">&#8250;</button>
+      </div>
+    </div>
+
+    <div class="slides" data-slides>
+      <article class="slide" data-slide>
+        <div class="stage">
+          <img src="screenshots/toolbar-resting-with-tabs.png" alt="Toolbar with multiple active sessions and queued clips">
+          <div class="source-stack" aria-hidden="true">
+            <div class="source-card"><span class="palette-mark"></span><span><span class="source-name">Claude Code</span><span class="source-detail">reply + tool narration</span></span></div>
+            <div class="source-card"><span class="palette-mark split-lr"></span><span><span class="source-name">Codex CLI</span><span class="source-detail">commentary + final</span></span></div>
+            <div class="source-card"><span class="palette-mark split-tb"></span><span><span class="source-name">Desktop Code</span><span class="source-detail">persistent chat identity</span></span></div>
+            <div class="source-card"><span class="palette-mark" style="background: var(--purple);"></span><span><span class="source-name">Highlight</span><span class="source-detail">read selected text</span></span></div>
+          </div>
+          <div class="queue-target" aria-hidden="true">
+            <strong>Spoken queue</strong>
+            <span class="queue-dot-demo speaking"></span>
+            <span class="queue-dot-demo auto" style="background: var(--red);"></span>
+            <span class="queue-dot-demo" style="background: linear-gradient(90deg, var(--blue) 0 50%, var(--orange) 50% 100%);"></span>
+            <span class="queue-dot-demo" style="background: linear-gradient(180deg, var(--green) 0 50%, var(--red) 50% 100%);"></span>
+            <span class="queue-dot-demo" style="background: var(--purple);"></span>
+          </div>
+        </div>
+        <div class="copy">
+          <span class="kicker">One queue</span>
+          <h2>Four assistants feed one spoken queue</h2>
+          <p>Claude Code, Codex CLI, Claude Desktop Code, and Codex Desktop can all speak through one toolbar. The user sees who is active, what is queued, and which clip is speaking.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>Multiple coding agents can keep working without forcing you to read every window.</span></div>
+            <div class="takeaway"><b>2</b><span>The toolbar turns their output into a single ordered audio stream.</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide>
+        <div class="stage stage-diagram">
+          <div class="identity-grid" aria-hidden="true">
+            <div class="surface-card pulse-surface">
+              <div class="surface-top"><h4>Toolbar tab</h4><span class="palette-mark split-tb"></span></div>
+              <div class="surface-sample">TT Green/Red · API watcher</div>
+              <p>The visible queue keeps the same identity.</p>
+            </div>
+            <div class="surface-card pulse-surface">
+              <div class="surface-top"><h4>Claude footer</h4><span class="palette-mark split-tb"></span></div>
+              <div class="surface-sample">▌ API watcher<br>▸ 1 shell · 2 monitors</div>
+              <p>Statusline marker matches the registry palette.</p>
+            </div>
+            <div class="surface-card pulse-surface">
+              <div class="surface-top"><h4>Codex terminal</h4><span class="palette-mark split-tb"></span></div>
+              <div class="surface-sample">API watcher | terminal-talk | auto</div>
+              <p>Terminal title avoids short-id clutter.</p>
+            </div>
+            <div class="surface-card pulse-surface">
+              <div class="surface-top"><h4>Desktop chat</h4><span class="palette-mark split-tb"></span></div>
+              <div class="surface-sample">TT Green/Red · API watcher</div>
+              <p>Persistent chats can keep the same local title.</p>
+            </div>
+          </div>
+        </div>
+        <div class="copy">
+          <span class="kicker">Identity</span>
+          <h2>Identity follows the session, not the window</h2>
+          <p>The same label and palette are used in the toolbar, terminal title/footer, registry row, and desktop title-sync metadata where the desktop app exposes it.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>Colour and label are functional routing signals, not decoration.</span></div>
+            <div class="takeaway"><b>2</b><span>The user can glance at any surface and know which assistant is speaking.</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide>
+        <div class="stage stage-diagram">
+          <div class="focus-demo" aria-hidden="true">
+            <div class="focus-lanes">
+              <div class="queue-card">
+                <h4>Normal arrival order</h4>
+                <div class="queue-row">
+                  <span class="queue-token red"></span>
+                  <span class="queue-token red"></span>
+                  <span class="queue-token yellow"></span>
+                  <span class="queue-token green"></span>
+                  <span class="queue-token"></span>
+                </div>
+                <p class="source-detail">Oldest unplayed clip speaks next.</p>
+              </div>
+              <div class="queue-card">
+                <h4><span class="focus-star">★</span> Focused session</h4>
+                <div class="queue-row">
+                  <span class="queue-token"></span>
+                  <span class="queue-token jump"></span>
+                  <span class="queue-token red"></span>
+                  <span class="queue-token yellow"></span>
+                  <span class="queue-token green"></span>
+                </div>
+                <p class="source-detail">Focused assistant clips jump ahead without muting the rest.</p>
+              </div>
+            </div>
+            <img src="screenshots/toolbar-sessions-panel-expanded.png" alt="" style="height: 150px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); object-fit: cover; object-position: top;">
+          </div>
+        </div>
+        <div class="copy">
+          <span class="kicker">Priority</span>
+          <h2>Focus the assistant that matters now</h2>
+          <p>Focus one session so its unplayed clips jump ahead of the rest. Mute, voices, heartbeat, desktop sync, and speech rules stay per-session instead of global.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>You keep many agents alive without letting the loudest queue dominate.</span></div>
+            <div class="takeaway"><b>2</b><span>Voice, mute, heartbeat, and speech rules remain isolated per session.</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide>
+        <div class="stage stage-diagram">
+          <div class="collapsed-stack" aria-hidden="true">
+            <div class="letterbox-demo"><span class="letterbox-wave"></span></div>
+            <div class="letterbox-demo vertical"><span class="letterbox-wave"></span></div>
+            <img src="screenshots/toolbar-collapsed-resting.png" alt="" style="width: 232px; height: auto; border-radius: 999px;">
+          </div>
+        </div>
+        <div class="copy">
+          <span class="kicker">Collapsed</span>
+          <h2>Collapsed still tells you who is speaking</h2>
+          <p>The toolbar can shrink to a short click-through waveform. When audio plays, both the waveform and border keep the session palette, including left/right and top/bottom splits.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>The tiny state stays useful instead of becoming a generic blinking bar.</span></div>
+            <div class="takeaway"><b>2</b><span>Split palettes remain distinguishable at a glance.</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide>
+        <div class="stage">
+          <img src="screenshots/toolbar-transcript-expanded.png" alt="Transcript panel with spoken rows and copy buttons">
+          <span class="pulse-ring" style="right: 5%; top: 37%; width: 10%; height: 10%;"></span>
+          <div class="transcript-callout" aria-hidden="true">
+            <span class="mini-button">Copy spoken row</span>
+            <span class="mini-button" style="animation-delay: .35s;">Spoken / Original</span>
+          </div>
+        </div>
+        <div class="copy">
+          <span class="kicker">Transcript</span>
+          <h2>Listen first, inspect only when needed</h2>
+          <p>The transcript panel keeps recent spoken clips close. Filter by session, copy a row, or compare the spoken sanitised text with the original assistant output.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>Audio workflow still leaves a searchable, copyable trail.</span></div>
+            <div class="takeaway"><b>2</b><span>Heartbeat pings stay out, so the transcript remains useful.</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide>
+        <div class="stage stage-diagram">
+          <div class="bind-flow" aria-hidden="true">
+            <div class="bind-card">
+              <span class="palette-mark split-tb" style="width: 24px; height: 24px;"></span>
+              <strong>Pick identity</strong>
+              <span>assistant, folder, label, colour</span>
+            </div>
+            <div class="bind-card">
+              <span class="palette-mark" style="width: 24px; height: 24px; background: var(--green);"></span>
+              <strong>Launch session</strong>
+              <span>provisional terminal/window binding</span>
+            </div>
+            <div class="bind-card">
+              <span class="palette-mark split-tb" style="width: 24px; height: 24px;"></span>
+              <strong>Bind real id</strong>
+              <span>registry keeps the chosen label + palette</span>
+            </div>
+          </div>
+          <span class="route-line" style="left: 17%; top: 50%; width: 66%;"></span>
+        </div>
+        <div class="copy">
+          <span class="kicker">Create</span>
+          <h2>Create sessions with identity already planned</h2>
+          <p>Choose assistant type, project folder, label, colour, and launch defaults before the real session id binds. The registry then keeps the workflow readable.</p>
+          <div class="takeaways">
+            <div class="takeaway"><b>1</b><span>The user does not have to wait for the assistant to speak before naming it.</span></div>
+            <div class="takeaway"><b>2</b><span>The real session id can arrive later without creating stale duplicate rows.</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="dots" data-dots aria-label="Choose slide"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const root = document.querySelector('[data-carousel]');
+  const slides = Array.from(root.querySelectorAll('[data-slide]'));
+  const dotsRoot = root.querySelector('[data-dots]');
+  const current = root.querySelector('[data-current]');
+  const total = root.querySelector('[data-total]');
+  const prev = root.querySelector('[data-prev]');
+  const next = root.querySelector('[data-next]');
+  let index = 0;
+  let paused = false;
+
+  total.textContent = String(slides.length);
+  const dots = slides.map((_slide, dotIndex) => {
+    const dot = document.createElement('button');
+    dot.className = 'dot';
+    dot.type = 'button';
+    dot.setAttribute('aria-label', `Show slide ${dotIndex + 1}`);
+    dot.addEventListener('click', () => show(dotIndex));
+    dotsRoot.append(dot);
+    return dot;
+  });
+
+  function show(nextIndex) {
+    index = (nextIndex + slides.length) % slides.length;
+    root.style.setProperty('--index', index);
+    current.textContent = String(index + 1);
+    dots.forEach((dot, dotIndex) => dot.classList.toggle('active', dotIndex === index));
+  }
+
+  prev.addEventListener('click', () => show(index - 1));
+  next.addEventListener('click', () => show(index + 1));
+  root.addEventListener('mouseenter', () => { paused = true; });
+  root.addEventListener('mouseleave', () => { paused = false; });
+  root.addEventListener('focusin', () => { paused = true; });
+  root.addEventListener('focusout', () => { paused = false; });
+  setInterval(() => {
+    if (!paused && document.visibilityState === 'visible') show(index + 1);
+  }, 9000);
+  show(0);
+})();
+</script>
+</body>
+</html>

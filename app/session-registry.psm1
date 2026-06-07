@@ -476,7 +476,19 @@ function Update-SessionAssignment {
         # Optional so existing test call sites + un-instrumented
         # callers stay back-compat.
         [string]$LogPath = '',
-        [string]$Caller = 'unknown'
+        [string]$Caller = 'unknown',
+        # Test seam + /clear robustness. Returns $true if the pid is a live
+        # process. A pid that is alive RIGHT NOW cannot have been reused by
+        # the OS, so a matching live pid is a definitive "same terminal"
+        # signal for /clear migration even when the old entry's last_seen is
+        # older than PidMigrateWindowSec (user idled before /clear). Defaults
+        # to a real Get-Process probe; tests inject a stub.
+        [scriptblock]$IsPidAlive = {
+            param([int]$ProbePid)
+            if ($ProbePid -le 0) { return $false }
+            try { $null = Get-Process -Id $ProbePid -ErrorAction Stop; return $true }
+            catch { return $false }
+        }
     )
 
     # PSScriptAnalyzer can't follow $LogPath/$Caller usage into the
@@ -517,16 +529,21 @@ function Update-SessionAssignment {
     #   1. Only match on non-zero pids: 0 means "unknown" and would
     #      collide across ghost entries created by main.js's queue-
     #      scanner fallback.
-    #   2. Require freshness -- the matched entry's last_seen must be
-    #      within $PidMigrateWindowSec. Without this, Windows reusing a
-    #      pid hours later (rare but possible) would let a brand-new
-    #      terminal inherit a long-dead session's colour and label.
+    #   2. Require freshness OR a live pid. The matched entry's last_seen must
+    #      be within $PidMigrateWindowSec, OR the pid must still be alive. The
+    #      freshness window alone made /clear LOSE the colour whenever the user
+    #      idled longer than the window before clearing -- even though the same
+    #      terminal process was still running. A live pid cannot have been
+    #      reused by the OS, so "pid matches AND pid alive" is a definitive
+    #      same-terminal signal; the window only guards the pid-DEAD case
+    #      (Windows reusing a long-dead session's pid hours later).
     if ($ClaudePid -gt 0) {
         $cutoff = $Now - $script:PidMigrateWindowSec
+        $pidAlive = [bool](& $IsPidAlive $ClaudePid)
         $oldShort = $null
         foreach ($key in @($Assignments.Keys)) {
             $entry = $Assignments[$key]
-            if ([int]$entry.claude_pid -eq $ClaudePid -and [long]$entry.last_seen -ge $cutoff) {
+            if ([int]$entry.claude_pid -eq $ClaudePid -and ([long]$entry.last_seen -ge $cutoff -or $pidAlive)) {
                 $oldShort = $key
                 break
             }

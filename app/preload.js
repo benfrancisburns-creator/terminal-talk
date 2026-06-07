@@ -198,6 +198,10 @@ const api = {
   // sidecars don't exist (older clips, ephemerals, etc.).
   readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
   deleteFile: (p, reason) => ipcRenderer.invoke('delete-file', p, reason),
+  // Batch delete (toolbar bin + per-session tab bins). One IPC for the whole
+  // set so the per-handler rate limiter can't silently drop a bulk clear.
+  // Returns { deleted, failed:[], rateLimited }.
+  deleteFiles: (paths, reason) => ipcRenderer.invoke('delete-files', paths, reason),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   // Phase 6 (#30): first-run-wizard deep-links into macOS System
   // Settings via x-apple.systempreferences:// URLs. Main-side handler
@@ -255,6 +259,10 @@ const api = {
   // so the renderer can read it on demand even if it loaded after the
   // initial push fired.
   getHotkeyRegistration: () => ipcRenderer.invoke('get-hotkey-registration'),
+  // Re-run global-shortcut registration on demand (Settings → Shortcuts
+  // "Re-register" button). Self-heals a transient startup collision without
+  // a full app restart. Returns the fresh { failed, at } status.
+  reregisterHotkeys: () => ipcRenderer.invoke('reregister-hotkeys'),
   startDictation: (opts) => ipcRenderer.invoke('start-dictation', opts || {}),
   stopDictation: (reason) => ipcRenderer.invoke('stop-dictation', reason || 'renderer'),
   getDictations: (limit) => ipcRenderer.invoke('get-dictations', limit),

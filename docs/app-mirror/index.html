@@ -79,7 +79,7 @@
       <div id="scrubberJarvis" class="scrubber-jarvis" aria-hidden="true">J</div>
     </div>
     <span id="time" aria-live="off">0:00 / 0:00</span>
-    <button class="icon-btn" id="clearPlayed" title="Clear all played" aria-label="Clear all played clips">
+    <button class="icon-btn" id="clearPlayed" title="Clear all clips (heard or not — Undo available)" aria-label="Clear all clips">
       <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
     <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="panel">
@@ -335,6 +335,7 @@
         <div class="row">
           <label>Status</label>
           <span id="hotkeyStatus" class="hotkey-status" aria-live="polite"></span>
+          <button type="button" id="hotkeyReregister" class="text-btn" title="Re-claim the global shortcuts now. Use this if a hotkey-collision banner appeared at startup (another app briefly held a chord) — it re-registers without restarting the toolbar.">Re-register</button>
           <button type="button" id="hotkeyResetDefaults" class="text-btn" title="Restore the global shortcuts to Control+Shift+A/S/J/P/O/D plus Control+Alt+Space and Control+Shift+Space. Does not reset per-session toggles (those each have their own controls).">Reset hotkeys</button>
         </div>
       </section>

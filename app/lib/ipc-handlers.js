@@ -998,6 +998,38 @@ function createIpcHandlers(deps) {
       return false;
     });
 
+    // Batch delete — used by the toolbar bin + per-session tab bins. A
+    // SINGLE allowMutation check covers the whole batch so a 50-clip clear
+    // isn't shredded by the per-handler IPC rate limiter (burst 30, 20/s),
+    // which silently dropped all-but-~30 of a one-at-a-time clear and left
+    // the rest on disk to reload. ENOENT counts as success (already gone).
+    // Returns counts so the renderer can surface genuine failures instead
+    // of a clear that silently leaves files behind.
+    ipcMain.handle('delete-files', (_e, filePaths, reason = '') => {
+      if (!allowMutation('delete-files')) return { deleted: 0, failed: [], rateLimited: true };
+      const result = { deleted: 0, failed: [], rateLimited: false };
+      if (!Array.isArray(filePaths)) return result;
+      const why = typeof reason === 'string' ? reason : '';
+      for (const filePath of filePaths) {
+        try {
+          if (typeof filePath !== 'string' || filePath.length > 4096) { result.failed.push(filePath); continue; }
+          if (!isPathInside(filePath, QUEUE_DIR)) { result.failed.push(filePath); continue; }
+          const resolved = path.resolve(filePath);
+          try {
+            fs.unlinkSync(resolved);
+          } catch (e) {
+            if (e && e.code === 'ENOENT') { result.deleted++; continue; }  // already gone = done
+            throw e;
+          }
+          result.deleted++;
+        } catch {
+          result.failed.push(filePath);
+        }
+      }
+      diag(`delete-files: reason=${why || 'manual-clear'} requested=${filePaths.length} deleted=${result.deleted} failed=${result.failed.length}`);
+      return result;
+    });
+
     // About panel version query. Returns whatever `app.getVersion()`
     // returns on the main side — which reads package.json's `version`
     // field. The IPC wraps a getter so the ipc-handlers factory stays

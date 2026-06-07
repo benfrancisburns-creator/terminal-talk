@@ -195,9 +195,9 @@ The toolbar's audio queue applies three rules in this order:
 2. **Focus ★ session** — unplayed clips from the session you've starred in Settings → Sessions jump ahead of unfocused sessions.
 3. **Oldest unplayed clip** from any unmuted session.
 
-That's how you make a slow agent's important reply play before a fast agent's 3-deep ramble. Muted sessions never produce dots; auto-prune removes heard body clips after a configurable delay (3–600 s, default 20 s); tool narration and heartbeat clips are ephemeral by design.
+That's how you make a slow agent's important reply play before a fast agent's 3-deep ramble. Muted sessions never produce clips; auto-prune removes heard body clips after a configurable delay (3–600 s, default 20 s); tool narration and heartbeat clips are ephemeral by design.
 
-The dot strip clusters by session in arrival order — three reds, gap, three yellows, gap, two greens — so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. The collapsed letterbox is a compact click-through strip that shows the speaking session's palette colour as a pulsing border and waveform, with horizontal/vertical splits preserved for two-colour identities.
+The clip strip clusters by session in arrival order — three red mascots, gap, three yellow, gap, two green — so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. The collapsed letterbox is a compact click-through strip that shows the speaking session's palette colour as a pulsing border and waveform, with horizontal/vertical splits preserved for two-colour identities.
 
 For an interactive walkthrough of every control, see the [live UI kit](#try-it-live).
 
@@ -257,7 +257,7 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
 ```
 ╭──────────────────────────────────────────────────────────────────╮
 │  ◀◀10  [▶]  10▶▶   ●━━━━━━━○━━━━━━━━━  1:23 / 2:10  🗑  ⚙  ✕   │  ← controls
-│  ● ● ● | ● ● | ● ● ● ● ● ●                                       │  ← dot strip
+│  ᗣ ᗣ ᗣ | ᗣ ᗣ | ᗣ ᗣ ᗣ ᗣ ᗣ ᗣ                                       │  ← clip strip (one session mascot per clip)
 ╰──────────────────────────────────────────────────────────────────╯
                            ↑        ↑
                  run gap  —  different terminal
@@ -266,17 +266,17 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
  • Idle delay (3 s default) → shrinks to a thin strip; hover to expand
 ```
 
-- Each dot = one audio clip in the queue.
-- **Dot colour = session colour** (matches the Claude footer/statusline, Codex terminal title/launcher binding, and desktop title-sync metadata where available). Muted sessions don't show dots at all.
+- Each clip shows as a **miniature of the session mascot** — the same pixel character as the playback scrubber, shrunk to the dot footprint.
+- **The mascot's colour = session colour** (matches the Claude footer/statusline, Codex terminal title/launcher binding, and desktop title-sync metadata where available), including two-colour top/bottom and left/right splits — so a clip always matches who said it. Muted sessions show nothing.
 - **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
-- **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
-- **Session tabs row** (above the dots) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the dot strip and transcript; click "All" to re-show everything. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
-- **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
-- Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken assistant responses.
-- Up to ~40 dots visible; beyond that the oldest drop off.
+- **State at a glance (fade-on-heard):** an **unheard** clip is a bright, full-colour mascot; once it **auto-plays** it fades back so unheard arrivals stand out; a clip you **played manually** (click or "hey jarvis") turns **all-white with a session-colour ring**; the clip **playing right now** keeps full colour and gains a white pulsing halo (same size — no layout jump).
+- **Session tabs row** (above the clip strip) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the strip and transcript; click "All" to re-show everything. Each session tab also has a small **bin in its corner** to clear just that session's clips. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
+- **Click** a mascot to (re)play it manually. **Right-click** to delete it immediately.
+- "Hey jarvis" / `Ctrl+Shift+S` clips carry a small round **J** badge (not a mascot) so you can tell your own read-aloud requests from auto-spoken assistant responses.
+- Up to ~40 clips visible; beyond that they scroll.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 - **Collapsed mode** is a short waveform letterbox. It flashes and animates only for the session whose clip is actually playing, so queued or muted arrivals do not steal the colour while another session is speaking.
-- **🗑 Clear played** — one-click removal of every heard clip (currently-playing clip is kept). A toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive. The `X` on the toast dismisses without restoring.
+- **🗑 Clear all clips** — one click removes **every** clip on disk, heard or not (the currently-playing clip is kept so audio doesn't cut out). The per-tab corner bins do the same for a single session. Either way a toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive — and if a clip genuinely can't be removed (locked/busy) you get a visible error instead of a silent miss. The `X` on the toast dismisses without restoring.
 
 ### Settings panel (gear icon)
 
@@ -439,7 +439,7 @@ Key fields worth calling out:
 - **`dictation.cleanup_provider`** (`"local"` | `"openai"`, default `"local"`) — local cleanup is free and offline. `"openai"` is explicit opt-in; it sends the dictated text to OpenAI for a Wispr-style cleanup pass and falls back to local cleanup if unavailable.
 - **`dictation.keep_audio`** (default `false`) — saves the recorded WAV beside each transcript so you can compare audio with the output while tuning dictation.
 - **`dictation.save_timing`** (default `true`) — saves Whisper segment and word-pause metadata beside each transcript for pause-based paragraph tuning.
-- **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the dot strip.
+- **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the clip strip.
 - **`heartbeat_enabled`** (default `true`) — during the silent gap while Claude Code or Codex is working, play short spinner-verb + thinking-phrase clips every ~8 s so you know the assistant is alive, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins. Individual sessions can override this with `heartbeat_enabled` in `session-colours.json`.
 - **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start/Stop Dictation** menu when available, with a Fn/Fn fallback.
 - **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.

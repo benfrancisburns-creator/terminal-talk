@@ -1558,13 +1558,37 @@ function _parseRegistryFile(fullPath) {
   return clean;
 }
 
+// Synchronous short sleep for the torn-read retry path below. Atomics.wait
+// blocks the thread without busy-spinning; falls back to a tight loop if
+// SharedArrayBuffer is unavailable. Only ever invoked on a (rare) failed
+// registry parse, so the brief main-thread stall is acceptable.
+function _sleepSyncMs(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* spin */ }
+  }
+}
+
 function loadAssignments() {
   if (!fs.existsSync(COLOURS_REGISTRY)) return {};
-  const primary = _parseRegistryFile(COLOURS_REGISTRY);
+  // Torn-read tolerance. A concurrent atomic rename (a PS Save-Registry or the
+  // JS saveAssignments/writeAssignments swapping the primary) can make a single
+  // read throw a Windows sharing violation or observe a half-written file —
+  // _parseRegistryFile reports either as null. Treating that ONE transient as
+  // "corrupt" archived 23 false positives in ~3 weeks AND kicked off
+  // backup-recovery that can resurrect a STALE colour. Retry briefly before
+  // declaring corruption; a genuinely malformed file fails every attempt.
+  let primary = _parseRegistryFile(COLOURS_REGISTRY);
+  for (let attempt = 0; primary === null && attempt < 3; attempt++) {
+    _sleepSyncMs(25);
+    primary = _parseRegistryFile(COLOURS_REGISTRY);
+  }
   if (primary === null) {
     // Archive note covers both JSON.parse failure and the shape
     // mismatch (missing assignments field) inside one helper call.
-    archiveCorruptRegistry('JSON.parse failed OR missing assignments field');
+    archiveCorruptRegistry('unparseable after retries (JSON.parse failed OR missing assignments field)');
     // Even though the primary is corrupt, try recovering from a backup
     // before falling back to empty. Matches the "pick newest non-empty
     // slot" rule below.
@@ -1604,12 +1628,18 @@ function loadAssignments() {
 // can attribute who wrote what to the log. Best-effort: a missing or
 // malformed registry is treated as empty prior state. Returns
 // { count, added:[...], removed:[...], changed:[...] } — short-IDs only.
-function writeAssignments(all, opts) {
+// Write body that assumes the caller ALREADY holds the registry lock. Shared
+// by the writeAssignments wrapper, which acquires the lock, and by
+// ensureAssignmentsForFiles, which holds the lock across its WHOLE
+// read-modify-write. That last path is the
+// real fix for "colours change on their own": ensureAssignmentsForFiles used to
+// load the registry UNLOCKED, so during queue-churn it could race a hook's
+// mid-write, momentarily "lose" live sessions, and re-create them as fresh
+// EMPTY entries (labels blanked, colours reshuffled). Loading + writing under a
+// single lock makes the load always see the last committed registry.
+function _writeAssignmentsLocked(all, opts) {
   const skipBackup = !!(opts && opts.skipBackup);
   const caller = (opts && opts.caller) || 'unknown';
-  // #8 — writeAssignments is used by ensureAssignmentsForFiles
-  // (queue-scan prune+recreate) and backup-recovery. Both are
-  // touch-paths; neither should ever drop user-intent fields.
   const restored = _guardUserIntent(all, caller);
   const delta = _registryWriteDelta(all);
   try {
@@ -1637,6 +1667,31 @@ function writeAssignments(all, opts) {
     diag(`write-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
     return true;
   } catch (e) { diag(`writeAssignments fail from=${caller}: ${e.message}`); return false; }
+}
+
+function writeAssignments(all, opts) {
+  const caller = (opts && opts.caller) || 'unknown';
+  return withRegistryLock(COLOURS_REGISTRY, (held) => {
+    if (!held) {
+      diag(`write-registry skip from=${caller} reason=lock-timeout — next write will retry`);
+      return false;
+    }
+    return _writeAssignmentsLocked(all, opts);
+  });
+}
+
+// Parse the primary registry with the same torn-read retry as loadAssignments
+// but WITHOUT the backup-recovery write. Callers use this while holding the
+// lock, so a clean parse failure means the file is genuinely bad (not a
+// transient race) and {} is the honest answer.
+function _loadRegistryConsistent() {
+  if (!fs.existsSync(COLOURS_REGISTRY)) return {};
+  let primary = _parseRegistryFile(COLOURS_REGISTRY);
+  for (let attempt = 0; primary === null && attempt < 3; attempt++) {
+    _sleepSyncMs(25);
+    primary = _parseRegistryFile(COLOURS_REGISTRY);
+  }
+  return primary || {};
 }
 
 function isPidAlive(pid) {
@@ -1710,64 +1765,78 @@ function isSessionLive(entry, now) {
 }
 
 function ensureAssignmentsForFiles(files) {
-  const all = loadAssignments();
-  let changed = false;
-  const nowMs = Date.now();
-  const now = Math.floor(nowMs / 1000);
+  return withRegistryLock(COLOURS_REGISTRY, (held) => {
+    // Load the registry UNDER the lock. The unlocked load this replaced was the
+    // root of "colours change on their own": under queue-churn it could race a
+    // hook's mid-write, observe live sessions as missing, and re-create them as
+    // fresh EMPTY entries (labels blanked, colours reshuffled). Holding the lock
+    // across load+modify+write makes the load always see the last committed
+    // registry, never a transient view.
+    const all = _loadRegistryConsistent();
+    if (!held) {
+      // Lock-timeout: return the current view for display but DO NOT
+      // modify/write — a stale read-modify-write here is exactly the clobber
+      // we're eliminating. The next scan retries.
+      return all;
+    }
+    let changed = false;
+    const nowMs = Date.now();
+    const now = Math.floor(nowMs / 1000);
 
-  // Prune ONLY truly dead sessions (PID gone AND grace expired AND not pinned).
-  for (const k of Object.keys(all)) {
-    if (isRecentlyCleanedPluginShort(k, nowMs)) {
-      delete all[k];
+    // Prune ONLY truly dead sessions (PID gone AND grace expired AND not pinned).
+    for (const k of Object.keys(all)) {
+      if (isRecentlyCleanedPluginShort(k, nowMs)) {
+        delete all[k];
+        changed = true;
+        diag(`ensureAssignments: pruned recently cleaned codex-plugin ${k}`);
+        continue;
+      }
+      if (!isSessionLive(all[k], now)) {
+        delete all[k];
+        changed = true;
+      }
+    }
+
+    for (const [short, entry] of Object.entries(all)) {
+      if (!entry || !shouldAutoAssignVoice(entry)) continue;
+      const alloc = ensureAutoVoice(entry, all);
+      if (alloc) {
+        changed = true;
+        diag(`ensureAssignments: auto voice ${short} -> ${alloc.voice} (${alloc.reason})`);
+      }
+    }
+
+    for (const f of files) {
+      const short = shortFromFile(path.basename(f.path));
+      if (!short || all[short]) continue;
+      if (isRecentlyCleanedPluginShort(short, nowMs)) {
+        diag(`ensureAssignments: skipped recently cleaned codex-plugin ${short}`);
+        continue;
+      }
+      const alloc = allocatePaletteIndex(short, all, 24);
+      if (alloc.evicted) {
+        diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
+        delete all[alloc.evicted];
+      } else if (alloc.reason === 'hash-collision') {
+        diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
+      }
+      const entry = {
+        index: alloc.index,
+        session_id: short,
+        claude_pid: 0,
+        label: '',
+        pinned: false,
+        last_seen: now
+      };
+      const voiceAlloc = ensureAutoVoice(entry, all);
+      all[short] = entry;
       changed = true;
-      diag(`ensureAssignments: pruned recently cleaned codex-plugin ${k}`);
-      continue;
+      diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
     }
-    if (!isSessionLive(all[k], now)) {
-      delete all[k];
-      changed = true;
-    }
-  }
 
-  for (const [short, entry] of Object.entries(all)) {
-    if (!entry || !shouldAutoAssignVoice(entry)) continue;
-    const alloc = ensureAutoVoice(entry, all);
-    if (alloc) {
-      changed = true;
-      diag(`ensureAssignments: auto voice ${short} -> ${alloc.voice} (${alloc.reason})`);
-    }
-  }
-
-  for (const f of files) {
-    const short = shortFromFile(path.basename(f.path));
-    if (!short || all[short]) continue;
-    if (isRecentlyCleanedPluginShort(short, nowMs)) {
-      diag(`ensureAssignments: skipped recently cleaned codex-plugin ${short}`);
-      continue;
-    }
-    const alloc = allocatePaletteIndex(short, all, 24);
-    if (alloc.evicted) {
-      diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
-      delete all[alloc.evicted];
-    } else if (alloc.reason === 'hash-collision') {
-      diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
-    }
-    const entry = {
-      index: alloc.index,
-      session_id: short,
-      claude_pid: 0,
-      label: '',
-      pinned: false,
-      last_seen: now
-    };
-    const voiceAlloc = ensureAutoVoice(entry, all);
-    all[short] = entry;
-    changed = true;
-    diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
-  }
-
-  if (changed) writeAssignments(all, { caller: 'ensure-for-files' });
-  return all;
+    if (changed) _writeAssignmentsLocked(all, { caller: 'ensure-for-files' });
+    return all;
+  });
 }
 
 // Redact secrets from any value before it reaches a log file.
@@ -2074,7 +2143,12 @@ ipcMain.handle('demo-start-ready', () => {
 // after it loads. Without this the user gets silent hotkey collisions
 // (e.g. Wispr Flow already owns Ctrl+Shift+A) and no signal about why.
 let hotkeyRegistrationStatus = { failed: [], at: 0 };
+// Assigned inside app.whenReady once the hotkey handlers + window exist.
+// Lets the manual "Re-register" button (Settings → Shortcuts) re-run the
+// idempotent registration without restarting the app.
+let _reregisterHotkeys = null;
 ipcMain.handle('get-hotkey-registration', () => hotkeyRegistrationStatus);
+ipcMain.handle('reregister-hotkeys', () => (_reregisterHotkeys ? _reregisterHotkeys() : hotkeyRegistrationStatus));
 ipcMain.handle('start-dictation', (_event, opts = {}) => {
   const source = opts && opts.source ? String(opts.source).slice(0, 40) : (opts && opts.paste ? 'renderer-paste' : 'renderer');
   return _dictation.start({ paste: !!(opts && opts.paste), source, externalStop: !!(opts && opts.manualStop), maxSeconds: opts && opts.manualStop ? 1200 : 0 });
@@ -2609,52 +2683,72 @@ app.whenReady().then(() => {
   // has already reserved the combo. Without this diag line a user who
   // has (say) Wispr Flow binding Ctrl+Shift+A would see the toolbar's
   // Ctrl+Shift+A doing nothing with zero signal about why. The
-  // failedHotkeys list is also pushed to the renderer below so the
-  // user gets a visible banner instead of mysteriously dead hotkeys.
-  const failedHotkeys = [];
-  function registerAndLog(accel, fn, name) {
-    if (!accel) return;
-    const ok = globalShortcut.register(accel, fn);
-    diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
-    if (!ok) failedHotkeys.push({ name, accel });
-  }
-  registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
-  registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
-  registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
-  if (process.platform !== 'win32' && process.platform !== 'darwin') {
-    registerAndLog(CFG.hotkeys.dictate_paste, () => _dictation.start({ paste: true, source: 'hotkey', holdAccelerator: CFG.hotkeys.dictate_paste }), 'dictate_paste'); registerAndLog(CFG.hotkeys.dictate_toggle, () => toggleHandsFreeDictation('toggle-hotkey'), 'dictate_toggle');
-  } else {
-    diag(`globalShortcut dictate_paste skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
-  }
-  if (CFG.hotkeys.pause_resume) {
-    registerAndLog(CFG.hotkeys.pause_resume, () => {
-      if (win && !win.isDestroyed()) {
-        try { win.webContents.send('toggle-pause-playback'); } catch {}
-      }
-    }, 'pause_resume');
-  }
-  if (CFG.hotkeys.pause_only) {
-    registerAndLog(CFG.hotkeys.pause_only, () => {
-      if (win && !win.isDestroyed()) {
-        try { win.webContents.send('pause-playback-only'); } catch {}
-      }
-    }, 'pause_only');
-  }
-  if (CFG.hotkeys.start_dictation) {
-    registerAndLog(CFG.hotkeys.start_dictation, startDictation, 'start_dictation');
-  }
-  _dictationHoldHotkeyHook.start();
-  _dictationToggleHotkeyHook.start();
-  // Push failed-registration detail to the renderer so settings-form
-  // can show a banner. Renderer subscribes via api.onHotkeyRegistration;
-  // delivery is fire-and-forget — if the renderer isn't ready yet, the
-  // get-hotkey-registration IPC handler below covers it on demand.
-  hotkeyRegistrationStatus = { failed: failedHotkeys, at: Date.now() };
-  setTimeout(() => {
-    if (failedHotkeys.length && win && !win.isDestroyed()) {
+  // failedHotkeys list is also pushed to the renderer so the user gets a
+  // visible banner instead of mysteriously dead hotkeys.
+  //
+  // SELF-HEAL: this is idempotent (unregisterAll → re-grab) and re-callable,
+  // so a TRANSIENT startup collision — another process momentarily holding a
+  // chord (a still-closing prior instance during a restart, Wispr Flow, etc.)
+  // — no longer leaves the hotkey dead until the next full app restart. It's
+  // retried automatically (shortly after startup + on every window focus
+  // while any chord is still unclaimed) and on demand via the
+  // `reregister-hotkeys` IPC behind the Settings → Shortcuts button.
+  function registerGlobalHotkeys() {
+    try { globalShortcut.unregisterAll(); } catch {}
+    const failedHotkeys = [];
+    function registerAndLog(accel, fn, name) {
+      if (!accel) return;
+      let ok = false;
+      try { ok = globalShortcut.register(accel, fn); } catch {}
+      diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
+      if (!ok) failedHotkeys.push({ name, accel });
+    }
+    registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
+    registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
+    registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
+      registerAndLog(CFG.hotkeys.dictate_paste, () => _dictation.start({ paste: true, source: 'hotkey', holdAccelerator: CFG.hotkeys.dictate_paste }), 'dictate_paste'); registerAndLog(CFG.hotkeys.dictate_toggle, () => toggleHandsFreeDictation('toggle-hotkey'), 'dictate_toggle');
+    } else {
+      diag(`globalShortcut dictate_paste skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
+    }
+    if (CFG.hotkeys.pause_resume) {
+      registerAndLog(CFG.hotkeys.pause_resume, () => {
+        if (win && !win.isDestroyed()) {
+          try { win.webContents.send('toggle-pause-playback'); } catch {}
+        }
+      }, 'pause_resume');
+    }
+    if (CFG.hotkeys.pause_only) {
+      registerAndLog(CFG.hotkeys.pause_only, () => {
+        if (win && !win.isDestroyed()) {
+          try { win.webContents.send('pause-playback-only'); } catch {}
+        }
+      }, 'pause_only');
+    }
+    if (CFG.hotkeys.start_dictation) {
+      registerAndLog(CFG.hotkeys.start_dictation, startDictation, 'start_dictation');
+    }
+    // Renderer subscribes via api.onHotkeyRegistration; the on-load
+    // get-hotkey-registration pull covers the first call (renderer may not
+    // be ready yet), and each retry re-pushes so the banner clears the
+    // moment a previously-failed chord is finally claimed.
+    hotkeyRegistrationStatus = { failed: failedHotkeys, at: Date.now() };
+    if (win && !win.isDestroyed()) {
       try { win.webContents.send('hotkey-registration', hotkeyRegistrationStatus); } catch {}
     }
-  }, 1500);
+    return hotkeyRegistrationStatus;
+  }
+  _reregisterHotkeys = registerGlobalHotkeys;
+  registerGlobalHotkeys();
+  _dictationHoldHotkeyHook.start();
+  _dictationToggleHotkeyHook.start();
+  // Auto-retry the self-heal: once ~10 s after startup (the conflicting
+  // process has usually exited by then), and again on any window focus
+  // while chords remain unclaimed. Both are no-ops once everything is held.
+  setTimeout(() => { if (hotkeyRegistrationStatus.failed.length) registerGlobalHotkeys(); }, 10_000);
+  app.on('browser-window-focus', () => {
+    if (hotkeyRegistrationStatus.failed.length) registerGlobalHotkeys();
+  });
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
   startMicWatcher();
