@@ -8648,7 +8648,7 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
   );
 
-  it('orphan sweep covers wake-word-listener AND key_helper fragments', () => {
+  it('orphan sweep covers wake-word-listener, key_helper, and dictation hotkey fragments', () => {
     // The script-fragments list is the source of truth for what counts
     // as a TT-owned python child. Both must be present.
     const m = mainJs.match(/ORPHAN_PY_SCRIPTS\s*=\s*\[([^\]]*)\]/);
@@ -8659,6 +8659,9 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     }
     if (!/['"]key_helper['"]/.test(list)) {
       throw new Error('ORPHAN_PY_SCRIPTS must include "key_helper" — see #9');
+    }
+    if (!/['"]dictation-hotkey-hook['"]/.test(list)) {
+      throw new Error('ORPHAN_PY_SCRIPTS must include "dictation-hotkey-hook" so stale dictation listeners cannot pile up');
     }
   });
 
@@ -8723,6 +8726,66 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     if (/voiceProc\.kill\(\)/.test(body) || /keyHelper\.kill\(\)/.test(body)) {
       throw new Error('will-quit must NOT use soft voiceProc.kill() / keyHelper.kill() — promote to _hardKillProc — see #9');
     }
+  });
+});
+
+describe('DICTATION HOTKEY HOOK LIFECYCLE', () => {
+  const { EventEmitter } = require('events');
+  const { createDictationHotkeyHook } = require(path.join(__dirname, '..', 'app', 'lib', 'dictation-hotkey-hook.js'));
+
+  function makeFakeSpawner() {
+    const children = [];
+    const spawn = (cmd, args, opts) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.pid = 1000 + children.length;
+      child.killed = false;
+      child.kill = () => { child.killed = true; };
+      child.command = cmd;
+      child.args = args;
+      child.opts = opts;
+      children.push(child);
+      return child;
+    };
+    return { spawn, children };
+  }
+
+  it('stop() cancels any pending restart from a stale helper exit', async () => {
+    const fake = makeFakeSpawner();
+    const hook = createDictationHotkeyHook({
+      spawn: fake.spawn,
+      pythonExe: 'python',
+      scriptPath: 'dictation-hotkey-hook.py',
+      accelerator: 'Control+Alt+Space',
+      restartBackoffMs: 20,
+    });
+
+    hook.start();
+    assertEqual(fake.children.length, 1);
+    const child = fake.children[0];
+    hook.stop();
+    assertTruthy(child.killed, 'stop() must kill the tracked helper');
+    child.emit('exit', 0);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assertEqual(fake.children.length, 1, 'stale helper exit must not restart after stop()');
+  });
+
+  it('helper exit restarts exactly once while the hook is active', async () => {
+    const fake = makeFakeSpawner();
+    const hook = createDictationHotkeyHook({
+      spawn: fake.spawn,
+      pythonExe: 'python',
+      scriptPath: 'dictation-hotkey-hook.py',
+      accelerator: 'Control+Shift+Space',
+      restartBackoffMs: 20,
+    });
+
+    hook.start();
+    fake.children[0].emit('exit', 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assertEqual(fake.children.length, 2, 'active hook should respawn one replacement helper');
+    hook.stop();
   });
 });
 
@@ -20610,6 +20673,10 @@ describe('PLATFORM CONTRACT', () => {
       homedir: 'C:\\Users\\Ben',
       env: { SystemRoot: 'C:\\Windows' },
       path: path.win32,
+      fs: {
+        readdirSync: () => { throw new Error('no pythoncore dirs'); },
+        existsSync: () => false,
+      },
     });
     assertEqual(p.installDir, 'C:\\Users\\Ben\\.terminal-talk');
     assertEqual(p.pythonExe, 'python');
@@ -20625,6 +20692,24 @@ describe('PLATFORM CONTRACT', () => {
     assertFalsy(p.supportsPosixFooterClip);
     assertFalsy(p.supportsMacTerminalFooterScrape);
     assertTruthy(p.supportsFooterScrape);
+  });
+
+  it('Windows prefers the real Store Python executable over the python shim when available', () => {
+    const p = createPlatform({
+      platform: 'win32',
+      homedir: 'C:\\Users\\Ben',
+      env: { SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\Ben\\AppData\\Local' },
+      path: path.win32,
+      fs: {
+        readdirSync: () => [
+          { name: 'pythoncore-3.12-64', isDirectory: () => true },
+          { name: 'pythoncore-3.14-64', isDirectory: () => true },
+          { name: 'not-python', isDirectory: () => true },
+        ],
+        existsSync: (p) => /pythoncore-3\.14-64\\python\.exe$/.test(p) || /pythoncore-3\.12-64\\python\.exe$/.test(p),
+      },
+    });
+    assertEqual(p.pythonExe, 'C:\\Users\\Ben\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe');
   });
 
   it('macOS/Linux default to python3 and disable Windows-only helpers', () => {

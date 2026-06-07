@@ -2174,7 +2174,7 @@ function isWakeWordAvailable() {
 // fragment is matched as a substring against the python child's
 // CommandLine, so 'wake-word-listener' catches our wake-word-listener.py
 // without false-positive on unrelated python tools.
-const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper', 'mic_watcher_mac', 'synth_daemon'];
+const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper', 'mic_watcher_mac', 'synth_daemon', 'dictation-hotkey-hook'];
 
 // Military-grade safety net: sweep any orphan python helpers.
 // Matches only python.exe processes whose command line contains one of

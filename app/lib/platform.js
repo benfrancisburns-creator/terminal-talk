@@ -1,13 +1,40 @@
 'use strict';
 
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+function resolveWindowsPythonExe({ env, homedir, pathMod, fsMod }) {
+  const localAppData = env.LOCALAPPDATA || pathMod.join(homedir, 'AppData', 'Local');
+  const pythonRoot = pathMod.join(localAppData, 'Python');
+  try {
+    const candidates = fsMod.readdirSync(pythonRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory && entry.isDirectory())
+      .map((entry) => {
+        const match = /^pythoncore-(\d+)\.(\d+)-(\d+)$/i.exec(entry.name);
+        if (!match) return null;
+        const exe = pathMod.join(pythonRoot, entry.name, 'python.exe');
+        if (!fsMod.existsSync(exe)) return null;
+        return {
+          exe,
+          major: Number(match[1]),
+          minor: Number(match[2]),
+          arch: Number(match[3]),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.major - a.major) || (b.minor - a.minor) || (b.arch - a.arch));
+    if (candidates.length) return candidates[0].exe;
+  } catch {}
+  return 'python';
+}
 
 function createPlatform(opts = {}) {
   const platform = opts.platform || process.platform;
   const env = opts.env || process.env;
   const homedir = opts.homedir || os.homedir();
   const pathMod = opts.path || path;
+  const fsMod = opts.fs || fs;
 
   const isWindows = platform === 'win32';
   const isMac = platform === 'darwin';
@@ -33,7 +60,9 @@ function createPlatform(opts = {}) {
   const systemRoot = env.SystemRoot || 'C:\\Windows';
   const system32 = isWindows ? pathMod.join(systemRoot, 'System32') : '';
 
-  const pythonExe = env.TT_PYTHON_EXE || env.PYTHON || (isWindows ? 'python' : 'python3');
+  const pythonExe = env.TT_PYTHON_EXE || env.PYTHON || (
+    isWindows ? resolveWindowsPythonExe({ env, homedir, pathMod, fsMod }) : 'python3'
+  );
   const powershellExe = env.TT_POWERSHELL_EXE || (
     isWindows
       ? pathMod.join(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -73,4 +102,5 @@ function createPlatform(opts = {}) {
 module.exports = {
   ...createPlatform(),
   createPlatform,
+  resolveWindowsPythonExe,
 };

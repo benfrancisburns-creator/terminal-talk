@@ -14,18 +14,31 @@ function createDictationHotkeyHook({
   if (!spawn) throw new Error('createDictationHotkeyHook: spawn required');
   let proc = null;
   let stopped = false;
+  let generation = 0;
+  let restartTimer = null;
+
+  function clearRestartTimer() {
+    if (!restartTimer) return;
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
 
   function start() {
     if (!enabled || !accelerator || !pythonExe || !scriptPath || proc) return;
     stopped = false;
+    clearRestartTimer();
+    const myGeneration = ++generation;
     let buf = '';
+
     try {
-      proc = spawn(pythonExe, ['-u', scriptPath, '--accelerator', accelerator], {
+      const child = spawn(pythonExe, ['-u', scriptPath, '--accelerator', accelerator], {
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      proc = child;
       diag(`dictation-hotkey-hook starting [${accelerator}]`);
-      proc.stdout.on('data', (chunk) => {
+
+      child.stdout.on('data', (chunk) => {
         buf += chunk.toString('utf8');
         let nl;
         while ((nl = buf.indexOf('\n')) >= 0) {
@@ -37,18 +50,23 @@ function createDictationHotkeyHook({
           else if (line) diag(`dictation-hotkey-hook: ${line}`);
         }
       });
-      proc.stderr.on('data', (chunk) => {
+      child.stderr.on('data', (chunk) => {
         const text = chunk.toString('utf8').trim();
         if (text) diag(`dictation-hotkey-hook stderr: ${text.slice(0, 240)}`);
       });
-      proc.on('error', (e) => {
+      child.on('error', (e) => {
         diag(`dictation-hotkey-hook failed: ${e && e.message}`);
-        proc = null;
+        if (proc === child) proc = null;
       });
-      proc.on('exit', (code) => {
-        proc = null;
+      child.on('exit', (code) => {
+        if (proc === child) proc = null;
         diag(`dictation-hotkey-hook exited code=${code}`);
-        if (!stopped) setTimeout(start, restartBackoffMs);
+        if (!stopped && myGeneration === generation) {
+          restartTimer = setTimeout(() => {
+            restartTimer = null;
+            start();
+          }, restartBackoffMs);
+        }
       });
     } catch (e) {
       diag(`dictation-hotkey-hook start failed: ${e && e.message}`);
@@ -58,9 +76,12 @@ function createDictationHotkeyHook({
 
   function stop() {
     stopped = true;
+    generation++;
+    clearRestartTimer();
     if (!proc) return;
-    try { proc.kill(); } catch {}
+    const child = proc;
     proc = null;
+    try { child.kill(); } catch {}
   }
 
   return { start, stop };
