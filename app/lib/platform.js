@@ -4,26 +4,19 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-function resolveWindowsPythonExe({ env, homedir, pathMod, fsMod }) {
+function resolveWindowsPythonExe({ env, homedir, pathMod, fsMod = fs }) {
   const localAppData = env.LOCALAPPDATA || pathMod.join(homedir, 'AppData', 'Local');
-  const pythonRoot = pathMod.join(localAppData, 'Python');
+  const root = pathMod.join(localAppData, 'Python');
   try {
-    const candidates = fsMod.readdirSync(pythonRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory && entry.isDirectory())
-      .map((entry) => {
-        const match = /^pythoncore-(\d+)\.(\d+)-(\d+)$/i.exec(entry.name);
-        if (!match) return null;
-        const exe = pathMod.join(pythonRoot, entry.name, 'python.exe');
-        if (!fsMod.existsSync(exe)) return null;
-        return {
-          exe,
-          major: Number(match[1]),
-          minor: Number(match[2]),
-          arch: Number(match[3]),
-        };
-      })
+    const versioned = (entry) => {
+      const match = entry.isDirectory && entry.isDirectory() && /^pythoncore-(\d+)\.(\d+)-(\d+)$/i.exec(entry.name);
+      const exe = match && pathMod.join(root, entry.name, 'python.exe');
+      return exe && fsMod.existsSync(exe) ? { exe, version: match.slice(1).map(Number) } : null;
+    };
+    const candidates = fsMod.readdirSync(root, { withFileTypes: true })
+      .map(versioned)
       .filter(Boolean)
-      .sort((a, b) => (b.major - a.major) || (b.minor - a.minor) || (b.arch - a.arch));
+      .sort((a, b) => b.version[0] - a.version[0] || b.version[1] - a.version[1] || b.version[2] - a.version[2]);
     if (candidates.length) return candidates[0].exe;
   } catch {}
   return 'python';
