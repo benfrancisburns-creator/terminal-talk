@@ -33,7 +33,7 @@ function createDictationController(deps = {}) {
     } catch {}
   }
 
-  function findScript(name = platform === 'win32' ? 'whisper-dictate.ps1' : 'whisper-dictate.py') {
+  function findScript(name = 'whisper-dictate.py') {
     const candidates = [
       path.join(appDir, name),
       path.resolve(appDir, '..', 'scripts', name),
@@ -70,6 +70,19 @@ function createDictationController(deps = {}) {
       || '';
   }
 
+  function lastUsefulLine(text) {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\r/g, '').trim())
+      .filter((line) => line && !/^\d+%|\|/.test(line))
+      .filter((line) => !/^Recording\./i.test(line))
+      .filter((line) => !/^Python transcription failed with exit code/i.test(line))
+      .filter((line) => !/FullyQualifiedErrorId/i.test(line))
+      .filter((line) => !/^\+\s+CategoryInfo/i.test(line))
+      .filter((line) => !/^\+\s+~+/.test(line));
+    return lines[lines.length - 1] || '';
+  }
+
   function dictationConfig() {
     const cfg = (getConfig() || {}).dictation || {};
     const cleanupEnabled = cfg.cleanup !== false;
@@ -80,6 +93,9 @@ function createDictationController(deps = {}) {
     const timeout = Math.max(3, Math.min(60, Number(cfg.cleanup_timeout_sec) || 20));
     const keepAudio = cfg.keep_audio === true;
     const saveTiming = cfg.save_timing !== false;
+    const inputDevice = cfg.input_device === undefined || cfg.input_device === null
+      ? ''
+      : String(cfg.input_device).trim();
     return {
       cleanup: cleanupEnabled ? (provider === 'openai' ? 'smart' : 'local') : 'off',
       provider,
@@ -87,6 +103,7 @@ function createDictationController(deps = {}) {
       timeout,
       keepAudio,
       saveTiming,
+      inputDevice,
     };
   }
 
@@ -148,68 +165,41 @@ function createDictationController(deps = {}) {
     sendStatus({ state: 'recording', paste, source, externalStop: !!externalStop });
     sendMicCaptured();
 
-    let command = powershellExe;
-    const args = platform === 'win32'
-      ? [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          script,
-          '-Record',
-          '-Json',
-          paste ? '-Paste' : '-Copy',
-        ]
-      : [
-          script,
-          '--record',
-          '--json',
-          paste ? '--paste' : '--copy',
-          '--model-dir',
-          path.resolve(appDir, '..', '.codex-transcribe-cache'),
-        ];
-    if (platform !== 'win32') command = pythonExe;
+    const command = pythonExe;
+    const args = [
+      script,
+      '--record',
+      '--json',
+      paste ? '--paste' : '--copy',
+      '--model-dir',
+      path.resolve(appDir, '..', '.codex-transcribe-cache'),
+    ];
     const cleanupCfg = dictationConfig();
-    if (platform === 'win32') {
-      args.push(
-        '-Cleanup',
-        cleanupCfg.cleanup,
-        '-CleanupProvider',
-        cleanupCfg.provider,
-        '-CleanupModel',
-        cleanupCfg.model,
-        '-CleanupTimeout',
-        String(cleanupCfg.timeout),
-      );
-      if (cleanupCfg.keepAudio) args.push('-KeepWav');
-      if (cleanupCfg.saveTiming) args.push('-SaveTiming');
-    } else {
-      const stamp = timestamp();
-      const outPath = path.join(dictationDir, `dictation-${stamp}.txt`);
-      args.push(
-        '--out',
-        outPath,
-        '--cleanup',
-        cleanupCfg.cleanup,
-        '--cleanup-provider',
-        cleanupCfg.provider,
-        '--cleanup-model',
-        cleanupCfg.model,
-        '--cleanup-timeout',
-        String(cleanupCfg.timeout),
-      );
-      if (cleanupCfg.keepAudio) args.push('--keep-wav', path.join(dictationDir, `dictation-${stamp}.wav`));
-      if (cleanupCfg.saveTiming) args.push('--segments-out', path.join(dictationDir, `dictation-${stamp}.segments.json`));
-    }
+    const stamp = timestamp();
+    const outPath = path.join(dictationDir, `dictation-${stamp}.txt`);
+    args.push(
+      '--out',
+      outPath,
+      '--cleanup',
+      cleanupCfg.cleanup,
+      '--cleanup-provider',
+      cleanupCfg.provider,
+      '--cleanup-model',
+      cleanupCfg.model,
+      '--cleanup-timeout',
+      String(cleanupCfg.timeout),
+    );
+    if (cleanupCfg.keepAudio) args.push('--keep-wav', path.join(dictationDir, `dictation-${stamp}.wav`));
+    if (cleanupCfg.saveTiming) args.push('--segments-out', path.join(dictationDir, `dictation-${stamp}.segments.json`));
+    if (cleanupCfg.inputDevice) args.push('--device', cleanupCfg.inputDevice);
     if (holdMode) {
       try { fs.mkdirSync(dictationDir, { recursive: true }); } catch {}
       stopFilePath = path.join(dictationDir, `dictation-stop-${Date.now()}-${process.pid}.flag`);
       try { fs.unlinkSync(stopFilePath); } catch {}
-      if (platform === 'win32') args.push('-StopFile', stopFilePath, '-NoSilenceStop');
-      else args.push('--stop-file', stopFilePath, '--no-silence-stop');
+      args.push('--stop-file', stopFilePath, '--no-silence-stop');
     }
     const boundedMaxSeconds = Math.max(0, Math.min(1200, Number(maxSeconds) || 0));
-    if (boundedMaxSeconds > 0) args.push(platform === 'win32' ? '-MaxSeconds' : '--max-seconds', String(boundedMaxSeconds));
+    if (boundedMaxSeconds > 0) args.push('--max-seconds', String(boundedMaxSeconds));
 
     const childEnv = { ...process.env };
     if (cleanupCfg.provider === 'openai' && cleanupCfg.cleanup !== 'off') {
@@ -283,7 +273,7 @@ function createDictationController(deps = {}) {
         finish();
         return;
       }
-      const errorText = firstUsefulLine(stderr) || firstUsefulLine(stdout) || `Dictation exited with code ${code}`;
+      const errorText = lastUsefulLine(stderr) || lastUsefulLine(stdout) || `Dictation exited with code ${code}`;
       diag(`dictation: failed code=${code} error=${errorText.slice(0, 240)}`);
       sendStatus({ state: 'error', error: errorText.slice(0, 240) });
       finish();

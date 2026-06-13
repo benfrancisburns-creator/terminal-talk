@@ -16,6 +16,7 @@ param(
     [string]$CleanupProvider = 'local',
     [string]$CleanupModel = 'gpt-5.4-mini',
     [int]$CleanupTimeout = 20,
+    [string]$InputDevice,
     [string]$Model = 'base.en',
     [int]$MaxSeconds = 180,
     [int]$SilenceMs = 900,
@@ -112,6 +113,7 @@ if ($Record) {
     }
     if ($StopFile) { $pyArgs += @('--stop-file', $StopFile) }
     if ($NoSilenceStop) { $pyArgs += '--no-silence-stop' }
+    if ($InputDevice) { $pyArgs += @('--device', $InputDevice) }
 } else {
     $resolvedAudioPath = (Resolve-Path -LiteralPath $AudioPath).Path
     $pyArgs += @('--file', $resolvedAudioPath)

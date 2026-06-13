@@ -203,6 +203,7 @@ def record_until_silence(
     pre_roll_ms: int,
     stop_file: Path | None,
     no_silence_stop: bool,
+    device: str | None,
 ):
     np = import_numpy()
     try:
@@ -233,7 +234,9 @@ def record_until_silence(
         print("Recording. Speak now; stopping when the hotkey is released.", file=sys.stderr, flush=True)
     else:
         print("Recording. Speak now; stopping after silence.", file=sys.stderr, flush=True)
+    resolved_device = resolve_input_device(sd, device)
     with sd.InputStream(
+        device=resolved_device,
         samplerate=SAMPLE_RATE,
         channels=1,
         dtype="float32",
@@ -284,6 +287,27 @@ def record_until_silence(
     audio = np.concatenate(chunks).astype(np.float32)
     print(f"Captured {audio.shape[0] / SAMPLE_RATE:.1f}s.", file=sys.stderr, flush=True)
     return audio
+
+
+def resolve_input_device(sd, value: str | None):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    lowered = text.lower()
+    matches = [
+        idx for idx, device in enumerate(sd.query_devices())
+        if device.get("max_input_channels", 0) > 0
+        and lowered in str(device.get("name", "")).lower()
+    ]
+    if not matches:
+        raise SystemExit(f"Input device not found: {text}")
+    return matches[0]
 
 
 def write_wav(path: Path, audio) -> None:
@@ -691,6 +715,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--segments-out", type=Path, help="Write Whisper timing metadata to this JSON file")
     parser.add_argument("--stop-file", type=Path, help="Stop recording when this file appears")
     parser.add_argument("--no-silence-stop", action="store_true", help="Only stop recording on stop-file or max seconds")
+    parser.add_argument("--device", help="Input device index or name substring for recording")
     parser.add_argument("--cleanup", choices=("off", "local", "smart"), default="local")
     parser.add_argument("--cleanup-provider", choices=("local", "openai"), default="local")
     parser.add_argument("--cleanup-model", default=DEFAULT_CLEANUP_MODEL)
@@ -718,6 +743,7 @@ def main() -> int:
             pre_roll_ms=args.pre_roll_ms,
             stop_file=args.stop_file,
             no_silence_stop=args.no_silence_stop,
+            device=args.device,
         )
         if args.keep_wav:
             write_wav(args.keep_wav, audio)

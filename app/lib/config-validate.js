@@ -44,6 +44,7 @@ const RULES = [
   { path: 'dictation.cleanup_timeout_sec', type: 'number', min: 3, max: 60 },
   { path: 'dictation.keep_audio', type: 'boolean' },
   { path: 'dictation.save_timing', type: 'boolean' },
+  { path: 'dictation.input_device', type: 'string', maxLen: 120 },
   { path: 'speech_includes', type: 'object' },
   // F2 (#11): every sub-key in DEFAULTS.speech_includes (main.js) now
   // has a corresponding validator rule. Prior to this the parent object
