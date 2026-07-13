@@ -2402,14 +2402,17 @@ const _micWatcher = createMicWatcher({
 const startMicWatcher = _micWatcher.start;
 const stopMicWatcher = _micWatcher.stop;
 
-// Phase 11 (#35): long-lived synth daemon over Unix socket. POSIX-
-// only (Mac + Linux). Saves ~80 ms cold-start + imports per hook
-// fire — typical turn fires 6-12 times so 0.5-1 s of pure overhead.
-// posix_hooks.py:spawn_synth tries the socket first and falls
-// through to per-hook subprocess if it can't connect, so the
-// daemon being down never breaks audio.
+// Phase 11 (#35): long-lived synth daemon — all platforms since
+// 2026-07-13. Unix socket on POSIX; token-authenticated TCP loopback
+// (TT_HOME/synth-port.json) on Windows. Saves Python cold-start +
+// imports per hook fire — typical turn fires 6-12 times so 0.5-1 s+
+// of pure overhead, and the daemon's incremental transcript cache
+// stops long sessions re-parsing the whole JSONL each fire.
+// Dispatchers (posix_hooks.py / synth-dispatch.psm1 / synth-client.js)
+// try the daemon first and fall through to per-hook subprocess if
+// they can't connect, so the daemon being down never breaks audio.
 const _synthDaemon = createSynthDaemon({
-  enabled: !platform.isWindows,
+  enabled: true,
   pythonExe: PYTHON_EXE,
   appDir: __dirname,
   spawn,

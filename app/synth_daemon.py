@@ -1,6 +1,6 @@
-"""Long-lived synth dispatcher over a Unix domain socket — Phase 11
-(#35). Imports synth_turn once at boot; thereafter dispatches per-
-request synth runs without paying the Python cold-start tax.
+"""Long-lived synth dispatcher — Phase 11 (#35), win32 transport 2026-07-13.
+Imports synth_turn once at boot; thereafter dispatches per-request synth
+runs without paying the Python cold-start tax.
 
 Why: every Claude / Codex hook fires `python synth_turn.py ...` as a
 fresh subprocess. Cold-start + module imports cost ~50-100 ms each;
@@ -9,16 +9,32 @@ per tool invocation + on-stop per turn). 0.5-1 s of pure startup
 overhead per response. With this daemon: socket round-trip <5 ms,
 synth_turn module already loaded.
 
-Posix-only. The matching socket-first dispatcher lives in
-posix_hooks.py:spawn_synth which falls back to the existing Popen
-path if the daemon is unavailable. Daemon down ≠ broken hooks.
+Transport is per-platform:
+  - POSIX: Unix domain socket at TT_HOME/synth.sock (0600, unchanged
+    since Phase 11). Client: posix_hooks.py:spawn_synth.
+  - Windows: TCP loopback on an ephemeral 127.0.0.1 port, advertised in
+    TT_HOME/synth-port.json together with a per-boot random token that
+    every request must echo. Loopback TCP is reachable by OTHER local
+    users (unlike a user-profile Unix socket), so the token restores the
+    same-user trust boundary documented in ipc-integrity.md. Clients:
+    app/synth-dispatch.psm1 (hooks) + app/lib/synth-client.js (watcher).
+  TT_SYNTH_TRANSPORT=unix|tcp overrides the default (used by tests to
+  exercise the TCP path on POSIX CI).
+
+The matching dispatchers fall back to the existing Popen path if the
+daemon is unavailable. Daemon down ≠ broken hooks.
+
+Additionally, running under the daemon sets TT_SYNTH_DAEMON=1 which
+switches synth_turn's transcript reader to an incremental append-only
+cache — long sessions stop re-parsing the whole JSONL on every fire.
 
 Protocol: line-delimited JSON request → line-delimited JSON
 response on a per-connection basis. One round-trip per turn.
 
 Request:
     {"session_id": "...", "transcript_path": "...",
-     "mode": "on-stop", "elapsed_sec": 25, "footer_phrase": ""}
+     "mode": "on-stop", "elapsed_sec": 25, "footer_phrase": "",
+     "token": "<required on TCP, ignored on Unix socket>"}
 
 Response:
     {"ok": true,  "exit_code": 0, "elapsed_ms": 740}    # success
@@ -26,11 +42,13 @@ Response:
 """
 from __future__ import annotations
 
+import atexit
 import contextlib
 import json
 import logging
 import logging.handlers
 import os
+import secrets
 import signal
 import socket
 import sys
@@ -46,6 +64,7 @@ sys.path.insert(0, str(APP_DIR))
 _TT_HOME_ENV = os.environ.get('TT_HOME') or os.environ.get('TT_INSTALL_DIR')
 TT_HOME = Path(_TT_HOME_ENV) if _TT_HOME_ENV else (Path.home() / '.terminal-talk')
 SOCKET_PATH = TT_HOME / 'synth.sock'
+PORT_FILE = TT_HOME / 'synth-port.json'
 LOG_PATH = TT_HOME / 'queue' / '_synth_daemon.log'
 
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -110,7 +129,8 @@ def _read_request_line(conn: socket.socket) -> bytes | None:
     return line
 
 
-def handle_connection(synth_turn_module, conn: socket.socket) -> None:
+def handle_connection(synth_turn_module, conn: socket.socket,
+                      token: str | None = None) -> None:
     try:
         line = _read_request_line(conn)
         if line is None:
@@ -122,6 +142,18 @@ def handle_connection(synth_turn_module, conn: socket.socket) -> None:
             with contextlib.suppress(Exception):
                 conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
             return
+        # TCP transport carries a per-boot token (see module docstring).
+        # compare_digest so the reject path is constant-time. The Unix-
+        # socket transport passes token=None and skips the check —
+        # filesystem permissions are the boundary there.
+        if token is not None:
+            supplied = str(req.get('token') or '')
+            if not secrets.compare_digest(supplied, token):
+                log.warning('request rejected: bad or missing token')
+                resp = {'ok': False, 'error': 'unauthorised'}
+                with contextlib.suppress(Exception):
+                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
+                return
         resp = handle_request(synth_turn_module, req)
         with contextlib.suppress(Exception):
             conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
@@ -130,32 +162,89 @@ def handle_connection(synth_turn_module, conn: socket.socket) -> None:
             conn.close()
 
 
-def serve() -> int:
-    """Bind the Unix socket + accept loop. Returns 0 on clean shutdown,
-    non-zero on bind failure."""
-    if sys.platform == 'win32':
-        log.error('synth_daemon is POSIX-only; refusing to start on win32')
-        return 2
-
-    # Stale-socket cleanup — previous run crashed and left the path.
-    # bind() would fail with EADDRINUSE otherwise. Acceptable race here:
-    # if another daemon is actually listening, our bind below fails and
-    # we return non-zero.
-    with contextlib.suppress(FileNotFoundError):
+def _cleanup_endpoint_files() -> None:
+    """Remove the advertised endpoint (socket path / port file). Called
+    from the signal handler AND atexit — on Windows a TerminateProcess
+    from the toolbar skips both, so clients also treat a connect-refused
+    port file as 'daemon down' and boot overwrites it atomically."""
+    with contextlib.suppress(Exception):
         SOCKET_PATH.unlink()
-    SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(Exception):
+        PORT_FILE.unlink()
 
+
+def _make_server_socket() -> tuple[socket.socket | None, str | None]:
+    """Bind the platform transport. Returns (sock, token). token is None
+    on the Unix-socket path (no in-band auth needed), a random hex string
+    on TCP. Returns (None, None) on bind failure (already logged)."""
+    transport = os.environ.get('TT_SYNTH_TRANSPORT') or (
+        'tcp' if sys.platform == 'win32' else 'unix')
+
+    if transport == 'unix':
+        af_unix = getattr(socket, 'AF_UNIX', None)
+        if af_unix is None:
+            log.error('unix transport requested but AF_UNIX unavailable on this platform')
+            return None, None
+        # Stale-socket cleanup — previous run crashed and left the path.
+        # bind() would fail with EADDRINUSE otherwise. Acceptable race here:
+        # if another daemon is actually listening, our bind below fails and
+        # we return non-zero.
+        with contextlib.suppress(FileNotFoundError):
+            SOCKET_PATH.unlink()
+        SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
+        sock = socket.socket(af_unix, socket.SOCK_STREAM)
+        try:
+            sock.bind(str(SOCKET_PATH))
+        except OSError as e:
+            log.error(f'bind failed: {e}')
+            return None, None
+        os.chmod(SOCKET_PATH, 0o600)  # owner-only — synth runs as the user
+        return sock, None
+
+    # TCP loopback (Windows default). Ephemeral port; advertise via an
+    # atomically-replaced port file so a half-written file is never read.
+    # No SO_REUSEADDR on purpose — on Windows it permits port hijack.
+    token = secrets.token_hex(16)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(('127.0.0.1', 0))
+    except OSError as e:
+        log.error(f'tcp bind failed: {e}')
+        return None, None
+    port = sock.getsockname()[1]
+    try:
+        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = PORT_FILE.with_name(PORT_FILE.name + '.tmp')
+        tmp.write_text(
+            json.dumps({'v': 1, 'port': port, 'token': token, 'pid': os.getpid()}),
+            encoding='utf-8',
+        )
+        os.replace(tmp, PORT_FILE)
+    except OSError as e:
+        log.error(f'port file write failed: {e}')
+        with contextlib.suppress(Exception):
+            sock.close()
+        return None, None
+    return sock, token
+
+
+def serve() -> int:
+    """Bind the platform transport + accept loop. Returns 0 on clean
+    shutdown, non-zero on bind failure."""
+    # Flag BEFORE importing synth_turn: its transcript reader checks this
+    # at call time to enable the daemon-only incremental parse cache.
+    os.environ['TT_SYNTH_DAEMON'] = '1'
+
+    sock, token = _make_server_socket()
+    if sock is None:
+        return 3
+
+    atexit.register(_cleanup_endpoint_files)
     synth_turn_module = _import_synth_turn()
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.bind(str(SOCKET_PATH))
-    except OSError as e:
-        log.error(f'bind failed: {e}')
-        return 3
-    os.chmod(SOCKET_PATH, 0o600)  # owner-only — synth runs as the user
     sock.listen(8)
-    log.info(f'listening on {SOCKET_PATH} (pid={os.getpid()})')
+    endpoint = f'127.0.0.1:{sock.getsockname()[1]}' if token else str(SOCKET_PATH)
+    log.info(f'listening on {endpoint} (pid={os.getpid()})')
 
     shutting_down = threading.Event()
 
@@ -166,8 +255,7 @@ def serve() -> int:
         log.info('shutdown signal received')
         with contextlib.suppress(Exception):
             sock.close()
-        with contextlib.suppress(FileNotFoundError):
-            SOCKET_PATH.unlink()
+        _cleanup_endpoint_files()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
@@ -187,7 +275,7 @@ def serve() -> int:
         # cross-session requests run in parallel as intended.
         threading.Thread(
             target=handle_connection,
-            args=(synth_turn_module, conn),
+            args=(synth_turn_module, conn, token),
             daemon=True,
         ).start()
     return 0

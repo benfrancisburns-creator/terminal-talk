@@ -5668,9 +5668,15 @@ describe('SYNTH TURN SYNC STATE', () => {
     // synth_turn must NOT add anything itself or we'd double-up.
     const tmpDir = os.tmpdir();
     const fakeTranscript = path.join(tmpDir, `tt-no-elapsed-${process.pid}-${Date.now()}.jsonl`);
+    // Timestamps must be FRESH — the backlog guard (2026-07-13) marks
+    // entries older than STALE_ENTRY_CUTOFF_SEC handled without
+    // synthesis, so a fixed historical date would zero the body clips
+    // this test inspects (test-dates gotcha).
+    const tUser = new Date(Date.now() - 319000).toISOString();
+    const tAsst = new Date(Date.now() - 1000).toISOString();
     fs.writeFileSync(fakeTranscript,
-      '{"type":"user","timestamp":"2026-05-04T12:00:00.000Z","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
-      '{"type":"assistant","timestamp":"2026-05-04T12:05:19.000Z","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
+      `{"type":"user","timestamp":"${tUser}","message":{"content":[{"type":"text","text":"hi"}]}}\n` +
+      `{"type":"assistant","timestamp":"${tAsst}","message":{"content":[{"type":"text","text":"Short reply."}]}}\n`,
       'utf8');
     const testSession = 'deadbeef-1111-2222-3333-444455556666';
     try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
@@ -5703,6 +5709,110 @@ for ph, pref in captured:
     }
   });
 
+  it('run() backlog guard: stale entries are marked handled, not spoken (2026-07-13)', () => {
+    // Toolbar (and with it the toolbar-alive hook gate) can be off for
+    // hours while sessions keep working. On relaunch, the first hook
+    // fire must NOT synthesise the idle period's prose as one audio
+    // dump — entries older than STALE_ENTRY_CUTOFF_SEC are added to
+    // sync state without a synthesize_parallel call.
+    const tmpDir = os.tmpdir();
+    const fakeTranscript = path.join(tmpDir, `tt-stale-${process.pid}-${Date.now()}.jsonl`);
+    const tOld = new Date(Date.now() - 2 * 3600 * 1000).toISOString();  // 2 h ago
+    fs.writeFileSync(fakeTranscript,
+      `{"type":"user","timestamp":"${tOld}","message":{"content":[{"type":"text","text":"hi"}]}}\n` +
+      `{"type":"assistant","timestamp":"${tOld}","message":{"content":[{"type":"text","text":"Hours-old reply that must stay silent."}]}}\n`,
+      'utf8');
+    const testSession = 'deadbee2-1111-2222-3333-444455556666';
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    const code = `
+import sys
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+captured = []
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', fallback_provider='edge', openai_voice='alloy', originals=None, original_full=None):
+    captured.append((list(phrases), prefix))
+synth_turn.synthesize_parallel = fake_synth
+rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}', 'on-stop')
+print('RC', rc)
+print('CALLS', len(captured))
+`;
+    const r = runPythonInline(code);
+    try { fs.unlinkSync(fakeTranscript); } catch {}
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
+    if (!/^RC 0$/m.test(r.stdout)) throw new Error(`expected rc 0; stdout:\n${r.stdout}`);
+    const calls = (r.stdout.match(/^CALLS (\d+)$/m) || [])[1];
+    if (calls !== '0') {
+      throw new Error(`stale entries must not reach synthesize_parallel (got ${calls} calls):\n${r.stdout}`);
+    }
+  });
+
+  it('daemon transcript cache matches the full parser + defers partial tails (2026-07-13)', () => {
+    // TT_SYNTH_DAEMON=1 (set by synth_daemon.py) switches
+    // read_transcript_lines to an incremental append-only cache. The
+    // complete-entry prefix must be identical to the full parser at
+    // every stage; a trailing line without \\n is deferred, never split.
+    const code = `
+import json, os, sys, tempfile
+os.environ['TT_SYNTH_DAEMON'] = '1'
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+from pathlib import Path
+fd, tmp = tempfile.mkstemp(suffix='.jsonl')
+os.close(fd)  # win32: an open mkstemp fd blocks the final unlink
+p = Path(tmp)
+p.write_text('\\n'.join(json.dumps({'type': 'assistant', 'n': i}) for i in range(20)) + '\\n', encoding='utf-8')
+assert synth_turn.read_transcript_lines(p) == synth_turn._read_transcript_lines_full(p), 'first read'
+with open(p, 'a', encoding='utf-8') as f:
+    f.write('\\n')                     # blank line: index-aligned {}
+    f.write('not json\\n')             # bad line: index-aligned {}
+    f.write('{"partial": tr')          # no newline: deferred
+cached = synth_turn.read_transcript_lines(p)
+full = synth_turn._read_transcript_lines_full(p)
+assert cached == full[:len(cached)], 'prefix parity after append'
+assert len(full) - len(cached) == 1, 'exactly the partial deferred'
+with open(p, 'a', encoding='utf-8') as f:
+    f.write('ue}\\n')                  # complete the partial
+assert synth_turn.read_transcript_lines(p) == synth_turn._read_transcript_lines_full(p), 'after completion'
+p.write_text('{}\\n', encoding='utf-8')   # truncation → cache reset
+assert len(synth_turn.read_transcript_lines(p)) == 1, 'truncation reset'
+p.unlink()
+print('CACHE-OK')
+`;
+    const r = runPythonInline(code);
+    if (r.code !== 0 || !r.stdout.includes('CACHE-OK')) {
+      throw new Error(`cache parity failed (exit ${r.code}):\n${r.stdout}\n${r.stderr}`);
+    }
+  });
+
+  it('queue TTL prune removes >24h clip artifacts, keeps fresh ones + logs (2026-07-13)', () => {
+    const code = `
+import os, sys, tempfile, time
+home = tempfile.mkdtemp()
+os.environ['TT_HOME'] = home
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+q = synth_turn.QUEUE_DIR
+q.mkdir(parents=True, exist_ok=True)
+old = q / 'old.mp3'; old.write_bytes(b'x')
+oldt = time.time() - 2 * 86400
+os.utime(old, (oldt, oldt))
+fresh = q / 'fresh.mp3'; fresh.write_bytes(b'x')
+logf = q / '_hook.log'; logf.write_text('keep me', encoding='utf-8')
+os.utime(logf, (oldt, oldt))   # even old logs must survive
+synth_turn._prune_queue_ttl()
+assert not old.exists(), 'old clip should be pruned'
+assert fresh.exists(), 'fresh clip must survive'
+assert logf.exists(), 'log files must never be pruned'
+assert (q / '_prune.stamp').exists(), 'stamp must be written'
+synth_turn._prune_queue_ttl()  # stamp-gated second call: no crash, no-op
+print('PRUNE-OK')
+`;
+    const r = runPythonInline(code);
+    if (r.code !== 0 || !r.stdout.includes('PRUNE-OK')) {
+      throw new Error(`prune test failed (exit ${r.code}):\n${r.stdout}\n${r.stderr}`);
+    }
+  });
 
   it('format_elapsed_phrase uses a varied verb pool (not always "Worked")', () => {
     // Regression guard for Ben's 2026-04-23 ask: the first cut always
@@ -6709,6 +6819,57 @@ describe('TranscriptWatcher lifecycle (EX7f / audit 2026-04-23)', () => {
       w.start();  // no-op — already armed
       assertEqual(w._armed, true);
       w.stop();
+    } finally { home.cleanup(); }
+  });
+
+  it('daemon-first: accepted dispatch skips the Python spawn (2026-07-13)', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const daemonCalls = [];
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: (req, cb) => { daemonCalls.push(req); cb(true); },
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(daemonCalls.length, 1);
+      assertEqual(daemonCalls[0].mode, 'on-stream');
+      assertEqual(spawner.calls.length, 0);  // no Python spawn
+      // inFlight must be cleared after the sync callback so the next
+      // tick isn't wedged behind a phantom handle.
+      assertEqual(w._state.get('aabbccdd').inFlight, null);
+    } finally { home.cleanup(); }
+  });
+
+  it('daemon-first: rejected dispatch falls back to the Python spawn', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: (req, cb) => cb(false),
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);  // fallback spawned
+      assertEqual(spawner.calls[0].args.includes('--mode'), true);
+      assertEqual(spawner.calls[0].args.includes('on-stream'), true);
+    } finally { home.cleanup(); }
+  });
+
+  it('daemon-first: a throwing dispatcher still falls back to the spawn', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: () => { throw new Error('boom'); },
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      assertEqual(w._state.get('aabbccdd').inFlight, spawner.procs[0]);
     } finally { home.cleanup(); }
   });
 
@@ -11711,9 +11872,13 @@ s.close()
     if (!/stopSynthDaemon\(\)/.test(main)) {
       throw new Error('main.js must call stopSynthDaemon() on will-quit');
     }
-    // Daemon must be POSIX-only (gated by !platform.isWindows).
-    if (!/createSynthDaemon\([\s\S]{0,200}enabled:\s*!platform\.isWindows/.test(main)) {
-      throw new Error('main.js must gate createSynthDaemon by !platform.isWindows (POSIX-only Unix socket)');
+    // Cross-platform since 2026-07-13: Unix socket on POSIX, token-
+    // authenticated TCP loopback on Windows. The gate must be gone.
+    if (!/createSynthDaemon\([\s\S]{0,200}enabled:\s*true/.test(main)) {
+      throw new Error('main.js must enable createSynthDaemon on ALL platforms (enabled: true)');
+    }
+    if (/createSynthDaemon\([\s\S]{0,200}enabled:\s*!platform\.isWindows/.test(main)) {
+      throw new Error('stale POSIX-only gate on createSynthDaemon — Windows uses TCP loopback now');
     }
   });
 

@@ -96,6 +96,20 @@ REGISTRY_PATH = TT_HOME / 'session-colours.json'
 LOG_PATH = QUEUE_DIR / '_hook.log'
 EDGE_TTS_SCRIPT = Path(__file__).resolve().parent / 'edge_tts_speak.py'
 
+# Queue TTL — defence in depth behind app/lib/prune.js (which only runs
+# while the toolbar is up; Ben's 2026-06-02 call fixed retention at one
+# day there and this mirrors it). Synth-side pruning means the queue
+# self-trims even when only the daemon / Popen path is producing files.
+QUEUE_PRUNE_TTL_SEC = 24 * 3600
+QUEUE_PRUNE_INTERVAL_SEC = 600  # stamp-gated: at most one sweep per 10 min
+
+# Backlog guard — transcript entries older than this are marked handled
+# WITHOUT synthesis. Prevents the "toolbar comes back after hours away
+# and dumps the whole backlog as audio" failure and bounds what a stale
+# sync state can ever replay. Fail-open: entries without a parseable
+# timestamp are treated as fresh.
+STALE_ENTRY_CUTOFF_SEC = 900
+
 
 def _load_openai_key_from_secrets():
     """Return the OpenAI API key from `config.secrets.json`, or None.
@@ -339,11 +353,139 @@ class _SessionLock:
 
 
 # ---------------------------------------------------------------------------
+# Queue TTL prune + backlog staleness guard
+# ---------------------------------------------------------------------------
+
+def _prune_queue_ttl() -> None:
+    """Best-effort disk TTL for the queue dir. Deletes clip artifacts
+    older than QUEUE_PRUNE_TTL_SEC; never touches logs (*.log), sync
+    state (*.json except *.played.json tombstones) or the stamp file.
+    Stamp-gated so concurrent invocations don't all sweep; unlink races
+    with app/lib/prune.js are harmless (missing file → skip)."""
+    try:
+        stamp = QUEUE_DIR / '_prune.stamp'
+        now = time.time()
+        with contextlib.suppress(FileNotFoundError):
+            if now - stamp.stat().st_mtime < QUEUE_PRUNE_INTERVAL_SEC:
+                return
+        QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+        stamp.touch()
+        cutoff = now - QUEUE_PRUNE_TTL_SEC
+        removed = 0
+        roots = [QUEUE_DIR]
+        tmp_dir = QUEUE_DIR / '.tmp_synth'
+        if tmp_dir.is_dir():
+            roots.append(tmp_dir)
+        for root in roots:
+            for pattern in ('*.mp3', '*.wav', '*.txt', '*.err',
+                            '*.partial', '*.played.json'):
+                for f in root.glob(pattern):
+                    try:
+                        if f.is_file() and f.stat().st_mtime < cutoff:
+                            f.unlink()
+                            removed += 1
+                    except OSError:
+                        continue
+        if removed:
+            _log(f'queue TTL prune: removed {removed} file(s) older than '
+                 f'{QUEUE_PRUNE_TTL_SEC // 3600}h')
+    except Exception as e:
+        _log(f'queue TTL prune failed: {type(e).__name__}: {e}')
+
+
+def _entry_is_stale(entry: dict, now_ts: float) -> bool:
+    """True when the transcript entry's own timestamp is older than
+    STALE_ENTRY_CUTOFF_SEC. Used to mark long-idle content handled
+    instead of speaking it (backlog guard). Fail-open on missing or
+    malformed timestamps — better to speak fresh-looking content than
+    to silently drop a live turn over a parse quirk."""
+    ts = entry.get('timestamp') if isinstance(entry, dict) else None
+    if not isinstance(ts, str) or not ts:
+        return False
+    try:
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        return (now_ts - dt.timestamp()) > STALE_ENTRY_CUTOFF_SEC
+    except (ValueError, OverflowError, OSError):
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Transcript extraction
 # ---------------------------------------------------------------------------
 
-def read_transcript_lines(transcript_path: Path) -> list[dict]:
-    """Parse transcript JSONL. Invalid lines are skipped with a log entry."""
+# Incremental transcript cache — daemon path only (TT_SYNTH_DAEMON=1,
+# set by synth_daemon.py before importing this module). Transcript
+# JSONLs are append-only, so a long-lived process can parse each line
+# exactly once instead of re-parsing the whole file on every hook fire
+# (a multi-hour session's transcript is tens of MB; full re-parse every
+# 2-5 s across sessions was a measurable share of the 2026-07-13 CPU-
+# heat incident). One-shot Popen invocations skip the cache — nothing
+# to reuse across a process that exits.
+_TRANSCRIPT_CACHE: dict[str, dict] = {}
+_TRANSCRIPT_CACHE_LOCK = Lock()
+_TRANSCRIPT_CACHE_MAX_FILES = 8
+
+
+def _parse_jsonl_lines(lines: list[str]) -> list[dict]:
+    """Parse complete JSONL lines. Blank / invalid lines become {} to
+    keep index alignment (sync state records line indices)."""
+    entries: list[dict] = []
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            entries.append({})  # keep index alignment
+            continue
+        try:
+            entries.append(json.loads(raw))
+        except json.JSONDecodeError:
+            entries.append({})
+    return entries
+
+
+def _read_transcript_lines_cached(transcript_path: Path) -> list[dict]:
+    """Append-only incremental parse. Only COMPLETE lines (ending \\n)
+    are consumed — a partially-written trailing line stays unread until
+    its newline lands, so the byte offset never splits a line. The full
+    parser treats that partial as a transient {} tail entry; omitting it
+    here is equivalent (every reader skips {} entries) and indices of
+    complete entries are identical between both readers. If the file
+    shrank (rotation/rewrite) the cache resets to a full re-parse."""
+    key = str(transcript_path)
+    try:
+        size = transcript_path.stat().st_size
+    except OSError:
+        _log(f'transcript missing: {transcript_path}')
+        return []
+    with _TRANSCRIPT_CACHE_LOCK:
+        slot = _TRANSCRIPT_CACHE.get(key)
+        if slot is None or size < slot['offset']:
+            slot = {'offset': 0, 'entries': []}
+            _TRANSCRIPT_CACHE[key] = slot
+        if size > slot['offset']:
+            with open(transcript_path, 'rb') as f:
+                f.seek(slot['offset'])
+                chunk = f.read(size - slot['offset'])
+            nl = chunk.rfind(b'\n')
+            if nl >= 0:
+                block = chunk[:nl + 1]
+                # \n never appears inside a multibyte UTF-8 sequence, so a
+                # block ending at a newline is always a valid decode unit.
+                slot['entries'].extend(_parse_jsonl_lines(
+                    block.decode('utf-8', errors='replace').splitlines()))
+                slot['offset'] += len(block)
+        slot['at'] = time.time()
+        if len(_TRANSCRIPT_CACHE) > _TRANSCRIPT_CACHE_MAX_FILES:
+            oldest = min(_TRANSCRIPT_CACHE, key=lambda k: _TRANSCRIPT_CACHE[k].get('at', 0))
+            if oldest != key:
+                del _TRANSCRIPT_CACHE[oldest]
+        # Shallow copy: callers may hold the list across a later cache
+        # extend; entry dicts themselves are treated as read-only.
+        return list(slot['entries'])
+
+
+def _read_transcript_lines_full(transcript_path: Path) -> list[dict]:
+    """Parse transcript JSONL front to back. Invalid lines are skipped
+    with index alignment preserved."""
     entries: list[dict] = []
     try:
         with open(transcript_path, encoding='utf-8') as f:
@@ -361,6 +503,18 @@ def read_transcript_lines(transcript_path: Path) -> list[dict]:
     except Exception as e:
         _log(f'transcript read fail: {e}')
     return entries
+
+
+def read_transcript_lines(transcript_path: Path) -> list[dict]:
+    """Parse transcript JSONL. Invalid lines are skipped with a log entry.
+    Under the daemon (TT_SYNTH_DAEMON=1) reads are incremental; any cache
+    failure falls back to the full parser so audio never depends on it."""
+    if os.environ.get('TT_SYNTH_DAEMON') == '1':
+        try:
+            return _read_transcript_lines_cached(transcript_path)
+        except Exception as e:
+            _log(f'transcript cache fail ({type(e).__name__}: {e}) -- full re-parse')
+    return _read_transcript_lines_full(transcript_path)
 
 
 def find_last_user_idx(entries: list[dict]) -> int:
@@ -1873,6 +2027,11 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         _log(f'invalid session_short: {session_short!r}')
         return 2
 
+    # Disk hygiene — stamp-gated to one sweep per 10 min, so this is a
+    # single stat() on the hot path. Outside the session lock: unlink
+    # races are benign and other sessions shouldn't queue behind a sweep.
+    _prune_queue_ttl()
+
     transcript = Path(transcript_path)
     # Windows path normalisation (`/c/...` → `C:\\...`)
     if not transcript.is_absolute() and transcript_path.startswith('/'):
@@ -1950,6 +2109,30 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
             for tool_idx, tname, tinput, tresult in tool_use_entries_after(entries, user_idx):
                 if tool_idx not in announced_set:
                     new_tool_entries.append((tool_idx, tname, tinput, tresult))
+
+        # Backlog guard: content older than STALE_ENTRY_CUTOFF_SEC is
+        # marked handled WITHOUT synthesis — same state bookkeeping as
+        # the muted path below. Scenario this kills: toolbar (and with
+        # it the 2026-07-13 toolbar-alive hook gate) off for hours while
+        # sessions kept working; on relaunch the first hook fire would
+        # otherwise synthesise the entire idle period's prose as one
+        # audio dump. "Speak from now on" matches unmute semantics.
+        now_ts = time.time()
+        stale_text = [i for (i, _) in pending if _entry_is_stale(entries[i], now_ts)]
+        if stale_text:
+            state['synthesized_line_indices'].extend(stale_text)
+            stale_text_set = set(stale_text)
+            pending = [(i, t) for (i, t) in pending if i not in stale_text_set]
+        stale_tool_idxs = {t[0] for t in new_tool_entries
+                           if _entry_is_stale(entries[t[0]], now_ts)}
+        if stale_tool_idxs:
+            announced_set = announced_set.union(stale_tool_idxs)
+            state['announced_tool_line_indices'] = list(announced_set)
+            new_tool_entries = [t for t in new_tool_entries if t[0] not in stale_tool_idxs]
+        if stale_text or stale_tool_idxs:
+            _log(f'{mode}: backlog guard skipped {len(stale_text)} text + '
+                 f'{len(stale_tool_idxs)} tool entries older than {STALE_ENTRY_CUTOFF_SEC}s')
+            save_sync_state(session_id, state)
 
         # On-stop owes the user a footer clip when elapsed is known.
         # owes_footer in synth_footer.py encapsulates the POSIX two-
