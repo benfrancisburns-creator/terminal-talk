@@ -68,8 +68,26 @@ function trySynthDaemon({ sessionId, transcriptPath, mode, elapsedSec = 0, foote
         try { sock.destroy(); } catch { /* already gone */ }
         finish(false);
       }
+      // LEAK FIX (2026-07-20): we never read the daemon's response, so
+      // without resume() the reply + peer FIN sit unread, 'close' never
+      // fires and the HANDLE lives forever — in a long-lived caller
+      // (the toolbar's transcript-watcher) that leaked ~15.8k Bound
+      // sockets in ~2 days and exhausted the machine's dynamic port
+      // range (every app on the box got ENOBUFS). Drain the response
+      // to nowhere and hard-cap the socket's remaining life.
+      try { sock.resume(); } catch { /* stream already gone */ }
+      const reaper = setTimeout(() => {
+        try { sock.destroy(); } catch { /* already gone */ }
+      }, 3000);
+      sock.once('close', () => clearTimeout(reaper));
     });
-    sock.on('error', () => { clearTimeout(timer); finish(false); });
+    sock.on('error', () => {
+      clearTimeout(timer);
+      // Same leak class on the refused/reset path: without an explicit
+      // destroy the failed handle can linger in Bound state.
+      try { sock.destroy(); } catch { /* already gone */ }
+      finish(false);
+    });
   } catch {
     finish(false);
   }
