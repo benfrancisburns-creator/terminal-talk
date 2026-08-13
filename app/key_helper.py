@@ -154,11 +154,21 @@ if IS_WINDOWS:
     _SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
     _SendInput.restype = wintypes.UINT
 
+    _MapVirtualKeyW = _u32.MapVirtualKeyW
+    _MapVirtualKeyW.argtypes = (wintypes.UINT, wintypes.UINT)
+    _MapVirtualKeyW.restype = wintypes.UINT
+
     def _press(vk: int, up: bool) -> _INPUT:
         ev = _INPUT()
         ev.type = _INPUT_KEYBOARD
         ev.ki.wVk = vk
-        ev.ki.wScan = 0
+        # Windows Terminal (ConPTY-era input handling) resolves injected keys
+        # from the SCAN CODE and drops VK-only events -- wScan=0 made the
+        # synthetic Ctrl+C invisible to WT while browsers accepted it (the
+        # highlight-to-speak "No text selected" bug, 2026-08-13). Populate the
+        # real scan code alongside the VK -- both-fields is what physical
+        # keyboards and AutoHotkey emit, accepted everywhere.
+        ev.ki.wScan = _MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC
         ev.ki.dwFlags = _KEYEVENTF_KEYUP if up else 0
         ev.ki.time = 0
         ev.ki.dwExtraInfo = None

@@ -1244,7 +1244,10 @@ async function captureSelection() {
   setTimeout(() => {
     try {
       const now = clipboard.readText();
-      if (now === captured) {
+      // Also restore when the board still holds OUR MARKER — the empty-capture
+      // path used to leave marker junk as the user's clipboard (captured=''
+      // never equals the marker, so restore was skipped; found 2026-08-13).
+      if (now === captured || now === marker) {
         clipboard.writeText(original);
       } else {
         diag('captureSelection: clipboard changed mid-gap -- skipping restore');
@@ -1299,14 +1302,28 @@ async function speakClipboard() {
   }, CLIPBOARD_BUSY_HARD_TIMEOUT_MS);
   sendClipboardStatus('synth');
   try {
-    const { captured } = await captureSelection();
+    let { captured, original } = await captureSelection();
     if (!captured || !captured.trim()) {
-      diag('speakClipboard: EMPTY capture, exit');
-      // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
-      // "hey jarvis") with nothing highlighted — silent failure today
-      // means they think the hotkey is broken. Toast tells them why.
-      sendClipboardStatus('empty');
-      return;
+      // Windows Terminal ignores injected copy chords entirely (verified
+      // 2026-08-13: scan-coded SendInput, SendKeys and UIA GetSelection all
+      // fail while injected plain typing passes) — so the Ctrl+C dance can
+      // never capture a WT selection. With WT's copyOnSelect enabled the
+      // user's highlight is ALREADY on the clipboard before we overwrite it
+      // with the marker; fall back to that pre-capture text. Opt out with
+      // playback.clipboard_fallback: false. Never fall back to a stale
+      // marker from a previous failed run.
+      const fallbackOn = !(CFG && CFG.playback && CFG.playback.clipboard_fallback === false);
+      if (fallbackOn && original && original.trim() && !original.startsWith('___TT_CLIP_MARKER___')) {
+        diag(`speakClipboard: empty capture -- falling back to pre-capture clipboard (len=${original.length})`);
+        captured = original;
+      } else {
+        diag('speakClipboard: EMPTY capture, exit');
+        // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
+        // "hey jarvis") with nothing highlighted — silent failure today
+        // means they think the hotkey is broken. Toast tells them why.
+        sendClipboardStatus('empty');
+        return;
+      }
     }
     const text = stripForTTS(captured);
     diag(`speakClipboard: stripped len=${text.length} preview="${text.slice(0,80)}"`);
