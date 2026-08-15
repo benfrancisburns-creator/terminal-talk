@@ -2252,6 +2252,41 @@ function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
 // only covered wake-word-listener. New callers should use
 // killOrphanPythonProcs directly.
 function killOrphanVoiceListeners() { killOrphanPythonProcs(); }
+
+// Self-heal our OWN per-app mixer volume (Windows only). Seen 2026-08-15:
+// after a Windows Update reboot the toolbar ran, the OS default output was
+// fine and clips were logged as played, yet nothing was audible — the
+// Volume Mixer session for terminal-talk sat at 0 (not muted, volume 0).
+// Windows persists that slider per app path so it survives restarts and
+// recurs every few weeks. TT never writes it, so it can only be restored
+// from here. Runs at boot (delayed — the session only exists once the
+// renderer has opened an audio stream) and after every watchdog sweep.
+// Async execFile so a slow Add-Type compile can never stall the main
+// thread; one diag line per run, always. Opt out: cfg.playback.ensure_app_volume=false.
+const ENSURE_APP_VOLUME_SCRIPT = path.join(__dirname, 'ensure-app-volume.ps1');
+function ensureOwnAudioSessionVolume(reason = 'sweep') {
+  if (process.platform !== 'win32') return;
+  try {
+    const pb = (CFG && CFG.playback) || {};
+    if (pb.ensure_app_volume === false) return;
+    if (!fs.existsSync(ENSURE_APP_VOLUME_SCRIPT)) return;
+    const procName = path.basename(process.execPath, '.exe');
+    const { execFile } = require('child_process');
+    execFile(POWERSHELL_EXE, [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', ENSURE_APP_VOLUME_SCRIPT, '-ProcessName', procName,
+    ], { windowsHide: true, timeout: 20000, encoding: 'utf8' }, (err, stdout) => {
+      const line = String(stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+      if (err && !line) { diag(`ensure-app-volume (${reason}) failed: ${err.message}`); return; }
+      if (/^RESTORED/.test(line)) diag(`ensure-app-volume (${reason}) RESTORED — mixer session was silent: ${line}`);
+      else if (/^ERROR/.test(line)) diag(`ensure-app-volume (${reason}) ${line}`);
+      else if (/^NOSESSION/.test(line)) { /* no audio session yet — expected before first clip */ }
+      else if (reason !== 'sweep') diag(`ensure-app-volume (${reason}) ${line}`);
+    });
+  } catch (e) {
+    diag(`ensure-app-volume (${reason}) threw: ${e.message}`);
+  }
+}
 function stopVoiceListener() {
   if (voiceProc) {
     try { voiceProc.removeAllListeners('exit'); } catch {}
@@ -2527,6 +2562,7 @@ const _watchdog = createWatchdog({
   ],
   postSweepFns: [
     { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
+    { name: 'ensureOwnAudioSessionVolume', fn: () => ensureOwnAudioSessionVolume('sweep') },
   ],
   // #6 G6 — emit per-sweep resource metrics so 24h-soak deltas can be
   // read straight off _watchdog.log instead of hand-gathered. RSS is
@@ -2680,6 +2716,9 @@ app.whenReady().then(() => {
   createWindow();
   startWatcher();
   startWatchdog();
+  // Mixer-session self-heal: first pass ~90s after boot (the session only
+  // exists once a clip has played), then every watchdog sweep.
+  setTimeout(() => ensureOwnAudioSessionVolume('boot'), 90 * 1000).unref();
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
   _codexIdentitySync.start();
