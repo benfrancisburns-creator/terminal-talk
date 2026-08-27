@@ -204,11 +204,17 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     // top/bottom, or left/right. This keeps the scrubber character from
     // implying the wrong split direction for mixed-palette sessions.
     lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="${k}"] { ${mascotVarDeclarations(mascotVarsForArrangement(i, baseColours))}; }`);
+    // Dot-strip mascot: each queued clip is a miniature of the scrubber
+    // mascot, recoloured by the same arrangement so a dot matches its
+    // session (solid / top-bottom / left-right). Emitted as its own rule
+    // (not grouped with .scrubber-mascot) so existing source-shape tests
+    // keep matching the scrubber selector verbatim.
+    lines.push(`${selectorPrefix}.dot.mascot[data-palette="${k}"] { ${mascotVarDeclarations(mascotVarsForArrangement(i, baseColours))}; }`);
   }
   lines.push(`${selectorPrefix}[data-palette="neutral"] { background: ${palette.NEUTRAL_COLOUR}; --tt-palette-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.collapsed-signal[data-palette="neutral"] { --collapsed-signal-bg: ${palette.NEUTRAL_COLOUR}; }`);
   lines.push(`${selectorPrefix}.dot.heard[data-palette="neutral"] { --dot-ring-bg: ${palette.NEUTRAL_COLOUR}; }`);
-  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { ${mascotVarDeclarations({
+  const neutralMascotVars = {
     topLeft: palette.NEUTRAL_COLOUR,
     topRight: palette.NEUTRAL_COLOUR,
     bottomLeft: palette.NEUTRAL_COLOUR,
@@ -220,7 +226,9 @@ function emitPaletteRules(baseColours, selectorPrefix) {
     leftLeg: palette.NEUTRAL_COLOUR,
     rightLeg: palette.NEUTRAL_COLOUR,
     secondary: palette.NEUTRAL_COLOUR,
-  })}; }`);
+  };
+  lines.push(`${selectorPrefix}.scrubber-mascot[data-palette="neutral"] { ${mascotVarDeclarations(neutralMascotVars)}; }`);
+  lines.push(`${selectorPrefix}.dot.mascot[data-palette="neutral"] { ${mascotVarDeclarations(neutralMascotVars)}; }`);
   return lines;
 }
 

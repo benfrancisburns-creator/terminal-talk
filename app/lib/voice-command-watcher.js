@@ -22,6 +22,7 @@ const realFs = require('node:fs');
 
 const DEFAULT_ALLOWED = Object.freeze([
   'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
+  'dictation_start', 'dictation_stop',
 ]);
 
 function createVoiceCommandWatcher({

@@ -26,6 +26,7 @@ try { nativeTheme.themeSource = 'dark'; } catch {}
 // TT_INSTALL_DIR pins a legacy/sandbox root.
 const INSTALL_DIR = platform.installDir;
 const QUEUE_DIR = path.join(INSTALL_DIR, 'queue');
+const DICTATION_DIR = path.join(INSTALL_DIR, 'dictation');
 const CONFIG_PATH = platform.configPath;
 const LISTENING_STATE_FILE = path.join(INSTALL_DIR, 'listening.state');
 const WAKE_WORD_UNAVAILABLE_FILE = path.join(INSTALL_DIR, 'wake-word-unavailable.flag');
@@ -39,7 +40,7 @@ process.env.TT_HOME = process.env.TT_HOME || INSTALL_DIR;
 process.env.TT_CONFIG_PATH = process.env.TT_CONFIG_PATH || CONFIG_PATH;
 process.env.TT_APP_DIR = process.env.TT_APP_DIR || __dirname;
 
-for (const dir of [INSTALL_DIR, QUEUE_DIR, platform.configDir]) {
+for (const dir of [INSTALL_DIR, QUEUE_DIR, DICTATION_DIR, platform.configDir]) {
   try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch {}
 }
 
@@ -66,6 +67,8 @@ const DEFAULTS = {
     toggle_window: 'Control+Shift+A',
     speak_clipboard: 'Control+Shift+S',
     toggle_listening: 'Control+Shift+J',
+    dictate_paste: 'Control+Alt+Space',
+    dictate_toggle: 'Control+Shift+Space',
     // Toggle: pause if playing, resume if paused. Use for manual control.
     pause_resume: 'Control+Shift+P',
     // Pause-only: pauses the current clip if it's playing; NEVER resumes.
@@ -73,7 +76,11 @@ const DEFAULTS = {
     // this and nothing was playing (or it was already paused), nothing
     // unexpected happens. Bind via PowerToys / AutoHotkey / Wispr Flow
     // macro so pressing your dictation trigger stops TTS gracefully.
-    pause_only: 'Control+Shift+O'
+    pause_only: 'Control+Shift+O',
+    // Native dictation trigger. Windows opens voice typing (Win+H);
+    // macOS opens Apple Dictation in the foreground app. We pause first
+    // so Terminal Talk never talks over the dictated prompt.
+    start_dictation: 'Control+Shift+D'
   },
   playback: {
     speed: 1.25,
@@ -106,6 +113,7 @@ const DEFAULTS = {
     tts_provider: 'edge',
     tts_fallback_provider: 'edge'
   },
+  dictation: { cleanup: true, cleanup_provider: 'local', cleanup_model: 'gpt-5.4-mini', cleanup_timeout_sec: 20 },
   speech_includes: {
     code_blocks: false,
     inline_code: false,
@@ -1111,6 +1119,20 @@ function helperRequest(cmd, timeoutMs = 500) {
 }
 
 async function sendCtrlC() { await helperRequest('ctrlc', 200); }
+async function sendStartDictation() { return helperRequest('start-dictation', 2000); }
+
+async function startDictation() {
+  diag('startDictation: TRIGGERED');
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send('pause-playback-only'); } catch {}
+  }
+  try {
+    const result = await sendStartDictation();
+    diag(`startDictation: helper OK (${result || 'ok'})`);
+  } catch (e) {
+    diag(`startDictation: helper fail: ${e && e.message ? e.message : e}`);
+  }
+}
 
 async function getForegroundTree() {
   const line = await helperRequest('fgtree', 500);
@@ -1222,7 +1244,10 @@ async function captureSelection() {
   setTimeout(() => {
     try {
       const now = clipboard.readText();
-      if (now === captured) {
+      // Also restore when the board still holds OUR MARKER — the empty-capture
+      // path used to leave marker junk as the user's clipboard (captured=''
+      // never equals the marker, so restore was skipped; found 2026-08-13).
+      if (now === captured || now === marker) {
         clipboard.writeText(original);
       } else {
         diag('captureSelection: clipboard changed mid-gap -- skipping restore');
@@ -1277,14 +1302,30 @@ async function speakClipboard() {
   }, CLIPBOARD_BUSY_HARD_TIMEOUT_MS);
   sendClipboardStatus('synth');
   try {
-    const { captured } = await captureSelection();
+    const selection = await captureSelection();
+    let { captured } = selection;
+    const { original } = selection;
     if (!captured || !captured.trim()) {
-      diag('speakClipboard: EMPTY capture, exit');
-      // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
-      // "hey jarvis") with nothing highlighted — silent failure today
-      // means they think the hotkey is broken. Toast tells them why.
-      sendClipboardStatus('empty');
-      return;
+      // Windows Terminal ignores injected copy chords entirely (verified
+      // 2026-08-13: scan-coded SendInput, SendKeys and UIA GetSelection all
+      // fail while injected plain typing passes) — so the Ctrl+C dance can
+      // never capture a WT selection. With WT's copyOnSelect enabled the
+      // user's highlight is ALREADY on the clipboard before we overwrite it
+      // with the marker; fall back to that pre-capture text. Opt out with
+      // playback.clipboard_fallback: false. Never fall back to a stale
+      // marker from a previous failed run.
+      const fallbackOn = !(CFG && CFG.playback && CFG.playback.clipboard_fallback === false);
+      if (fallbackOn && original && original.trim() && !original.startsWith('___TT_CLIP_MARKER___')) {
+        diag(`speakClipboard: empty capture -- falling back to pre-capture clipboard (len=${original.length})`);
+        captured = original;
+      } else {
+        diag('speakClipboard: EMPTY capture, exit');
+        // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
+        // "hey jarvis") with nothing highlighted — silent failure today
+        // means they think the hotkey is broken. Toast tells them why.
+        sendClipboardStatus('empty');
+        return;
+      }
     }
     const text = stripForTTS(captured);
     diag(`speakClipboard: stripped len=${text.length} preview="${text.slice(0,80)}"`);
@@ -1536,13 +1577,37 @@ function _parseRegistryFile(fullPath) {
   return clean;
 }
 
+// Synchronous short sleep for the torn-read retry path below. Atomics.wait
+// blocks the thread without busy-spinning; falls back to a tight loop if
+// SharedArrayBuffer is unavailable. Only ever invoked on a (rare) failed
+// registry parse, so the brief main-thread stall is acceptable.
+function _sleepSyncMs(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* spin */ }
+  }
+}
+
 function loadAssignments() {
   if (!fs.existsSync(COLOURS_REGISTRY)) return {};
-  const primary = _parseRegistryFile(COLOURS_REGISTRY);
+  // Torn-read tolerance. A concurrent atomic rename (a PS Save-Registry or the
+  // JS saveAssignments/writeAssignments swapping the primary) can make a single
+  // read throw a Windows sharing violation or observe a half-written file —
+  // _parseRegistryFile reports either as null. Treating that ONE transient as
+  // "corrupt" archived 23 false positives in ~3 weeks AND kicked off
+  // backup-recovery that can resurrect a STALE colour. Retry briefly before
+  // declaring corruption; a genuinely malformed file fails every attempt.
+  let primary = _parseRegistryFile(COLOURS_REGISTRY);
+  for (let attempt = 0; primary === null && attempt < 3; attempt++) {
+    _sleepSyncMs(25);
+    primary = _parseRegistryFile(COLOURS_REGISTRY);
+  }
   if (primary === null) {
     // Archive note covers both JSON.parse failure and the shape
     // mismatch (missing assignments field) inside one helper call.
-    archiveCorruptRegistry('JSON.parse failed OR missing assignments field');
+    archiveCorruptRegistry('unparseable after retries (JSON.parse failed OR missing assignments field)');
     // Even though the primary is corrupt, try recovering from a backup
     // before falling back to empty. Matches the "pick newest non-empty
     // slot" rule below.
@@ -1582,12 +1647,18 @@ function loadAssignments() {
 // can attribute who wrote what to the log. Best-effort: a missing or
 // malformed registry is treated as empty prior state. Returns
 // { count, added:[...], removed:[...], changed:[...] } — short-IDs only.
-function writeAssignments(all, opts) {
+// Write body that assumes the caller ALREADY holds the registry lock. Shared
+// by the writeAssignments wrapper, which acquires the lock, and by
+// ensureAssignmentsForFiles, which holds the lock across its WHOLE
+// read-modify-write. That last path is the
+// real fix for "colours change on their own": ensureAssignmentsForFiles used to
+// load the registry UNLOCKED, so during queue-churn it could race a hook's
+// mid-write, momentarily "lose" live sessions, and re-create them as fresh
+// EMPTY entries (labels blanked, colours reshuffled). Loading + writing under a
+// single lock makes the load always see the last committed registry.
+function _writeAssignmentsLocked(all, opts) {
   const skipBackup = !!(opts && opts.skipBackup);
   const caller = (opts && opts.caller) || 'unknown';
-  // #8 — writeAssignments is used by ensureAssignmentsForFiles
-  // (queue-scan prune+recreate) and backup-recovery. Both are
-  // touch-paths; neither should ever drop user-intent fields.
   const restored = _guardUserIntent(all, caller);
   const delta = _registryWriteDelta(all);
   try {
@@ -1615,6 +1686,31 @@ function writeAssignments(all, opts) {
     diag(`write-registry ok from=${caller} keys=${delta.count} added=[${delta.added.join(',')}] removed=[${delta.removed.join(',')}] changed=[${delta.changed.join(',')}]`);
     return true;
   } catch (e) { diag(`writeAssignments fail from=${caller}: ${e.message}`); return false; }
+}
+
+function writeAssignments(all, opts) {
+  const caller = (opts && opts.caller) || 'unknown';
+  return withRegistryLock(COLOURS_REGISTRY, (held) => {
+    if (!held) {
+      diag(`write-registry skip from=${caller} reason=lock-timeout — next write will retry`);
+      return false;
+    }
+    return _writeAssignmentsLocked(all, opts);
+  });
+}
+
+// Parse the primary registry with the same torn-read retry as loadAssignments
+// but WITHOUT the backup-recovery write. Callers use this while holding the
+// lock, so a clean parse failure means the file is genuinely bad (not a
+// transient race) and {} is the honest answer.
+function _loadRegistryConsistent() {
+  if (!fs.existsSync(COLOURS_REGISTRY)) return {};
+  let primary = _parseRegistryFile(COLOURS_REGISTRY);
+  for (let attempt = 0; primary === null && attempt < 3; attempt++) {
+    _sleepSyncMs(25);
+    primary = _parseRegistryFile(COLOURS_REGISTRY);
+  }
+  return primary || {};
 }
 
 function isPidAlive(pid) {
@@ -1688,64 +1784,78 @@ function isSessionLive(entry, now) {
 }
 
 function ensureAssignmentsForFiles(files) {
-  const all = loadAssignments();
-  let changed = false;
-  const nowMs = Date.now();
-  const now = Math.floor(nowMs / 1000);
+  return withRegistryLock(COLOURS_REGISTRY, (held) => {
+    // Load the registry UNDER the lock. The unlocked load this replaced was the
+    // root of "colours change on their own": under queue-churn it could race a
+    // hook's mid-write, observe live sessions as missing, and re-create them as
+    // fresh EMPTY entries (labels blanked, colours reshuffled). Holding the lock
+    // across load+modify+write makes the load always see the last committed
+    // registry, never a transient view.
+    const all = _loadRegistryConsistent();
+    if (!held) {
+      // Lock-timeout: return the current view for display but DO NOT
+      // modify/write — a stale read-modify-write here is exactly the clobber
+      // we're eliminating. The next scan retries.
+      return all;
+    }
+    let changed = false;
+    const nowMs = Date.now();
+    const now = Math.floor(nowMs / 1000);
 
-  // Prune ONLY truly dead sessions (PID gone AND grace expired AND not pinned).
-  for (const k of Object.keys(all)) {
-    if (isRecentlyCleanedPluginShort(k, nowMs)) {
-      delete all[k];
+    // Prune ONLY truly dead sessions (PID gone AND grace expired AND not pinned).
+    for (const k of Object.keys(all)) {
+      if (isRecentlyCleanedPluginShort(k, nowMs)) {
+        delete all[k];
+        changed = true;
+        diag(`ensureAssignments: pruned recently cleaned codex-plugin ${k}`);
+        continue;
+      }
+      if (!isSessionLive(all[k], now)) {
+        delete all[k];
+        changed = true;
+      }
+    }
+
+    for (const [short, entry] of Object.entries(all)) {
+      if (!entry || !shouldAutoAssignVoice(entry)) continue;
+      const alloc = ensureAutoVoice(entry, all);
+      if (alloc) {
+        changed = true;
+        diag(`ensureAssignments: auto voice ${short} -> ${alloc.voice} (${alloc.reason})`);
+      }
+    }
+
+    for (const f of files) {
+      const short = shortFromFile(path.basename(f.path));
+      if (!short || all[short]) continue;
+      if (isRecentlyCleanedPluginShort(short, nowMs)) {
+        diag(`ensureAssignments: skipped recently cleaned codex-plugin ${short}`);
+        continue;
+      }
+      const alloc = allocatePaletteIndex(short, all, 24);
+      if (alloc.evicted) {
+        diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
+        delete all[alloc.evicted];
+      } else if (alloc.reason === 'hash-collision') {
+        diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
+      }
+      const entry = {
+        index: alloc.index,
+        session_id: short,
+        claude_pid: 0,
+        label: '',
+        pinned: false,
+        last_seen: now
+      };
+      const voiceAlloc = ensureAutoVoice(entry, all);
+      all[short] = entry;
       changed = true;
-      diag(`ensureAssignments: pruned recently cleaned codex-plugin ${k}`);
-      continue;
+      diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
     }
-    if (!isSessionLive(all[k], now)) {
-      delete all[k];
-      changed = true;
-    }
-  }
 
-  for (const [short, entry] of Object.entries(all)) {
-    if (!entry || !shouldAutoAssignVoice(entry)) continue;
-    const alloc = ensureAutoVoice(entry, all);
-    if (alloc) {
-      changed = true;
-      diag(`ensureAssignments: auto voice ${short} -> ${alloc.voice} (${alloc.reason})`);
-    }
-  }
-
-  for (const f of files) {
-    const short = shortFromFile(path.basename(f.path));
-    if (!short || all[short]) continue;
-    if (isRecentlyCleanedPluginShort(short, nowMs)) {
-      diag(`ensureAssignments: skipped recently cleaned codex-plugin ${short}`);
-      continue;
-    }
-    const alloc = allocatePaletteIndex(short, all, 24);
-    if (alloc.evicted) {
-      diag(`ensureAssignments: LRU eviction -- ${alloc.evicted} -> freed index ${alloc.index}`);
-      delete all[alloc.evicted];
-    } else if (alloc.reason === 'hash-collision') {
-      diag(`ensureAssignments: ALL 24 slots pinned -- hash-collision fallback for ${short} -> index ${alloc.index}`);
-    }
-    const entry = {
-      index: alloc.index,
-      session_id: short,
-      claude_pid: 0,
-      label: '',
-      pinned: false,
-      last_seen: now
-    };
-    const voiceAlloc = ensureAutoVoice(entry, all);
-    all[short] = entry;
-    changed = true;
-    diag(`ensureAssignments: new session ${short} -> index ${alloc.index} (${alloc.reason}) voice=${voiceAlloc ? voiceAlloc.voice : 'none'}`);
-  }
-
-  if (changed) writeAssignments(all, { caller: 'ensure-for-files' });
-  return all;
+    if (changed) _writeAssignmentsLocked(all, { caller: 'ensure-for-files' });
+    return all;
+  });
 }
 
 // Redact secrets from any value before it reaches a log file.
@@ -1866,6 +1976,16 @@ function isPathInside(target, base) {
            resolvedTarget.startsWith(resolvedBase + path.sep);
   } catch { return false; }
 }
+
+const { createDictationController } = require('./lib/dictation');
+const { createDictationHotkeyHook } = require('./lib/dictation-hotkey-hook');
+function sendRenderer(channel) { if (win && !win.isDestroyed()) { try { win.webContents.send(channel); } catch {} } }
+const _dictation = createDictationController({ spawn, fs, path, platform: process.platform, powershellExe: POWERSHELL_EXE, pythonExe: PYTHON_EXE, appDir: __dirname, installDir: INSTALL_DIR, getWin: () => win, diag, getConfig: () => CFG, getApiKey: () => loadApiKey(), sendMicCaptured: () => sendRenderer('mic-captured-elsewhere'), sendResumePlayback: () => sendRenderer('mic-released') });
+function toggleHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.isBusy() ? _dictation.stop(source) : startHandsFreeDictation(source); }
+function startHandsFreeDictation(source = 'toggle-hotkey') { return _dictation.start({ paste: true, source, externalStop: true, maxSeconds: 1200 }); }
+const _dictationHookOpts = { enabled: process.platform === 'win32' || process.platform === 'darwin', spawn, pythonExe: PYTHON_EXE, scriptPath: path.join(__dirname, 'dictation-hotkey-hook.py'), diag };
+const _dictationHoldHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_paste, onStart: () => _dictation.start({ paste: true, source: 'keyboard-hook', externalStop: true }), onStop: () => _dictation.stop('hotkey-release') });
+const _dictationToggleHotkeyHook = createDictationHotkeyHook({ ..._dictationHookOpts, accelerator: CFG.hotkeys.dictate_toggle, onStart: () => toggleHandsFreeDictation('toggle-hotkey'), onStop: () => {} });
 
 // EX6f — IPC handlers migrated out of main.js into app/lib/ipc-handlers.js
 // arrive as a single register() call. Placed at the end of the IPC block
@@ -2042,7 +2162,19 @@ ipcMain.handle('demo-start-ready', () => {
 // after it loads. Without this the user gets silent hotkey collisions
 // (e.g. Wispr Flow already owns Ctrl+Shift+A) and no signal about why.
 let hotkeyRegistrationStatus = { failed: [], at: 0 };
+// Assigned inside app.whenReady once the hotkey handlers + window exist.
+// Lets the manual "Re-register" button (Settings → Shortcuts) re-run the
+// idempotent registration without restarting the app.
+let _reregisterHotkeys = null;
 ipcMain.handle('get-hotkey-registration', () => hotkeyRegistrationStatus);
+ipcMain.handle('reregister-hotkeys', () => (_reregisterHotkeys ? _reregisterHotkeys() : hotkeyRegistrationStatus));
+ipcMain.handle('start-dictation', (_event, opts = {}) => {
+  const source = opts && opts.source ? String(opts.source).slice(0, 40) : (opts && opts.paste ? 'renderer-paste' : 'renderer');
+  return _dictation.start({ paste: !!(opts && opts.paste), source, externalStop: !!(opts && opts.manualStop), maxSeconds: opts && opts.manualStop ? 1200 : 0 });
+});
+ipcMain.handle('stop-dictation', (_event, reason = 'renderer') => _dictation.stop(String(reason || 'renderer').slice(0, 80)));
+ipcMain.handle('get-dictations', (_event, limit = 20) => _dictation.list(limit));
+ipcMain.handle('delete-dictation', (_event, filePath) => _dictation.remove(filePath));
 
 let voiceProc = null;
 function isListeningEnabled() {
@@ -2061,7 +2193,7 @@ function isWakeWordAvailable() {
 // fragment is matched as a substring against the python child's
 // CommandLine, so 'wake-word-listener' catches our wake-word-listener.py
 // without false-positive on unrelated python tools.
-const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper', 'mic_watcher_mac', 'synth_daemon'];
+const ORPHAN_PY_SCRIPTS = ['wake-word-listener', 'key_helper', 'mic_watcher_mac', 'synth_daemon', 'dictation-hotkey-hook'];
 
 // Military-grade safety net: sweep any orphan python helpers.
 // Matches only python.exe processes whose command line contains one of
@@ -2122,6 +2254,41 @@ function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
 // only covered wake-word-listener. New callers should use
 // killOrphanPythonProcs directly.
 function killOrphanVoiceListeners() { killOrphanPythonProcs(); }
+
+// Self-heal our OWN per-app mixer volume (Windows only). Seen 2026-08-15:
+// after a Windows Update reboot the toolbar ran, the OS default output was
+// fine and clips were logged as played, yet nothing was audible — the
+// Volume Mixer session for terminal-talk sat at 0 (not muted, volume 0).
+// Windows persists that slider per app path so it survives restarts and
+// recurs every few weeks. TT never writes it, so it can only be restored
+// from here. Runs at boot (delayed — the session only exists once the
+// renderer has opened an audio stream) and after every watchdog sweep.
+// Async execFile so a slow Add-Type compile can never stall the main
+// thread; one diag line per run, always. Opt out: cfg.playback.ensure_app_volume=false.
+const ENSURE_APP_VOLUME_SCRIPT = path.join(__dirname, 'ensure-app-volume.ps1');
+function ensureOwnAudioSessionVolume(reason = 'sweep') {
+  if (process.platform !== 'win32') return;
+  try {
+    const pb = (CFG && CFG.playback) || {};
+    if (pb.ensure_app_volume === false) return;
+    if (!fs.existsSync(ENSURE_APP_VOLUME_SCRIPT)) return;
+    const procName = path.basename(process.execPath, '.exe');
+    const { execFile } = require('child_process');
+    execFile(POWERSHELL_EXE, [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', ENSURE_APP_VOLUME_SCRIPT, '-ProcessName', procName,
+    ], { windowsHide: true, timeout: 20000, encoding: 'utf8' }, (err, stdout) => {
+      const line = String(stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+      if (err && !line) { diag(`ensure-app-volume (${reason}) failed: ${err.message}`); return; }
+      if (/^RESTORED/.test(line)) diag(`ensure-app-volume (${reason}) RESTORED — mixer session was silent: ${line}`);
+      else if (/^ERROR/.test(line)) diag(`ensure-app-volume (${reason}) ${line}`);
+      else if (/^NOSESSION/.test(line)) { /* no audio session yet — expected before first clip */ }
+      else if (reason !== 'sweep') diag(`ensure-app-volume (${reason}) ${line}`);
+    });
+  } catch (e) {
+    diag(`ensure-app-volume (${reason}) threw: ${e.message}`);
+  }
+}
 function stopVoiceListener() {
   if (voiceProc) {
     try { voiceProc.removeAllListeners('exit'); } catch {}
@@ -2251,9 +2418,7 @@ const stopOpenaiInvalidWatcher = _openaiInvalidWatcher.stop;
 // existing tests asserting on `app/main.js VOICE_COMMAND_ALLOWED`
 // (#27 invariant) keep finding it.
 const VOICE_COMMAND_PATH = path.join(INSTALL_DIR, 'voice-command.json');
-const VOICE_COMMAND_ALLOWED = new Set([
-  'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
-]);
+const VOICE_COMMAND_ALLOWED = new Set(['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel', 'dictation_start', 'dictation_stop']);
 const _voiceCommandWatcher = createVoiceCommandWatcher({
   commandPath: VOICE_COMMAND_PATH,
   allowed: VOICE_COMMAND_ALLOWED,
@@ -2291,14 +2456,17 @@ const _micWatcher = createMicWatcher({
 const startMicWatcher = _micWatcher.start;
 const stopMicWatcher = _micWatcher.stop;
 
-// Phase 11 (#35): long-lived synth daemon over Unix socket. POSIX-
-// only (Mac + Linux). Saves ~80 ms cold-start + imports per hook
-// fire — typical turn fires 6-12 times so 0.5-1 s of pure overhead.
-// posix_hooks.py:spawn_synth tries the socket first and falls
-// through to per-hook subprocess if it can't connect, so the
-// daemon being down never breaks audio.
+// Phase 11 (#35): long-lived synth daemon — all platforms since
+// 2026-07-13. Unix socket on POSIX; token-authenticated TCP loopback
+// (TT_HOME/synth-port.json) on Windows. Saves Python cold-start +
+// imports per hook fire — typical turn fires 6-12 times so 0.5-1 s+
+// of pure overhead, and the daemon's incremental transcript cache
+// stops long sessions re-parsing the whole JSONL each fire.
+// Dispatchers (posix_hooks.py / synth-dispatch.psm1 / synth-client.js)
+// try the daemon first and fall through to per-hook subprocess if
+// they can't connect, so the daemon being down never breaks audio.
 const _synthDaemon = createSynthDaemon({
-  enabled: !platform.isWindows,
+  enabled: true,
   pythonExe: PYTHON_EXE,
   appDir: __dirname,
   spawn,
@@ -2396,6 +2564,7 @@ const _watchdog = createWatchdog({
   ],
   postSweepFns: [
     { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
+    { name: 'ensureOwnAudioSessionVolume', fn: () => ensureOwnAudioSessionVolume('sweep') },
   ],
   // #6 G6 — emit per-sweep resource metrics so 24h-soak deltas can be
   // read straight off _watchdog.log instead of hand-gathered. RSS is
@@ -2549,6 +2718,9 @@ app.whenReady().then(() => {
   createWindow();
   startWatcher();
   startWatchdog();
+  // Mixer-session self-heal: first pass ~90s after boot (the session only
+  // exists once a clip has played), then every watchdog sweep.
+  setTimeout(() => ensureOwnAudioSessionVolume('boot'), 90 * 1000).unref();
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
   _codexIdentitySync.start();
@@ -2572,42 +2744,72 @@ app.whenReady().then(() => {
   // has already reserved the combo. Without this diag line a user who
   // has (say) Wispr Flow binding Ctrl+Shift+A would see the toolbar's
   // Ctrl+Shift+A doing nothing with zero signal about why. The
-  // failedHotkeys list is also pushed to the renderer below so the
-  // user gets a visible banner instead of mysteriously dead hotkeys.
-  const failedHotkeys = [];
-  function registerAndLog(accel, fn, name) {
-    if (!accel) return;
-    const ok = globalShortcut.register(accel, fn);
-    diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
-    if (!ok) failedHotkeys.push({ name, accel });
-  }
-  registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
-  registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
-  registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
-  if (CFG.hotkeys.pause_resume) {
-    registerAndLog(CFG.hotkeys.pause_resume, () => {
-      if (win && !win.isDestroyed()) {
-        try { win.webContents.send('toggle-pause-playback'); } catch {}
-      }
-    }, 'pause_resume');
-  }
-  if (CFG.hotkeys.pause_only) {
-    registerAndLog(CFG.hotkeys.pause_only, () => {
-      if (win && !win.isDestroyed()) {
-        try { win.webContents.send('pause-playback-only'); } catch {}
-      }
-    }, 'pause_only');
-  }
-  // Push failed-registration detail to the renderer so settings-form
-  // can show a banner. Renderer subscribes via api.onHotkeyRegistration;
-  // delivery is fire-and-forget — if the renderer isn't ready yet, the
-  // get-hotkey-registration IPC handler below covers it on demand.
-  hotkeyRegistrationStatus = { failed: failedHotkeys, at: Date.now() };
-  setTimeout(() => {
-    if (failedHotkeys.length && win && !win.isDestroyed()) {
+  // failedHotkeys list is also pushed to the renderer so the user gets a
+  // visible banner instead of mysteriously dead hotkeys.
+  //
+  // SELF-HEAL: this is idempotent (unregisterAll → re-grab) and re-callable,
+  // so a TRANSIENT startup collision — another process momentarily holding a
+  // chord (a still-closing prior instance during a restart, Wispr Flow, etc.)
+  // — no longer leaves the hotkey dead until the next full app restart. It's
+  // retried automatically (shortly after startup + on every window focus
+  // while any chord is still unclaimed) and on demand via the
+  // `reregister-hotkeys` IPC behind the Settings → Shortcuts button.
+  function registerGlobalHotkeys() {
+    try { globalShortcut.unregisterAll(); } catch {}
+    const failedHotkeys = [];
+    function registerAndLog(accel, fn, name) {
+      if (!accel) return;
+      let ok = false;
+      try { ok = globalShortcut.register(accel, fn); } catch {}
+      diag(`globalShortcut ${name} [${accel}] registered=${ok}`);
+      if (!ok) failedHotkeys.push({ name, accel });
+    }
+    registerAndLog(CFG.hotkeys.toggle_window,    toggleWindow,      'toggle_window');
+    registerAndLog(CFG.hotkeys.speak_clipboard,  speakClipboard,    'speak_clipboard');
+    registerAndLog(CFG.hotkeys.toggle_listening, toggleListening,   'toggle_listening');
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
+      registerAndLog(CFG.hotkeys.dictate_paste, () => _dictation.start({ paste: true, source: 'hotkey', holdAccelerator: CFG.hotkeys.dictate_paste }), 'dictate_paste'); registerAndLog(CFG.hotkeys.dictate_toggle, () => toggleHandsFreeDictation('toggle-hotkey'), 'dictate_toggle');
+    } else {
+      diag(`globalShortcut dictate_paste skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_paste}]`); diag(`globalShortcut dictate_toggle skipped on ${process.platform}; low-level hook owns [${CFG.hotkeys.dictate_toggle}]`);
+    }
+    if (CFG.hotkeys.pause_resume) {
+      registerAndLog(CFG.hotkeys.pause_resume, () => {
+        if (win && !win.isDestroyed()) {
+          try { win.webContents.send('toggle-pause-playback'); } catch {}
+        }
+      }, 'pause_resume');
+    }
+    if (CFG.hotkeys.pause_only) {
+      registerAndLog(CFG.hotkeys.pause_only, () => {
+        if (win && !win.isDestroyed()) {
+          try { win.webContents.send('pause-playback-only'); } catch {}
+        }
+      }, 'pause_only');
+    }
+    if (CFG.hotkeys.start_dictation) {
+      registerAndLog(CFG.hotkeys.start_dictation, startDictation, 'start_dictation');
+    }
+    // Renderer subscribes via api.onHotkeyRegistration; the on-load
+    // get-hotkey-registration pull covers the first call (renderer may not
+    // be ready yet), and each retry re-pushes so the banner clears the
+    // moment a previously-failed chord is finally claimed.
+    hotkeyRegistrationStatus = { failed: failedHotkeys, at: Date.now() };
+    if (win && !win.isDestroyed()) {
       try { win.webContents.send('hotkey-registration', hotkeyRegistrationStatus); } catch {}
     }
-  }, 1500);
+    return hotkeyRegistrationStatus;
+  }
+  _reregisterHotkeys = registerGlobalHotkeys;
+  registerGlobalHotkeys();
+  _dictationHoldHotkeyHook.start();
+  _dictationToggleHotkeyHook.start();
+  // Auto-retry the self-heal: once ~10 s after startup (the conflicting
+  // process has usually exited by then), and again on any window focus
+  // while chords remain unclaimed. Both are no-ops once everything is held.
+  setTimeout(() => { if (hotkeyRegistrationStatus.failed.length) registerGlobalHotkeys(); }, 10_000);
+  app.on('browser-window-focus', () => {
+    if (hotkeyRegistrationStatus.failed.length) registerGlobalHotkeys();
+  });
   if (isListeningEnabled()) startVoiceListener();
   else diag('listening DISABLED at startup');
   startMicWatcher();
@@ -2668,6 +2870,7 @@ app.on('will-quit', () => {
   stopOpenaiInvalidWatcher();
   stopVoiceCommandWatcher();
   stopUpdateChecker();
+  _dictationHoldHotkeyHook.stop(); _dictationToggleHotkeyHook.stop();
   stopSynthDaemon();
 });
 

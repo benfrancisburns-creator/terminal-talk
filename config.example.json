@@ -15,8 +15,11 @@
     "toggle_window": "Control+Shift+A",
     "speak_clipboard": "Control+Shift+S",
     "toggle_listening": "Control+Shift+J",
+    "dictate_paste": "Control+Alt+Space",
+    "dictate_toggle": "Control+Shift+Space",
     "pause_resume": "Control+Shift+P",
-    "pause_only": "Control+Shift+O"
+    "pause_only": "Control+Shift+O",
+    "start_dictation": "Control+Shift+D"
   },
 
   "playback": {
@@ -30,6 +33,16 @@
     "palette_variant": "default",
     "tts_provider": "edge",
     "tts_fallback_provider": "edge"
+  },
+
+  "dictation": {
+    "_comment": "Local Whisper cleanup removes filler words and spoken formatting commands before paste. cleanup_provider 'openai' is opt-in and can spend API credits; it falls back to local cleanup if unavailable.",
+    "cleanup": true,
+    "cleanup_provider": "local",
+    "cleanup_model": "gpt-5.4-mini",
+    "cleanup_timeout_sec": 20,
+    "keep_audio": false,
+    "save_timing": true
   },
 
   "speech_includes": {

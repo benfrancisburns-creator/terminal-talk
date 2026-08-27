@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Terminal Talk — faithful mascot dot · crispness + state system</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; background: #0a0b0f; color: #cfd2da;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    padding: 24px 28px 80px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; color: #fff; }
+  h2 { font-size: 14px; font-weight: 600; margin: 30px 0 10px; color: #fff; }
+  h3 { font-size: 12.5px; font-weight: 600; margin: 18px 0 6px; color: #e6c07b; }
+  p.note { font-size: 12px; color: #8a8f9a; max-width: 820px; line-height: 1.55; margin: 0 0 8px; }
+  code { color:#b8c0cc; }
+
+  .bar {
+    background: #181a20; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 10px 16px;
+    display: inline-flex; align-items: center; gap: 3px; margin: 4px 0;
+  }
+  .run-gap { display:inline-block; width:12px; }
+  .cap { font-size:11px; color:#9aa0ac; margin: 10px 0 2px; }
+
+  .grid { border-collapse: separate; border-spacing: 0; margin: 4px 0 8px; }
+  .grid th { font-size: 11px; font-weight: 600; color: #9aa0ac; padding: 6px 16px; text-align:center; }
+  .grid td.lbl { font-size: 11px; color: #9aa0ac; text-align:right; padding-right:14px; white-space:nowrap; }
+  .grid td.cell { padding: 8px 16px; text-align:center; background:#181a20; }
+  .grid td.cell:nth-child(even) { background:#15161b; }
+
+  /* ----- DOT ----- */
+  .dot { position: relative; width: 14px; height: 14px; display: inline-flex;
+         vertical-align: middle; border-radius: 50%; }
+  .dot.s16 { width:16px; height:16px; }
+  .dot.s20 { width:20px; height:20px; }
+  .dot .glyph { width: 100%; height: 100%; overflow: visible; display:block; }
+
+  .glyph .btl{fill:var(--m-btl,currentColor);} .glyph .btr{fill:var(--m-btr,currentColor);}
+  .glyph .bbl{fill:var(--m-bbl,currentColor);} .glyph .bbr{fill:var(--m-bbr,currentColor);}
+  .glyph .elt{fill:var(--m-elt,currentColor);} .glyph .elb{fill:var(--m-elb,currentColor);}
+  .glyph .ert{fill:var(--m-ert,currentColor);} .glyph .erb{fill:var(--m-erb,currentColor);}
+  .glyph .ll{fill:var(--m-ll,currentColor);}   .glyph .lr{fill:var(--m-lr,currentColor);}
+  .glyph .eye{fill:#23252b;}
+  .glyph .belly{fill:#fff; display:none;}
+
+  /* ---- state mechanics, shared ---- */
+  .dot.heardDim .glyph { opacity: 0.38; }                 /* System A: faded = heard */
+  .dot.bellyDot .glyph .belly { display:block; }          /* System C: white belly dot */
+  .dot.whiteMascot .glyph .region { fill:#fff; }          /* manual: all-white mascot */
+  .dot.whiteMascot .glyph .belly  { display:none; }
+
+  .dot.ringColor { box-shadow: 0 0 0 1.5px var(--ring, #8a8a8a); }      /* coloured border */
+  .dot.ringWhite { box-shadow: 0 0 0 1.5px rgba(255,255,255,0.92); }   /* white border (auto, System B) */
+  .dot.halo::after {
+    content:""; position:absolute; inset:-3px; border-radius:50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.5), 0 0 7px 1px rgba(255,255,255,0.35);
+    pointer-events:none;
+  }
+  .dot.stale .glyph { opacity:0.4; filter:saturate(0.3); }
+
+  .zoom { transform: scale(7); transform-origin: top left; }
+  .zoomwrap { display:inline-block; width:120px; height:120px; padding: 8px 0 0; }
+</style>
+</head>
+<body>
+  <h1>Faithful mascot dots — crispness + a clearer state system</h1>
+  <p class="note">
+    Using the <b>real mascot</b> (full art), kept at the 14&nbsp;px circle footprint, recoloured
+    per session via the same <code>data-palette</code> scheme as the scrubber mascot. Two things to
+    settle: <b>(1)</b> how to render it so it's crisp not hairy at this size, and <b>(2)</b> a state
+    system where <i>queued</i> / <i>auto-played</i> / <i>manually-played</i> are obvious at a glance.
+  </p>
+
+  <h2>1 · Crispness — same mascot, different rendering</h2>
+  <p class="note">
+    "Hairy" comes from <code>shape-rendering="crispEdges"</code> snapping the smile + 4 legs onto a
+    fractional pixel grid at this size. Smooth anti-aliasing (<code>geometricPrecision</code>) lets
+    the fine detail soften instead of fray. Compare each pair — left = crispEdges (today), right =
+    smooth. Sizes 14 / 16 / 20&nbsp;px.
+  </p>
+  <div id="crisp"></div>
+
+  <h2>2 · State system — which reads clearest?</h2>
+  <p class="note">
+    At 14&nbsp;px a tiny inner dot is nearly invisible, but <b>brightness</b>, a <b>ring</b>, or
+    <b>all-white</b> all read instantly. Three candidate systems below. In every one,
+    <b>Manually-played</b> = white mascot + session-colour ring, and <b>Active</b> (the clip playing
+    right now) = pulsing white halo. They differ in how <b>Queued</b> vs <b>Auto-played</b> are shown.
+  </p>
+  <div id="systems"></div>
+</body>
+
+<script>
+const COLORS = {
+  red:'#ff5e5e', orange:'#ffa726', yellow:'#ffd93d', green:'#4ade80',
+  blue:'#60a5fa', pink:'#ee2bbd', brown:'#c97b50', grey:'#e0e0e0', neutral:'#8a8a8a'
+};
+function paletteVars(primary, secondary, mode){
+  const P=primary, S=(mode==='solid')?primary:secondary; let r;
+  if (mode==='solid')   r={btl:P,btr:P,bbl:P,bbr:P,elt:P,elb:P,ert:P,erb:P,ll:P,lr:P};
+  else if (mode==='tb') r={btl:P,btr:P,bbl:S,bbr:S,elt:P,elb:S,ert:P,erb:S,ll:S,lr:S};
+  else                  r={btl:P,btr:S,bbl:P,bbr:S,elt:P,elb:P,ert:S,erb:S,ll:P,lr:S};
+  r.ring=P; return r;
+}
+function varStyle(v){
+  return ['btl','btr','bbl','bbr','elt','elb','ert','erb','ll','lr']
+    .map(k=>`--m-${k}:${v[k]}`).join(';')+`;--ring:${v.ring}`;
+}
+// Faithful mascot (the real 140×120 art). `sr` = shape-rendering.
+function glyphFaithful(sr){
+  return `<svg class="glyph" viewBox="0 0 140 120" shape-rendering="${sr}" aria-hidden="true">
+    <rect class="region btl" x="13" y="0"  width="57" height="44"/>
+    <rect class="region btr" x="70" y="0"  width="57" height="44"/>
+    <rect class="region bbl" x="13" y="44" width="57" height="44"/>
+    <rect class="region bbr" x="70" y="44" width="57" height="44"/>
+    <rect class="region elt" x="0"   y="36" width="13" height="8"/>
+    <rect class="region elb" x="0"   y="44" width="13" height="18"/>
+    <rect class="region ert" x="127" y="36" width="13" height="8"/>
+    <rect class="region erb" x="127" y="44" width="13" height="18"/>
+    <rect class="region ll" x="19"  y="88" width="16" height="32"/>
+    <rect class="region ll" x="46"  y="88" width="16" height="32"/>
+    <rect class="region lr" x="79"  y="88" width="16" height="32"/>
+    <rect class="region lr" x="106" y="88" width="16" height="32"/>
+    <rect class="eye" x="36" y="26" width="16" height="16"/>
+    <rect class="eye" x="88" y="26" width="16" height="16"/>
+    <rect class="eye" x="44" y="58" width="8"  height="6"/>
+    <rect class="eye" x="88" y="58" width="8"  height="6"/>
+    <rect class="eye" x="44" y="64" width="52" height="6"/>
+    <rect class="belly" x="56" y="74" width="28" height="12" rx="6"/>
+  </svg>`;
+}
+function dot(v, classes, sr, sizeCls){
+  return `<span class="dot ${sizeCls||''} ${classes||''}" style="${varStyle(v)}">${glyphFaithful(sr||'crispEdges')}</span>`;
+}
+
+const PALETTES = [
+  { name:'Blue (solid)',          v: paletteVars(COLORS.blue,null,'solid') },
+  { name:'Green (solid)',         v: paletteVars(COLORS.green,null,'solid') },
+  { name:'Brown (solid)',         v: paletteVars(COLORS.brown,null,'solid') },
+  { name:'Orange/Blue (top·bot)', v: paletteVars(COLORS.orange,COLORS.blue,'tb') },
+  { name:'Red/Blue (left·right)', v: paletteVars(COLORS.red,COLORS.blue,'lr') },
+  { name:'Neutral',               v: paletteVars(COLORS.neutral,null,'solid') },
+];
+
+/* ---------- Section 1: crispness ---------- */
+const crisp = document.getElementById('crisp');
+for (const size of ['','s16','s20']) {
+  const label = size===''?'14px':size==='s16'?'16px':'20px';
+  const h3 = document.createElement('h3'); h3.textContent = label + ' — crispEdges (left)  vs  geometricPrecision (right)';
+  crisp.appendChild(h3);
+  const bar = document.createElement('div'); bar.className='bar';
+  let html='';
+  for (const p of PALETTES) html += dot(p.v,'',  'crispEdges', size);
+  html += '<span class="run-gap"></span><span class="run-gap"></span>';
+  for (const p of PALETTES) html += dot(p.v,'',  'geometricPrecision', size);
+  bar.innerHTML = html;
+  crisp.appendChild(bar);
+}
+// 7× zoom of the two renderings at 16px
+{
+  const h3=document.createElement('h3'); h3.textContent='7× zoom @16px — crispEdges then geometricPrecision (blue, orange/blue split)';
+  crisp.appendChild(h3);
+  const bar=document.createElement('div'); bar.className='bar';
+  for (const sr of ['crispEdges','geometricPrecision'])
+    for (const p of [PALETTES[0],PALETTES[3]]) {
+      const w=document.createElement('span'); w.className='zoomwrap';
+      w.innerHTML=`<span class="zoom">${dot(p.v,'',sr,'s16')}</span>`;
+      bar.appendChild(w);
+    }
+  crisp.appendChild(bar);
+}
+
+/* ---------- Section 2: state systems ---------- */
+// All use geometricPrecision (smooth) faithful mascot at 14px.
+const SR='geometricPrecision';
+const SYSTEMS = [
+  { key:'A', title:'System A — Fade on heard',
+    note:'Unheard clips are bright and POP; once heard they fade back. Most legible difference at 14px — the strip becomes "what haven\'t I heard yet". Manual = white + ring.',
+    cls:{ queued:'', auto:'heardDim', manual:'whiteMascot ringColor', active:'halo' } },
+  { key:'B', title:'System B — Auto gets a white ring',
+    note:'Queued = bare mascot. Auto-played earns a white ring (the "white" signal, but as an outline so it survives at 14px). Manual = white mascot + colour ring.',
+    cls:{ queued:'', auto:'ringWhite', manual:'whiteMascot ringColor', active:'halo' } },
+  { key:'C', title:'System C — White belly dot (your literal idea)',
+    note:'Queued = bare mascot. Auto-played = mascot + a white belly dot. Manual = white mascot + colour ring. Closest to what you described; the belly dot is subtle at 14px.',
+    cls:{ queued:'', auto:'bellyDot', manual:'whiteMascot ringColor', active:'halo' } },
+];
+const STATES=[['Queued','queued'],['Auto-played','auto'],['Manually-played','manual'],['Active (now playing)','active']];
+const systems=document.getElementById('systems');
+for (const sys of SYSTEMS){
+  const h3=document.createElement('h3'); h3.textContent=sys.title; systems.appendChild(h3);
+  const note=document.createElement('p'); note.className='note'; note.textContent=sys.note; systems.appendChild(note);
+  // representative mixed strip
+  const cap1=document.createElement('div'); cap1.className='cap'; cap1.textContent='Realistic strip (mixed sessions & states):'; systems.appendChild(cap1);
+  const bar=document.createElement('div'); bar.className='bar';
+  const mix=[[0,'auto'],[0,'auto'],[0,'manual'],'gap',[3,'queued'],[3,'active'],'gap',[1,'auto'],[4,'auto'],[2,'queued'],[1,'manual']];
+  bar.innerHTML=mix.map(m=>m==='gap'?'<span class="run-gap"></span>':dot(PALETTES[m[0]].v, sys.cls[m[1]], SR)).join('');
+  systems.appendChild(bar);
+  // grid
+  const table=document.createElement('table'); table.className='grid';
+  table.innerHTML='<tr><th></th>'+STATES.map(s=>`<th>${s[0]}</th>`).join('')+'</tr>'+
+    PALETTES.map(p=>`<tr><td class="lbl">${p.name}</td>`+
+      STATES.map(s=>`<td class="cell">${dot(p.v, sys.cls[s[1]], SR)}</td>`).join('')+'</tr>').join('');
+  systems.appendChild(table);
+}
+</script>
+</html>

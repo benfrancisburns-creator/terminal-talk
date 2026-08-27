@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tabs + per-session bin — real-component verification</title>
+<link rel="stylesheet" href="../app/styles.css">
+<link rel="stylesheet" href="../app/lib/palette-classes.css">
+<style>
+  html,body{background:#0a0b0f;color:#cfd2da;font-family:-apple-system,"Segoe UI",system-ui,sans-serif;margin:0;padding:22px 26px 60px;}
+  h1{font-size:15px;color:#fff;margin:0 0 8px;}
+  .cap{font-size:11px;color:#9aa0ac;margin:14px 0 4px;}
+  .barwrap{background:#181a20;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 12px;display:inline-block;}
+  /* force bins visible in the second row so positioning is reviewable in a static shot */
+  .force .tab-bin{opacity:1 !important;}
+  .tabs-row{ -webkit-app-region:no-drag; }
+</style>
+</head>
+<body>
+<h1>Real Tabs component + real CSS — per-session bin in each tab corner</h1>
+
+<div class="cap">Default (bins hidden until hover/selected — "MateainBOT" is selected so its bin shows):</div>
+<div class="barwrap"><div class="tabs-row"><div class="tabs" id="tabs1" role="tablist"></div></div></div>
+
+<div class="cap">Bins force-shown (to check positioning + colour on every tab; [All] has none):</div>
+<div class="barwrap force"><div class="tabs-row"><div class="tabs" id="tabs2" role="tablist"></div></div></div>
+
+<script src="../app/lib/component.js"></script>
+<script src="../app/lib/tabs.js"></script>
+<script>
+const PAL = { mate: '01', worker: '03', orch: '04' };  // yellow, green, blue
+const clipPaths = {
+  extractSessionShort: (f) => (/-(mate|worker|orch)-/.exec(f) || [])[1] || '',
+  isClipFile: () => false,
+  paletteKeyForShort: (short) => PAL[short] || 'neutral',
+};
+const staleSessionPoller = { has: () => false };
+const nowSec = 1717000000;
+const sessionAssignments = {
+  mate:   { label: 'MateainBOT', last_seen: nowSec, index: 1 },
+  worker: { label: 'Worker1',    last_seen: nowSec, index: 3 },
+  orch:   { label: 'Orchestrator', last_seen: nowSec, index: 4 },
+};
+// allPaths: a few clips per session, some unheard (drives the count badge)
+const allPaths = [
+  'm-mate-00.mp3','m-mate-01.mp3','m-mate-02.mp3',
+  'm-worker-00.mp3',
+  'm-orch-00.mp3','m-orch-01.mp3',
+];
+const heardPaths = new Set(['m-mate-00.mp3']);
+
+function mount(elId, selected) {
+  const t = new window.TT_TABS({
+    clipPaths, staleSessionPoller, paletteSize: 24,
+    onTabSelect(){}, onExpandChange(){}, onDeleteSession(){},
+    nowProvider: () => nowSec * 1000,
+  });
+  t.mount(document.getElementById(elId));
+  t.update({ queue: allPaths.map(p => ({ path: p, mtime: nowSec*1000 })), allPaths, heardPaths, sessionAssignments, selectedTab: selected });
+  t.renderNow();
+}
+mount('tabs1', 'mate');
+mount('tabs2', 'all');
+</script>
+</body>
+</html>

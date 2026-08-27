@@ -95,9 +95,7 @@ function stripForTTS(text, includes) {
           if (phrase) bodyParts.push(`Row ${idx + 1}: ${phrase}.`);
         });
         const omitted = rowCount - 5;
-        if (omitted > 0) {
-          bodyParts.push(`Rows 4 through ${rowCount - 2} omitted (${omitted} ${omitted === 1 ? 'row' : 'rows'}).`);
-        }
+        bodyParts.push(`Rows 4 through ${rowCount - 2} omitted (${omitted} rows).`);
         rows.slice(-2).forEach((cells, offset) => {
           const idx = rowCount - 1 + offset;
           const phrase = tableRowPhrase(headerCells, cells);
@@ -473,6 +471,18 @@ function stripForTTS(text, includes) {
   // Drop the character; ~/path reads as "/path" (awkward but not wrong),
   // ~N loses "approximately" but context usually makes it clear.
   t = t.replace(/~/g, '');
+
+  // Decoration emoji — edge-tts reads each codepoint by its Unicode name
+  // when it doesn't know the glyph, e.g. ✅ → "white heavy check mark",
+  // ❌ → "cross mark", 🚀 → "rocket". On most LLM responses these are
+  // pure decoration and listeners hear the Unicode name dozens of times
+  // per turn. Strip the common ranges (Misc Symbols + Dingbats, Misc
+  // Pictographs, Emoticons, Transport, Supplemental, Extended-A) and any
+  // trailing VS16 (U+FE0F) emoji-presentation variation selector.
+  t = t.replace(
+    /[☀-➿\u{1F300}-\u{1F5FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}]️?/gu,
+    '',
+  );
 
   // "live" at sentence end is ambiguous to TTS and can be pronounced
   // like "I live in a house". For Terminal Talk status/deploy phrasing,

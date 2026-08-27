@@ -1,52 +1,51 @@
-"""SSML builder for edge-tts — Block B of the May-9 narration sweep.
+"""Plain-text pronunciation + pacing rewrites for edge-tts.
 
-Edge TTS accepts plain text (default) OR SSML when the input begins
-with `<speak`. Switching to SSML unlocks three things the audit
-flagged as missing:
+History: this module originally emitted SSML (`<speak xmlns="...">`,
+`<break>`, `<say-as>`, `<sub>`). That was wrong: `edge_tts.Communicate`
+XML-escapes its input and wraps it in its own `<speak>` envelope, so
+our outer `<speak xmlns="http://www.w3.org/2001/10/synthesis">` was
+delivered to Microsoft's Azure endpoint as escaped text content and
+read aloud verbatim — every clip began with "speak version 1 xmlns
+http www w3 org 2001 10 synthesis xml lang en G B". The fix is to
+keep the substitutions but emit plain text, which edge-tts handles
+natively.
 
-  1. **Pauses** between bullets (200 ms), table rows (400 ms), and
-     paragraphs (600 ms). Without these, edge-tts runs sentences
-     together when the source markdown lacks period punctuation.
-
+What the module still does:
+  1. **Pacing** — ensures bullets, table rows, paragraphs end in
+     sentence-terminating punctuation so edge-tts produces audible
+     pauses on its own (it pauses naturally on `.`, `,`, `;`, `\n`).
   2. **Letter-by-letter pronunciation** for short-SHA commit hashes
-     (`a48a6e3` → "a four eight a six e three"). The default voice
-     reads them as garbage syllables; users hear nothing useful.
+     (`a48a6e3` → `a 4 8 a 6 e 3`). Spaced single characters read
+     one-by-one naturally — no `<say-as>` needed.
+  3. **Acronym + extension aliases** for common dev terms (`npm`
+     → `N P M`, `.py` → `dot py`). Spaced letters get spelled out
+     by the voice.
 
-  3. **Acronym + extension aliases** for common dev terms (npm,
-     DMG, CLI, IPC, .py, .js, .json, etc.). Without aliases the
-     voice mispronounces "DMG" as "dimg" and "npm" as "nim".
+The module name stays `narration_ssml` for historical reasons and to
+avoid churning imports — it no longer produces SSML.
 
-The builder is **opt-in per call**: callers decide whether the input
-needs SSML based on its content shape. Pure prose stays plain-text
-because the synth fast path skips the wrapper. Anything with
-multi-row tables, multi-bullet lists, commit hashes, or known
-acronyms gets the SSML treatment.
-
-Public API:
-    needs_ssml(text)              → bool: heuristic for "worth wrapping"
+Public API (unchanged signatures):
+    needs_ssml(text)              → bool: still True when the text
+                                    has SHAs / bullets / table rows /
+                                    known acronyms worth rewriting
     apply_pronunciation(text)     → str: substitute aliases inline
-    insert_breaks(text)           → str: add <break> between segments
-    wrap_speak(content)           → str: full <speak>...</speak> envelope
-    build(text, voice_lang='en-GB') → str: pipeline of all four
-
-Fallback discipline: callers MUST be ready for the synth subprocess
-to reject the SSML and retry with the plain text. We never break
-audio for the sake of nicer pauses.
+    insert_breaks(text)           → str: ensure pause-worthy
+                                    punctuation between segments
+    build(text, lang='en-GB')     → str: full pipeline
 """
 from __future__ import annotations
 
 import re
 
-# 7-char hex strings that look like git short-SHAs. We deliberately
-# don't try to be smarter than this — false positives (a 7-char hex
-# noun in prose) are cheap (the audio is just letter-by-letter for
-# one word) but missing real SHAs is bad.
+# 7-char hex strings that look like git short-SHAs. False positives
+# (a 7-char hex noun) are cheap — the audio is just letter-by-letter
+# for one word — but missing real SHAs is bad.
 _SHA7_RE = re.compile(r'\b([a-f0-9]{7})\b')
 
 # Dev acronyms and short tokens that edge-tts mispronounces by default.
-# Map: lowercase form → SSML alias text (forced spelling). Order
-# matters when multiple keys overlap; we sort longest-first at
-# substitution time so JSONL beats JSON beats JS.
+# Map: lowercase form → spoken text (forced spelling / phonetic spelling).
+# Order matters when keys overlap; we sort longest-first at substitution
+# time so JSONL beats JSON beats JS.
 _ACRONYM_ALIASES: dict[str, str] = {
     'npm':   'N P M',
     'dmg':   'D M G',
@@ -86,9 +85,9 @@ _ACRONYM_ALIASES: dict[str, str] = {
     'png':   'P N G',
 }
 
-# File extensions read with deliberate "dot X" prefix — the user
-# wants "dot py" not "py" when hearing `app/main.py` etc. Captured
-# at word boundaries to avoid mangling URLs / fully-qualified names.
+# File extensions read with deliberate "dot X" prefix — the user wants
+# "dot py" not "py" when hearing `app/main.py` etc. Captured at word
+# boundaries to avoid mangling fully-qualified names.
 _EXTENSION_ALIASES: dict[str, str] = {
     '.py':    'dot py',
     '.js':    'dot J S',
@@ -116,126 +115,72 @@ _EXTENSION_ALIASES: dict[str, str] = {
     '.aiff':  'dot A I F F',
 }
 
-# Pause durations (ms). Tuned to feel natural without dragging out
-# rapid-fire technical content.
-PAUSE_BULLET_MS = 200
-PAUSE_TABLE_ROW_MS = 400
-PAUSE_PARAGRAPH_MS = 600
-PAUSE_HEADING_MS = 100
-
-
-def _xml_escape(text: str) -> str:
-    """Minimal XML escape sufficient for SSML text content. We don't
-    need to handle attribute quoting because we never put user text in
-    attributes — only inside element bodies."""
-    return (text
-        .replace('&', '&amp;')
-        .replace('<', '&lt;')
-        .replace('>', '&gt;')
-    )
+# Characters that already produce an audible pause in edge-tts. If a
+# line ends in one of these we leave it alone; otherwise insert_breaks
+# appends a period so the next segment doesn't run together.
+_PAUSE_PUNCT = '.!?:;,'
 
 
 def _spell_sha7(text: str) -> str:
-    """Wrap each 7-char hex match in <say-as interpret-as="characters">.
-    Operates on already-escaped text so we don't double-escape the
-    contents we're wrapping."""
-    return _SHA7_RE.sub(
-        lambda m: f'<say-as interpret-as="characters">{m.group(1)}</say-as>',
-        text,
-    )
+    """Replace each 7-char hex SHA match with its characters separated
+    by spaces, so edge-tts pronounces them one at a time. Single
+    letters/digits voiced separately read out cleanly without needing
+    SSML `<say-as>`."""
+    return _SHA7_RE.sub(lambda m: ' '.join(m.group(1)), text)
 
 
 def apply_pronunciation(text: str) -> str:
-    """Substitute SSML <sub alias="..."> tags around known acronyms +
-    file extensions. Input must already be XML-escaped. Order: longest
-    keys first so JSONL beats JSON beats JS (avoid mid-word overlaps)."""
+    """Substitute spoken-form aliases inline for known acronyms +
+    file extensions. Order: longest keys first so JSONL beats JSON
+    beats JS (avoid mid-word overlaps)."""
     out = text
     # Extensions first — they have the dot anchor so they're less
-    # ambiguous than bare acronyms.
+    # ambiguous than bare acronyms. Prepend a space to the substitution
+    # so `main.py` → `main dot py` rather than `maindot py` — the `.`
+    # gets consumed by the match so we need a separator on the left.
     for ext in sorted(_EXTENSION_ALIASES.keys(), key=len, reverse=True):
         alias = _EXTENSION_ALIASES[ext]
-        # Match the extension only at word/path boundaries — `.py` in
-        # `app/main.py` should match, but `.py` inside `.python` (no
-        # such case) should not. Use lookahead for non-word.
         pat = re.compile(re.escape(ext) + r'(?=$|[^\w])', re.IGNORECASE)
-        out = pat.sub(f'<sub alias="{alias}">{ext}</sub>', out)
-    # Then acronyms. Only match at word boundaries; case-insensitive.
+        out = pat.sub(' ' + alias, out)
+    # Then acronyms. Word boundaries; case-insensitive.
     for acro in sorted(_ACRONYM_ALIASES.keys(), key=len, reverse=True):
         alias = _ACRONYM_ALIASES[acro]
         pat = re.compile(r'\b' + re.escape(acro) + r'\b', re.IGNORECASE)
-        out = pat.sub(f'<sub alias="{alias}">{acro}</sub>', out)
+        out = pat.sub(alias, out)
     return out
 
 
 def insert_breaks(text: str) -> str:
-    """Insert <break> tags between segments based on markdown structure.
-    Operates on already-escaped + alias-substituted text. We add
-    breaks AFTER newlines because that's where edge-tts otherwise
-    produces no audible pause."""
+    """Ensure each non-blank line ends in pause-worthy punctuation so
+    edge-tts produces an audible break before the next line. Edge-tts
+    pauses naturally on `.`, `,`, `;`, `\\n` — we just guarantee at
+    least one of them is present at line boundaries."""
     lines = text.split('\n')
     out_lines: list[str] = []
-    prev_kind = 'prose'
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            # Blank line — paragraph break.
-            if out_lines:
-                out_lines.append(f'<break time="{PAUSE_PARAGRAPH_MS}ms"/>')
-            prev_kind = 'paragraph'
-            continue
-        # Detect kind. Heading = leading `#`. Bullet = leading `-`/`*`/digits.
-        # Table row = leading `|`. Anything else = prose.
-        kind = 'prose'
-        if stripped.startswith('#'):
-            kind = 'heading'
-        elif re.match(r'^\s*(?:\d+\.|[-*+])\s+', line):
-            kind = 'bullet'
-        elif stripped.startswith('|'):
-            kind = 'table'
-        # Insert pre-line break based on the JOIN: previous kind →
-        # this kind. Same-kind transitions get their kind's pause;
-        # different-kind transitions take the larger.
-        if out_lines:
-            if kind == prev_kind:
-                if kind == 'bullet':
-                    out_lines.append(f'<break time="{PAUSE_BULLET_MS}ms"/>')
-                elif kind == 'table':
-                    out_lines.append(f'<break time="{PAUSE_TABLE_ROW_MS}ms"/>')
-                # prose-prose, heading-heading: rely on natural sentence flow
-            elif prev_kind == 'heading' or kind == 'heading':
-                out_lines.append(f'<break time="{PAUSE_HEADING_MS}ms"/>')
-            else:
-                out_lines.append(f'<break time="{PAUSE_PARAGRAPH_MS}ms"/>')
+        stripped = line.rstrip()
+        if stripped and out_lines:
+            prev = out_lines[-1].rstrip()
+            if prev and prev[-1] not in _PAUSE_PUNCT:
+                out_lines[-1] = prev + '.'
         out_lines.append(line)
-        prev_kind = kind
     return '\n'.join(out_lines)
 
 
-def wrap_speak(content: str, lang: str = 'en-GB') -> str:
-    """Wrap content in a `<speak>` element. Uses Microsoft's Speech
-    Synthesis Markup Language schema URI (required by edge-tts)."""
-    return (
-        f'<speak version="1.0" '
-        f'xmlns="http://www.w3.org/2001/10/synthesis" '
-        f'xml:lang="{lang}">{content}</speak>'
-    )
-
-
 def needs_ssml(text: str) -> bool:
-    """Heuristic: should this text be wrapped in SSML?
+    """Heuristic: is this text worth running through `build()`?
     True when the text has structural markers we want to pause around
-    OR known patterns (commit hashes, acronyms) the alias map handles."""
+    OR known patterns (commit hashes, acronyms) the alias map handles.
+    Name kept for compatibility — the module no longer emits SSML."""
     if not text:
         return False
     if _SHA7_RE.search(text):
         return True
-    # Multi-line table or bullet list → benefits from <break>.
     lines = [ln for ln in text.split('\n') if ln.strip()]
     bullets = sum(1 for ln in lines if re.match(r'^\s*(?:\d+\.|[-*+])\s+', ln))
     rows = sum(1 for ln in lines if ln.lstrip().startswith('|'))
     if bullets >= 2 or rows >= 2:
         return True
-    # Known acronym or extension present → benefits from alias.
     lower = text.lower()
     if any(re.search(r'\b' + re.escape(acro) + r'\b', lower) for acro in _ACRONYM_ALIASES):
         return True
@@ -243,13 +188,13 @@ def needs_ssml(text: str) -> bool:
 
 
 def build(text: str, lang: str = 'en-GB') -> str:
-    """Full SSML pipeline: escape → spell SHAs → alias acronyms +
-    extensions → insert breaks → wrap. Idempotent on already-built
-    SSML strings (returns them unchanged)."""
-    if text.lstrip().startswith('<speak'):
+    """Spell SHAs → alias acronyms + extensions → ensure inter-line
+    pause punctuation. Plain text, ready to feed straight to edge-tts.
+
+    The `lang` parameter is accepted for API stability but no longer
+    used — edge-tts picks language from the voice name."""
+    if not text:
         return text
-    escaped = _xml_escape(text)
-    spelled = _spell_sha7(escaped)
+    spelled = _spell_sha7(text)
     aliased = apply_pronunciation(spelled)
-    broken = insert_breaks(aliased)
-    return wrap_speak(broken, lang=lang)
+    return insert_breaks(aliased)

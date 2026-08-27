@@ -41,15 +41,21 @@
     toggle_window: 'Control+Shift+A',
     speak_clipboard: 'Control+Shift+S',
     toggle_listening: 'Control+Shift+J',
+    dictate_paste: 'Control+Alt+Space',
+    dictate_toggle: 'Control+Shift+Space',
     pause_resume: 'Control+Shift+P',
     pause_only: 'Control+Shift+O',
+    start_dictation: 'Control+Shift+D',
   });
   const HOTKEY_FIELDS = Object.freeze([
     { key: 'toggle_window', id: 'hotkeyToggleWindow', label: 'show / hide toolbar' },
     { key: 'speak_clipboard', id: 'hotkeySpeakClipboard', label: 'read selected text' },
     { key: 'toggle_listening', id: 'hotkeyToggleListening', label: 'mic listener' },
+    { key: 'dictate_paste', id: 'hotkeyDictatePaste', label: 'dictate and paste' },
+    { key: 'dictate_toggle', id: 'hotkeyDictateToggle', label: 'hands-free dictation' },
     { key: 'pause_resume', id: 'hotkeyPauseResume', label: 'pause / resume' },
     { key: 'pause_only', id: 'hotkeyPauseOnly', label: 'pause only' },
+    { key: 'start_dictation', id: 'hotkeyStartDictation', label: 'start dictation' },
   ]);
   const MODIFIER_KEYS = new Set(['Control', 'Ctrl', 'Shift', 'Alt', 'Meta', 'Command', 'Cmd', 'Option']);
 
@@ -126,6 +132,7 @@
         openaiTestResult: document.getElementById('openaiTestResult'),
         hotkeyInputs: {},
         hotkeyStatus: document.getElementById('hotkeyStatus'),
+        hotkeyReregister: document.getElementById('hotkeyReregister'),
         hotkeyResetDefaults: document.getElementById('hotkeyResetDefaults'),
         // Speech-includes checkboxes follow a consistent naming scheme.
         // tool_calls (#24 / Ben B-2) — global on/off for tool-call
@@ -390,6 +397,30 @@
             this.update({ cfg: merged });
           }
           await this._refreshHotkeyStatus('Default shortcuts restored.');
+        });
+      }
+
+      // Re-register: re-run global-shortcut registration on demand. Self-heals
+      // a transient startup collision (another app briefly held a chord) that
+      // the one-shot startup register left dead — no full app restart needed.
+      const rereg = this._el.hotkeyReregister;
+      if (rereg && this._api.reregisterHotkeys) {
+        this._on(rereg, 'click', async () => {
+          this._setHotkeyStatus('Re-registering shortcuts...', 'busy');
+          try {
+            const status = await this._api.reregisterHotkeys();
+            const failed = (status && status.failed) || [];
+            if (failed.length) {
+              this._setHotkeyStatus(
+                `Still blocked: ${failed.map((f) => f.name).join(', ')}. Close the app that owns the chord, then retry.`,
+                'err',
+              );
+            } else {
+              this._setHotkeyStatus('All shortcuts registered.', 'ok');
+            }
+          } catch {
+            this._setHotkeyStatus('Re-register failed — see logs.', 'err');
+          }
         });
       }
     }

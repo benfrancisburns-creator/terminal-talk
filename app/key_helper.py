@@ -5,6 +5,9 @@ Reads lines from stdin; executes commands; writes one response line per command.
 Commands:
   ctrlc                 Send the OS "copy" shortcut to the foreground window
                         (Ctrl+C on Windows/Linux, Cmd+C on macOS).
+  start-dictation       Ask the OS dictation surface to toggle in the
+                        foreground app (Win+H on Windows; macOS Dictation
+                        menu/fallback on macOS).
   fgtree                Return JSON { fg_pid, descendants } -- the foreground
                         window's process ID plus every descendant PID in its
                         process tree. Used by speakClipboard to map hey-jarvis
@@ -109,7 +112,9 @@ if IS_WINDOWS:
     _k32 = ctypes.windll.kernel32
 
     _VK_CONTROL = 0x11
+    _VK_LWIN = 0x5B
     _VK_C = 0x43
+    _VK_H = 0x48
     _KEYEVENTF_KEYUP = 0x0002
     _INPUT_KEYBOARD = 1
 
@@ -149,11 +154,21 @@ if IS_WINDOWS:
     _SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
     _SendInput.restype = wintypes.UINT
 
+    _MapVirtualKeyW = _u32.MapVirtualKeyW
+    _MapVirtualKeyW.argtypes = (wintypes.UINT, wintypes.UINT)
+    _MapVirtualKeyW.restype = wintypes.UINT
+
     def _press(vk: int, up: bool) -> _INPUT:
         ev = _INPUT()
         ev.type = _INPUT_KEYBOARD
         ev.ki.wVk = vk
-        ev.ki.wScan = 0
+        # Windows Terminal (ConPTY-era input handling) resolves injected keys
+        # from the SCAN CODE and drops VK-only events -- wScan=0 made the
+        # synthetic Ctrl+C invisible to WT while browsers accepted it (the
+        # highlight-to-speak "No text selected" bug, 2026-08-13). Populate the
+        # real scan code alongside the VK -- both-fields is what physical
+        # keyboards and AutoHotkey emit, accepted everywhere.
+        ev.ki.wScan = _MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC
         ev.ki.dwFlags = _KEYEVENTF_KEYUP if up else 0
         ev.ki.time = 0
         ev.ki.dwExtraInfo = None
@@ -175,6 +190,19 @@ if IS_WINDOWS:
             # into the input stream; anything less is UIPI / other-session
             # blocked. Raise so the caller logs `err`.
             raise RuntimeError(f'SendInput inserted {n}/4 events')
+
+    def start_dictation() -> str:
+        """Open Windows voice typing for the focused app."""
+        events = (_INPUT * 4)(
+            _press(_VK_LWIN, False),
+            _press(_VK_H, False),
+            _press(_VK_H, True),
+            _press(_VK_LWIN, True),
+        )
+        n = _SendInput(4, events, ctypes.sizeof(_INPUT))
+        if n != 4:
+            raise RuntimeError(f'SendInput inserted {n}/4 events')
+        return 'win+h'
 
     # Process-tree snapshot via CreateToolhelp32Snapshot.
     TH32CS_SNAPPROCESS = 0x00000002
@@ -224,6 +252,8 @@ if IS_WINDOWS:
 # macOS backend
 # ---------------------------------------------------------------------------
 elif IS_MAC:
+    import subprocess
+
     import psutil
     import Quartz
     from AppKit import NSWorkspace
@@ -234,6 +264,7 @@ elif IS_MAC:
     # set. This is the documented modern path; CGPostKeyboardEvent is
     # deprecated.
     _KC_C = 0x08
+    _KC_FN = 0x3F
 
     def ctrlc() -> None:
         """Send the OS "copy" shortcut. On macOS that's Cmd+C; the
@@ -249,6 +280,68 @@ elif IS_MAC:
         # a first-run prompt to send the user to System Settings.
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    def _post_key(key_code: int) -> None:
+        down = Quartz.CGEventCreateKeyboardEvent(None, key_code, True)
+        up = Quartz.CGEventCreateKeyboardEvent(None, key_code, False)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    def _toggle_dictation_from_menu() -> str:
+        script = r'''
+tell application "System Events"
+  set frontApp to first application process whose frontmost is true
+  tell frontApp
+    set editMenu to menu "Edit" of menu bar 1
+    try
+      click menu item "Stop Dictation" of editMenu
+      return "menu:stop"
+    end try
+    try
+      click menu item "Stop Dictation..." of editMenu
+      return "menu:stop"
+    end try
+    try
+      click menu item "Stop Dictation…" of editMenu
+      return "menu:stop"
+    end try
+    try
+      click menu item "Start Dictation" of editMenu
+      return "menu:start"
+    end try
+    try
+      click menu item "Start Dictation..." of editMenu
+      return "menu:start"
+    end try
+    click menu item "Start Dictation…" of editMenu
+    return "menu:start"
+  end tell
+end tell
+'''
+        proc = subprocess.run(
+            ['osascript', '-e', script],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        return (proc.stdout or 'menu').strip() or 'menu'
+
+    def start_dictation() -> str:
+        """Toggle macOS Dictation in the foreground app.
+
+        The menu path is the preferred route because it exposes both Start and
+        Stop Dictation and does not guess the user's configured shortcut.
+        Fn/Fn is a fallback for apps that expose no Edit > Dictation menu item.
+        """
+        try:
+            return _toggle_dictation_from_menu()
+        except Exception:
+            pass
+        _post_key(_KC_FN)
+        time.sleep(0.08)
+        _post_key(_KC_FN)
+        return 'keyboard-fallback'
 
     def get_foreground_pid() -> int:
         # NSWorkspace.frontmostApplication is the lightest path to "what
@@ -292,6 +385,9 @@ else:
     def ctrlc() -> None:
         raise RuntimeError(f'ctrlc not implemented on {sys.platform}')
 
+    def start_dictation() -> str:
+        raise RuntimeError(f'start-dictation not implemented on {sys.platform}')
+
     def get_foreground_pid() -> int:
         return 0
 
@@ -328,7 +424,7 @@ def _log_cmd(cmd: str) -> None:
         if cmd == 'ctrlc':
             extra = f' fg_pid={get_foreground_pid()}'
     except Exception:
-        pass
+        pass  # Foreground-PID context is optional diagnostic enrichment.
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
@@ -350,6 +446,9 @@ def main() -> int:
             if cmd == 'ctrlc':
                 ctrlc()
                 sys.stdout.write('ok\n')
+            elif cmd == 'start-dictation':
+                result = start_dictation()
+                sys.stdout.write(f'ok {result}\n')
             elif cmd == 'fgtree':
                 sys.stdout.write(fgtree_payload() + '\n')
             elif cmd == 'fgtree-bump':

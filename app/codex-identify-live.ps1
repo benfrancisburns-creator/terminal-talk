@@ -421,18 +421,34 @@ function Sync-LiveCodexAssignment($Process, $Rollout) {
             Log "skip pid=$($Process.pid) short=$short reason=waiting-for-hook-identity"
             return $null
         }
-        $null = Update-SessionAssignment -Assignments $all -Short $short `
-                                         -SessionId ([string]$Rollout.session_id) `
-                                         -ClaudePid ([int]$Process.pid) `
-                                         -Now $now -LogPath $logPath `
-                                         -Caller 'codex-identify-live'
-        $entry = $all[$short]
-        if ($RestoreShort -and $short -eq $RestoreShort.ToLowerInvariant() -and $RestoreLabel) {
-            $entry.label = [string]$RestoreLabel
-            $entry.pinned = $true
+        if ($locked) {
+            $null = Update-SessionAssignment -Assignments $all -Short $short `
+                                             -SessionId ([string]$Rollout.session_id) `
+                                             -ClaudePid ([int]$Process.pid) `
+                                             -Now $now -LogPath $logPath `
+                                             -Caller 'codex-identify-live'
+            $entry = $all[$short]
+            if ($RestoreShort -and $short -eq $RestoreShort.ToLowerInvariant() -and $RestoreLabel) {
+                $entry.label = [string]$RestoreLabel
+                $entry.pinned = $true
+            }
+            Save-Registry -RegistryPath $registryPath -Assignments $all `
+                          -Caller 'codex-identify-live' -LogPath $logPath
+        } else {
+            # Lock-acquire timed out. Previously this path fell through and did
+            # an UNCONDITIONAL Read-Update-Save -- the same lock-fail-fall-
+            # through wipe class fixed in statusline.ps1 / speak-*.ps1 / the JS
+            # saveAssignments. Read-Registry can return an empty/mid-rename
+            # registry under contention; Save-Registry then rebuilt the whole
+            # file from this one session, blanking the other sessions' labels
+            # and reshuffling their colours. Correct behaviour: read-only for
+            # the title banner, DO NOT persist. Next fire retries the lock.
+            $entry = $all[$short]
+            try {
+                $ts = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+                Add-Content -Path $logPath -Value "$ts save-registry skip from=codex-identify-live reason=lock-timeout short=$short" -ErrorAction SilentlyContinue
+            } catch {}
         }
-        Save-Registry -RegistryPath $registryPath -Assignments $all `
-                      -Caller 'codex-identify-live' -LogPath $logPath
     } finally {
         if ($locked) { Exit-RegistryLock -RegistryPath $registryPath }
     }

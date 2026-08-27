@@ -32,7 +32,8 @@ for event in ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', '
     assert event in codex.get('hooks', {}), event
 
 config = (home / '.codex' / 'config.toml').read_text(encoding='utf-8')
-assert 'codex_hooks = true' in config
+assert 'hooks = true' in config
+assert 'codex_hooks' not in config
 assert 'terminal_title = []' in config
 
 print('posix-install-smoke-ok')

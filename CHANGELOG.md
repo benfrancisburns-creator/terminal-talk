@@ -4,8 +4,52 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Windows synth daemon** — the Phase 11 long-lived synth dispatcher
+  now runs on Windows too, over a token-authenticated TCP loopback
+  port advertised in `TT_HOME/synth-port.json` (Unix socket path on
+  POSIX unchanged). Every hook fire previously paid a full Python
+  cold-start via `Start-Process`; dispatchers now try the daemon
+  first: `app/synth-dispatch.psm1` (Windows hooks),
+  `app/lib/synth-client.js` (in-app transcript watcher — the hottest
+  spawn site, up to one spawn per 500 ms per active session), with
+  the old spawn path as automatic fallback.
+- **Incremental transcript cache** (daemon only, `TT_SYNTH_DAEMON=1`).
+  Transcript JSONLs are append-only, so the daemon parses each line
+  once and serves unchanged reads from memory (measured: 200
+  unchanged reads in ~1 ms vs a full multi-MB JSON re-parse per hook
+  fire on long sessions). Partial trailing lines are deferred until
+  their newline lands; truncation resets the slot.
+- **Queue TTL prune in synth_turn** — clip artifacts older than 24 h
+  are swept (stamp-gated, ≤1 sweep/10 min) as defence in depth behind
+  `app/lib/prune.js`, which only runs while the toolbar is up.
+
 ### Fixed
 
+- **Codex Desktop replies are spoken again after the 2026 rollout-schema
+  change.** Terminal Talk now accepts assistant commentary/final text from
+  current `response_item` message payloads as well as the legacy
+  `event_msg` / `agent_message` shape. Registration and working-state hooks
+  had continued to run, but the watcher silently ignored every assistant
+  message because its text had moved into `payload.content[]`.
+- **GitHub maintenance gates are green again.** Reconciled the file-length
+  ratchet with already-shipped source growth, removed the outstanding
+  ESLint warning, brought `synth_turn.run()` back under Ruff's complexity
+  limit, hardened docs `postMessage` listeners with same-origin checks,
+  and cleared actionable CodeQL findings in the affected helpers.
+- **Toolbar-off synthesis storm (2026-07-13 incident)**. With the
+  toolbar closed, Claude/Codex hooks kept spawning Python + edge-tts
+  and writing MP3s nobody could ever play — thousands of queue files
+  and a 90-99 °C CPU for 10+ minutes on an otherwise light machine.
+  Both Windows hooks now gate on toolbar liveness (`terminal-talk.exe`
+  process check) before any synthesis: no player, no synth. Session
+  registry + working-flag bookkeeping still runs.
+- **Backlog audio dump after downtime**. Transcript entries older
+  than 15 minutes are marked handled without synthesis (same state
+  bookkeeping as the muted path), so the first hook fire after the
+  toolbar returns speaks "from now on" instead of replaying hours of
+  idle-period prose.
 - **macOS `say(1)` fallback honours the configured edge voice**.
   Ben (2026-05-09): "I have the voice set as Sonia but every now and
   then I'm getting a male voice in the audio clips". Cause: when

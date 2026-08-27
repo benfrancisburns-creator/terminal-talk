@@ -41,6 +41,7 @@
     "app/lib/settings-form.js",
     "app/lib/audio-player.js",
     "app/lib/transcript-panel.js",
+    "app/lib/dictation-panel.js",
     "app/lib/first-run-wizard.js",
     "app/lib/update-badge.js",
     "app/lib/voice-command-dispatch.js",

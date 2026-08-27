@@ -14,15 +14,24 @@
 const realFs = require('node:fs');
 const realPath = require('node:path');
 
-// 14 days. .txt + .original.txt sidecars are kept long after the
-// .mp3 they describe so the transcript-panel "show me what was
-// said earlier today" feature works after the audio has been
-// auto-pruned. But unbounded retention turns the queue dir into
-// a long-tail of small files (1000+ observed in the field after a
-// day of use). Two-week retention covers any plausible "scroll
-// back through last week's sessions" use case while still letting
-// the dir self-trim. Audio still uses staleMs (much shorter).
-const SIDECAR_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+// 1 day. .txt + .original.txt sidecars are kept after the .mp3 they
+// describe so the transcript-panel "show me what was said earlier" feature
+// works once the audio has been auto-pruned. Retention was 14 days, which
+// (with one sidecar per ephemeral tool-narration clip) let the queue dir
+// balloon to 50k+ small files — slow readdirSync on every queue-watch fire.
+// Ben's call (2026-06-02): a single day of scroll-back is plenty; anything
+// older is dead weight. Keeps the hot dir to ~1 day of files so scans stay
+// fast. Audio still uses staleMs (much shorter).
+const SIDECAR_MAX_AGE_MS = 1 * 24 * 60 * 60 * 1000;
+
+// 1 day. `<clip>.played.json` tombstones are written on every auto-prune /
+// ephemeral delete (app/lib/ipc-handlers.js) and read ONLY by the offline
+// synth-audit dev tool. They had NO prune rule and grew without bound (98k+
+// in the field). Matched to the sidecar window above so the whole queue dir
+// self-trims to ~1 day. synth-audit will simply report on the last day of
+// turns instead of the last week — acceptable for a dev-only tool Ben
+// doesn't run in normal use.
+const PLAYED_MARKER_MAX_AGE_MS = 1 * 24 * 60 * 60 * 1000;
 
 function createPruner({
   queueDir,
@@ -60,6 +69,30 @@ function createPruner({
         // / _watchdog.log — those start with underscore and the
         // suffix check below excludes them via the .txt-only test.
         if ((f.endsWith('.txt') || f.endsWith('.original.txt')) && !f.startsWith('_')) {
+          try {
+            const stat = fs.statSync(full);
+            if (now - stat.mtimeMs > SIDECAR_MAX_AGE_MS) fs.unlinkSync(full);
+          } catch {}
+          continue;
+        }
+        // `<clip>.played.json` auto-prune tombstones. Read only by the
+        // offline synth-audit tool over a 7-day window (see the constant
+        // above). Previously had NO prune rule, so they grew without
+        // bound and were the single largest contributor to queue-dir
+        // bloat. Sweep anything past the consumer's window.
+        if (f.endsWith('.played.json')) {
+          try {
+            const stat = fs.statSync(full);
+            if (now - stat.mtimeMs > PLAYED_MARKER_MAX_AGE_MS) fs.unlinkSync(full);
+          } catch {}
+          continue;
+        }
+        // Synth spawn-error markers (`synth-spawn-<hash>.err`, written by
+        // the synth path when a TTS subprocess fails). Debug breadcrumbs
+        // only — nothing reads them at runtime. They had NO prune rule and
+        // grew without bound (100+ in the field). Sweep past the same
+        // one-day window as the other breadcrumb files. Skips _*.log etc.
+        if (f.endsWith('.err') && !f.startsWith('_')) {
           try {
             const stat = fs.statSync(full);
             if (now - stat.mtimeMs > SIDECAR_MAX_AGE_MS) fs.unlinkSync(full);

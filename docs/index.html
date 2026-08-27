@@ -25,7 +25,7 @@
   "operatingSystem": "Windows 10, Windows 11, macOS",
   "url": "https://benfrancisburns-creator.github.io/terminal-talk/",
   "downloadUrl": "https://github.com/benfrancisburns-creator/terminal-talk/releases/latest",
-  "softwareVersion": "0.6.0",
+  "softwareVersion": "0.7.0",
   "license": "https://opensource.org/licenses/MIT",
   "offers": {
     "@type": "Offer",
@@ -806,6 +806,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
     </div>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#dictation">Dictation</a>
       <a href="#ui">UI</a>
       <a href="#why">Why</a>
       <a href="#install">Install</a>
@@ -901,7 +902,7 @@ footer a { color: var(--text-dim); margin: 0 12px; }
       <div class="voice-step active">
         <span>Terminal Talk</span>
         <strong>Agent text becomes a tracked spoken workflow</strong>
-        <p>Claude and Codex responses, tool narration, and session updates come back as colour-coded clips with focus, transcripts, and queue control.</p>
+        <p>Claude and Codex responses, tool narration, and session updates come back as colour-coded mascot clips with focus, transcripts, and queue control.</p>
       </div>
     </div>
     <div class="feature-grid">
@@ -941,6 +942,34 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <p>Uses Microsoft Edge's neural voices with no API key. Wake-word detection runs offline on CPU. Optional OpenAI TTS fallback is explicit, encrypted, and off unless you choose it.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="dictation">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-kicker">Talk, don't type</div>
+      <h2 class="sec-title">Built-in voice dictation — included in the download</h2>
+      <p class="sec-intro">Terminal Talk speaks your agents' replies back to you. It works the other way too: a local dictation tool ships in the package, so you can talk instead of type into any app — your terminal, browser, editor, or chat. No monthly subscription, no separate tool to install.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="icon">🎙️</div>
+        <h3>Hold to talk</h3>
+        <p>Hold <span class="mono">Ctrl+Alt+Space</span>, speak, release — your words are transcribed and pasted straight into whatever app is focused. The push-to-talk flow that replaces a paid dictation subscription.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🗣️</div>
+        <h3>Hands-free toggle</h3>
+        <p>Press <span class="mono">Ctrl+Shift+Space</span> to start, talk as long as you like, then press again to stop and paste. Built for longer prompts and notes where you don't want to hold a key.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🔒</div>
+        <h3>Local and private</h3>
+        <p>On Windows, transcription runs offline with local Whisper — nothing leaves your machine. Optional cleanup turns spoken commands like <span class="mono">"new paragraph"</span> and <span class="mono">"full stop"</span> into real formatting.</p>
+      </div>
+    </div>
+    <p class="sec-intro" style="margin-top: 32px; text-align: center;">Local Whisper dictation runs on Windows today. On macOS the same <span class="mono">Ctrl+Shift+D</span> shortcut opens native Apple Dictation, so you can talk into any app there too.</p>
   </div>
 </section>
 
@@ -1133,8 +1162,8 @@ footer a { color: var(--text-dim); margin: 0 12px; }
         <p>The toolbar X just hides the window; <span class="mono">Ctrl+Shift+A</span>, the tray icon, or Start Menu › Terminal Talk brings it back. If you fully quit or kill it in Task Manager, use the Desktop or Start Menu shortcut.</p>
       </details>
       <details>
-        <summary>What's with the coloured dots?</summary>
-        <p>Each tracked assistant session gets a unique solid or split palette marker on the toolbar. Claude Code can show a matching statusline glyph; Codex CLI can show a matching Terminal Talk terminal title; desktop sessions can sync local chat titles where the desktop app exposes enough metadata. You can also give each session its own voice, focus priority, mute state, heartbeat override, and speech rules.</p>
+        <summary>What are the little mascots in the strip?</summary>
+        <p>Each clip shows as a miniature of the Terminal Talk mascot in its session's colour — a solid or split palette marker, the same character (and recolouring) as the playback scrubber. Unheard clips are bright; once they auto-play they fade back so new arrivals stand out; a clip you play yourself turns white with a session-colour ring. Claude Code can show a matching statusline glyph; Codex CLI can show a matching Terminal Talk terminal title; desktop sessions can sync local chat titles where the desktop app exposes enough metadata. You can also give each session its own voice, focus priority, mute state, heartbeat override, and speech rules.</p>
       </details>
     </div>
   </div>
@@ -1189,7 +1218,7 @@ async function copyInstallCommand(commandId, trigger) {
   };
 
   window.addEventListener('message', (event) => {
-    if (!event || !event.data || event.data.type !== 'terminal-talk-mascot-preview-done') return;
+    if (event.origin !== window.location.origin || !event.data || event.data.type !== 'terminal-talk-mascot-preview-done') return;
     revealHero();
   });
 
@@ -1633,37 +1662,6 @@ async function copyInstallCommand(commandId, trigger) {
     },
   };
 
-  const modes = {
-    toolbar: {
-      src: 'ui-kit/?seed=mixed-states&chrome=0&mockAudioMs=45000',
-      detail: details.dots,
-    },
-    settings: {
-      src: 'ui-kit/?seed=settings-panel-sessions-expanded&chrome=0&mockAudioMs=45000',
-      detail: details.settings,
-    },
-    transcript: {
-      src: 'ui-kit/?seed=tabs-active&chrome=0&mockAudioMs=45000',
-      detail: details.transcript,
-      afterLoad: (doc) => {
-        let tries = 0;
-        const openTranscript = () => {
-          const btn = doc.getElementById('transcriptToggle');
-          if (btn) {
-            btn.click();
-            return;
-          }
-          if (tries++ < 30) setTimeout(openTranscript, 100);
-        };
-        openTranscript();
-      },
-    },
-    collapsed: {
-      src: 'ui-kit/?seed=collapsed-signal&chrome=0&demoCollapsed=1&demoCollapsedPalette=16&mockAudioMs=45000',
-      detail: details.collapsed,
-    },
-  };
-
   function setDetail(detail) {
     if (!detail) return;
     if (title) title.textContent = detail.title || '';
@@ -1799,7 +1797,7 @@ async function copyInstallCommand(commandId, trigger) {
   setToolbarDemoHeight(TOOLBAR_HEIGHT_PANEL_OPEN);
   window.addEventListener('resize', updateToolbarDemoScale);
   window.addEventListener('message', (event) => {
-    if (!event || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
+    if (event.origin !== window.location.origin || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
     setToolbarDemoHeight(event.data.open ? TOOLBAR_HEIGHT_PANEL_OPEN : TOOLBAR_HEIGHT_DEFAULT);
   });
   if (frame) frame.addEventListener('load', wireFrame);

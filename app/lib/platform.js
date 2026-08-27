@@ -1,13 +1,33 @@
 'use strict';
 
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+function resolveWindowsPythonExe({ env, homedir, pathMod, fsMod = fs }) {
+  const localAppData = env.LOCALAPPDATA || pathMod.join(homedir, 'AppData', 'Local');
+  const root = pathMod.join(localAppData, 'Python');
+  try {
+    const versioned = (entry) => {
+      const match = entry.isDirectory && entry.isDirectory() && /^pythoncore-(\d+)\.(\d+)-(\d+)$/i.exec(entry.name);
+      const exe = match && pathMod.join(root, entry.name, 'python.exe');
+      return exe && fsMod.existsSync(exe) ? { exe, version: match.slice(1).map(Number) } : null;
+    };
+    const candidates = fsMod.readdirSync(root, { withFileTypes: true })
+      .map(versioned)
+      .filter(Boolean)
+      .sort((a, b) => b.version[0] - a.version[0] || b.version[1] - a.version[1] || b.version[2] - a.version[2]);
+    if (candidates.length) return candidates[0].exe;
+  } catch {}
+  return 'python';
+}
 
 function createPlatform(opts = {}) {
   const platform = opts.platform || process.platform;
   const env = opts.env || process.env;
   const homedir = opts.homedir || os.homedir();
   const pathMod = opts.path || path;
+  const fsMod = opts.fs || fs;
 
   const isWindows = platform === 'win32';
   const isMac = platform === 'darwin';
@@ -33,7 +53,9 @@ function createPlatform(opts = {}) {
   const systemRoot = env.SystemRoot || 'C:\\Windows';
   const system32 = isWindows ? pathMod.join(systemRoot, 'System32') : '';
 
-  const pythonExe = env.TT_PYTHON_EXE || env.PYTHON || (isWindows ? 'python' : 'python3');
+  const pythonExe = env.TT_PYTHON_EXE || env.PYTHON || (
+    isWindows ? resolveWindowsPythonExe({ env, homedir, pathMod, fsMod }) : 'python3'
+  );
   const powershellExe = env.TT_POWERSHELL_EXE || (
     isWindows
       ? pathMod.join(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -73,4 +95,5 @@ function createPlatform(opts = {}) {
 module.exports = {
   ...createPlatform(),
   createPlatform,
+  resolveWindowsPythonExe,
 };

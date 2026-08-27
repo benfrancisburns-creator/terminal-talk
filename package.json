@@ -22,6 +22,7 @@
     "knip": "knip",
     "check:file-length": "node scripts/check-file-length.cjs",
     "check:file-length:update": "node scripts/check-file-length.cjs --update",
+    "preview:docs": "node scripts/live-preview-server.cjs",
     "synth-audit": "node scripts/synth-audit.cjs",
     "synth-audit:json": "node scripts/synth-audit.cjs --json",
     "start": "node -e \"console.log('Run install.ps1 first, then start via Start Menu/Desktop shortcut or wscript scripts/start-toolbar.vbs')\""

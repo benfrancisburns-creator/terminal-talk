@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mascot dot — real-component verification</title>
+<!-- Loads the REAL shipping CSS + the REAL DotStrip component so this page
+     verifies the actual product render, not a mock. Scratch file — delete. -->
+<link rel="stylesheet" href="../app/styles.css">
+<link rel="stylesheet" href="../app/lib/palette-classes.css">
+<style>
+  html,body{background:#0a0b0f;color:#cfd2da;font-family:-apple-system,"Segoe UI",system-ui,sans-serif;margin:0;padding:22px 26px 60px;}
+  h1{font-size:16px;color:#fff;margin:0 0 12px;}
+  .row{display:flex;align-items:center;margin:0 0 6px;gap:14px;}
+  .row .lbl{width:180px;font-size:12px;color:#9aa0ac;text-align:right;}
+  /* Re-create just enough of the toolbar bar context for the .dots strip. */
+  .barwrap{background:#181a20;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 14px;}
+  .dots-row{ -webkit-app-region:no-drag; }
+  .dots{min-width:280px;}
+  .zoom7 .dots{transform:scale(7);transform-origin:left center;}
+  .zoomrow{height:120px;align-items:center;}
+</style>
+</head>
+<body>
+<h1>Real DotStrip + real CSS — every state · solid, splits, neutral, J-clip, stale</h1>
+<div id="rows"></div>
+
+<script src="../app/lib/component.js"></script>
+<script src="../app/lib/dot-strip.js"></script>
+<script>
+// Mock the three deps DotStrip needs. Palette key is parsed from the
+// filename so each dot lands on a known arrangement.
+const clipPaths = {
+  extractSessionShort: (f) => f,
+  isClipFile: (f) => /^clip/.test(f),
+  paletteKeyForShort: (f) => { const m = /-(\d\d|neutral)\./.exec(f); return m ? m[1] : 'neutral'; },
+};
+let STALE = false;
+const staleSessionPoller = { has: () => STALE };
+
+// Six representative arrangements: blue, green, brown, orange/blue (top-bot),
+// red/blue (left-right), neutral.
+const KEYS = ['04','03','06','08','16','neutral'];
+function queueFor(prefix){
+  let t = 1717000000000;
+  return KEYS.map((k,i)=>({ path: `${prefix}-${k}.mp3`, mtime: t - i*1000 }));
+}
+const allPaths = (q)=> new Set(q.map(f=>f.path));
+
+const ROWS = [
+  { lbl:'Queued (unheard)',        build:()=>({queue:queueFor('m'), heardPaths:new Set(), manualPlayedPaths:new Set(), currentPath:null}) },
+  { lbl:'Auto-played (heard)',     build:()=>{const q=queueFor('m');return{queue:q,heardPaths:allPaths(q),manualPlayedPaths:new Set(),currentPath:null};} },
+  { lbl:'Manually-played',         build:()=>{const q=queueFor('m');return{queue:q,heardPaths:allPaths(q),manualPlayedPaths:allPaths(q),currentPath:null};} },
+  { lbl:'Active — auto (playing)', build:()=>{const q=queueFor('m');return{queue:q,heardPaths:allPaths(q),manualPlayedPaths:new Set(),currentPath:q[0].path,currentIsManual:false};} },
+  { lbl:'Active — manual (playing)',build:()=>{const q=queueFor('m');return{queue:q,heardPaths:allPaths(q),manualPlayedPaths:allPaths(q),currentPath:q[0].path,currentIsManual:true};} },
+  { lbl:'Stale (closed session)',  stale:true, build:()=>{const q=queueFor('m');return{queue:q,heardPaths:allPaths(q),manualPlayedPaths:new Set(),currentPath:null};} },
+  { lbl:'J-clips (highlight read)',build:()=>{const q=queueFor('clip');return{queue:q,heardPaths:new Set([q[1].path,q[2].path]),manualPlayedPaths:new Set([q[2].path]),currentPath:null};} },
+];
+
+function mkState(extra){
+  return Object.assign({ queue:[], currentPath:null, currentIsManual:false,
+    heardPaths:new Set(), manualPlayedPaths:new Set(), sessionAssignments:{}, synthInProgress:false }, extra);
+}
+
+const rowsEl = document.getElementById('rows');
+function render(zoom){
+  for (const r of ROWS){
+    const row=document.createElement('div'); row.className='row'+(zoom?' zoomrow zoom7':'');
+    const lbl=document.createElement('div'); lbl.className='lbl'; lbl.textContent=r.lbl + (zoom?' (7×)':''); row.appendChild(lbl);
+    const wrap=document.createElement('div'); wrap.className='barwrap';
+    const dr=document.createElement('div'); dr.className='dots-row';
+    const dots=document.createElement('div'); dots.className='dots'; dots.setAttribute('role','list');
+    dr.appendChild(dots); wrap.appendChild(dr); row.appendChild(wrap); rowsEl.appendChild(row);
+    STALE = !!r.stale;
+    const ds = new window.TT_DOT_STRIP({ clipPaths, staleSessionPoller, paletteSize:24, maxVisibleDots:40, onPlay(){}, onDelete(){} });
+    ds.mount(dots);
+    ds.update(mkState(r.build()));
+    ds.renderNow();
+    STALE = false;
+  }
+}
+render(false);
+// spacer + 7× zoom of the same rows
+const hr=document.createElement('h1'); hr.textContent='7× zoom'; rowsEl.appendChild(hr);
+render(true);
+</script>
+</body>
+</html>

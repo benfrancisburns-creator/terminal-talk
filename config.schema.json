@@ -23,8 +23,11 @@
         "toggle_window":    { "type": "string", "maxLength": 64 },
         "speak_clipboard":  { "type": "string", "maxLength": 64 },
         "toggle_listening": { "type": "string", "maxLength": 64 },
+        "dictate_paste":    { "type": "string", "maxLength": 64 },
+        "dictate_toggle":   { "type": "string", "maxLength": 64 },
         "pause_resume":     { "type": "string", "maxLength": 64 },
-        "pause_only":       { "type": "string", "maxLength": 64 }
+        "pause_only":       { "type": "string", "maxLength": 64 },
+        "start_dictation":  { "type": "string", "maxLength": 64 }
       }
     },
     "playback": {
@@ -39,6 +42,18 @@
         "palette_variant": { "type": "string", "enum": ["default", "cb"], "default": "default", "description": "Colour palette variant. 'default' = the standard 8-colour palette; 'cb' = colour-blind-friendly (Paul Tol's 'muted' scheme, distinguishable under deutan/protan/tritan). EX5 / H3 Option 2." },
         "tts_provider": { "type": "string", "enum": ["edge", "openai"], "default": "edge", "description": "Which TTS provider to try first. 'edge' = Microsoft edge-tts (free, no key, default). 'openai' = OpenAI TTS (paid, needs openai_api_key configured)." },
         "tts_fallback_provider": { "type": "string", "enum": ["edge", "openai", "none"], "default": "edge", "description": "Which provider to try if the primary provider fails. Default 'edge' keeps fallback free and prevents hidden OpenAI credit spend when Edge is primary. Set to 'openai' only if you intentionally want paid fallback; monitor credits or enable OpenAI billing auto top-up/auto recharge. Set to 'none' to disable fallback." }
+      }
+    },
+    "dictation": {
+      "type": "object",
+      "description": "Local Whisper dictation cleanup. The default local cleanup is free. Set cleanup_provider to 'openai' only if you intentionally want a paid LLM cleanup pass for Wispr-style punctuation, paragraphs, and list formatting.",
+      "properties": {
+        "cleanup": { "type": "boolean", "default": true, "description": "When true, clean raw Whisper output before copy/paste by removing filler words and applying spoken formatting commands." },
+        "cleanup_provider": { "type": "string", "enum": ["local", "openai"], "default": "local", "description": "'local' runs deterministic no-cost cleanup. 'openai' sends dictated text to OpenAI using the saved API key and falls back to local cleanup on failure." },
+        "cleanup_model": { "type": "string", "maxLength": 80, "default": "gpt-5.4-mini", "description": "OpenAI model used only when dictation.cleanup_provider is 'openai'." },
+        "cleanup_timeout_sec": { "type": "integer", "minimum": 3, "maximum": 60, "default": 20 },
+        "keep_audio": { "type": "boolean", "default": false, "description": "When true, save each recorded dictation as a WAV beside the transcript for debugging and review." },
+        "save_timing": { "type": "boolean", "default": true, "description": "When true, save Whisper segment and word-pause metadata as a .segments.json sidecar." }
       }
     },
     "speech_includes": {

@@ -117,6 +117,9 @@ The installer creates a venv at `~/.terminal-talk/.venv`, pip-installs the same 
 
 - **Accessibility** — the Cmd+C used by highlight-to-speak. Triggered the first time you press the speak-clipboard hotkey or fire "hey jarvis". Without it the wake-word listener still hears you, but synthesised keystrokes silently no-op.
 - **Microphone** — the wake-word listener. Triggered the first time the listener opens an audio stream (i.e. on first toolbar launch, unless you ran with `--skip-python-deps` and pre-flagged wake-word as unavailable).
+- **Automation / Apple Events** — the foreground-app menu automation used by the start-dictation hotkey before it falls back to the keyboard shortcut route.
+
+Apple Dictation itself must be enabled separately in **System Settings → Keyboard → Dictation** for `Ctrl+Shift+D` to feel like Windows voice typing.
 
 The macOS hotkey defaults stay as `Control+Shift+S` / `Control+Shift+A` etc. — they avoid Cmd+Shift+S, which collides with system Save As and the screenshot-save dialog. The settings panel renders the bindings using HIG glyphs (⌃⇧S etc.). Right-click on a clip dot deletes it; if your trackpad's secondary click isn't enabled, **Ctrl+click** works as a permanent fallback.
 
@@ -192,9 +195,9 @@ The toolbar's audio queue applies three rules in this order:
 2. **Focus ★ session** — unplayed clips from the session you've starred in Settings → Sessions jump ahead of unfocused sessions.
 3. **Oldest unplayed clip** from any unmuted session.
 
-That's how you make a slow agent's important reply play before a fast agent's 3-deep ramble. Muted sessions never produce dots; auto-prune removes heard body clips after a configurable delay (3–600 s, default 20 s); tool narration and heartbeat clips are ephemeral by design.
+That's how you make a slow agent's important reply play before a fast agent's 3-deep ramble. Muted sessions never produce clips; auto-prune removes heard body clips after a configurable delay (3–600 s, default 20 s); tool narration and heartbeat clips are ephemeral by design.
 
-The dot strip clusters by session in arrival order — three reds, gap, three yellows, gap, two greens — so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. The collapsed letterbox is a compact click-through strip that shows the speaking session's palette colour as a pulsing border and waveform, with horizontal/vertical splits preserved for two-colour identities.
+The clip strip clusters by session in arrival order — three red mascots, gap, three yellow, gap, two green — so the timeline reads as **A A A — B B B — C C** at a glance. Oldest left, newest right, never re-sorted. The collapsed letterbox is a compact click-through strip that shows the speaking session's palette colour as a pulsing border and waveform, with horizontal/vertical splits preserved for two-colour identities.
 
 For an interactive walkthrough of every control, see the [live UI kit](#try-it-live).
 
@@ -204,6 +207,7 @@ For an interactive walkthrough of every control, see the [live UI kit](#try-it-l
 - **Claude Desktop Code and Codex Desktop users** who want persistent desktop chats to keep the same Terminal Talk identity, colour, voice, and transcript history as their terminal workflow.
 - **Anyone** who wants a fast "select text, hear it" keystroke — no agent required.
 - **Voice-first workflows** — combine with a speech-to-text tool and you barely touch the keyboard. See [Companion dictation tools](#companion-dictation-tools-optional) near the bottom.
+- **Native dictation trigger** — `Ctrl+Shift+D` pauses Terminal Talk and opens the OS dictation surface for the focused app: Windows voice typing on Windows, Apple Dictation on macOS.
 
 ---
 
@@ -218,6 +222,8 @@ All hotkeys are **global** — they work from any app. Nothing is captured from 
 | `Ctrl+Shift+A` | Show / hide the toolbar (your recovery hotkey) |
 | `Ctrl+Shift+S` | Read the currently highlighted text |
 | `Ctrl+Shift+J` | Toggle wake-word listening (chime confirms on/off) |
+| `Ctrl+Alt+Space` | Hold to dictate with local Whisper; release to paste into the active app |
+| `Ctrl+Shift+Space` | Toggle hands-free dictation; press again to stop and paste |
 | `Ctrl+Shift+P` | Pause / resume playback |
 | `Ctrl+Shift+O` | Pause-only (doesn't auto-resume on next clip) |
 | `Ctrl+R` | Reload toolbar (same as Settings › Reload button) — use if the UI ever looks stuck |
@@ -251,7 +257,7 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
 ```
 ╭──────────────────────────────────────────────────────────────────╮
 │  ◀◀10  [▶]  10▶▶   ●━━━━━━━○━━━━━━━━━  1:23 / 2:10  🗑  ⚙  ✕   │  ← controls
-│  ● ● ● | ● ● | ● ● ● ● ● ●                                       │  ← dot strip
+│  ᗣ ᗣ ᗣ | ᗣ ᗣ | ᗣ ᗣ ᗣ ᗣ ᗣ ᗣ                                       │  ← clip strip (one session mascot per clip)
 ╰──────────────────────────────────────────────────────────────────╯
                            ↑        ↑
                  run gap  —  different terminal
@@ -260,17 +266,17 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
  • Idle delay (3 s default) → shrinks to a thin strip; hover to expand
 ```
 
-- Each dot = one audio clip in the queue.
-- **Dot colour = session colour** (matches the Claude footer/statusline, Codex terminal title/launcher binding, and desktop title-sync metadata where available). Muted sessions don't show dots at all.
+- Each clip shows as a **miniature of the session mascot** — the same pixel character as the playback scrubber, shrunk to the dot footprint.
+- **The mascot's colour = session colour** (matches the Claude footer/statusline, Codex terminal title/launcher binding, and desktop title-sync metadata where available), including two-colour top/bottom and left/right splits — so a clip always matches who said it. Muted sessions show nothing.
 - **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
-- **Currently playing** dot glows with a white pulsing halo (same size as the others — no layout jump).
-- **Session tabs row** (above the dots) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the dot strip and transcript; click "All" to re-show everything. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
-- **Click** a dot to (re)play it manually. **Right-click** to delete immediately.
-- Clips for "hey jarvis" / `Ctrl+Shift+S` carry a small **J** label so you can tell them from auto-spoken assistant responses.
-- Up to ~40 dots visible; beyond that the oldest drop off.
+- **State at a glance (fade-on-heard):** an **unheard** clip is a bright, full-colour mascot; once it **auto-plays** it fades back so unheard arrivals stand out; a clip you **played manually** (click or "hey jarvis") turns **all-white with a session-colour ring**; the clip **playing right now** keeps full colour and gains a white pulsing halo (same size — no layout jump).
+- **Session tabs row** (above the clip strip) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the strip and transcript; click "All" to re-show everything. Each session tab also has a small **bin in its corner** to clear just that session's clips. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
+- **Click** a mascot to (re)play it manually. **Right-click** to delete it immediately.
+- "Hey jarvis" / `Ctrl+Shift+S` clips carry a small round **J** badge (not a mascot) so you can tell your own read-aloud requests from auto-spoken assistant responses.
+- Up to ~40 clips visible; beyond that they scroll.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
 - **Collapsed mode** is a short waveform letterbox. It flashes and animates only for the session whose clip is actually playing, so queued or muted arrivals do not steal the colour while another session is speaking.
-- **🗑 Clear played** — one-click removal of every heard clip (currently-playing clip is kept). A toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive. The `X` on the toast dismisses without restoring.
+- **🗑 Clear all clips** — one click removes **every** clip on disk, heard or not (the currently-playing clip is kept so audio doesn't cut out). The per-tab corner bins do the same for a single session. Either way a toast appears with a 10-second **Undo** window before the files are actually deleted from disk, so a misclick is never destructive — and if a clip genuinely can't be removed (locked/busy) you get a visible error instead of a silent miss. The `X` on the toast dismisses without restoring.
 
 ### Settings panel (gear icon)
 
@@ -383,8 +389,11 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "toggle_window":    "Control+Shift+A",
     "speak_clipboard":  "Control+Shift+S",
     "toggle_listening": "Control+Shift+J",
+    "dictate_paste":    "Control+Alt+Space",
+    "dictate_toggle":   "Control+Shift+Space",
     "pause_resume":     "Control+Shift+P",
-    "pause_only":       "Control+Shift+O"
+    "pause_only":       "Control+Shift+O",
+    "start_dictation":  "Control+Shift+D"
   },
   "playback": {
     "speed":                     1.25,
@@ -396,6 +405,14 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "palette_variant":           "default",
     "tts_provider":              "edge",
     "tts_fallback_provider":     "edge"
+  },
+  "dictation": {
+    "cleanup":             true,
+    "cleanup_provider":    "local",
+    "cleanup_model":       "gpt-5.4-mini",
+    "cleanup_timeout_sec": 20,
+    "keep_audio":          false,
+    "save_timing":         true
   },
   "speech_includes": {
     "code_blocks":    false,
@@ -418,8 +435,13 @@ Key fields worth calling out:
 - **`playback.palette_variant`** (`"default"` | `"cb"`, default `"default"`) — swaps the 8-colour session palette for Paul Tol's "muted" scheme under deutan / protan / tritan colour-blindness.
 - **`playback.tts_provider`** (`"edge"` | `"openai"`, default `"edge"`) — which TTS provider to try first. Setting this to `"openai"` needs a saved OpenAI key.
 - **`playback.tts_fallback_provider`** (`"edge"` | `"openai"` | `"none"`, default `"edge"`) — which provider to try if the primary fails. The default keeps fallback free; set to `"openai"` only when you intentionally want paid fallback and are tracking OpenAI credits.
-- **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the dot strip.
+- **`dictation.cleanup`** (default `true`) — cleans raw Whisper output before paste, removing filler sounds and converting spoken commands like _"new paragraph"_, _"bullet point"_, and _"full stop"_ into text formatting.
+- **`dictation.cleanup_provider`** (`"local"` | `"openai"`, default `"local"`) — local cleanup is free and offline. `"openai"` is explicit opt-in; it sends the dictated text to OpenAI for a Wispr-style cleanup pass and falls back to local cleanup if unavailable.
+- **`dictation.keep_audio`** (default `false`) — saves the recorded WAV beside each transcript so you can compare audio with the output while tuning dictation.
+- **`dictation.save_timing`** (default `true`) — saves Whisper segment and word-pause metadata beside each transcript for pause-based paragraph tuning.
+- **`speech_includes.tool_calls`** (default `true`) — narrate assistant tool progress as ephemeral clips (e.g. _"Looking at the renderer file"_, _"Running the tests"_, _"Searching the codebase"_). Claude uses the `PreToolUse` hook; Codex uses rollout tool events when available. Clips auto-delete on play-end so long tool chains don't flood the clip strip.
 - **`heartbeat_enabled`** (default `true`) — during the silent gap while Claude Code or Codex is working, play short spinner-verb + thinking-phrase clips every ~8 s so you know the assistant is alive, not stuck. Mirrors the visible mascot word-cloud. Stops the moment real response audio begins. Individual sessions can override this with `heartbeat_enabled` in `session-colours.json`.
+- **`hotkeys.start_dictation`** (default `Control+Shift+D`) — pauses current playback, then asks the OS to start dictation in the focused app. On Windows this sends Win+H. On macOS this uses the foreground app's **Edit > Start/Stop Dictation** menu when available, with a Fn/Fn fallback.
 - **`openai_api_key`** — always stays `null` in `config.json`. Real keys go through the Settings panel and land in the safeStorage-encrypted sidecar. Setting the key here directly still works but leaves it in plaintext on disk, so don't unless you know you need to.
 
 Per-session overrides live in `~/.terminal-talk/session-colours.json` (managed by the toolbar UI, but you can edit by hand). Each session entry can have an optional `voice`, optional `heartbeat_enabled`, and an optional `speech_includes` partial:
@@ -499,7 +521,7 @@ node terminal-talk/scripts/run-tests.cjs --verbose
 
 Coverage highlights:
 
-- **Codex integration** — native hook session binding, quiet colour/name title sync, rollout-file delta tracking, `agent_message` event extraction (commentary + final phases), provisional-to-real session rebinding for toolbar-created terminals, per-session promise tail chain ordering, signature dedup against rewrite-replay, registry-touch persistence.
+- **Codex integration** — native hook session binding, quiet colour/name title sync, rollout-file delta tracking, legacy `agent_message` and current `response_item` message extraction (commentary + final phases), provisional-to-real session rebinding for toolbar-created terminals, per-session promise tail chain ordering, signature dedup against rewrite-replay, registry-touch persistence.
 - **Desktop identity sync** — Codex Desktop and Claude Desktop title metadata writers, UIA live-rename helper coverage, registry preservation, and sync status plumbing.
 - **Tool narration** — flag-aware path capture (`ls -lat /path` doesn't capture `-lat`), echo-header peeling for `;` / `|` separators, batch-level dedup of identical phrases, enclosing-scope detection from structuredPatch + originalFile walk.
 - **Sanitiser** — GFM table summarisation in both Python and JS sanitisers, code-fence language detection, inline-code stripping, parity invariant between `synth_turn.py` and `app/lib/text.js`.
@@ -595,11 +617,57 @@ dictation tool. A few options, ranked by free-tier generosity:
 
 | Tool | Free tier | Paid | Platform | Notes |
 |---|---|---|---|---|
+| **Local Whisper in Terminal Talk** | Unlimited | Free after model download | Windows, macOS | Hold `Ctrl+Alt+Space`, speak, release to paste into the active app and store a transcript row. |
 | **[Wispr Flow](https://wisprflow.ai/)** | 2,000 words/wk | $12/mo | Mac, Win, iOS, Android | Best polish. Cloud only. |
 | **Windows Speech Recognition** | Unlimited | Free | Windows | Built-in, no signup. Basic quality. |
 | **Apple Dictation** | Unlimited | Free | Mac, iOS | Built-in. Decent on M1+. |
 
-For light use (a few prompts/day) any free tier works. For heavy daily use you'll want one of the paid options or the OS built-ins.
+Local Whisper setup on Windows from the repo:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -Install
+.\scripts\whisper-dictate.ps1 -Warmup
+```
+
+Transcribe an existing audio file:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -AudioPath "C:\path\to\message.wav"
+```
+
+Dictate into the active app:
+
+```powershell
+.\scripts\whisper-dictate.ps1 -Record -Paste
+```
+
+On macOS, `install.sh` installs the local Whisper package into
+`~/.terminal-talk/.codex-transcribe-pkgs` when possible. The first local
+dictation downloads the Whisper model into `~/.terminal-talk/.codex-transcribe-cache`.
+
+Inside Terminal Talk on Windows and macOS, hold `Ctrl+Alt+Space` from your
+terminal or any text field: recording starts while the keys are held, then
+Terminal Talk transcribes locally and pastes the result into the active app when
+you release. The transcript is
+copied to the clipboard. File transcriptions also write a `.transcript.txt`
+sidecar beside the audio file; live dictation writes under
+`~\.terminal-talk\dictation\` and appears in the transcript panel with copy/delete
+controls. The transcript-panel **Dictate** button records one clip and stops on
+the next click. `Ctrl+Shift+Space` is the hands-free shortcut: press once to start
+recording, press again to stop, transcribe, and paste.
+
+Wake-word control uses the same voice-command chain as playback controls. With
+listening enabled, say _"hey jarvis dictate"_ to start hands-free dictation and
+_"hey jarvis stop dictation"_ to stop it. If the dictated text ends with _"press
+enter"_, Terminal Talk removes that phrase, pastes the text, and sends Enter.
+
+Raw Whisper output is cleaned before paste by default: filler sounds are removed,
+common spoken formatting commands become punctuation/paragraphs/bullets, and
+spacing/capitalisation is normalised. For a stronger Wispr-style cleanup pass,
+set `dictation.cleanup_provider` to `"openai"` after saving an OpenAI key in the
+Settings panel; this is opt-in because it can spend API credits.
+
+For light use (a few prompts/day) any free tier works. For heavy daily use you'll want local Whisper, one of the paid options, or the OS built-ins.
 
 Not affiliated with any of these.
 

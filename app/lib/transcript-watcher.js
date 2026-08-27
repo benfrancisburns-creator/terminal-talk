@@ -34,6 +34,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn: defaultSpawn } = require('node:child_process');
+const { trySynthDaemon: defaultTrySynthDaemon } = require('./synth-client');
 
 class TranscriptWatcher {
   constructor(opts = {}) {
@@ -58,6 +59,10 @@ class TranscriptWatcher {
       // lifecycle audit). Default does a best-effort SIGKILL; main.js
       // injects _hardKillProc so taskkill /F /T runs on Windows.
       killProc = (proc) => { try { proc.kill('SIGKILL'); } catch {} },
+      // Injectable daemon dispatch (2026-07-13). Tries the long-lived
+      // synth daemon before paying a Python spawn; tests substitute a
+      // recorder. Pass null to force the spawn path.
+      trySynthDaemonFn = defaultTrySynthDaemon,
     } = opts;
     this._sessionsDir = path.join(ttHome, 'sessions');
     this._ttHome = ttHome;
@@ -69,6 +74,7 @@ class TranscriptWatcher {
     this._diag = diag;
     this._spawn = spawnFn;
     this._killProc = killProc;
+    this._trySynthDaemon = trySynthDaemonFn;
 
     // Per-session state:
     //   inFlight   — child process handle currently running for this short
@@ -157,6 +163,33 @@ class TranscriptWatcher {
     }
     st.lastSpawn = now;
     const sessionId = path.basename(st.transcript, '.jsonl');
+    // Daemon-first (2026-07-13): the long-lived synth daemon skips the
+    // Python cold-start this watcher pays every ≤500 ms per active
+    // session — the single hottest spawn site in the app. inFlight
+    // holds `true` (not a proc handle) during the ≤200 ms handshake so
+    // ticks can't stack; concurrent same-session daemon jobs serialise
+    // via synth_turn's _SessionLock (contender exits in ms).
+    if (this._trySynthDaemon) {
+      st.inFlight = true;
+      try {
+        this._trySynthDaemon(
+          { sessionId, transcriptPath: st.transcript, mode: 'on-stream', ttHome: this._ttHome },
+          (ok) => {
+            st.inFlight = null;
+            if (!ok) this._spawnSynthProc(st, shortId, sessionId);
+          },
+        );
+      } catch (e) {
+        st.inFlight = null;
+        this._diag(`transcript-watcher: daemon dispatch threw ${shortId}: ${e.message}`);
+        this._spawnSynthProc(st, shortId, sessionId);
+      }
+      return;
+    }
+    this._spawnSynthProc(st, shortId, sessionId);
+  }
+
+  _spawnSynthProc(st, shortId, sessionId) {
     const args = ['-u', this._synthScript,
       '--session', sessionId,
       '--transcript', st.transcript,

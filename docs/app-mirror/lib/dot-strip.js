@@ -32,6 +32,42 @@
 
   const { Component } = componentModule;
 
+  // Miniature of the scrubber mascot, stamped inside each assistant-session
+  // dot. Geometry is byte-identical to the #scrubberMascot SVG in
+  // app/index.html so a dot reads as the same character; the body/ear/leg
+  // rects fill from --mascot-* CSS variables that palette-classes.css sets on
+  // `.dot.mascot[data-palette="NN"]`, so a dot matches its session's solid /
+  // top-bottom / left-right arrangement automatically.
+  //   - shape-rendering="geometricPrecision": at 14 px the four legs + smile
+  //     land on a fractional pixel grid; smooth anti-aliasing keeps them from
+  //     fraying ("hairy") the way crispEdges' uneven snapping does.
+  //   - .dm-region rects carry the palette colour and flip to white for the
+  //     manually-played state (styles.css); .dm-face rects (eyes + smile) stay
+  //     dark so the character still reads when the body goes white.
+  // No inline `style=` attributes — CSP style-src is 'self'. The var()-based
+  // presentation `fill` attributes are not inline styles (same pattern the
+  // scrubber mascot already uses under this CSP).
+  const MASCOT_SVG =
+    '<svg class="dot-mascot" viewBox="0 0 140 120" shape-rendering="geometricPrecision" aria-hidden="true" focusable="false">' +
+    '<rect class="dm-region" x="13" y="0" width="57" height="44" fill="var(--mascot-body-top-left, currentColor)"/>' +
+    '<rect class="dm-region" x="70" y="0" width="57" height="44" fill="var(--mascot-body-top-right, currentColor)"/>' +
+    '<rect class="dm-region" x="13" y="44" width="57" height="44" fill="var(--mascot-body-bottom-left, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="70" y="44" width="57" height="44" fill="var(--mascot-body-bottom-right, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="0" y="36" width="13" height="8" fill="var(--mascot-ear-left-top, currentColor)"/>' +
+    '<rect class="dm-region" x="0" y="44" width="13" height="18" fill="var(--mascot-ear-left-bottom, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="127" y="36" width="13" height="8" fill="var(--mascot-ear-right-top, currentColor)"/>' +
+    '<rect class="dm-region" x="127" y="44" width="13" height="18" fill="var(--mascot-ear-right-bottom, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="19" y="88" width="16" height="32" fill="var(--mascot-leg-left, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="46" y="88" width="16" height="32" fill="var(--mascot-leg-left, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="79" y="88" width="16" height="32" fill="var(--mascot-leg-right, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-region" x="106" y="88" width="16" height="32" fill="var(--mascot-leg-right, var(--mascot-secondary, currentColor))"/>' +
+    '<rect class="dm-face" x="36" y="26" width="16" height="16" fill="#1a1c22"/>' +
+    '<rect class="dm-face" x="88" y="26" width="16" height="16" fill="#1a1c22"/>' +
+    '<rect class="dm-face" x="44" y="58" width="8" height="6" fill="#1a1c22"/>' +
+    '<rect class="dm-face" x="88" y="58" width="8" height="6" fill="#1a1c22"/>' +
+    '<rect class="dm-face" x="44" y="64" width="52" height="6" fill="#1a1c22"/>' +
+    '</svg>';
+
   class DotStrip extends Component {
     constructor(deps = {}) {
       super(deps);
@@ -138,6 +174,40 @@
       }
     }
 
+    // One physical right-click fires BOTH `mousedown` (button 2) and
+    // `contextmenu`. On a busy main thread the strip RE-RENDERS between the
+    // two (the first delete's renderDots() rAF fires, plus the queue-watch
+    // readdir keeps the thread busy), so the trailing `contextmenu` lands on
+    // a DIFFERENT dot and deletes it too — the user's "deleted 2 with one
+    // click". The two events therefore share neither a path NOR a reliable
+    // time gap (~250 ms observed), so neither a per-path nor a fixed-time
+    // guard can pair them.
+    //
+    // Gate by EVENT ROLE instead: `mousedown` is the authoritative delete and
+    // is NEVER suppressed, so rapid right-clicks on different dots each delete
+    // (the earlier instance-wide time guard wrongly swallowed those). The
+    // `contextmenu` that trails a mousedown is the redundant half of one
+    // gesture and is dropped. On platforms where button-2 `mousedown` doesn't
+    // fire (some mac trackpad configs / flaky Electron alwaysOnTop), no
+    // suppression is armed, so `contextmenu` becomes the sole trigger and
+    // still deletes exactly once.
+    _deleteFromMousedown(path) {
+      // Arm suppression of the paired contextmenu that follows within this
+      // window. Generous (600 ms) to survive a congested main-thread
+      // re-render+IPC; harmless to rapid distinct deletes because those
+      // arrive as fresh `mousedown` events, which are never suppressed.
+      this._suppressContextmenuUntil = Date.now() + 600;
+      if (this._onDelete) this._onDelete(path);
+    }
+
+    _deleteFromContextmenu(path) {
+      if (this._suppressContextmenuUntil && Date.now() < this._suppressContextmenuUntil) {
+        this._suppressContextmenuUntil = 0;  // consume: only the paired contextmenu is dropped
+        return;
+      }
+      if (this._onDelete) this._onDelete(path);
+    }
+
     _buildDot(f, fname, short, viewState) {
       const { currentPath, currentIsManual, heardPaths, manualPlayedPaths, sessionAssignments } = viewState;
       const dot = document.createElement('button');
@@ -154,8 +224,19 @@
         dot.classList.add(currentIsManual ? 'active-manual' : 'active-auto');
       }
       if (this._clipPaths.isClipFile(fname)) {
+        // Highlight-to-speak ("hey jarvis" / Ctrl+Shift+S) clips keep the
+        // round "J" badge. The mascot is reserved for assistant-session
+        // replies — mirrors the scrubber (mascot = assistant, J = manual read).
         dot.classList.add('clip');
         dot.textContent = 'J';
+      } else {
+        // Assistant-session clip: render the session mascot. Same art +
+        // data-palette recolouring as the scrubber mascot, so the dot matches
+        // its session exactly. Lifecycle (queued / auto-played / manually-
+        // played / active) is driven by the heard / played-* / active classes
+        // set below + the .dot.mascot rules in styles.css.
+        dot.classList.add('mascot');
+        dot.innerHTML = MASCOT_SVG;
       }
       if (heardPaths.has(f.path)) {
         dot.classList.add('heard');
@@ -194,7 +275,7 @@
         if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
           e.preventDefault();
           e.stopPropagation();
-          if (this._onDelete) this._onDelete(f.path);
+          this._deleteFromMousedown(f.path);
         }
       });
       dot.addEventListener('click', (e) => {
@@ -206,7 +287,7 @@
       });
       dot.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (this._onDelete) this._onDelete(f.path);
+        this._deleteFromContextmenu(f.path);
       });
       return dot;
     }

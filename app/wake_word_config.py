@@ -23,7 +23,8 @@ from typing import Protocol
 
 
 class _LogLike(Protocol):
-    def warning(self, msg: str) -> None: ...
+    def warning(self, msg: str) -> None:
+        raise NotImplementedError
 
 
 WAKE_WORDS_DEFAULT: list[str] = ['hey_jarvis']

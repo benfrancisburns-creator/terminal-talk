@@ -851,6 +851,7 @@ function createIpcHandlers(deps) {
           voices: { ...cur.voices, ...(partial.voices || {}) },
           hotkeys: { ...cur.hotkeys, ...(partial.hotkeys || {}) },
           playback: { ...cur.playback, ...(partial.playback || {}) },
+          dictation: { ...cur.dictation, ...(partial.dictation || {}) },
           speech_includes: { ...cur.speech_includes, ...(partial.speech_includes || {}) },
           panels: { ...(cur.panels || {}), ...(partial.panels || {}) },
           heartbeat_enabled: keepScalar('heartbeat_enabled'),
@@ -976,6 +977,10 @@ function createIpcHandlers(deps) {
         const resolved = path.resolve(filePath);
         fs.unlinkSync(resolved);
         const why = typeof reason === 'string' ? reason : '';
+        // Diagnostic: every actual file deletion funnels through here. Logging
+        // the filename + reason lets us see, in _toolbar.log, whether one user
+        // delete produces one unlink or two (the "deletes two at once" report).
+        diag(`delete-file: reason=${why || 'manual'} file=${path.basename(resolved)}`);
         if (/^(?:played-auto-prune|played-ephemeral)$/.test(why) && /\.(?:mp3|wav)$/i.test(resolved)) {
           const markerPath = resolved.replace(/\.(?:mp3|wav)$/i, '.played.json');
           try {
@@ -991,6 +996,38 @@ function createIpcHandlers(deps) {
         return true;
       } catch {}
       return false;
+    });
+
+    // Batch delete — used by the toolbar bin + per-session tab bins. A
+    // SINGLE allowMutation check covers the whole batch so a 50-clip clear
+    // isn't shredded by the per-handler IPC rate limiter (burst 30, 20/s),
+    // which silently dropped all-but-~30 of a one-at-a-time clear and left
+    // the rest on disk to reload. ENOENT counts as success (already gone).
+    // Returns counts so the renderer can surface genuine failures instead
+    // of a clear that silently leaves files behind.
+    ipcMain.handle('delete-files', (_e, filePaths, reason = '') => {
+      if (!allowMutation('delete-files')) return { deleted: 0, failed: [], rateLimited: true };
+      const result = { deleted: 0, failed: [], rateLimited: false };
+      if (!Array.isArray(filePaths)) return result;
+      const why = typeof reason === 'string' ? reason : '';
+      for (const filePath of filePaths) {
+        try {
+          if (typeof filePath !== 'string' || filePath.length > 4096) { result.failed.push(filePath); continue; }
+          if (!isPathInside(filePath, QUEUE_DIR)) { result.failed.push(filePath); continue; }
+          const resolved = path.resolve(filePath);
+          try {
+            fs.unlinkSync(resolved);
+          } catch (e) {
+            if (e && e.code === 'ENOENT') { result.deleted++; continue; }  // already gone = done
+            throw e;
+          }
+          result.deleted++;
+        } catch {
+          result.failed.push(filePath);
+        }
+      }
+      diag(`delete-files: reason=${why || 'manual-clear'} requested=${filePaths.length} deleted=${result.deleted} failed=${result.failed.length}`);
+      return result;
     });
 
     // About panel version query. Returns whatever `app.getVersion()`

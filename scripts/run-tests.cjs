@@ -326,6 +326,53 @@ describe('PRUNE LIB (#29 sub-2000 extract)', () => {
     fs.rmSync(t.dir, { recursive: true, force: true });
   });
 
+  it('pruneOldFiles removes .played.json markers + .txt sidecars past the 1-day window, keeps recent', () => {
+    // .played.json tombstones (no prune rule originally) AND .txt/.original.txt
+    // sidecars (14-day retention originally) bloated the queue dir to 77k+ files.
+    // Ben's call: 1-day retention keeps the hot dir small so readdirSync stays fast.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-marker-'));
+    const oldMarker = path.join(dir, '20260510T101010001-0001-deadbeef.played.json');
+    const freshMarker = path.join(dir, '20260601T101010001-0001-deadbeef.played.json');
+    const oldTxt = path.join(dir, '20260510T101010001-0001-deadbeef.txt');
+    const oldOrig = path.join(dir, '20260510T101010001-0001-deadbeef.original.txt');
+    const freshTxt = path.join(dir, '20260601T101010001-0001-deadbeef.txt');
+    for (const f of [oldMarker, freshMarker, oldTxt, oldOrig, freshTxt]) fs.writeFileSync(f, '{}');
+    const twoDaysAgo = (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000;
+    const oneHourAgo = (Date.now() - 60 * 60 * 1000) / 1000;
+    for (const f of [oldMarker, oldTxt, oldOrig]) fs.utimesSync(f, twoDaysAgo, twoDaysAgo);
+    for (const f of [freshMarker, freshTxt]) fs.utimesSync(f, oneHourAgo, oneHourAgo);
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(oldMarker), '.played.json older than 1 day must be unlinked');
+    assertFalsy(fs.existsSync(oldTxt), '.txt sidecar older than 1 day must be unlinked');
+    assertFalsy(fs.existsSync(oldOrig), '.original.txt sidecar older than 1 day must be unlinked');
+    assertTruthy(fs.existsSync(freshMarker), '.played.json within 1 day must survive');
+    assertTruthy(fs.existsSync(freshTxt), '.txt sidecar within 1 day must survive');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('pruneOldFiles removes synth-spawn .err markers past the 1-day window, keeps recent + underscore logs', () => {
+    // synth-spawn-<hash>.err breadcrumbs had NO prune rule and grew unbounded
+    // (100+ in the field). Sweep past the same 1-day window as the other
+    // breadcrumbs; never touch underscore-prefixed _*.log diagnostic files.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-err-'));
+    const oldErr = path.join(dir, 'synth-spawn-deadbeef.err');
+    const freshErr = path.join(dir, 'synth-spawn-cafef00d.err');
+    const underscoreErr = path.join(dir, '_keep.err');
+    for (const f of [oldErr, freshErr, underscoreErr]) fs.writeFileSync(f, '');
+    const twoDaysAgo = (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000;
+    const oneHourAgo = (Date.now() - 60 * 60 * 1000) / 1000;
+    fs.utimesSync(oldErr, twoDaysAgo, twoDaysAgo);
+    fs.utimesSync(underscoreErr, twoDaysAgo, twoDaysAgo);
+    fs.utimesSync(freshErr, oneHourAgo, oneHourAgo);
+    const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 60_000, isAudioFile: isAudio, isPidAlive: () => true });
+    p.pruneOldFiles();
+    assertFalsy(fs.existsSync(oldErr), '.err marker older than 1 day must be unlinked');
+    assertTruthy(fs.existsSync(freshErr), '.err marker within 1 day must survive');
+    assertTruthy(fs.existsSync(underscoreErr), 'underscore-prefixed _*.err must never be swept');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('pruneOldFiles tolerates missing queueDir + read errors', () => {
     const dir = path.join(os.tmpdir(), 'tt-prune-nope-' + Date.now());
     const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
@@ -354,6 +401,303 @@ describe('PRUNE LIB (#29 sub-2000 extract)', () => {
     const dir = path.join(os.tmpdir(), 'tt-prune-no-sess-' + Date.now());
     const p = createPruner({ queueDir: dir, sessionsDir: dir, staleMs: 1000, isAudioFile: isAudio, isPidAlive: () => true });
     p.pruneSessionsDir();
+  });
+});
+
+describe('DICTATION CONTROLLER (local Whisper)', () => {
+  const { EventEmitter } = require('events');
+  const { createDictationController } = require('../app/lib/dictation');
+
+  // A fake child process whose stdout/stderr/exit/error events we drive
+  // synchronously from the test, mirroring how the real PowerShell whisper
+  // process streams progress then emits a final JSON line + exit code.
+  function makeFakeChild() {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.kill = () => { child.killed = true; };
+    return child;
+  }
+
+  // Builds a controller with a temp install/app dir (so findScript() finds a
+  // stub whisper-dictate.ps1) and a fake spawn that records its invocations.
+  // Returns the controller plus capture buffers for assertions.
+  function makeController(configDict = {}, { apiKey = null, withScript = true } = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-'));
+    if (withScript) fs.writeFileSync(path.join(dir, 'whisper-dictate.ps1'), '# stub');
+    const spawnCalls = [];
+    const children = [];
+    const statuses = [];
+    let micCaptured = 0;
+    let resumed = 0;
+    const fakeSpawn = (exe, args, opts) => {
+      const child = makeFakeChild();
+      children.push(child);
+      spawnCalls.push({ exe, args, opts });
+      return child;
+    };
+    const win = {
+      isDestroyed: () => false,
+      webContents: { send: (_channel, payload) => statuses.push(payload) },
+    };
+    const ctl = createDictationController({
+      spawn: fakeSpawn,
+      fs,
+      path,
+      platform: 'win32',
+      appDir: dir,
+      installDir: dir,
+      getWin: () => win,
+      getConfig: () => ({ dictation: configDict }),
+      getApiKey: () => apiKey,
+      sendMicCaptured: () => { micCaptured++; },
+      sendResumePlayback: () => { resumed++; },
+    });
+    return {
+      ctl, dir, spawnCalls, children, statuses,
+      micCaptured: () => micCaptured,
+      resumed: () => resumed,
+      lastCall: () => spawnCalls[spawnCalls.length - 1],
+      // Resolve a started recording so its internal hard-timeout timer is
+      // cleared (otherwise a pending 5-min timer would keep node alive).
+      complete: (i = 0, { code = 0, stdout = '', stderr = '' } = {}) => {
+        const child = children[i];
+        if (stderr) child.stderr.emit('data', stderr);
+        if (stdout) child.stdout.emit('data', stdout);
+        child.emit('exit', code);
+      },
+    };
+  }
+
+  // argValue('-CleanupModel', args) -> the token after the flag, or undefined.
+  function argValue(flag, args) {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  }
+
+  it('passes local-cleanup defaults through to the whisper script args', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.start({ paste: true }).ok, true);
+    const args = h.lastCall().args;
+    assertEqual(argValue('-Cleanup', args), 'local');
+    assertEqual(argValue('-CleanupProvider', args), 'local');
+    assertEqual(argValue('-CleanupModel', args), 'gpt-5.4-mini');
+    assertEqual(argValue('-CleanupTimeout', args), '20');
+    assertTruthy(args.includes('-Paste'), 'paste:true should add -Paste');
+    assertTruthy(args.includes('-SaveTiming'), 'save_timing defaults on');
+    assertFalsy(args.includes('-KeepWav'), 'keep_audio defaults off');
+    assertEqual(h.micCaptured(), 1);
+    h.complete(0, { stdout: '{"ok":true,"transcript":"hi"}' });
+  });
+
+  it('emits -Copy (not -Paste) when paste is false', () => {
+    const h = makeController({});
+    h.ctl.start({ paste: false });
+    assertTruthy(h.lastCall().args.includes('-Copy'));
+    assertFalsy(h.lastCall().args.includes('-Paste'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":"x"}' });
+  });
+
+  it('cleanup:false disables cleanup; openai provider becomes smart', () => {
+    const off = makeController({ cleanup: false });
+    off.ctl.start({});
+    assertEqual(argValue('-Cleanup', off.lastCall().args), 'off');
+    off.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const smart = makeController({ cleanup_provider: 'openai' }, { apiKey: 'sk-test' });
+    smart.ctl.start({});
+    const args = smart.lastCall().args;
+    assertEqual(argValue('-Cleanup', args), 'smart');
+    assertEqual(argValue('-CleanupProvider', args), 'openai');
+    assertEqual(smart.lastCall().opts.env.OPENAI_API_KEY, 'sk-test',
+      'openai cleanup should inject the API key into the child env');
+    smart.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('clamps cleanup timeout to 3..60 and trims/falls back the model', () => {
+    const hi = makeController({ cleanup_timeout_sec: 500, cleanup_model: '  custom-model  ' });
+    hi.ctl.start({});
+    assertEqual(argValue('-CleanupTimeout', hi.lastCall().args), '60');
+    assertEqual(argValue('-CleanupModel', hi.lastCall().args), 'custom-model');
+    hi.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const lo = makeController({ cleanup_timeout_sec: 1, cleanup_model: '   ' });
+    lo.ctl.start({});
+    assertEqual(argValue('-CleanupTimeout', lo.lastCall().args), '3');
+    assertEqual(argValue('-CleanupModel', lo.lastCall().args), 'gpt-5.4-mini');
+    lo.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('keep_audio adds -KeepWav and save_timing:false drops -SaveTiming', () => {
+    const h = makeController({ keep_audio: true, save_timing: false });
+    h.ctl.start({});
+    assertTruthy(h.lastCall().args.includes('-KeepWav'));
+    assertFalsy(h.lastCall().args.includes('-SaveTiming'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('bounds maxSeconds to 1200 and omits the flag for non-positive values', () => {
+    const big = makeController({});
+    big.ctl.start({ maxSeconds: 5000 });
+    assertEqual(argValue('-MaxSeconds', big.lastCall().args), '1200');
+    big.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+
+    const none = makeController({});
+    none.ctl.start({ maxSeconds: -3 });
+    assertFalsy(none.lastCall().args.includes('-MaxSeconds'));
+    none.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('rejects a second start while busy and reports a busy status', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.start({}).ok, true);
+    assertTruthy(h.ctl.isBusy());
+    const second = h.ctl.start({});
+    assertEqual(second.ok, false);
+    assertTruthy(h.statuses.some((s) => s.state === 'busy'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+    assertFalsy(h.ctl.isBusy());
+  });
+
+  it('runs via the python whisper runner on non-win32 (macOS parity)', () => {
+    // macOS parity (4d405be) made dictation cross-platform: off win32 it
+    // spawns pythonExe with whisper-dictate.py instead of powershell + .ps1.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-mac-'));
+    fs.writeFileSync(path.join(dir, 'whisper-dictate.py'), '# stub');
+    const calls = [];
+    const children = [];
+    const ctl = createDictationController({
+      spawn: (exe, args) => { calls.push({ exe, args }); const c = makeFakeChild(); children.push(c); return c; },
+      fs, path, platform: 'darwin', pythonExe: '/usr/bin/python3', appDir: dir, installDir: dir,
+      getWin: () => ({ isDestroyed: () => false, webContents: { send: () => {} } }),
+      getConfig: () => ({ dictation: {} }),
+    });
+    assertEqual(ctl.start({}).ok, true);
+    assertEqual(calls[0].exe, '/usr/bin/python3');
+    assertTruthy(calls[0].args.some((a) => /whisper-dictate\.py$/.test(String(a))), 'should spawn the .py runner');
+    children[0].emit('exit', 0);  // clear the hard-timeout timer so node can exit
+  });
+
+  it('errors when the whisper script is missing', () => {
+    const h = makeController({}, { withScript: false });
+    const r = h.ctl.start({});
+    assertEqual(r.ok, false);
+    assertTruthy(/missing/i.test(r.error));
+    assertEqual(h.spawnCalls.length, 0);
+  });
+
+  it('reports done with the parsed transcript on a clean exit', () => {
+    const h = makeController({});
+    h.ctl.start({ paste: true });
+    h.complete(0, {
+      stderr: 'progress...\nCaptured 4 seconds\n',
+      stdout: 'loading model\n{"ok":true,"transcript":"hello world","pasted":true}\n',
+    });
+    assertTruthy(h.statuses.some((s) => s.state === 'transcribing'),
+      '"Captured N" on stderr should flip status to transcribing');
+    const done = h.statuses.find((s) => s.state === 'done');
+    assertTruthy(done, 'expected a done status');
+    assertEqual(done.text, 'hello world');
+    assertEqual(done.pasted, true);
+    assertFalsy(h.ctl.isBusy());
+    assertEqual(h.resumed(), 1);
+  });
+
+  it('surfaces the first useful stderr line on a failed exit, skipping progress', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.complete(0, { code: 3, stderr: '42%|####\nNo microphone detected\n' });
+    const err = h.statuses.find((s) => s.state === 'error');
+    assertTruthy(err, 'expected an error status');
+    assertEqual(err.error, 'No microphone detected');
+  });
+
+  it('reports a spawn error and clears busy', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.children[0].emit('error', new Error('spawn ENOENT'));
+    assertTruthy(h.statuses.some((s) => s.state === 'error' && /ENOENT/.test(s.error)));
+    assertFalsy(h.ctl.isBusy());
+  });
+
+  it('stop() writes the stop flag in hold mode and refuses when idle', () => {
+    const idle = makeController({});
+    assertEqual(idle.ctl.stop().ok, false);
+
+    const h = makeController({});
+    h.ctl.start({ externalStop: true });
+    const args = h.lastCall().args;
+    assertTruthy(args.includes('-NoSilenceStop'), 'hold mode disables silence stop');
+    const stopFile = argValue('-StopFile', args);
+    assertTruthy(stopFile, 'hold mode should pass a -StopFile path');
+    assertEqual(h.ctl.stop('release').ok, true);
+    assertTruthy(fs.existsSync(stopFile), 'stop() should write the flag file');
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('list() returns matching transcripts newest-first and ignores junk', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    const older = path.join(ddir, 'dictation-20260101-120000.txt');
+    const newer = path.join(ddir, 'dictation-20260102-120000.txt');
+    fs.writeFileSync(older, 'first');
+    fs.writeFileSync(newer, 'second');
+    fs.writeFileSync(path.join(ddir, 'notes.txt'), 'ignore me');
+    fs.writeFileSync(path.join(ddir, 'dictation-20260103-120000.txt'), '');
+    const past = Date.now() / 1000 - 100;
+    fs.utimesSync(older, past, past);
+    const entries = h.ctl.list();
+    assertEqual(entries.length, 2);
+    assertEqual(entries[0].text, 'second');
+    assertEqual(entries[1].text, 'first');
+  });
+
+  it('remove() deletes inside the dictation dir but rejects path traversal', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    const target = path.join(ddir, 'dictation-20260101-120000.txt');
+    fs.writeFileSync(target, 'bye');
+    fs.writeFileSync(path.join(ddir, 'dictation-20260101-120000.wav'), 'audio');
+    assertEqual(h.ctl.remove(path.join(h.dir, '..', 'escape.txt')).ok, false);
+    assertEqual(h.ctl.remove(target).ok, true);
+    assertFalsy(fs.existsSync(target));
+    assertFalsy(fs.existsSync(path.join(ddir, 'dictation-20260101-120000.wav')),
+      'remove() should also clean the sibling .wav');
+  });
+
+  it('list() returns [] when no dictation dir exists yet', () => {
+    const h = makeController({});
+    assertEqual(h.ctl.list(), []);
+  });
+
+  it('list() skips entries it cannot read', () => {
+    const h = makeController({});
+    const ddir = path.join(h.dir, 'dictation');
+    fs.mkdirSync(ddir, { recursive: true });
+    // A directory whose name matches the transcript pattern: readFileSync
+    // throws (EISDIR), so the entry maps to null and is filtered out.
+    fs.mkdirSync(path.join(ddir, 'dictation-20260104-120000.txt'));
+    assertEqual(h.ctl.list(), []);
+  });
+
+  it('falls back to silence-stop when the release watcher script is missing', () => {
+    const h = makeController({});
+    h.ctl.start({ holdAccelerator: 'Control+Alt+Space' });
+    // No watch-hotkey-release.ps1 stub -> not hold mode, so no -StopFile.
+    assertFalsy(h.lastCall().args.includes('-StopFile'));
+    assertFalsy(h.lastCall().args.includes('-NoSilenceStop'));
+    h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
+  });
+
+  it('uses an exit-code fallback message when there is no useful output', () => {
+    const h = makeController({});
+    h.ctl.start({});
+    h.complete(0, { code: 7 });
+    const err = h.statuses.find((s) => s.state === 'error');
+    assertTruthy(err && /code 7/.test(err.error), 'expected a code-7 fallback message');
   });
 });
 
@@ -723,11 +1067,11 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
     }
   });
 
-  it('key_helper supports all four commands in its protocol', () => {
-    // Protocol contract: ctrlc / fgtree / fgtree-bump / exit.
+  it('key_helper supports every command in its protocol', () => {
+    // Protocol contract: ctrlc / start-dictation / fgtree / fgtree-bump / exit.
     // Adding new commands is fine; removing any of these breaks the
     // Electron-side preload bindings that depend on them.
-    for (const cmd of ['ctrlc', 'fgtree', 'fgtree-bump', 'exit']) {
+    for (const cmd of ['ctrlc', 'start-dictation', 'fgtree', 'fgtree-bump', 'exit']) {
       // Commands are compared as strings in the helper's dispatcher.
       // Quoted string match keeps us from matching substrings in
       // function names (e.g. "exit" vs sys.exit).
@@ -735,6 +1079,21 @@ print('backup_exists=', os.path.exists(r'${tmpLog.replace(/\\/g, '\\\\')}.1'))
       if (!re.test(helper)) {
         throw new Error(`key_helper.py missing "${cmd}" in command dispatcher — protocol break`);
       }
+    }
+  });
+
+  it('key_helper maps native dictation trigger on Windows and macOS', () => {
+    if (!/def\s+start_dictation\s*\(\s*\)/.test(helper)) {
+      throw new Error('key_helper.py must expose start_dictation() for the native dictation hotkey');
+    }
+    if (!/_VK_LWIN\s*=\s*0x5B/.test(helper) || !/_VK_H\s*=\s*0x48/.test(helper)) {
+      throw new Error('Windows start_dictation must send Win+H for voice typing');
+    }
+    if (!/Start Dictation/.test(helper) || !/Stop Dictation/.test(helper) || !/_KC_FN\s*=\s*0x3F/.test(helper)) {
+      throw new Error('macOS start_dictation must use Start/Stop Dictation menu with Fn fallback');
+    }
+    if (!/ok \{result\}/.test(helper)) {
+      throw new Error('start-dictation helper replies must include the selected macOS/Windows route for diagnostics');
     }
   });
 
@@ -867,6 +1226,25 @@ print('WAKE_WORDS', ','.join(load_wake_words()))
 const { stripForTTS } = require(path.join(__dirname, '..', 'app', 'lib', 'text.js'));
 
 describe('SPEECH INCLUDES (stripForTTS)', () => {
+  it('strips decoration emoji so edge-tts does not speak Unicode names ("white heavy check mark")', () => {
+    const cases = [
+      { in: 'Build status: ✅ Done', forbid: '✅' },
+      { in: 'Test ❌ failed', forbid: '❌' },
+      { in: 'Heavy check ✔ ok', forbid: '✔' },
+      { in: 'Pass ✓ fail ✗ done', forbid: ['✓', '✗'] },
+      { in: 'Shipping 🚀 today', forbid: '🚀' }, // rocket
+      { in: 'Heart ❤️ attached', forbid: ['❤', '️'] },
+    ];
+    for (const c of cases) {
+      const out = stripForTTS(c.in);
+      const forbids = Array.isArray(c.forbid) ? c.forbid : [c.forbid];
+      for (const f of forbids) {
+        if (out.includes(f)) {
+          throw new Error(`emoji not stripped: in=${JSON.stringify(c.in)} -> out=${JSON.stringify(out)} (forbid ${JSON.stringify(f)})`);
+        }
+      }
+    }
+  });
   it('D1 (#19): looksLikeCode counts ALL pattern matches — untagged fence with repeated shell commands strips', () => {
     // Pre-parity, the 'shell-command-at-line-start' pattern only contributed 1 hit
     // regardless of how many times it matched in the body. Two `npm ...` lines
@@ -2018,6 +2396,7 @@ describe('CONFIG PERSISTENCE ROUND-TRIP', () => {
     voices:          { edge_response: 'en-GB-RyanNeural' },
     hotkeys:         {},
     playback:        { speed: 1.25, collapse_delay_sec: 3, tts_provider: 'edge', tts_fallback_provider: 'edge' },
+    dictation:       { cleanup: true, cleanup_provider: 'local', cleanup_model: 'gpt-5.4-mini', cleanup_timeout_sec: 20 },
     speech_includes: { code_blocks: false },
     panels:          { transcript_expanded: false, transcript_view: 'spoken' },
     heartbeat_enabled: true,
@@ -2396,9 +2775,17 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
     if (!saveMatch || !/_guardUserIntent\(all,\s*caller\)/.test(saveMatch[0])) {
       throw new Error('saveAssignments must call _guardUserIntent(all, caller) — see #8 guard');
     }
+    // writeAssignments now delegates its body to _writeAssignmentsLocked so
+    // ensureAssignmentsForFiles can reuse it while already holding the lock
+    // (atomic read-modify-write — the "colours change on their own" fix). The
+    // guard lives in _writeAssignmentsLocked; writeAssignments must route to it.
     const writeMatch = mainJsSrc.match(/function\s+writeAssignments\s*\(all,\s*opts\)[\s\S]*?\n\}/);
-    if (!writeMatch || !/_guardUserIntent\(all,\s*caller\)/.test(writeMatch[0])) {
-      throw new Error('writeAssignments must call _guardUserIntent(all, caller) — see #8 guard');
+    if (!writeMatch || !/_writeAssignmentsLocked\(all,\s*opts\)/.test(writeMatch[0])) {
+      throw new Error('writeAssignments must delegate to _writeAssignmentsLocked — see #8 guard');
+    }
+    const lockedMatch = mainJsSrc.match(/function\s+_writeAssignmentsLocked\s*\(all,\s*opts\)[\s\S]*?\n\}/);
+    if (!lockedMatch || !/_guardUserIntent\(all,\s*caller\)/.test(lockedMatch[0])) {
+      throw new Error('_writeAssignmentsLocked must call _guardUserIntent(all, caller) — see #8 guard');
     }
   });
 
@@ -2663,12 +3050,15 @@ describe('REGISTRY USER-INTENT GUARD (#8 defensive)', () => {
   it('PS — statusline / hooks skip save when Enter-RegistryLock fails (#8 root cause)', () => {
     // Critical root-cause fix. Prior to this, an unlocked fall-through
     // allowed the race that dropped other sessions' entries. Each of
-    // the 3 PS callers must now branch on $locked and only do
-    // Read-Update-Save when the lock was acquired.
+    // the PS callers must now branch on $locked and only do
+    // Read-Update-Save when the lock was acquired. codex-identify-live.ps1
+    // was originally MISSING from this list — it kept doing an
+    // unconditional Read-Update-Save and was a confirmed clobber source.
     const files = [
-      { path: 'app/statusline.ps1',       caller: 'statusline' },
-      { path: 'hooks/speak-on-tool.ps1',  caller: 'speak-on-tool' },
-      { path: 'hooks/speak-response.ps1', caller: 'speak-response' },
+      { path: 'app/statusline.ps1',          caller: 'statusline' },
+      { path: 'hooks/speak-on-tool.ps1',     caller: 'speak-on-tool' },
+      { path: 'hooks/speak-response.ps1',    caller: 'speak-response' },
+      { path: 'app/codex-identify-live.ps1', caller: 'codex-identify-live' },
     ];
     for (const { path: relPath, caller } of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', relPath), 'utf8');
@@ -2798,7 +3188,7 @@ describe('SETTINGS PANEL ↔ VALIDATOR COVERAGE (#11)', () => {
     // Parent-only rules (object-typed, top-level) are inherently
     // structural — skip them, since their "consumer" is the nested
     // merge in config-store + ipc-handlers.
-    const skipPaths = new Set(['voices', 'hotkeys', 'playback', 'speech_includes']);
+    const skipPaths = new Set(['voices', 'hotkeys', 'playback', 'dictation', 'speech_includes']);
     const dead = [];
     for (const rule of RULES) {
       if (skipPaths.has(rule.path)) continue;
@@ -5278,9 +5668,15 @@ describe('SYNTH TURN SYNC STATE', () => {
     // synth_turn must NOT add anything itself or we'd double-up.
     const tmpDir = os.tmpdir();
     const fakeTranscript = path.join(tmpDir, `tt-no-elapsed-${process.pid}-${Date.now()}.jsonl`);
+    // Timestamps must be FRESH — the backlog guard (2026-07-13) marks
+    // entries older than STALE_ENTRY_CUTOFF_SEC handled without
+    // synthesis, so a fixed historical date would zero the body clips
+    // this test inspects (test-dates gotcha).
+    const tUser = new Date(Date.now() - 319000).toISOString();
+    const tAsst = new Date(Date.now() - 1000).toISOString();
     fs.writeFileSync(fakeTranscript,
-      '{"type":"user","timestamp":"2026-05-04T12:00:00.000Z","message":{"content":[{"type":"text","text":"hi"}]}}\n' +
-      '{"type":"assistant","timestamp":"2026-05-04T12:05:19.000Z","message":{"content":[{"type":"text","text":"Short reply."}]}}\n',
+      `{"type":"user","timestamp":"${tUser}","message":{"content":[{"type":"text","text":"hi"}]}}\n` +
+      `{"type":"assistant","timestamp":"${tAsst}","message":{"content":[{"type":"text","text":"Short reply."}]}}\n`,
       'utf8');
     const testSession = 'deadbeef-1111-2222-3333-444455556666';
     try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
@@ -5313,6 +5709,110 @@ for ph, pref in captured:
     }
   });
 
+  it('run() backlog guard: stale entries are marked handled, not spoken (2026-07-13)', () => {
+    // Toolbar (and with it the toolbar-alive hook gate) can be off for
+    // hours while sessions keep working. On relaunch, the first hook
+    // fire must NOT synthesise the idle period's prose as one audio
+    // dump — entries older than STALE_ENTRY_CUTOFF_SEC are added to
+    // sync state without a synthesize_parallel call.
+    const tmpDir = os.tmpdir();
+    const fakeTranscript = path.join(tmpDir, `tt-stale-${process.pid}-${Date.now()}.jsonl`);
+    const tOld = new Date(Date.now() - 2 * 3600 * 1000).toISOString();  // 2 h ago
+    fs.writeFileSync(fakeTranscript,
+      `{"type":"user","timestamp":"${tOld}","message":{"content":[{"type":"text","text":"hi"}]}}\n` +
+      `{"type":"assistant","timestamp":"${tOld}","message":{"content":[{"type":"text","text":"Hours-old reply that must stay silent."}]}}\n`,
+      'utf8');
+    const testSession = 'deadbee2-1111-2222-3333-444455556666';
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    const code = `
+import sys
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+captured = []
+def fake_synth(phrases, voice, short, openai_key, prefix='', provider='edge', fallback_provider='edge', openai_voice='alloy', originals=None, original_full=None):
+    captured.append((list(phrases), prefix))
+synth_turn.synthesize_parallel = fake_synth
+rc = synth_turn.run('${testSession}', r'${fakeTranscript.replace(/\\/g, '\\\\')}', 'on-stop')
+print('RC', rc)
+print('CALLS', len(captured))
+`;
+    const r = runPythonInline(code);
+    try { fs.unlinkSync(fakeTranscript); } catch {}
+    try { fs.unlinkSync(path.join(os.homedir(), '.terminal-talk', 'sessions', `${testSession}-sync.json`)); } catch {}
+    if (r.code !== 0) throw new Error(`python exit ${r.code}: ${r.stderr}`);
+    if (!/^RC 0$/m.test(r.stdout)) throw new Error(`expected rc 0; stdout:\n${r.stdout}`);
+    const calls = (r.stdout.match(/^CALLS (\d+)$/m) || [])[1];
+    if (calls !== '0') {
+      throw new Error(`stale entries must not reach synthesize_parallel (got ${calls} calls):\n${r.stdout}`);
+    }
+  });
+
+  it('daemon transcript cache matches the full parser + defers partial tails (2026-07-13)', () => {
+    // TT_SYNTH_DAEMON=1 (set by synth_daemon.py) switches
+    // read_transcript_lines to an incremental append-only cache. The
+    // complete-entry prefix must be identical to the full parser at
+    // every stage; a trailing line without \\n is deferred, never split.
+    const code = `
+import json, os, sys, tempfile
+os.environ['TT_SYNTH_DAEMON'] = '1'
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+from pathlib import Path
+fd, tmp = tempfile.mkstemp(suffix='.jsonl')
+os.close(fd)  # win32: an open mkstemp fd blocks the final unlink
+p = Path(tmp)
+p.write_text('\\n'.join(json.dumps({'type': 'assistant', 'n': i}) for i in range(20)) + '\\n', encoding='utf-8')
+assert synth_turn.read_transcript_lines(p) == synth_turn._read_transcript_lines_full(p), 'first read'
+with open(p, 'a', encoding='utf-8') as f:
+    f.write('\\n')                     # blank line: index-aligned {}
+    f.write('not json\\n')             # bad line: index-aligned {}
+    f.write('{"partial": tr')          # no newline: deferred
+cached = synth_turn.read_transcript_lines(p)
+full = synth_turn._read_transcript_lines_full(p)
+assert cached == full[:len(cached)], 'prefix parity after append'
+assert len(full) - len(cached) == 1, 'exactly the partial deferred'
+with open(p, 'a', encoding='utf-8') as f:
+    f.write('ue}\\n')                  # complete the partial
+assert synth_turn.read_transcript_lines(p) == synth_turn._read_transcript_lines_full(p), 'after completion'
+p.write_text('{}\\n', encoding='utf-8')   # truncation → cache reset
+assert len(synth_turn.read_transcript_lines(p)) == 1, 'truncation reset'
+p.unlink()
+print('CACHE-OK')
+`;
+    const r = runPythonInline(code);
+    if (r.code !== 0 || !r.stdout.includes('CACHE-OK')) {
+      throw new Error(`cache parity failed (exit ${r.code}):\n${r.stdout}\n${r.stderr}`);
+    }
+  });
+
+  it('queue TTL prune removes >24h clip artifacts, keeps fresh ones + logs (2026-07-13)', () => {
+    const code = `
+import os, sys, tempfile, time
+home = tempfile.mkdtemp()
+os.environ['TT_HOME'] = home
+sys.path.insert(0, r'${appDirRepo.replace(/\\/g, '\\\\')}')
+import synth_turn
+q = synth_turn.QUEUE_DIR
+q.mkdir(parents=True, exist_ok=True)
+old = q / 'old.mp3'; old.write_bytes(b'x')
+oldt = time.time() - 2 * 86400
+os.utime(old, (oldt, oldt))
+fresh = q / 'fresh.mp3'; fresh.write_bytes(b'x')
+logf = q / '_hook.log'; logf.write_text('keep me', encoding='utf-8')
+os.utime(logf, (oldt, oldt))   # even old logs must survive
+synth_turn._prune_queue_ttl()
+assert not old.exists(), 'old clip should be pruned'
+assert fresh.exists(), 'fresh clip must survive'
+assert logf.exists(), 'log files must never be pruned'
+assert (q / '_prune.stamp').exists(), 'stamp must be written'
+synth_turn._prune_queue_ttl()  # stamp-gated second call: no crash, no-op
+print('PRUNE-OK')
+`;
+    const r = runPythonInline(code);
+    if (r.code !== 0 || !r.stdout.includes('PRUNE-OK')) {
+      throw new Error(`prune test failed (exit ${r.code}):\n${r.stdout}\n${r.stderr}`);
+    }
+  });
 
   it('format_elapsed_phrase uses a varied verb pool (not always "Worked")', () => {
     // Regression guard for Ben's 2026-04-23 ask: the first cut always
@@ -6322,6 +6822,57 @@ describe('TranscriptWatcher lifecycle (EX7f / audit 2026-04-23)', () => {
     } finally { home.cleanup(); }
   });
 
+  it('daemon-first: accepted dispatch skips the Python spawn (2026-07-13)', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const daemonCalls = [];
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: (req, cb) => { daemonCalls.push(req); cb(true); },
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(daemonCalls.length, 1);
+      assertEqual(daemonCalls[0].mode, 'on-stream');
+      assertEqual(spawner.calls.length, 0);  // no Python spawn
+      // inFlight must be cleared after the sync callback so the next
+      // tick isn't wedged behind a phantom handle.
+      assertEqual(w._state.get('aabbccdd').inFlight, null);
+    } finally { home.cleanup(); }
+  });
+
+  it('daemon-first: rejected dispatch falls back to the Python spawn', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: (req, cb) => cb(false),
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);  // fallback spawned
+      assertEqual(spawner.calls[0].args.includes('--mode'), true);
+      assertEqual(spawner.calls[0].args.includes('on-stream'), true);
+    } finally { home.cleanup(); }
+  });
+
+  it('daemon-first: a throwing dispatcher still falls back to the spawn', () => {
+    const home = makeTempHome();
+    try {
+      const spawner = makeFakeSpawn();
+      const w = makeWatcher(home, spawner, {
+        trySynthDaemonFn: () => { throw new Error('boom'); },
+      });
+      home.writeFlag('aabbccdd');
+      home.writeTranscript('aabbccdd-1111-2222-3333-444455556666');
+      w._maybeSpawn('aabbccdd');
+      assertEqual(spawner.calls.length, 1);
+      assertEqual(w._state.get('aabbccdd').inFlight, spawner.procs[0]);
+    } finally { home.cleanup(); }
+  });
+
   it('stop() clears the pending timer and can be called twice', () => {
     const home = makeTempHome();
     try {
@@ -6720,17 +7271,22 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
   // rather than -Command. Windows arg-quoting for -Command mangles
   // backslashes inside paths ("C:\Users\..." becomes "C:Users..." before
   // PowerShell parses it), which silently empties the registry read.
-  function runUpdate({ seed = {}, short, sessionId, claudePid, now }) {
+  function runUpdate({ seed = {}, short, sessionId, claudePid, now, isPidAlive }) {
     const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const regPath    = path.join(os.tmpdir(), `tt-test-mig-${nonce}.json`);
     const scriptPath = path.join(os.tmpdir(), `tt-test-mig-${nonce}.ps1`);
     fs.writeFileSync(regPath, JSON.stringify({ assignments: seed }), 'utf8');
     const psEscape = (s) => String(s).replace(/'/g, "''");
+    // Inject a deterministic IsPidAlive stub when the test specifies one, so
+    // the pid-alive migration widening doesn't depend on whether the seeded
+    // (fake) pid happens to be a live process on the test machine. Omitting
+    // it falls back to the real Get-Process probe (production default).
+    const aliveArg = isPidAlive === undefined ? '' : ` -IsPidAlive { ${isPidAlive ? '$true' : '$false'} }`;
     const script = [
       `Import-Module '${psEscape(MODULE_PATH)}' -Force`,
       `$p = '${psEscape(regPath)}'`,
       `$a = Read-Registry -RegistryPath $p`,
-      `$idx = Update-SessionAssignment -Assignments $a -Short '${psEscape(short)}' -SessionId '${psEscape(sessionId)}' -ClaudePid ${Number(claudePid) | 0} -Now ${Number(now)}`,
+      `$idx = Update-SessionAssignment -Assignments $a -Short '${psEscape(short)}' -SessionId '${psEscape(sessionId)}' -ClaudePid ${Number(claudePid) | 0} -Now ${Number(now)}${aliveArg}`,
       `Save-Registry -RegistryPath $p -Assignments $a`,
       `Write-Output $idx`,
       '',
@@ -6789,10 +7345,11 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertEqual(migrated.claude_pid, 1234);             // pid carried forward
   });
 
-  it('stale pid (last_seen outside the 600 s freshness window) does NOT migrate', () => {
+  it('stale pid (last_seen outside the 600 s window AND pid dead) does NOT migrate', () => {
     // If Windows reuses a pid hours/days later, the claim of "same
     // terminal" is no longer credible. We fall through to fresh
     // allocation rather than inherit a stranger's colour + label.
+    // isPidAlive:false makes this deterministic (the seeded pid is dead).
     const seed = {
       'oldshort': {
         index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
@@ -6801,7 +7358,7 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
       }
     };
     const { returnedIndex, assignments } = runUpdate({
-      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW,
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW, isPidAlive: false,
     });
     // oldshort keeps its slot (it's pinned), newshort gets the first spread-order free
     // slot that isn't 7. That's 0.
@@ -6810,6 +7367,33 @@ describe('PS SESSION-IDENTITY BEHAVIOUR', () => {
     assertTruthy(assignments['newshort'], 'new entry created fresh');
     assertEqual(assignments['newshort'].label, '');
     assertEqual(assignments['newshort'].pinned, false);
+  });
+
+  it('/clear after a long idle still migrates when the pid is ALIVE (last_seen stale)', () => {
+    // Ben's report: stepping away >10 min then /clear gave a fresh colour.
+    // The 600 s freshness window expired, but the SAME terminal process is
+    // still running — a live pid can't be OS-reused, so it must migrate and
+    // keep the colour/label/voice. This is the headline /clear fix.
+    const seed = {
+      'oldshort': {
+        index: 7, session_id: 'oldshort-uuid', claude_pid: 1234,
+        label: 'MATE.AIN brain', pinned: true, voice: 'en-GB-RyanNeural',
+        last_seen: STALE,  // idled well past the 600 s window
+      }
+    };
+    const { returnedIndex, assignments } = runUpdate({
+      seed, short: 'newshort', sessionId: 'newshort-uuid', claudePid: 1234, now: NOW, isPidAlive: true,
+    });
+    assertEqual(returnedIndex, 7);  // same colour preserved
+    if (assignments['oldshort']) throw new Error('old short must be removed after live-pid migration');
+    const migrated = assignments['newshort'];
+    if (!migrated) throw new Error('new short entry missing after live-pid migration');
+    assertEqual(migrated.index, 7);
+    assertEqual(migrated.label, 'MATE.AIN brain');
+    assertEqual(migrated.pinned, true);
+    assertEqual(migrated.voice, 'en-GB-RyanNeural');
+    assertEqual(migrated.session_id, 'newshort-uuid');
+    assertEqual(migrated.claude_pid, 1234);
   });
 
   it('claude_pid=0 never triggers migration (blocks ghost-entry pollution)', () => {
@@ -8148,6 +8732,44 @@ describe('REGISTRY LOCK SKIP-ON-FAIL (#26)', () => {
     }
   });
 
+  it('writeAssignments source acquires the lock + skips the write when held=false (was UNLOCKED)', () => {
+    // writeAssignments (ensureAssignmentsForFiles queue-scan + backup-recovery)
+    // used to write the registry with NO lock, racing the PS hooks +
+    // saveAssignments — a confirmed clobber source (blank labels, reshuffled
+    // colours). It must now use the same withRegistryLock + skip-on-fail
+    // discipline as saveAssignments.
+    const m = mainJs.match(/function\s+writeAssignments\s*\(\s*all\s*,\s*opts[\s\S]+?\r?\n\}/);
+    if (!m) throw new Error('writeAssignments function body not found');
+    const body = m[0];
+    if (!/withRegistryLock\([^,]+,\s*\(held\)/.test(body)) {
+      throw new Error('writeAssignments must wrap its write in withRegistryLock((held)=>...) — clobber fix');
+    }
+    if (!/if\s*\(\s*!held\s*\)/.test(body)) {
+      throw new Error('writeAssignments must branch on !held and skip — clobber fix');
+    }
+    if (!/write-registry skip from=\$\{caller\} reason=lock-timeout/.test(body)) {
+      throw new Error('writeAssignments must emit "write-registry skip from=<caller> reason=lock-timeout" — clobber fix');
+    }
+  });
+
+  it('loadAssignments retries a failed parse before archiving as corrupt (torn-read tolerance)', () => {
+    // A concurrent atomic rename can make one read throw / see a partial file;
+    // _parseRegistryFile reports that as null. Treating the single transient
+    // as corruption archived 23 false positives AND triggered colour-changing
+    // backup recovery. loadAssignments must retry before archiveCorruptRegistry.
+    const m = mainJs.match(/function\s+loadAssignments\s*\(\s*\)[\s\S]+?\n\}/);
+    if (!m) throw new Error('loadAssignments function body not found');
+    const body = m[0];
+    const retryIdx = body.search(/for\s*\([^)]*primary\s*===\s*null[^)]*\)/);
+    if (retryIdx === -1) {
+      throw new Error('loadAssignments must retry the parse while primary === null before archiving — torn-read fix');
+    }
+    const archiveIdx = body.indexOf('archiveCorruptRegistry');
+    if (archiveIdx !== -1 && retryIdx > archiveIdx) {
+      throw new Error('loadAssignments retry loop must come BEFORE archiveCorruptRegistry — torn-read fix');
+    }
+  });
+
   it('back-compat: callbacks that ignore held argument still work', () => {
     // Existing tests + hypothetical future callers that don't care
     // about held (`() => 42`) must continue to function.
@@ -8187,7 +8809,7 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     path.join(__dirname, '..', 'app', 'main.js'), 'utf8'
   );
 
-  it('orphan sweep covers wake-word-listener AND key_helper fragments', () => {
+  it('orphan sweep covers wake-word-listener, key_helper, and dictation hotkey fragments', () => {
     // The script-fragments list is the source of truth for what counts
     // as a TT-owned python child. Both must be present.
     const m = mainJs.match(/ORPHAN_PY_SCRIPTS\s*=\s*\[([^\]]*)\]/);
@@ -8198,6 +8820,9 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     }
     if (!/['"]key_helper['"]/.test(list)) {
       throw new Error('ORPHAN_PY_SCRIPTS must include "key_helper" — see #9');
+    }
+    if (!/['"]dictation-hotkey-hook['"]/.test(list)) {
+      throw new Error('ORPHAN_PY_SCRIPTS must include "dictation-hotkey-hook" so stale dictation listeners cannot pile up');
     }
   });
 
@@ -8262,6 +8887,66 @@ describe('ORPHAN PYTHON CLEANUP ON QUIT (#9)', () => {
     if (/voiceProc\.kill\(\)/.test(body) || /keyHelper\.kill\(\)/.test(body)) {
       throw new Error('will-quit must NOT use soft voiceProc.kill() / keyHelper.kill() — promote to _hardKillProc — see #9');
     }
+  });
+});
+
+describe('DICTATION HOTKEY HOOK LIFECYCLE', () => {
+  const { EventEmitter } = require('events');
+  const { createDictationHotkeyHook } = require(path.join(__dirname, '..', 'app', 'lib', 'dictation-hotkey-hook.js'));
+
+  function makeFakeSpawner() {
+    const children = [];
+    const spawn = (cmd, args, opts) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.pid = 1000 + children.length;
+      child.killed = false;
+      child.kill = () => { child.killed = true; };
+      child.command = cmd;
+      child.args = args;
+      child.opts = opts;
+      children.push(child);
+      return child;
+    };
+    return { spawn, children };
+  }
+
+  it('stop() cancels any pending restart from a stale helper exit', async () => {
+    const fake = makeFakeSpawner();
+    const hook = createDictationHotkeyHook({
+      spawn: fake.spawn,
+      pythonExe: 'python',
+      scriptPath: 'dictation-hotkey-hook.py',
+      accelerator: 'Control+Alt+Space',
+      restartBackoffMs: 20,
+    });
+
+    hook.start();
+    assertEqual(fake.children.length, 1);
+    const child = fake.children[0];
+    hook.stop();
+    assertTruthy(child.killed, 'stop() must kill the tracked helper');
+    child.emit('exit', 0);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assertEqual(fake.children.length, 1, 'stale helper exit must not restart after stop()');
+  });
+
+  it('helper exit restarts exactly once while the hook is active', async () => {
+    const fake = makeFakeSpawner();
+    const hook = createDictationHotkeyHook({
+      spawn: fake.spawn,
+      pythonExe: 'python',
+      scriptPath: 'dictation-hotkey-hook.py',
+      accelerator: 'Control+Shift+Space',
+      restartBackoffMs: 20,
+    });
+
+    hook.start();
+    fake.children[0].emit('exit', 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assertEqual(fake.children.length, 2, 'active hook should respawn one replacement helper');
+    hook.stop();
   });
 });
 
@@ -8468,6 +9153,29 @@ describe('SESSION STALE DETECTION', () => {
     const calls = (body.match(/isPathSessionStale\s*\(/g) || []).length;
     if (calls < 3) {
       throw new Error(`playNextPending must call isPathSessionStale in at least 3 branches (focus, pending, fallback); found ${calls}`);
+    }
+  });
+
+  it('playNextPending does not consume queue entries while audio is active or system-paused', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    const m = rendererSrc.match(/function\s+playNextPending\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (!m) throw new Error('playNextPending function body not found');
+    const body = m[1];
+    if (!/audioPlayer\.isIdle\(\)/.test(body)) {
+      throw new Error('playNextPending must not drain while a clip is loading, paused, or playing');
+    }
+    if (!/audioPlayer\.isSystemAutoPaused\(\)/.test(body)) {
+      throw new Error('playNextPending must not drop pending clips while system/mic pause is active');
+    }
+  });
+
+  it('renderer keeps an autoplay drain watchdog for missed media/fs events', () => {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+    if (!/function\s+drainAutoplayQueue\s*\(/.test(rendererSrc)) {
+      throw new Error('renderer must expose a shared drainAutoplayQueue helper');
+    }
+    if (!/setInterval\s*\(\s*drainAutoplayQueue\s*,\s*AUTOPLAY_DRAIN_INTERVAL_MS\s*\)/.test(rendererSrc)) {
+      throw new Error('renderer must periodically retry autoplay drain');
     }
   });
 
@@ -8945,8 +9653,9 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     }
     // Must be called on JSON.parse failure AND on shape mismatch.
     // Capture window bumped 1500 → 2500 after the rolling-backup
-    // recovery code landed in loadAssignments on 2026-04-23.
-    const load = src.match(/function loadAssignments[\s\S]{0,2500}\n\}/);
+    // recovery code landed (2026-04-23), then → 3500 after the
+    // torn-read retry loop landed (2026-06-02).
+    const load = src.match(/function loadAssignments[\s\S]{0,3500}\n\}/);
     if (!load) throw new Error('loadAssignments block not found');
     if (!/archiveCorruptRegistry\(.{0,100}JSON\.parse/i.test(load[0])) {
       throw new Error('loadAssignments must archive on JSON.parse failure');
@@ -9014,6 +9723,316 @@ describe('R5 RUNTIME ROBUSTNESS', () => {
     const src = fs.readFileSync(mainPath, 'utf8');
     if (!/\.corrupt-.{0,40}\$\{ts\}/.test(src) && !/\.corrupt-\$\{ts\}/.test(src)) {
       throw new Error('archive filename should embed ISO timestamp (.corrupt-<ts>.json)');
+    }
+  });
+});
+
+// =============================================================================
+// MASCOT DOTS — each assistant-session clip renders a miniature of the
+// scrubber mascot instead of a plain circle, recoloured by the same
+// data-palette scheme so a dot matches its session. Lifecycle is System A
+// ("fade on heard"): queued = bright, auto-played = faded, manually-played =
+// white mascot + session-colour ring, active = full presence + pulsing halo.
+// J-clips keep the round "J" badge (mascot = assistant, J = manual read).
+// =============================================================================
+describe('MASCOT DOTS — session mascot replaces the queued circle', () => {
+  const dotStripSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'dot-strip.js'), 'utf8');
+  const stylesSrc   = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+  const paletteCss  = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'palette-classes.css'), 'utf8');
+
+  it('dot-strip stamps the mascot on assistant clips and keeps the J badge for clips', () => {
+    if (!/classList\.add\('mascot'\)/.test(dotStripSrc)) {
+      throw new Error("dot-strip.js should add the 'mascot' class to assistant-session dots");
+    }
+    if (!/class="dot-mascot"/.test(dotStripSrc)) {
+      throw new Error('dot-strip.js should stamp a .dot-mascot svg into mascot dots');
+    }
+    if (!/dm-region/.test(dotStripSrc) || !/dm-face/.test(dotStripSrc)) {
+      throw new Error('mascot svg should tag body/ear/leg as .dm-region and eyes/smile as .dm-face');
+    }
+    if (!/classList\.add\('clip'\)[\s\S]{0,80}textContent\s*=\s*'J'/.test(dotStripSrc)) {
+      throw new Error("dot-strip.js should still render the round 'J' badge for clip files");
+    }
+  });
+
+  it('mascot svg shares the scrubber geometry + renders smooth to stay crisp at 14px', () => {
+    if (!/viewBox="0 0 140 120"/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should use the 140×120 mascot viewBox (matches #scrubberMascot)');
+    }
+    if (!/shape-rendering="geometricPrecision"/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should render geometricPrecision so the legs/smile stay crisp');
+    }
+    if (!/--mascot-body-top-left/.test(dotStripSrc)) {
+      throw new Error('mascot dot svg should fill from --mascot-* vars (same recolour scheme as scrubber)');
+    }
+  });
+
+  it('styles.css implements System A: transparent bg, fade-on-heard, white+ring manual, no pip', () => {
+    if (!/\.dot\.mascot[\s\S]{0,160}background:\s*transparent/.test(stylesSrc)) {
+      throw new Error('.dot.mascot should be transparent — the mascot supplies the colour');
+    }
+    if (!/\.dot\.mascot\.heard\s*\{\s*background:\s*transparent\s*!important/.test(stylesSrc)) {
+      throw new Error('.dot.mascot.heard must beat the !important heard background');
+    }
+    if (!/\.dot\.mascot\.heard\.played-auto:not\(\.active\)[\s\S]{0,60}opacity:\s*0?\.4/.test(stylesSrc)) {
+      throw new Error('auto-played mascot should fade (opacity) when it is not the active clip');
+    }
+    if (!/\.dot\.mascot\.played-manual:not\(\.active\)[\s\S]{0,80}\.dm-region\s*\{\s*fill:\s*#fff/.test(stylesSrc)) {
+      throw new Error('manually-played mascot should turn white via .dm-region fill');
+    }
+    if (!/\.dot\.mascot\.played-manual:not\(\.active\)::before\s*\{\s*display:\s*block/.test(stylesSrc)) {
+      throw new Error('manually-played mascot should show the session-colour ring (::before)');
+    }
+    if (!/\.dot\.mascot::after\s*\{\s*display:\s*none\s*!important/.test(stylesSrc)) {
+      throw new Error('mascot dots should suppress the circle-era inner pip (::after)');
+    }
+  });
+
+  it('palette-classes.css recolours .dot.mascot per session, preserving split orientation', () => {
+    if (!/\.dot\.mascot\[data-palette="04"\]\s*\{[^}]*--mascot-body-top-left:\s*#60a5fa/.test(paletteCss)) {
+      throw new Error('.dot.mascot solid palette should recolour the body');
+    }
+    if (!/\.dot\.mascot\[data-palette="08"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-bottom-left:\s*#4ade80;[^}]*--mascot-leg-left:\s*#4ade80/.test(paletteCss)) {
+      throw new Error('.dot.mascot must preserve top/bottom split orientation (08)');
+    }
+    if (!/\.dot\.mascot\[data-palette="16"\]\s*\{[^}]*--mascot-body-top-left:\s*#ff5e5e;[^}]*--mascot-body-top-right:\s*#60a5fa;[^}]*--mascot-leg-right:\s*#60a5fa/.test(paletteCss)) {
+      throw new Error('.dot.mascot must preserve left/right split orientation (16)');
+    }
+  });
+
+  it('mascot dot region geometry stays byte-identical to the #scrubberMascot rects', () => {
+    // The dot mascot must read as the SAME character as the scrubber. Body/ear/
+    // leg rect coords are duplicated in two files; this guards against silent
+    // drift if someone nudges one. Face rects (dm-face) are excluded — their
+    // fill intentionally differs (#1a1c22 dot vs #3a3a3a scrubber, for 14px
+    // legibility) while coords still match.
+    const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+    const block = /id="scrubberMascot"[\s\S]*?<\/svg>/.exec(indexHtml);
+    if (!block) throw new Error('could not locate #scrubberMascot svg in app/index.html');
+    const quad = (s) => `${s[1]},${s[2]},${s[3]},${s[4]}`;
+    const scrubberQuads = new Set();
+    const rectRe = /x="(\d+)"\s+y="(\d+)"\s+width="(\d+)"\s+height="(\d+)"/g;
+    let r; while ((r = rectRe.exec(block[0]))) scrubberQuads.add(quad(r));
+    const regionRe = /class="dm-region"\s+x="(\d+)"\s+y="(\d+)"\s+width="(\d+)"\s+height="(\d+)"/g;
+    const dotRegions = [];
+    let d; while ((d = regionRe.exec(dotStripSrc))) dotRegions.push(quad(d));
+    if (dotRegions.length !== 12) {
+      throw new Error(`expected 12 mascot region rects (4 body + 4 ear + 4 leg) in dot-strip.js, found ${dotRegions.length}`);
+    }
+    for (const q of dotRegions) {
+      if (!scrubberQuads.has(q)) {
+        throw new Error(`mascot dot region rect [${q}] drifted from #scrubberMascot — keep the dot + scrubber geometry in sync`);
+      }
+    }
+  });
+});
+
+// =============================================================================
+// CLIP DELETION — the toolbar bin clears EVERY clip (heard or not) and each
+// session tab gets its own corner bin. Both soft-delete through the shared
+// 10 s undo window so a mis-click is recoverable. Lets the user drop a
+// multi-session backlog without right-clicking each dot.
+// =============================================================================
+describe('CLIP DELETION — toolbar clear-all + per-session tab bins', () => {
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer.js'), 'utf8');
+  const tabsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tabs.js'), 'utf8');
+  const stylesSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'styles.css'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+
+  it('toolbar bin clears EVERY clip ON DISK (allQueuePaths, not the MAX_FILES-capped queue)', () => {
+    if (!/function clearAllClips\(\)/.test(rendererSrc)) {
+      throw new Error('renderer.js should define clearAllClips()');
+    }
+    const body = /function clearAllClips\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!body) throw new Error('could not parse clearAllClips body');
+    if (/heardPaths\.has/.test(body[0])) {
+      throw new Error('clearAllClips must NOT gate on heardPaths — it clears played AND unheard clips');
+    }
+    // Cap-bug fix: clearing only the capped `queue` left the on-disk overflow
+    // to reload ("deleted 50, 20 jumped back"). The full set comes from the
+    // uncapped allQueuePaths via _allClipPathsExceptPlaying().
+    const helper = /function _allClipPathsExceptPlaying\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!helper) throw new Error('renderer.js should define _allClipPathsExceptPlaying() (cap-bug fix)');
+    if (!/allQueuePaths/.test(helper[0])) {
+      throw new Error('_allClipPathsExceptPlaying must read allQueuePaths (uncapped) so overflow clips clear too');
+    }
+    if (!/getCurrentPath\(\)/.test(helper[0])) {
+      throw new Error('_allClipPathsExceptPlaying must exclude the currently-playing clip');
+    }
+    if (!/_allClipPathsExceptPlaying\(\)/.test(body[0])) {
+      throw new Error('clearAllClips must clear the full on-disk set via _allClipPathsExceptPlaying()');
+    }
+    if (!/clearPlayedBtn\.addEventListener\('click',\s*\(\)\s*=>\s*clearAllClips\(\)\)/.test(rendererSrc)) {
+      throw new Error('the toolbar bin button must call clearAllClips()');
+    }
+  });
+
+  it('bulk clear deletes in ONE batched IPC (rate-limit safe) and surfaces failures', () => {
+    const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8');
+    const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+    if (!/ipcMain\.handle\('delete-files'/.test(ipcSrc)) {
+      throw new Error("ipc-handlers should register a 'delete-files' batch handler");
+    }
+    const handler = /ipcMain\.handle\('delete-files'[\s\S]*?\n {4}\}\);/.exec(ipcSrc);
+    if (!handler) throw new Error('could not parse delete-files handler');
+    if ((handler[0].match(/allowMutation\(/g) || []).length !== 1) {
+      throw new Error('delete-files must do exactly ONE allowMutation check for the whole batch (not per file) — otherwise the rate limiter shreds a bulk clear');
+    }
+    if (!/ENOENT/.test(handler[0])) {
+      throw new Error('delete-files must treat ENOENT (already gone) as success, not a failure');
+    }
+    if (!/deleteFiles:\s*\(paths,\s*reason\)\s*=>\s*ipcRenderer\.invoke\('delete-files'/.test(preloadSrc)) {
+      throw new Error('preload should expose deleteFiles -> delete-files');
+    }
+    const fin = /async function _finaliseClear\(\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!fin) throw new Error('renderer _finaliseClear should be async (awaits the batch delete)');
+    if (!/deleteFiles\(/.test(fin[0])) {
+      throw new Error('_finaliseClear must use the batched deleteFiles, not one deleteFile per clip');
+    }
+    if (!/_showStatusToast/.test(fin[0])) {
+      throw new Error('_finaliseClear must surface a visible error if any clip fails to delete');
+    }
+  });
+
+  it('per-session clear filters by session and reuses the soft-clear/undo path', () => {
+    if (!/function clearSessionClips\(shortId\)/.test(rendererSrc)) {
+      throw new Error('renderer.js should define clearSessionClips(shortId)');
+    }
+    const body = /function clearSessionClips\(shortId\)\s*\{[\s\S]*?\n\}/.exec(rendererSrc);
+    if (!body) throw new Error('could not parse clearSessionClips body');
+    if (!/extractSessionShort/.test(body[0])) {
+      throw new Error('clearSessionClips must filter clips by session shortId');
+    }
+    if (!/_beginSoftClear/.test(body[0])) {
+      throw new Error('clearSessionClips must route through _beginSoftClear (shared undo window)');
+    }
+    if (!/onDeleteSession:\s*\(shortId\)\s*=>\s*clearSessionClips\(shortId\)/.test(rendererSrc)) {
+      throw new Error('Tabs must be wired with onDeleteSession -> clearSessionClips');
+    }
+    if (!/function _beginSoftClear\(/.test(rendererSrc)) {
+      throw new Error('renderer.js should define the shared _beginSoftClear()');
+    }
+  });
+
+  it('delete-files handler batch-unlinks real files, tolerates ENOENT, honours one rate-limit gate', () => {
+    const { createIpcHandlers } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-delfiles-'));
+    const a = path.join(tmp, 'a.mp3');
+    const b = path.join(tmp, 'b.mp3');
+    const gone = path.join(tmp, 'gone.mp3');   // never created → ENOENT on unlink
+    fs.writeFileSync(a, 'x');
+    fs.writeFileSync(b, 'x');
+    function build(allow) {
+      const handlers = {};
+      createIpcHandlers({
+        ipcMain: { handle: (n, fn) => { handlers[n] = fn; } },
+        diag: () => {}, callEdgeTTS: () => {}, getAppVersion: () => '0', getCFG: () => ({}),
+        loadAssignments: () => ({}), getQueueFiles: () => [], getQueueAllPaths: () => [],
+        ensureAssignmentsForFiles: () => {}, shortFromFile: () => null, isPidAlive: () => false,
+        computeStaleSessions: () => [], SESSIONS_DIR: os.tmpdir(), getWin: () => null,
+        saveAssignments: () => true, notifyQueue: () => {}, allowMutation: () => allow,
+        validShort: () => true, validVoice: () => true, sanitiseLabel: (s) => s,
+        ALLOWED_INCLUDE_KEYS: new Set(), setCFG: () => {}, saveConfig: () => true,
+        apiKeyStore: { set: () => {}, get: () => null }, redactForLog: (x) => x, setApplyingDock: () => {},
+        testMode: true, QUEUE_DIR: tmp, isPathInside: (p) => typeof p === 'string' && p.startsWith(tmp),
+        getWatchdog: () => null, getWatchdogIntervalMs: () => 0,
+      }).register();
+      return handlers;
+    }
+    // Gate closed → nothing deleted, files survive, rateLimited flagged.
+    const blocked = build(false)['delete-files'](null, [a, b], 'clear-all');
+    assertTruthy(blocked.rateLimited, 'delete-files must flag rateLimited when the mutation gate is closed');
+    assertEqual(blocked.deleted, 0, 'rate-limited batch must delete nothing');
+    assertTruthy(fs.existsSync(a), 'rate-limited batch must not unlink anything');
+    // Gate open → a + b unlinked; missing `gone` counts as deleted (ENOENT); no failures.
+    const ok = build(true)['delete-files'](null, [a, b, gone], 'clear-all');
+    assertEqual(ok.deleted, 3, 'batch must count a + b + already-gone (ENOENT) as deleted');
+    assertEqual(ok.failed.length, 0, 'no genuine failures expected for in-dir files');
+    assertFalsy(fs.existsSync(a), 'a.mp3 must be unlinked');
+    assertFalsy(fs.existsSync(b), 'b.mp3 must be unlinked');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('tabs render a per-session bin (never on [All]) wired to onDeleteSession with stopPropagation', () => {
+    if (!/this\._onDeleteSession/.test(tabsSrc)) {
+      throw new Error('tabs.js should accept + use onDeleteSession');
+    }
+    if (!/'tab-bin'/.test(tabsSrc)) {
+      throw new Error('tabs.js should build a .tab-bin element');
+    }
+    if (!/id !== 'all'[\s\S]{0,400}_onDeleteSession/.test(tabsSrc)) {
+      throw new Error('the per-session bin must be skipped for the [All] tab');
+    }
+    if (!/stopPropagation/.test(tabsSrc)) {
+      throw new Error('the bin click must stopPropagation so it does not also select the tab');
+    }
+    if (!/\.tab-bin\b/.test(stylesSrc)) {
+      throw new Error('styles.css missing .tab-bin rule');
+    }
+  });
+
+  it('toolbar bin button is relabelled to clear-all (keeps title + aria-label)', () => {
+    const m = /id="clearPlayed"[^>]*>/.exec(indexHtml);
+    if (!m) throw new Error('#clearPlayed button missing');
+    if (!/aria-label="Clear all clips"/.test(m[0])) {
+      throw new Error('#clearPlayed aria-label should be "Clear all clips"');
+    }
+    if (!/title="[^"]*clips/i.test(m[0])) {
+      throw new Error('#clearPlayed title should describe clearing all clips');
+    }
+  });
+});
+
+// =============================================================================
+// HOTKEYS — self-healing re-registration. A transient startup collision
+// (another process momentarily holding a chord) must not leave a global
+// shortcut dead until the next full app restart. Registration is idempotent
+// + retried (delayed + on focus) + re-runnable on demand from Settings.
+// =============================================================================
+describe('HOTKEYS — self-healing re-registration', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'preload.js'), 'utf8');
+  const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+
+  it('registration is idempotent + re-callable (unregisterAll then re-grab)', () => {
+    if (!/function registerGlobalHotkeys\(\)/.test(mainSrc)) {
+      throw new Error('main.js should wrap global-shortcut registration in registerGlobalHotkeys()');
+    }
+    const body = /function registerGlobalHotkeys\(\)\s*\{[\s\S]*?\n {2}\}/.exec(mainSrc);
+    if (!body) throw new Error('could not parse registerGlobalHotkeys body');
+    if (!/globalShortcut\.unregisterAll\(\)/.test(body[0])) {
+      throw new Error('registerGlobalHotkeys must unregisterAll() first so a retry re-acquires cleanly');
+    }
+    if (!/globalShortcut\.register\(/.test(body[0])) {
+      throw new Error('registerGlobalHotkeys must (re-)register the chords');
+    }
+    if (!/_reregisterHotkeys\s*=\s*registerGlobalHotkeys/.test(mainSrc)) {
+      throw new Error('main.js must expose registerGlobalHotkeys via _reregisterHotkeys for the IPC');
+    }
+  });
+
+  it('auto-retries on a delayed timer + on window focus while chords remain unclaimed', () => {
+    if (!/registerGlobalHotkeys\(\);\s*\}, 10_?000\)/.test(mainSrc)) {
+      throw new Error('main.js should retry registration ~10s after startup if any chord failed');
+    }
+    if (!/'browser-window-focus'[\s\S]{0,140}registerGlobalHotkeys\(\)/.test(mainSrc)) {
+      throw new Error('main.js should re-register on window focus while chords remain unclaimed');
+    }
+  });
+
+  it('exposes a manual re-register path: IPC + preload + Settings button', () => {
+    if (!/ipcMain\.handle\('reregister-hotkeys'/.test(mainSrc)) {
+      throw new Error("main.js should register the 'reregister-hotkeys' IPC");
+    }
+    if (!/reregisterHotkeys:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('reregister-hotkeys'\)/.test(preloadSrc)) {
+      throw new Error('preload should expose reregisterHotkeys -> reregister-hotkeys');
+    }
+    if (!/id="hotkeyReregister"/.test(indexHtml)) {
+      throw new Error('index.html should add a #hotkeyReregister button in Settings → Shortcuts');
+    }
+    if (!/reregisterHotkeys\(\)/.test(settingsSrc)) {
+      throw new Error('settings-form should call reregisterHotkeys() when the button is clicked');
     }
   });
 });
@@ -10057,11 +11076,11 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
     return { modal, buttons, titleEl, blurbEl, dotsEl };
   }
 
-  it('exports STEPS array with 3 entries (Accessibility, Mic, Speech)', () => {
+  it('exports STEPS array with 4 entries (Accessibility, Mic, Speech, Dictation)', () => {
     if (!Array.isArray(wizardModule.STEPS)) throw new Error('STEPS must be an array');
-    assertEqual(wizardModule.STEPS.length, 3);
+    assertEqual(wizardModule.STEPS.length, 4);
     const keys = wizardModule.STEPS.map((s) => s.key);
-    assertEqual(keys.join(','), 'accessibility,microphone,speech');
+    assertEqual(keys.join(','), 'accessibility,microphone,speech,dictation');
   });
 
   it('STEPS each have settingsURL with x-apple.systempreferences scheme', () => {
@@ -10110,7 +11129,8 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
     assertEqual(w.isShowing(), true);
     buttons.granted._click();  // step 1 → 2
     buttons.granted._click();  // step 2 → 3
-    buttons.granted._click();  // step 3 → finish
+    buttons.granted._click();  // step 3 → 4
+    buttons.granted._click();  // step 4 → finish
     assertEqual(completedCount, 1);
     assertEqual(w.isShowing(), false);
   });
@@ -10122,6 +11142,7 @@ describe('FIRST-RUN PERMISSION WIZARD — macOS (#30 Phase 6)', () => {
       modalEl: modal,
     });
     w.show();
+    buttons.skip._click();
     buttons.skip._click();
     buttons.skip._click();
     buttons.skip._click();
@@ -10351,8 +11372,8 @@ describe('CLEAR-PLAYED UNDO RACE (#47)', () => {
     if (!/_pendingClear/.test(handler)) {
       throw new Error('onQueueUpdated must consult _pendingClear to filter soft-deleted clips');
     }
-    if (!/pendingClearPaths/.test(handler)) {
-      throw new Error('onQueueUpdated must build a Set of pending-clear paths to filter');
+    if (!/_pendingClear\.paths/.test(handler)) {
+      throw new Error('onQueueUpdated must filter against the _pendingClear.paths set (the full cleared set, incl. on-disk overflow)');
     }
     if (!/files\s*=\s*files\.filter/.test(handler)) {
       throw new Error('onQueueUpdated must filter the incoming `files` array (not just downstream)');
@@ -10511,7 +11532,11 @@ describe('NARRATION LIBRARY — 12-kind developer-action taxonomy (#46 Block C)'
   });
 });
 
-describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () => {
+describe('NARRATION REWRITES — pacing + pronunciation aliases (#45 Block B; plain-text)', () => {
+  // History: this module originally emitted SSML, but edge_tts.Communicate
+  // XML-escapes its input and wraps it in its own <speak> envelope, so
+  // the outer namespace URL was being read aloud at the start of every
+  // clip. The rewrites are now plain text — same substitutions, no tags.
   const appDirRepo = path.join(__dirname, '..', 'app');
 
   function py(code) {
@@ -10539,68 +11564,51 @@ describe('NARRATION SSML — pauses + pronunciation aliases (#45 Block B)', () =
     assertEqual(py(`print(ns.needs_ssml('- alpha\\n- bravo\\n- charlie'))`), 'True');
   });
 
-  it('build: commit hash wrapped in <say-as interpret-as="characters">', () => {
+  it('build: never emits a <speak> envelope (the namespace-leak bug)', () => {
     const out = py(`print(ns.build('Committed a48a6e3 on main.'))`);
-    if (!/<say-as interpret-as="characters">a48a6e3<\/say-as>/.test(out)) {
-      throw new Error(`SHA spell-out missing: ${out}`);
-    }
-    if (!/<speak/.test(out)) throw new Error(`speak envelope missing: ${out}`);
+    if (/<speak/i.test(out)) throw new Error(`speak envelope must not appear: ${out}`);
+    if (/xmlns/i.test(out)) throw new Error(`xmlns must not appear: ${out}`);
+    if (/synthesis/i.test(out)) throw new Error(`synthesis URL must not appear: ${out}`);
   });
 
-  it('build: dev acronyms get <sub alias=...> wrappers', () => {
+  it('build: commit hash gets spaced characters for letter-by-letter readback', () => {
+    const out = py(`print(ns.build('Committed a48a6e3 on main.'))`);
+    if (!/a 4 8 a 6 e 3/.test(out)) {
+      throw new Error(`SHA spell-out missing (expected "a 4 8 a 6 e 3"): ${out}`);
+    }
+  });
+
+  it('build: dev acronyms substituted to spoken-letter form', () => {
     const out = py(`print(ns.build('npm build using IPC + JSON.'))`);
-    if (!/<sub alias="N P M">npm<\/sub>/i.test(out)) {
-      throw new Error(`npm alias missing: ${out}`);
-    }
-    if (!/<sub alias="I P C">ipc<\/sub>/i.test(out)) {
-      throw new Error(`IPC alias missing: ${out}`);
-    }
+    if (!/\bN P M\b/.test(out)) throw new Error(`npm alias missing: ${out}`);
+    if (!/\bI P C\b/.test(out)) throw new Error(`IPC alias missing: ${out}`);
+    if (!/jay son/.test(out)) throw new Error(`JSON alias missing: ${out}`);
   });
 
-  it('build: file extensions get "dot X" alias', () => {
+  it('build: file extensions substituted to "dot X" form', () => {
     const out = py(`print(ns.build('Edited app/main.py and lib/text.js.'))`);
-    if (!/<sub alias="dot py">\.py<\/sub>/.test(out)) {
-      throw new Error(`.py alias missing: ${out}`);
-    }
-    if (!/<sub alias="dot J S">\.js<\/sub>/.test(out)) {
-      throw new Error(`.js alias missing: ${out}`);
-    }
+    if (!/\bdot py\b/.test(out)) throw new Error(`.py alias missing: ${out}`);
+    if (!/\bdot J S\b/.test(out)) throw new Error(`.js alias missing: ${out}`);
   });
 
-  it('build: bullet list gets <break time="200ms"/> between items', () => {
+  it('build: lines without terminating punctuation get a period appended', () => {
     const out = py(`print(ns.build('- alpha\\n- bravo\\n- charlie'))`);
-    const breakCount = (out.match(/<break time="200ms"\/>/g) || []).length;
-    if (breakCount < 2) {
-      throw new Error(`expected 2+ <break time="200ms"/> between bullets; got ${breakCount}: ${out}`);
+    // Edge-tts pauses naturally on `.` `,` `;` `\n`. We just need
+    // each non-punctuated line to end with one so segments don't run
+    // together. \r?\n handles Windows CRLF in test stdout.
+    if (!/alpha\.\r?\n/.test(out)) {
+      throw new Error(`expected period after "alpha" between bullets; got: ${JSON.stringify(out)}`);
+    }
+    if (!/bravo\.\r?\n/.test(out)) {
+      throw new Error(`expected period after "bravo" between bullets; got: ${JSON.stringify(out)}`);
     }
   });
 
-  it('build: idempotent — already-SSML input returns unchanged', () => {
-    const out = py(`a = ns.build('Committed a48a6e3.'); b = ns.build(a); print('SAME' if a == b else 'DIFF')`);
-    assertEqual(out, 'SAME');
+  it('build: empty input returns empty', () => {
+    assertEqual(py(`print(repr(ns.build('')))`), `''`);
   });
 
-  it('build: XML-escapes user content (& < > preserved as entities)', () => {
-    const out = py(`print(ns.build('Mix of & < > chars'))`);
-    if (!/&amp;/.test(out) || !/&lt;/.test(out) || !/&gt;/.test(out)) {
-      throw new Error(`XML escaping incomplete: ${out}`);
-    }
-  });
-
-  it('edge_tts_speak.py has SSML detection + plain-text fallback path', () => {
-    const src = fs.readFileSync(path.join(appDirRepo, 'edge_tts_speak.py'), 'utf8');
-    if (!/_strip_ssml\b/.test(src)) {
-      throw new Error('edge_tts_speak.py must define _strip_ssml for the fallback path');
-    }
-    if (!/is_ssml\s*=.*startswith\(['"]<speak/.test(src)) {
-      throw new Error('edge_tts_speak.py must detect SSML by leading <speak prefix');
-    }
-    if (!/SSML attempts exhausted/.test(src)) {
-      throw new Error('edge_tts_speak.py must log when falling back from SSML to plain text');
-    }
-  });
-
-  it('synth_turn.py wraps sentences via _maybe_ssml_wrap before edge_tts call', () => {
+  it('synth_turn.py applies the rewrite via _maybe_ssml_wrap before edge_tts call', () => {
     const src = fs.readFileSync(path.join(appDirRepo, 'synth_turn.py'), 'utf8');
     if (!/def\s+_maybe_ssml_wrap/.test(src)) {
       throw new Error('synth_turn.py must define _maybe_ssml_wrap helper');
@@ -10864,9 +11872,13 @@ s.close()
     if (!/stopSynthDaemon\(\)/.test(main)) {
       throw new Error('main.js must call stopSynthDaemon() on will-quit');
     }
-    // Daemon must be POSIX-only (gated by !platform.isWindows).
-    if (!/createSynthDaemon\([\s\S]{0,200}enabled:\s*!platform\.isWindows/.test(main)) {
-      throw new Error('main.js must gate createSynthDaemon by !platform.isWindows (POSIX-only Unix socket)');
+    // Cross-platform since 2026-07-13: Unix socket on POSIX, token-
+    // authenticated TCP loopback on Windows. The gate must be gone.
+    if (!/createSynthDaemon\([\s\S]{0,200}enabled:\s*true/.test(main)) {
+      throw new Error('main.js must enable createSynthDaemon on ALL platforms (enabled: true)');
+    }
+    if (/createSynthDaemon\([\s\S]{0,200}enabled:\s*!platform\.isWindows/.test(main)) {
+      throw new Error('stale POSIX-only gate on createSynthDaemon — Windows uses TCP loopback now');
     }
   });
 
@@ -13373,6 +14385,88 @@ describe('EX7c — DotStrip', () => {
     ds.unmount();
   });
 
+  it('a single right-click gesture (mousedown button 2 + contextmenu) deletes ONCE, not twice', () => {
+    // Regression: a physical right-click fires both mousedown(button=2) AND
+    // contextmenu. Both used to call onDelete, and because the first delete
+    // re-renders the strip, the second event landed on a different dot and
+    // deleted it too. The instance-level gesture guard must collapse them.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const clip = makeClip('aabbccdd', 1);
+    ds.update({ queue: [clip], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dot = root._children[0];
+    const md = dot._listeners.find((l) => l.ev === 'mousedown');
+    const ctx = dot._listeners.find((l) => l.ev === 'contextmenu');
+    md.fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    ctx.fn({ preventDefault: () => {} });
+    assertEqual(deletes, [clip.path]);  // exactly one delete for one gesture
+    ds.unmount();
+  });
+
+  it('rapid right-clicks (mousedown button 2) on different dots each delete — none swallowed', () => {
+    // The earlier instance-wide 300 ms time guard swallowed every delete
+    // within 300 ms of the previous one, so clearing several dots quickly
+    // dropped most ("delete isn't reliable, doesn't delete at once").
+    // mousedown is the authoritative trigger and is never suppressed, so
+    // each distinct dot must delete.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const a = makeClip('aabbccdd', 1);
+    const b = makeClip('eeff0011', 2);
+    ds.update({ queue: [b, a], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dots = root._children.filter((c) => c._listeners && c._listeners.some((l) => l.ev === 'mousedown'));
+    assertEqual(dots.length, 2);
+    for (const dot of dots) {
+      dot._listeners.find((l) => l.ev === 'mousedown').fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    }
+    assertEqual(deletes.length, 2);
+    assertTruthy(deletes.includes(a.path) && deletes.includes(b.path), 'both distinct dots must delete');
+    ds.unmount();
+  });
+
+  it('one right-click deletes ONCE even if the strip re-renders and contextmenu lands on a DIFFERENT dot', () => {
+    // The "deleted 2 with one click" regression: a single right-click fires
+    // mousedown (deletes dot A) and then contextmenu; on a busy main thread
+    // the strip rebuilds in between, so the trailing contextmenu lands on the
+    // adjacent dot B. Gating by event role (mousedown authoritative, the
+    // paired contextmenu suppressed) must prevent B's deletion regardless of
+    // the path/timing mismatch.
+    const deletes = [];
+    const root = makeFakeEl('div');
+    const ds = new DotStrip({
+      clipPaths,
+      staleSessionPoller: makePoller(),
+      onDelete: (p) => deletes.push(p),
+    });
+    ds.mount(root);
+    const a = makeClip('aabbccdd', 1);
+    const b = makeClip('eeff0011', 2);
+    ds.update({ queue: [b, a], currentPath: null, heardPaths: new Set(), sessionAssignments: {}, synthInProgress: false });
+    ds.renderNow();
+    const dots = root._children.filter((c) => c._listeners && c._listeners.some((l) => l.ev === 'mousedown'));
+    assertEqual(dots.length, 2);
+    // mousedown on dot A, then the paired contextmenu lands on dot B (rebuild).
+    dots[0]._listeners.find((l) => l.ev === 'mousedown').fn({ button: 2, preventDefault: () => {}, stopPropagation: () => {} });
+    dots[1]._listeners.find((l) => l.ev === 'contextmenu').fn({ preventDefault: () => {} });
+    assertEqual(deletes.length, 1);  // trailing contextmenu suppressed
+    assertEqual(deletes[0], a.path);  // only the mousedown's dot deleted
+    ds.unmount();
+  });
+
   it('update() schedules a single rAF regardless of call count', () => {
     _rafQueue.length = 0;
     const root = makeFakeEl('div');
@@ -14246,6 +15340,16 @@ describe('EX7e — AudioPlayer', () => {
     audio.paused = false;
     const { player } = makePlayer({ audio });
     player.mount();
+    assertEqual(player.isIdle(), false);
+    player.unmount();
+  });
+
+  it('isIdle() is false while a newly requested clip is still starting', () => {
+    const { player } = makePlayer({
+      queue: [{ path: '/a.mp3', mtime: 1 }],
+    });
+    player.mount();
+    player.playPath('/a.mp3', false, false);
     assertEqual(player.isIdle(), false);
     player.unmount();
   });
@@ -15702,9 +16806,11 @@ describe('PHASE 4 #1 — stripForTTS vulnerability pass', () => {
     assertTruthy(out.includes('你好'), 'CJK characters must not be stripped');
   });
 
-  it('emoji pass through unchanged', () => {
+  it('decoration emoji are stripped (edge-tts reads codepoint names) — surrounding prose preserved', () => {
     const out = stripForTTS('Click the 🚀 button');
-    assertTruthy(out.includes('🚀'), 'emoji must not be stripped');
+    if (out.includes('🚀')) throw new Error(`emoji must be stripped (edge-tts speaks "rocket" otherwise): "${out}"`);
+    if (!out.includes('Click the')) throw new Error(`surrounding prose must survive: "${out}"`);
+    if (!out.includes('button')) throw new Error(`surrounding prose must survive: "${out}"`);
   });
 
   it('RTL text (Arabic) passes through without corruption', () => {
@@ -16896,6 +18002,51 @@ describe('VOICE COMMAND (Phase 1)', () => {
   const repoApp = path.join(__dirname, '..', 'app');
   const recognizerPath = path.join(repoApp, 'voice-command-recognize.ps1');
 
+  function synthesizeVoiceCommandWav(text, wavPath) {
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const scriptPath = path.join(os.tmpdir(), `tt-sapi-synth-${nonce}.ps1`);
+    fs.writeFileSync(scriptPath, [
+      'param(',
+      '  [Parameter(Mandatory = $true)] [string]$OutPath,',
+      '  [Parameter(Mandatory = $true)] [string]$Text',
+      ')',
+      "$ErrorActionPreference = 'Stop'",
+      'Add-Type -AssemblyName System.Speech',
+      '$synth = $null',
+      'try {',
+      '  $format = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo -ArgumentList 16000, ([System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen), ([System.Speech.AudioFormat.AudioChannel]::Mono)',
+      '  $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      '  $synth.SetOutputToWaveFile($OutPath, $format)',
+      '  $null = $synth.Speak($Text)',
+      '} finally {',
+      '  if ($synth -ne $null) { $synth.Dispose() }',
+      '}',
+      'if (!(Test-Path -LiteralPath $OutPath)) { throw "SAPI did not create WAV: $OutPath" }',
+      '$length = (Get-Item -LiteralPath $OutPath).Length',
+      'if ($length -le 44) { throw "SAPI produced empty WAV: $length bytes" }',
+      'Write-Output "SYNTH_OK length=$length"',
+      '',
+    ].join('\r\n'), 'utf8');
+
+    try {
+      const synth = spawnSync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File',
+        scriptPath, wavPath, text,
+      ], { encoding: 'utf8', timeout: 20000 });
+      const exists = fs.existsSync(wavPath);
+      const size = exists ? fs.statSync(wavPath).size : 0;
+      if (synth.status !== 0 || !/\bSYNTH_OK\b/.test(synth.stdout || '') || size <= 44) {
+        throw new Error(
+          `synth fail: status=${synth.status} signal=${synth.signal || ''} ` +
+          `error=${synth.error ? synth.error.message : ''} size=${size} ` +
+          `stdout=${synth.stdout || ''} stderr=${synth.stderr || ''}`
+        );
+      }
+    } finally {
+      try { fs.unlinkSync(scriptPath); } catch {}
+    }
+  }
+
   it('recognizer script exists', () => {
     if (!fs.existsSync(recognizerPath)) {
       throw new Error(`voice-command-recognize.ps1 missing at ${recognizerPath}`);
@@ -16974,17 +18125,8 @@ describe('VOICE COMMAND (Phase 1)', () => {
     // synthesized speech; the Python listener may apply a stricter live
     // confidence gate before dispatching a command.
     const wavPath = path.join(os.tmpdir(), `tt-voice-play-${process.pid}-${Date.now()}.wav`);
-    const synth = spawnSync('powershell.exe', [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-      `Add-Type -AssemblyName System.Speech; ` +
-      `$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ` +
-      `$s.SetOutputToWaveFile('${wavPath.replace(/'/g, "''")}'); ` +
-      `$s.Speak('play'); $s.Dispose(); Write-Output 'SYNTH_OK'`,
-    ], { encoding: 'utf8', timeout: 20000 });
-    if (synth.status !== 0 || !synth.stdout.includes('SYNTH_OK')) {
-      throw new Error(`synth fail: stdout=${synth.stdout} stderr=${synth.stderr}`);
-    }
     try {
+      synthesizeVoiceCommandWav('play', wavPath);
       const r = spawnSync('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
         recognizerPath, wavPath,
@@ -17382,6 +18524,7 @@ ${body}
     // keeps the test authoritative if the set drifts.
     const whitelist = new Set([
       'play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel',
+      'dictation_start', 'dictation_stop',
     ]);
     const rejectCases = ['clear', 'delete', 'rm', '', null, 'PLAY', 'play;echo'];
     for (const a of rejectCases) {
@@ -17389,7 +18532,7 @@ ${body}
         throw new Error(`whitelist accepted bad action: ${JSON.stringify(a)}`);
       }
     }
-    const acceptCases = ['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel'];
+    const acceptCases = ['play', 'pause', 'resume', 'next', 'back', 'stop', 'cancel', 'dictation_start', 'dictation_stop'];
     for (const a of acceptCases) {
       if (!whitelist.has(a)) {
         throw new Error(`whitelist rejected good action: ${JSON.stringify(a)}`);
@@ -17438,6 +18581,7 @@ describe('CODEX SESSION WATCHER', () => {
   const {
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
+    extractCodexResponseItemMessageEvent,
     extractCodexSessionMetaEvent,
     extractCodexWorkingStateEvent,
     extractCodexToolCallEvent,
@@ -17527,6 +18671,54 @@ describe('CODEX SESSION WATCHER', () => {
       },
       'Codex final_answer lines must be spoken like final responses',
     );
+  });
+
+  it('extracts current Codex Desktop response_item commentary payloads', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-08-27T22:20:17.353Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: 'commentary',
+        content: [{ type: 'output_text', text: '  Tracing the live watcher now.  ' }],
+      },
+    });
+    assertDeepEqual(
+      extractCodexResponseItemMessageEvent(line),
+      {
+        timestamp: '2026-08-27T22:20:17.353Z',
+        phase: 'commentary',
+        message: 'Tracing the live watcher now.',
+      },
+      'Codex Desktop response_item messages should enter the speech queue',
+    );
+    assertEqual(extractCodexWorkingStateEvent(line), 'mark');
+  });
+
+  it('extracts current Codex Desktop final response_item payloads', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-08-27T22:22:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: 'final',
+        content: [
+          { type: 'output_text', text: 'First paragraph.' },
+          { type: 'output_text', text: 'Second paragraph.' },
+        ],
+      },
+    });
+    assertDeepEqual(
+      extractCodexResponseItemMessageEvent(line),
+      {
+        timestamp: '2026-08-27T22:22:00.000Z',
+        phase: 'final',
+        message: 'First paragraph.\nSecond paragraph.',
+      },
+    );
+    assertEqual(extractCodexWorkingStateEvent(line), 'clear');
   });
 
   it('chunks long Codex final answers into Edge-safe speech pieces', () => {
@@ -18120,6 +19312,60 @@ describe('SETTINGS PANEL LAYOUT', () => {
     }
     if (!/class="about-guide"/.test(aboutSection) || !/class="about-card/.test(aboutSection)) {
       throw new Error('About should use compact guide cards');
+    }
+  });
+
+  it('exposes the native dictation shortcut across defaults, Settings, and registration', () => {
+    const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'), 'utf8');
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    if (!/start_dictation:\s*['"]Control\+Shift\+D['"]/.test(mainSrc)) {
+      throw new Error('main.js DEFAULTS.hotkeys must include start_dictation');
+    }
+    if (!/registerAndLog\(CFG\.hotkeys\.start_dictation,\s*startDictation,\s*['"]start_dictation['"]\)/.test(mainSrc)) {
+      throw new Error('main.js must register the start_dictation global shortcut');
+    }
+    if (!/webContents\.send\(['"]pause-playback-only['"]\)/.test(mainSrc) || !/helperRequest\(['"]start-dictation['"]/.test(mainSrc)) {
+      throw new Error('startDictation must pause playback and call the helper start-dictation command');
+    }
+    if (!/start_dictation:\s*['"]Control\+Shift\+D['"]/.test(settingsSrc)) {
+      throw new Error('SettingsForm HOTKEY_DEFAULTS must include start_dictation');
+    }
+    if (!/id:\s*['"]hotkeyStartDictation['"][\s\S]{0,80}start dictation/.test(settingsSrc)) {
+      throw new Error('SettingsForm HOTKEY_FIELDS must include hotkeyStartDictation');
+    }
+    if (!/id="hotkeyStartDictation"/.test(indexHtmlSrc)) {
+      throw new Error('Shortcuts tab must render the Start dictation hotkey input');
+    }
+  });
+
+  it('local Whisper dictation has a macOS Python runner path', () => {
+    const { EventEmitter } = require('events');
+    const { createDictationController } = require('../app/lib/dictation');
+    const calls = [];
+    const fakeSpawn = (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = () => {};
+      return proc;
+    };
+    const controller = createDictationController({
+      spawn: fakeSpawn,
+      platform: 'darwin',
+      pythonExe: '/venv/bin/python',
+      appDir: path.join(__dirname, '..', 'app'),
+      installDir: path.join(os.tmpdir(), 'tt-dictation-test'),
+      getConfig: () => ({ dictation: { cleanup: true, cleanup_provider: 'local', save_timing: true, keep_audio: true } }),
+    });
+    const started = controller.start({ paste: true, source: 'test', externalStop: true, maxSeconds: 1200 });
+    assertTruthy(started.ok, started.error || 'dictation did not start');
+    assertEqual(calls.length, 1, 'mac dictation should spawn one Python process');
+    assertEqual(calls[0].cmd, '/venv/bin/python', 'mac dictation must use the configured Python executable');
+    for (const needle of ['whisper-dictate.py', '--record', '--json', '--paste', '--stop-file', '--no-silence-stop', '--segments-out', '--keep-wav']) {
+      if (!calls[0].args.some((arg) => String(arg).includes(needle))) {
+        throw new Error(`mac dictation args missing ${needle}: ${JSON.stringify(calls[0].args)}`);
+      }
     }
   });
 });
@@ -18854,6 +20100,15 @@ describe('CODEX TERMINAL IDENTITY', () => {
     }
     if (!/terminal_title[\s\S]*\[\]/.test(installSrc)) {
       throw new Error('install.ps1 must set [tui].terminal_title = [] so Codex does not overwrite TT titles');
+    }
+    if (!/Set-TomlSectionKey[\s\S]*-Section 'features'[\s\S]*-Key 'hooks'[\s\S]*-Value 'true'/.test(installSrc)) {
+      throw new Error('install.ps1 must enable the current [features].hooks Codex flag');
+    }
+    if (/Set-TomlSectionKey[\s\S]*-Section 'features'[\s\S]*-Key 'codex_hooks'/.test(installSrc)) {
+      throw new Error('install.ps1 must not write the deprecated [features].codex_hooks flag');
+    }
+    if (!/codex_hooks\\s\*=/.test(installSrc)) {
+      throw new Error('install.ps1 must remove stale deprecated [features].codex_hooks entries');
     }
     if (!/SessionStart/.test(installSrc) || !/UserPromptSubmit/.test(installSrc) || !/PreToolUse/.test(installSrc) || !/PostToolUse/.test(installSrc) || !/Stop/.test(installSrc)) {
       throw new Error('install.ps1 must register the full Codex lifecycle hook set');
@@ -19632,6 +20887,10 @@ describe('PLATFORM CONTRACT', () => {
       homedir: 'C:\\Users\\Ben',
       env: { SystemRoot: 'C:\\Windows' },
       path: path.win32,
+      fs: {
+        readdirSync: () => { throw new Error('no pythoncore dirs'); },
+        existsSync: () => false,
+      },
     });
     assertEqual(p.installDir, 'C:\\Users\\Ben\\.terminal-talk');
     assertEqual(p.pythonExe, 'python');
@@ -19647,6 +20906,24 @@ describe('PLATFORM CONTRACT', () => {
     assertFalsy(p.supportsPosixFooterClip);
     assertFalsy(p.supportsMacTerminalFooterScrape);
     assertTruthy(p.supportsFooterScrape);
+  });
+
+  it('Windows prefers the real Store Python executable over the python shim when available', () => {
+    const p = createPlatform({
+      platform: 'win32',
+      homedir: 'C:\\Users\\Ben',
+      env: { SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\Ben\\AppData\\Local' },
+      path: path.win32,
+      fs: {
+        readdirSync: () => [
+          { name: 'pythoncore-3.12-64', isDirectory: () => true },
+          { name: 'pythoncore-3.14-64', isDirectory: () => true },
+          { name: 'not-python', isDirectory: () => true },
+        ],
+        existsSync: (p) => /pythoncore-3\.14-64\\python\.exe$/.test(p) || /pythoncore-3\.12-64\\python\.exe$/.test(p),
+      },
+    });
+    assertEqual(p.pythonExe, 'C:\\Users\\Ben\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe');
   });
 
   it('macOS/Linux default to python3 and disable Windows-only helpers', () => {
@@ -19793,12 +21070,21 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
   });
 
   it('tt-doctor.sh runs end-to-end and exits cleanly with --no-net (smoke)', () => {
-    // Doesn't assert specific check outcomes (those depend on the
-    // runner's environment); just asserts the script doesn't crash
-    // mid-run and produces the summary line. Covers shell-syntax
-    // regressions like unbound-variable typos under set -u.
-    const r = spawnSync('bash', [path.join(__dirname, '..', 'scripts', 'tt-doctor.sh'), '--no-net'],
-      { encoding: 'utf8', timeout: 30000, env: { ...process.env, TERM: 'dumb' } });
+    // Pipe the script body into bash instead of passing a filesystem path.
+    // Windows machines can resolve `bash` to Git Bash, MSYS, or WSL; each maps
+    // `C:\...` differently. Feeding stdin avoids that platform split entirely
+    // while still exercising the script end-to-end.
+    const doctorPath = path.join(__dirname, '..', 'scripts', 'tt-doctor.sh');
+    const doctorBody = fs.readFileSync(doctorPath, 'utf8').replace(/\r/g, '');
+    const r = spawnSync('bash', process.platform === 'win32'
+      ? ['-s', '--', '--no-net']
+      : [doctorPath, '--no-net'],
+      {
+        encoding: 'utf8',
+        input: process.platform === 'win32' ? doctorBody : undefined,
+        timeout: 30000,
+        env: { ...process.env, TERM: 'dumb' },
+      });
     if (r.status === null) {
       throw new Error(`tt-doctor.sh did not return a status: ${r.error}`);
     }
@@ -19873,7 +21159,8 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
       'codex-on-tool.sh',
       'codex-post-tool.sh',
       'codex-stop.sh',
-      'codex_hooks',
+      "set_key(lines, 'features', 'hooks', 'true')",
+      "line.split('=', 1)[0].strip() != 'codex_hooks'",
       'terminal_title',
       'XDG_STATE_HOME',
       'XDG_DATA_HOME',

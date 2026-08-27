@@ -119,6 +119,7 @@
         staleCollapseMs = DEFAULT_STALE_MS,
         onTabSelect = null,
         onExpandChange = null,
+        onDeleteSession = null,
         nowProvider = () => Date.now(),
       } = deps;
       this._clipPaths = clipPaths;
@@ -128,6 +129,7 @@
       this._staleCollapseMs = staleCollapseMs;
       this._onTabSelect = onTabSelect;
       this._onExpandChange = onExpandChange;
+      this._onDeleteSession = onDeleteSession;
       this._nowProvider = nowProvider;
       this._pendingRaf = null;
       this.state = {
@@ -260,6 +262,27 @@
       tab.title = count > 0
         ? `${titleBase} — ${count} unplayed`
         : titleBase;
+
+      // Per-session bin in the tab corner. Not on [All] (that's what the
+      // toolbar bin is for). Soft-clears this session's clips (played or
+      // not) with the same undo window. role="button" span — not a nested
+      // <button> (invalid inside the tab <button>); stopPropagation so the
+      // click bins instead of selecting the tab.
+      if (id !== 'all' && this._onDeleteSession) {
+        const bin = document.createElement('span');
+        bin.className = 'tab-bin';
+        bin.setAttribute('role', 'button');
+        bin.setAttribute('tabindex', '0');
+        bin.setAttribute('aria-label', `Clear ${titleBase} clips`);
+        bin.title = `Clear all of ${titleBase}'s clips`;
+        bin.innerHTML = '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+        const fire = (ev) => { ev.stopPropagation(); ev.preventDefault(); this._onDeleteSession(id); };
+        bin.addEventListener('click', fire);
+        bin.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') fire(ev);
+        });
+        tab.appendChild(bin);
+      }
 
       tab.addEventListener('click', () => {
         if (this._onTabSelect) this._onTabSelect(id);

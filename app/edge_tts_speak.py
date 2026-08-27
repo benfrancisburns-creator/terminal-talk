@@ -7,6 +7,13 @@ websocket handshake bug that drops the initial TLS handshake.
 Retries up to EDGE_TTS_RETRIES times with short backoff; cleans up partial
 files on failure. `c.save(tmp)` is bounded by a 30 s wall-clock so a hung
 Microsoft server can't wedge the script forever.
+
+Input is plain text. We do NOT pass SSML through `edge_tts.Communicate`:
+the library XML-escapes its input and wraps it in its own `<speak>`
+envelope, so any caller-supplied SSML markup gets delivered as escaped
+text content and read aloud verbatim by the Azure endpoint. The
+pronunciation rewrites live in `narration_ssml.py` and produce plain
+text.
 """
 import asyncio
 import os
@@ -48,20 +55,9 @@ async def _try_synth_once(payload: str, voice: str, out_path: str) -> int:
     return 0
 
 
-def _strip_ssml(text: str) -> str:
-    """Remove all SSML tags from text — the fallback path when edge-tts
-    rejects an SSML payload. Inverse of narration_ssml.build()'s wrap."""
-    import re as _re
-    return _re.sub(r'<[^>]+>', '', text)
-
-
 async def synth(text: str, voice: str, out_path: str) -> int:
-    """Block B (#45): accept either plain text or pre-built SSML
-    (detected by leading `<speak`). On any synth failure we retry; on
-    persistent failure with SSML input, fall back to plain-text by
-    stripping every tag and trying once more — daemon-down ≠ broken
-    audio is the same principle as elsewhere in the pipeline."""
-    is_ssml = text.lstrip().startswith('<speak')
+    """Retry edge-tts up to EDGE_TTS_RETRIES times on transient
+    websocket/TLS wobbles. Returns 0 on success, 1 on final failure."""
     last_err = None
     for attempt in range(EDGE_TTS_RETRIES):
         try:
@@ -72,7 +68,6 @@ async def synth(text: str, voice: str, out_path: str) -> int:
             )
         except Exception as e:
             last_err = e
-        # Cleanup partial before the next attempt.
         try:
             if os.path.exists(out_path + '.partial'):
                 os.remove(out_path + '.partial')
@@ -80,26 +75,6 @@ async def synth(text: str, voice: str, out_path: str) -> int:
             pass  # cleanup best-effort — leftover .partial is handled by startup sweep
         await asyncio.sleep(0.3 + 0.2 * attempt)
 
-    # All retries failed. If we were running SSML, peel it back to
-    # plain text and try ONE more time before reporting silent failure.
-    if is_ssml:
-        plain = _strip_ssml(text).strip()
-        if plain:
-            print(
-                f'edge-tts: SSML attempts exhausted; retrying with plain text '
-                f'(last error: {type(last_err).__name__}: {last_err})',
-                file=sys.stderr,
-            )
-            try:
-                return await _try_synth_once(plain, voice, out_path)
-            except Exception as e:
-                last_err = e
-    try:
-        tmp = out_path + '.partial'
-        if os.path.exists(tmp):
-            os.remove(tmp)
-    except Exception:
-        pass  # cleanup best-effort — leftover .partial is handled by startup sweep
     print(
         f'edge-tts failed after {EDGE_TTS_RETRIES} attempts: '
         f'{type(last_err).__name__}: {last_err}',
@@ -120,8 +95,8 @@ def main() -> int:
     # renderer's diag trail captures garbled input before it turns into
     # mangled speech. U+FFFD is the replacement char `errors='replace'`
     # inserts; its presence means at least one byte was unrepresentable.
-    if '\ufffd' in decoded:
-        replaced = decoded.count('\ufffd')
+    if '�' in decoded:
+        replaced = decoded.count('�')
         print(
             f"edge_tts_speak: stdin had {replaced} non-UTF-8 byte(s) "
             f"replaced with U+FFFD (len={len(raw)})",

@@ -155,6 +155,11 @@ const { contextBridge, ipcRenderer } = require('electron');
  * @property {(cb: (clips: QueueClip[]) => void) => () => void} onQueueUpdated  Fires whenever the queue dir changes.
  * @property {(cb: (path: string) => void) => () => void} onPriorityPlay      A J-clip / priority queue entry should play next.
  * @property {(cb: (msg: ClipboardStatusMessage) => void) => () => void} onClipboardStatus  Highlight-to-speak result toast.
+ * @property {(opts?: {paste?: boolean, manualStop?: boolean, source?: string}) => Promise<{ok: boolean, error?: string}>} startDictation  Start one on-demand local Whisper dictation.
+ * @property {(reason?: string) => Promise<{ok: boolean, error?: string}>} stopDictation  Stop a manual or hands-free dictation.
+ * @property {() => Promise<Array<{path: string, text: string, mtime: number}>>} getDictations  Recent local dictation transcripts.
+ * @property {(path: string) => Promise<{ok: boolean, error?: string}>} deleteDictation  Delete one dictation transcript.
+ * @property {(cb: (msg: object) => void) => () => void} onDictationStatus  Dictation recording/transcribing/done/error updates.
  * @property {(cb: (listening: boolean) => void) => () => void} onListeningState  Wake-word listener on/off.
  * @property {(cb: () => void) => () => void} onForceExpand                 Renderer should leave collapsed mode now.
  * @property {(cb: (state: OrientationState) => void) => () => void} onSetOrientation  Bar dock/orientation changed.
@@ -193,6 +198,10 @@ const api = {
   // sidecars don't exist (older clips, ephemerals, etc.).
   readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
   deleteFile: (p, reason) => ipcRenderer.invoke('delete-file', p, reason),
+  // Batch delete (toolbar bin + per-session tab bins). One IPC for the whole
+  // set so the per-handler rate limiter can't silently drop a bulk clear.
+  // Returns { deleted, failed:[], rateLimited }.
+  deleteFiles: (paths, reason) => ipcRenderer.invoke('delete-files', paths, reason),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   // Phase 6 (#30): first-run-wizard deep-links into macOS System
   // Settings via x-apple.systempreferences:// URLs. Main-side handler
@@ -250,10 +259,19 @@ const api = {
   // so the renderer can read it on demand even if it loaded after the
   // initial push fired.
   getHotkeyRegistration: () => ipcRenderer.invoke('get-hotkey-registration'),
+  // Re-run global-shortcut registration on demand (Settings → Shortcuts
+  // "Re-register" button). Self-heals a transient startup collision without
+  // a full app restart. Returns the fresh { failed, at } status.
+  reregisterHotkeys: () => ipcRenderer.invoke('reregister-hotkeys'),
+  startDictation: (opts) => ipcRenderer.invoke('start-dictation', opts || {}),
+  stopDictation: (reason) => ipcRenderer.invoke('stop-dictation', reason || 'renderer'),
+  getDictations: (limit) => ipcRenderer.invoke('get-dictations', limit),
+  deleteDictation: (p) => ipcRenderer.invoke('delete-dictation', p),
   demoStartReady: () => ipcRenderer.invoke('demo-start-ready'),
   onQueueUpdated:        (cb) => subscribe('queue-updated',          cb, (p) => p),
   onPriorityPlay:        (cb) => subscribe('priority-play',          cb, (p) => p),
   onClipboardStatus:     (cb) => subscribe('clipboard-status',       cb, (m) => m),
+  onDictationStatus:     (cb) => subscribe('dictation-status',       cb, (m) => m),
   onListeningState:      (cb) => subscribe('listening-state',        cb, (on) => on),
   onForceExpand:         (cb) => subscribe('force-expand',           cb),
   onSetOrientation:      (cb) => subscribe('set-orientation',        cb, (p) => p),

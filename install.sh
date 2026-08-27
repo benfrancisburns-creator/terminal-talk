@@ -221,6 +221,19 @@ if [ "$install_python_deps" -eq 1 ]; then
     "$app_root/.venv/bin/python" -m pip install -r "$repo_root/requirements-mac.txt"
     say "   OK  macOS deps installed (Quartz / AppKit / Speech / CoreAudio / psutil)"
   fi
+  whisper_pkg_dir="$app_root/.codex-transcribe-pkgs"
+  mkdir -p "$whisper_pkg_dir"
+  if PYTHONPATH="$whisper_pkg_dir" "$app_root/.venv/bin/python" -c 'import whisper' >/dev/null 2>&1; then
+    rm -f "$tt_home/dictation-unavailable.flag"
+    say "   OK  local Whisper deps already installed"
+  elif "$app_root/.venv/bin/python" -m pip install --upgrade --target "$whisper_pkg_dir" openai-whisper; then
+    rm -f "$tt_home/dictation-unavailable.flag"
+    say "   OK  local Whisper dictation deps installed"
+  else
+    printf '%s\n' "Local Whisper dictation dependencies could not be installed." \
+      > "$tt_home/dictation-unavailable.flag"
+    say "   !!  Local Whisper dictation deps unavailable; toolbar install will continue"
+  fi
   export TT_PYTHON_EXE="$app_root/.venv/bin/python"
   printf 'TT_PYTHON_EXE=%s\n' "$(shell_quote "$TT_PYTHON_EXE")" >> "$env_path"
   say "   OK  Python core deps installed in $app_root/.venv"
