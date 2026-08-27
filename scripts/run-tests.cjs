@@ -11236,6 +11236,30 @@ describe('say(1) fallback honours configured voice (no male-voice leak on edge-t
   });
 });
 
+describe('Electron package and installer contract', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'package.json'), 'utf8'));
+  const installPs1 = fs.readFileSync(path.join(__dirname, '..', 'install.ps1'), 'utf8');
+  const installSh = fs.readFileSync(path.join(__dirname, '..', 'install.sh'), 'utf8');
+
+  it('keeps Electron and electron-builder in devDependencies for packaging', () => {
+    if (!pkg.devDependencies?.electron || !pkg.devDependencies?.['electron-builder']) {
+      throw new Error('Electron and electron-builder must both be app devDependencies');
+    }
+    if (pkg.dependencies?.electron) {
+      throw new Error('electron-builder requires Electron to be declared only in devDependencies');
+    }
+  });
+
+  it('production installers explicitly install the pinned Electron runtime', () => {
+    if (!installPs1.includes('devDependencies.electron') || !installPs1.includes('"electron@$electronVersion"')) {
+      throw new Error('install.ps1 must install the Electron version pinned in app/package.json');
+    }
+    if (!installSh.includes('devDependencies.electron') || !installSh.includes('"electron@$electron_version"')) {
+      throw new Error('install.sh must install the Electron version pinned in app/package.json');
+    }
+  });
+});
+
 describe('install.sh python resolution probes brew before falling back (#48)', () => {
   // Ben (2026-05-09): bash install.sh on a fresh-shell Mac bailed
   // out with "Python 3.10+ required; found 3.9.6" because /usr/bin

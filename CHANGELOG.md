@@ -27,6 +27,12 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **Electron security and packaging are current.** Updated Electron from
+  41.2.1 to 41.10.7 and electron-builder from 25.1.8 to 26.15.3, clearing
+  the app dependency audit. Electron remains a development dependency as
+  required by current electron-builder, while the Windows and POSIX
+  installers explicitly install the same pinned runtime without shipping
+  build tooling.
 - **Codex Desktop replies are spoken again after the 2026 rollout-schema
   change.** Terminal Talk now accepts assistant commentary/final text from
   current `response_item` message payloads as well as the legacy

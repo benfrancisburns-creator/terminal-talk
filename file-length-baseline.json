@@ -6,7 +6,7 @@
     "scripts/run-tests.cjs"
   ],
   "files": {
-    "scripts/run-tests.cjs": 21204,
+    "scripts/run-tests.cjs": 21228,
     "app/main.js": 2877,
     "app/renderer.js": 2792,
     "app/synth_turn.py": 2361,
