@@ -410,7 +410,7 @@ def clear_working(short: str, caller: str) -> int:
         flag.unlink()
         log(caller, f'working flag cleared for {short} elapsed={elapsed}s')
     except FileNotFoundError:
-        pass
+        pass  # Another hook may have cleared the same working flag first.
     return elapsed
 
 
