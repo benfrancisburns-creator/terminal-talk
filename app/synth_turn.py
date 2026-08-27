@@ -2016,6 +2016,17 @@ def _run_stream_mode(
 # Phase 0 of the v0.7 housekeeping pass.
 
 
+def _normalise_transcript_path(transcript_path: str) -> Path:
+    """Return a native Path, including MSYS-style Windows drive paths."""
+    transcript = Path(transcript_path)
+    if transcript.is_absolute() or not transcript_path.startswith('/'):
+        return transcript
+    match = re.match(r'/([a-zA-Z])/(.+)', transcript_path)
+    if not match:
+        return transcript
+    return Path(f'{match.group(1).upper()}:/{match.group(2)}')
+
+
 def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
         footer_phrase: str = '') -> int:
     """Returns exit code (0 on success, non-zero on unrecoverable error)."""
@@ -2032,12 +2043,8 @@ def run(session_id: str, transcript_path: str, mode: str, elapsed_sec: int = 0,
     # races are benign and other sessions shouldn't queue behind a sweep.
     _prune_queue_ttl()
 
-    transcript = Path(transcript_path)
     # Windows path normalisation (`/c/...` → `C:\\...`)
-    if not transcript.is_absolute() and transcript_path.startswith('/'):
-        m = re.match(r'/([a-zA-Z])/(.+)', transcript_path)
-        if m:
-            transcript = Path(f'{m.group(1).upper()}:/{m.group(2)}')
+    transcript = _normalise_transcript_path(transcript_path)
     if not transcript.exists():
         _log(f'transcript does not exist: {transcript}')
         return 2

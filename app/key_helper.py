@@ -424,7 +424,7 @@ def _log_cmd(cmd: str) -> None:
         if cmd == 'ctrlc':
             extra = f' fg_pid={get_foreground_pid()}'
     except Exception:
-        pass
+        pass  # Foreground-PID context is optional diagnostic enrichment.
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())

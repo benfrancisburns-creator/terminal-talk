@@ -18581,6 +18581,7 @@ describe('CODEX SESSION WATCHER', () => {
   const {
     parseSessionIdFromRolloutPath,
     extractCodexAgentMessageEvent,
+    extractCodexResponseItemMessageEvent,
     extractCodexSessionMetaEvent,
     extractCodexWorkingStateEvent,
     extractCodexToolCallEvent,
@@ -18670,6 +18671,54 @@ describe('CODEX SESSION WATCHER', () => {
       },
       'Codex final_answer lines must be spoken like final responses',
     );
+  });
+
+  it('extracts current Codex Desktop response_item commentary payloads', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-08-27T22:20:17.353Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: 'commentary',
+        content: [{ type: 'output_text', text: '  Tracing the live watcher now.  ' }],
+      },
+    });
+    assertDeepEqual(
+      extractCodexResponseItemMessageEvent(line),
+      {
+        timestamp: '2026-08-27T22:20:17.353Z',
+        phase: 'commentary',
+        message: 'Tracing the live watcher now.',
+      },
+      'Codex Desktop response_item messages should enter the speech queue',
+    );
+    assertEqual(extractCodexWorkingStateEvent(line), 'mark');
+  });
+
+  it('extracts current Codex Desktop final response_item payloads', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-08-27T22:22:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: 'final',
+        content: [
+          { type: 'output_text', text: 'First paragraph.' },
+          { type: 'output_text', text: 'Second paragraph.' },
+        ],
+      },
+    });
+    assertDeepEqual(
+      extractCodexResponseItemMessageEvent(line),
+      {
+        timestamp: '2026-08-27T22:22:00.000Z',
+        phase: 'final',
+        message: 'First paragraph.\nSecond paragraph.',
+      },
+    );
+    assertEqual(extractCodexWorkingStateEvent(line), 'clear');
   });
 
   it('chunks long Codex final answers into Edge-safe speech pieces', () => {

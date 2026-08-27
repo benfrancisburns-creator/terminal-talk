@@ -295,7 +295,7 @@ def compute_footer_clip_text(
                     scraped_secs = int(m.group(2) or 0) * 60 + int(m.group(3))
                     ratio = (
                         scraped_secs / chosen_elapsed
-                        if scraped_secs > 0 and chosen_elapsed > 0
+                        if scraped_secs > 0
                         else 0.0
                     )
                     # Field-observed ratios sit at 1.00-1.01; 0.85-1.20

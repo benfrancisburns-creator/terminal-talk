@@ -8,10 +8,11 @@
 
 const { spawnSync } = require('child_process');
 const fs   = require('fs');
+const os   = require('os');
 const path = require('path');
 
 const FRAMES  = Number(process.argv[2] || 90);
-const OUTFILE = process.argv[3] || '/tmp/mascot-preview.html';
+const OUTFILE = process.argv[3] || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-talk-mascot-')), 'preview.html');
 const FPS     = 30, ESC = String.fromCharCode(27);
 
 console.error(`Capturing ${FRAMES} frames @ ${FPS}fps from mascot-spin --walk ...`);

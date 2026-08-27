@@ -175,7 +175,7 @@ def _recognise_wav(Speech, NSURL, NSRunLoop, NSDate, wav_path: str) -> tuple[str
                     if confs:
                         state['confidence'] = sum(confs) / len(confs)
         except Exception:
-            pass
+            pass  # Partial recognition metadata is optional; final state still advances.
         if result.isFinal():
             state['done'] = True
 

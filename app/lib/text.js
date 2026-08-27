@@ -95,9 +95,7 @@ function stripForTTS(text, includes) {
           if (phrase) bodyParts.push(`Row ${idx + 1}: ${phrase}.`);
         });
         const omitted = rowCount - 5;
-        if (omitted > 0) {
-          bodyParts.push(`Rows 4 through ${rowCount - 2} omitted (${omitted} ${omitted === 1 ? 'row' : 'rows'}).`);
-        }
+        bodyParts.push(`Rows 4 through ${rowCount - 2} omitted (${omitted} rows).`);
         rows.slice(-2).forEach((cells, offset) => {
           const idx = rowCount - 1 + offset;
           const phrase = tableRowPhrase(headerCells, cells);

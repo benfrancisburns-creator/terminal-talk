@@ -331,7 +331,7 @@ function registerClaudeDesktopCodeSessions(opts = {}) {
       }
     }
 
-    const nowSec = Math.floor(activityMsForSession(data, meta && meta.mtimeMs, nowMs) / 1000) || Math.floor(Number(nowMs) / 1000);
+    const nowSec = Math.floor(activityMsForSession(data, meta && meta.mtimeMs) / 1000) || Math.floor(Number(nowMs) / 1000);
     if (applyClaudeDesktopSessionMetadata(entry, sessionId, data, nowSec)) changed = true;
     if (launchIntent) {
       if (launchIntent.index >= 0 && Number(entry.index) !== launchIntent.index) {

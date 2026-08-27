@@ -1302,7 +1302,9 @@ async function speakClipboard() {
   }, CLIPBOARD_BUSY_HARD_TIMEOUT_MS);
   sendClipboardStatus('synth');
   try {
-    let { captured, original } = await captureSelection();
+    const selection = await captureSelection();
+    let { captured } = selection;
+    const { original } = selection;
     if (!captured || !captured.trim()) {
       // Windows Terminal ignores injected copy chords entirely (verified
       // 2026-08-13: scan-coded SendInput, SendKeys and UIA GetSelection all

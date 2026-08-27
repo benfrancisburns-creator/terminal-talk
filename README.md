@@ -521,7 +521,7 @@ node terminal-talk/scripts/run-tests.cjs --verbose
 
 Coverage highlights:
 
-- **Codex integration** — native hook session binding, quiet colour/name title sync, rollout-file delta tracking, `agent_message` event extraction (commentary + final phases), provisional-to-real session rebinding for toolbar-created terminals, per-session promise tail chain ordering, signature dedup against rewrite-replay, registry-touch persistence.
+- **Codex integration** — native hook session binding, quiet colour/name title sync, rollout-file delta tracking, legacy `agent_message` and current `response_item` message extraction (commentary + final phases), provisional-to-real session rebinding for toolbar-created terminals, per-session promise tail chain ordering, signature dedup against rewrite-replay, registry-touch persistence.
 - **Desktop identity sync** — Codex Desktop and Claude Desktop title metadata writers, UIA live-rename helper coverage, registry preservation, and sync status plumbing.
 - **Tool narration** — flag-aware path capture (`ls -lat /path` doesn't capture `-lat`), echo-header peeling for `;` / `|` separators, batch-level dedup of identical phrases, enclosing-scope detection from structuredPatch + originalFile walk.
 - **Sanitiser** — GFM table summarisation in both Python and JS sanitisers, code-fence language detection, inline-code stripping, parity invariant between `synth_turn.py` and `app/lib/text.js`.

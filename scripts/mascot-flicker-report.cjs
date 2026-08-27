@@ -7,9 +7,10 @@
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-const OUTFILE = process.argv[2] || '/tmp/flicker-report.txt';
+const OUTFILE = process.argv[2] || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-talk-flicker-')), 'report.txt');
 const FPS = 30, ESC = String.fromCharCode(27);
 const NUM_FRAMES = 60;                     // 2 seconds of frames
 const INTERVAL_MS = Math.round(1000 / FPS);

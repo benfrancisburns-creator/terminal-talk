@@ -27,6 +27,17 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **Codex Desktop replies are spoken again after the 2026 rollout-schema
+  change.** Terminal Talk now accepts assistant commentary/final text from
+  current `response_item` message payloads as well as the legacy
+  `event_msg` / `agent_message` shape. Registration and working-state hooks
+  had continued to run, but the watcher silently ignored every assistant
+  message because its text had moved into `payload.content[]`.
+- **GitHub maintenance gates are green again.** Reconciled the file-length
+  ratchet with already-shipped source growth, removed the outstanding
+  ESLint warning, brought `synth_turn.run()` back under Ruff's complexity
+  limit, hardened docs `postMessage` listeners with same-origin checks,
+  and cleared actionable CodeQL findings in the affected helpers.
 - **Toolbar-off synthesis storm (2026-07-13 incident)**. With the
   toolbar closed, Claude/Codex hooks kept spawning Python + edge-tts
   and writing MP3s nobody could ever play — thousands of queue files
