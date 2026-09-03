@@ -23,5 +23,5 @@
 edge-tts==7.2.8
 openwakeword==0.6.0
 onnxruntime==1.26.0
-sounddevice==0.5.5
+sounddevice==0.5.6
 numpy==2.4.4
