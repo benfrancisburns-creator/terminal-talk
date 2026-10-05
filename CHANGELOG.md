@@ -75,6 +75,22 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **`install.ps1` no longer writes a UTF-8 BOM into config files.** Under
+  Windows PowerShell 5.1, `Set-Content -Encoding utf8` prepends a byte-order
+  mark, so the installer left `~/.claude/settings.json`, Codex's `hooks.json`
+  and `config.toml` starting with `EF BB BF`. Claude Code tolerates it, but
+  strict readers (Python `json`, `jq`, Codex's Rust parsers) do not. Every
+  config write now goes through a `Write-Utf8NoBom` helper, and a contract
+  test forbids `Set-Content`/`Out-File -Encoding utf8` in the installer.
+- **Flaky CI test "auto-registers Codex Desktop rollout sessions on the
+  first user prompt".** The Codex watcher treats a rollout whose creation
+  time is at or before its boot timestamp as pre-existing and skips its
+  content. File creation times come from the kernel's coarse clock and can
+  trail `Date.now()` (measured: 87 of 300 fresh files on a 1 ms timer; a
+  15.6 ms tick on GitHub's Windows runners), so a rollout written right
+  after the watcher was constructed was sometimes skipped. The test now pins
+  the watcher's boot clock 5 s in the past instead of hoping poll retries
+  outrun the clock.
 - **Installers actually install Electron again.** Since Electron moved to
   `app/package.json` devDependencies (`build: update Electron security
   dependencies`), `install.ps1` / `install.sh` ran `npm install --omit=dev

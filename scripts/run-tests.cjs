@@ -11274,6 +11274,27 @@ describe('Electron package and installer contract', () => {
       throw new Error('install.sh electron npm install must carry --omit=dev AND --save-prod');
     }
   });
+
+  it('install.ps1 writes every JSON/TOML config file without a UTF-8 BOM', () => {
+    // Hub 2026-10-06: right after `install.ps1 -Unattended`,
+    // ~/.claude/settings.json began with EF BB BF. Windows PowerShell 5.1's
+    // `Set-Content -Encoding utf8` always emits the BOM (PowerShell 7 does
+    // not). Claude Code tolerates it, but strict readers — Python's json,
+    // jq, Codex's Rust toml/serde parsers for config.toml and hooks.json —
+    // reject it. Every config write goes through Write-Utf8NoBom instead.
+    if (!/function Write-Utf8NoBom\b[\s\S]{0,600}UTF8Encoding\]::new\(\$false\)/.test(installPs1)) {
+      throw new Error('install.ps1 must define Write-Utf8NoBom on top of UTF8Encoding($false)');
+    }
+    const leaks = installPs1.split(/\r?\n/).filter((line) =>
+      /\b(Set-Content|Out-File)\b[^\n]*-Encoding\s+utf8/i.test(line) && !/^\s*#/.test(line));
+    if (leaks.length) {
+      throw new Error(`install.ps1 still writes with Set-Content/Out-File -Encoding utf8 (BOM on PS 5.1):\n${leaks.join('\n')}`);
+    }
+    for (const target of ['$claudeSettings', '$codexHooksJson', '$manifestPath', '$Path']) {
+      const re = new RegExp(`Write-Utf8NoBom -Path \\${target}\\b`);
+      if (!re.test(installPs1)) throw new Error(`install.ps1 must write ${target} via Write-Utf8NoBom`);
+    }
+  });
 });
 
 describe('install.sh python resolution probes brew before falling back (#48)', () => {
@@ -20187,6 +20208,7 @@ describe('CODEX TERMINAL IDENTITY', () => {
     const rollout = path.join(codexDir, `rollout-2026-05-03T20-41-24-${sessionId}.jsonl`);
     let assignments = {};
     const touched = [];
+    let bootOffsetMs = -5000;
     try {
       fs.mkdirSync(codexDir, { recursive: true });
       fs.mkdirSync(queueDir, { recursive: true });
@@ -20202,14 +20224,21 @@ describe('CODEX TERMINAL IDENTITY', () => {
         },
         callEdgeTTS: async () => {},
         onAssignmentTouched: (shortId) => touched.push(shortId),
-        // Retry every 100 ms — the initial _tick can miss the rollout
-        // file on slow Windows CI runners (D:\a\... drive) when the
-        // fs.statSync race makes the file briefly unreadable. Local
-        // runs hit it on the first tick but CI flaked several times
-        // until this poll cadence was lowered.
+        // The watcher stamps bootMs = now() in its constructor and treats a
+        // rollout whose birthtime is <= bootMs as pre-existing (offset =
+        // EOF, nothing replayed). File creation times come from the
+        // kernel's coarse clock and can TRAIL Date.now(): measured
+        // 2026-10-06 at 87/300 fresh files on a 1 ms timer, and a whole
+        // 15.6 ms tick on GitHub's Windows runners. A rollout written right
+        // after construction was therefore sometimes skipped — the real
+        // cause of this test's CI flakes (not an fs.statSync race). Pin
+        // boot 5 s in the past while constructing, then hand the watcher
+        // the real clock for everything that follows.
+        now: () => Date.now() + bootOffsetMs,
         pollIntervalMs: 100,
         diag: () => {},
       });
+      bootOffsetMs = 0;
       const longInstructions = 'x'.repeat(50000);
       fs.writeFileSync(rollout, [
         JSON.stringify({
@@ -20231,11 +20260,9 @@ describe('CODEX TERMINAL IDENTITY', () => {
         '',
       ].join('\n'), 'utf8');
       watcher.start();
-      // Poll deterministically — the watcher's file-watch event arrives
-      // within ~5 ms locally but slow CI runners (D:\a\... drive) can
-      // take 200-400 ms (sometimes more under contention). 80 ms / 2 s
-      // were flaky; 5 s gives ~50 watcher ticks (pollIntervalMs=100) to
-      // land before the test gives up.
+      // The first _tick runs synchronously inside start(); the loop only
+      // covers the async delivery hop. The deadline is generous so a slow
+      // runner never turns a real pass into a timeout.
       const deadline = Date.now() + 5000;
       while (!assignments['019def5c'] && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 25));

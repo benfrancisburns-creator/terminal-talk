@@ -91,6 +91,18 @@ function Write-Ok($msg) { Write-Host "   OK  $msg" -ForegroundColor Green }
 function Write-Warn2($msg) { Write-Host "   !!  $msg" -ForegroundColor Yellow }
 function Write-Fail($msg) { Write-Host "   ERR $msg" -ForegroundColor Red }
 
+# Windows PowerShell 5.1's `Set-Content -Encoding utf8` prepends a UTF-8 BOM
+# (PowerShell 7 does not). Strict JSON/TOML readers -- Codex's Rust parsers,
+# Python's json module, jq -- reject it, so every config file the installer
+# writes goes through here.
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)] [string]$Path,
+        [Parameter(Mandatory = $true)] [AllowEmptyString()] [string]$Content
+    )
+    [IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 function New-Shortcut {
     param(
         [Parameter(Mandatory = $true)] [string]$Path,
@@ -160,7 +172,7 @@ function Update-CodexConfigToml {
     $lines = @($lines | Where-Object { $_ -notmatch '^\s*codex_hooks\s*=' })
     $lines = Set-TomlSectionKey -Lines $lines -Section 'features' -Key 'hooks' -Value 'true'
     $lines = Set-TomlSectionKey -Lines $lines -Section 'tui' -Key 'terminal_title' -Value '[]'
-    Set-Content -Path $Path -Value $lines -Encoding utf8
+    Write-Utf8NoBom -Path $Path -Content (($lines -join [Environment]::NewLine) + [Environment]::NewLine)
 }
 
 function Set-CodexHookGroup {
@@ -278,7 +290,7 @@ foreach ($pattern in $patterns) {
 }
 $manifestPath = Join-Path $installDir 'manifest.json'
 $manifestJson = $manifest | ConvertTo-Json -Depth 5
-[IO.File]::WriteAllText($manifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
+Write-Utf8NoBom -Path $manifestPath -Content $manifestJson
 Write-Ok "Manifest: $manifestCount files SHA-256'd -> manifest.json"
 
 # D2 safeStorage sidecar hardening.
@@ -452,7 +464,7 @@ if ($hookResp -eq '' -or $hookResp -match '^[Yy]') {
                 timeout = 10
             })
         })
-        $settings | ConvertTo-Json -Depth 20 | Set-Content $claudeSettings -Encoding utf8
+        Write-Utf8NoBom -Path $claudeSettings -Content (($settings | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
         Write-Ok "Hooks registered (Stop, Notification, PreToolUse, UserPromptSubmit - settings.json backed up)"
     }
 } else {
@@ -473,7 +485,7 @@ if ($slResp -eq '' -or $slResp -match '^[Yy]') {
             type = 'command'
             command = $slCommand
         }) -Force
-        $settings | ConvertTo-Json -Depth 20 | Set-Content $claudeSettings -Encoding utf8
+        Write-Utf8NoBom -Path $claudeSettings -Content (($settings | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
         Write-Ok "Statusline registered -- restart Claude Code to see the emoji"
     }
 }
@@ -512,7 +524,7 @@ if ($codexResp -match '^[Yy]') {
     Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'PreToolUse' -Matcher '' -ScriptPath (Join-Path $hooksDir 'codex-on-tool.ps1') -Timeout 10
     Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'PostToolUse' -Matcher '' -ScriptPath (Join-Path $hooksDir 'codex-post-tool.ps1') -Timeout 10
     Set-CodexHookGroup -HooksRoot $codexHookRoot -Event 'Stop' -ScriptPath (Join-Path $hooksDir 'codex-stop.ps1') -Timeout 10
-    $codexHookRoot | ConvertTo-Json -Depth 20 | Set-Content $codexHooksJson -Encoding utf8
+    Write-Utf8NoBom -Path $codexHooksJson -Content (($codexHookRoot | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
     Write-Ok "Codex hooks registered (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop)"
     Write-Ok "Codex terminal_title emptied so Terminal Talk owns the tab title"
 } else {
