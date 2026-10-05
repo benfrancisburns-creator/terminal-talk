@@ -334,8 +334,14 @@ else { Write-Warn2 "Model download deferred to first use (first 'hey jarvis' may
 
 # 5. Node / Electron
 Write-Step "Installing Electron"
+$appPackage = Get-Content (Join-Path $appDir 'package.json') -Raw | ConvertFrom-Json
+$electronVersion = $appPackage.devDependencies.electron
+if (-not $electronVersion) {
+    Write-Fail "Electron version is missing from app/package.json devDependencies."
+    exit 1
+}
 Push-Location $appDir
-& npm install --omit=dev --silent --no-audit --no-fund 2>&1 | Out-Null
+& npm install --omit=dev --no-save --silent --no-audit --no-fund "electron@$electronVersion" 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Write-Fail "npm install failed."

@@ -80,7 +80,7 @@ def _read_palette() -> dict:
                 'VSPLIT_PARTNER': vsplit,
             }
     except Exception:
-        pass
+        pass  # Invalid user palette data falls back to the shipped palette.
     return _FALLBACK
 
 

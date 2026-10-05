@@ -50,10 +50,13 @@ function createSelectionCapture({
     // only if the clipboard still holds the text we captured. If the user
     // pressed Ctrl+C on something else in the 300 ms gap, their new copy
     // is on the board and we must not clobber it. Audit R11.
+    // Also restore when the board still holds OUR MARKER — the empty-capture
+    // path used to leave marker junk as the user's clipboard (captured=''
+    // never equals the marker, so restore was skipped; found 2026-08-13).
     setTimeout(() => {
       try {
         const current = clipboard.readText();
-        if (current === captured) {
+        if (current === captured || current === marker) {
           clipboard.writeText(original);
         } else {
           diag('captureSelection: clipboard changed mid-gap -- skipping restore');

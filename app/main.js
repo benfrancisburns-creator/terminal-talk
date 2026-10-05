@@ -1159,14 +1159,30 @@ async function speakClipboard() {
   }, CLIPBOARD_BUSY_HARD_TIMEOUT_MS);
   sendClipboardStatus('synth');
   try {
-    const { captured } = await captureSelection();
+    const selection = await captureSelection();
+    let { captured } = selection;
+    const { original } = selection;
     if (!captured || !captured.trim()) {
-      diag('speakClipboard: EMPTY capture, exit');
-      // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
-      // "hey jarvis") with nothing highlighted — silent failure today
-      // means they think the hotkey is broken. Toast tells them why.
-      sendClipboardStatus('empty');
-      return;
+      // Windows Terminal ignores injected copy chords entirely (verified
+      // 2026-08-13: scan-coded SendInput, SendKeys and UIA GetSelection all
+      // fail while injected plain typing passes) — so the Ctrl+C dance can
+      // never capture a WT selection. With WT's copyOnSelect enabled the
+      // user's highlight is ALREADY on the clipboard before we overwrite it
+      // with the marker; fall back to that pre-capture text. Opt out with
+      // playback.clipboard_fallback: false. Never fall back to a stale
+      // marker from a previous failed run.
+      const fallbackOn = !(CFG && CFG.playback && CFG.playback.clipboard_fallback === false);
+      if (fallbackOn && original && original.trim() && !original.startsWith('___TT_CLIP_MARKER___')) {
+        diag(`speakClipboard: empty capture -- falling back to pre-capture clipboard (len=${original.length})`);
+        captured = original;
+      } else {
+        diag('speakClipboard: EMPTY capture, exit');
+        // Surface to the renderer: the user pressed Ctrl+Shift+S (or said
+        // "hey jarvis") with nothing highlighted — silent failure today
+        // means they think the hotkey is broken. Toast tells them why.
+        sendClipboardStatus('empty');
+        return;
+      }
     }
     const text = stripForTTS(captured);
     diag(`speakClipboard: stripped len=${text.length} preview="${text.slice(0,80)}"`);
@@ -2096,6 +2112,41 @@ function killOrphanPythonProcs(scriptFragments = ORPHAN_PY_SCRIPTS) {
 // only covered wake-word-listener. New callers should use
 // killOrphanPythonProcs directly.
 function killOrphanVoiceListeners() { killOrphanPythonProcs(); }
+
+// Self-heal our OWN per-app mixer volume (Windows only). Seen 2026-08-15:
+// after a Windows Update reboot the toolbar ran, the OS default output was
+// fine and clips were logged as played, yet nothing was audible — the
+// Volume Mixer session for terminal-talk sat at 0 (not muted, volume 0).
+// Windows persists that slider per app path so it survives restarts and
+// recurs every few weeks. TT never writes it, so it can only be restored
+// from here. Runs at boot (delayed — the session only exists once the
+// renderer has opened an audio stream) and after every watchdog sweep.
+// Async execFile so a slow Add-Type compile can never stall the main
+// thread; one diag line per run, always. Opt out: cfg.playback.ensure_app_volume=false.
+const ENSURE_APP_VOLUME_SCRIPT = path.join(__dirname, 'ensure-app-volume.ps1');
+function ensureOwnAudioSessionVolume(reason = 'sweep') {
+  if (process.platform !== 'win32') return;
+  try {
+    const pb = (CFG && CFG.playback) || {};
+    if (pb.ensure_app_volume === false) return;
+    if (!fs.existsSync(ENSURE_APP_VOLUME_SCRIPT)) return;
+    const procName = path.basename(process.execPath, '.exe');
+    const { execFile } = require('child_process');
+    execFile(POWERSHELL_EXE, [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', ENSURE_APP_VOLUME_SCRIPT, '-ProcessName', procName,
+    ], { windowsHide: true, timeout: 20000, encoding: 'utf8' }, (err, stdout) => {
+      const line = String(stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+      if (err && !line) { diag(`ensure-app-volume (${reason}) failed: ${err.message}`); return; }
+      if (/^RESTORED/.test(line)) diag(`ensure-app-volume (${reason}) RESTORED — mixer session was silent: ${line}`);
+      else if (/^ERROR/.test(line)) diag(`ensure-app-volume (${reason}) ${line}`);
+      else if (/^NOSESSION/.test(line)) { /* no audio session yet — expected before first clip */ }
+      else if (reason !== 'sweep') diag(`ensure-app-volume (${reason}) ${line}`);
+    });
+  } catch (e) {
+    diag(`ensure-app-volume (${reason}) threw: ${e.message}`);
+  }
+}
 function stopVoiceListener() {
   if (voiceProc) {
     try { voiceProc.removeAllListeners('exit'); } catch {}
@@ -2263,14 +2314,17 @@ const _micWatcher = createMicWatcher({
 const startMicWatcher = _micWatcher.start;
 const stopMicWatcher = _micWatcher.stop;
 
-// Phase 11 (#35): long-lived synth daemon over Unix socket. POSIX-
-// only (Mac + Linux). Saves ~80 ms cold-start + imports per hook
-// fire — typical turn fires 6-12 times so 0.5-1 s of pure overhead.
-// posix_hooks.py:spawn_synth tries the socket first and falls
-// through to per-hook subprocess if it can't connect, so the
-// daemon being down never breaks audio.
+// Phase 11 (#35): long-lived synth daemon — all platforms since
+// 2026-07-13. Unix socket on POSIX; token-authenticated TCP loopback
+// (TT_HOME/synth-port.json) on Windows. Saves Python cold-start +
+// imports per hook fire — typical turn fires 6-12 times so 0.5-1 s+
+// of pure overhead, and the daemon's incremental transcript cache
+// stops long sessions re-parsing the whole JSONL each fire.
+// Dispatchers (posix_hooks.py / synth-dispatch.psm1 / synth-client.js)
+// try the daemon first and fall through to per-hook subprocess if
+// they can't connect, so the daemon being down never breaks audio.
 const _synthDaemon = createSynthDaemon({
-  enabled: !platform.isWindows,
+  enabled: true,
   pythonExe: PYTHON_EXE,
   appDir: __dirname,
   spawn,
@@ -2376,6 +2430,7 @@ const _watchdog = createWatchdog({
   ],
   postSweepFns: [
     { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
+    { name: 'ensureOwnAudioSessionVolume', fn: () => ensureOwnAudioSessionVolume('sweep') },
   ],
   // #6 G6 — emit per-sweep resource metrics so 24h-soak deltas can be
   // read straight off _watchdog.log instead of hand-gathered. RSS is
@@ -2533,6 +2588,9 @@ app.whenReady().then(() => {
   createWindow();
   startWatcher();
   startWatchdog();
+  // Mixer-session self-heal: first pass ~90s after boot (the session only
+  // exists once a clip has played), then every watchdog sweep.
+  setTimeout(() => ensureOwnAudioSessionVolume('boot'), 90 * 1000).unref();
   _transcriptWatcher.start();
   _codexSessionWatcher.start();
   _codexIdentitySync.start();

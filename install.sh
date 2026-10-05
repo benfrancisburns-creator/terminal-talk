@@ -244,8 +244,12 @@ fi
 
 step "Electron dependencies"
 if [ "$install_npm_deps" -eq 1 ]; then
-  (cd "$app_dir" && npm install --omit=dev --no-audit --no-fund)
-  say "   OK  runtime npm dependencies installed"
+  electron_version="$(node -e "process.stdout.write(require(process.argv[1]).devDependencies.electron || '')" "$app_dir/package.json")"
+  if [ -z "$electron_version" ]; then
+    die "Electron version is missing from app/package.json devDependencies."
+  fi
+  (cd "$app_dir" && npm install --omit=dev --no-save --no-audit --no-fund "electron@$electron_version")
+  say "   OK  Electron $electron_version installed"
 else
   say "   !!  Skipped npm install"
 fi

@@ -25,7 +25,7 @@
   "operatingSystem": "Windows 10, Windows 11, macOS",
   "url": "https://benfrancisburns-creator.github.io/terminal-talk/",
   "downloadUrl": "https://github.com/benfrancisburns-creator/terminal-talk/releases/latest",
-  "softwareVersion": "0.6.0",
+  "softwareVersion": "0.7.0",
   "license": "https://opensource.org/licenses/MIT",
   "offers": {
     "@type": "Offer",
@@ -1218,7 +1218,7 @@ async function copyInstallCommand(commandId, trigger) {
   };
 
   window.addEventListener('message', (event) => {
-    if (!event || !event.data || event.data.type !== 'terminal-talk-mascot-preview-done') return;
+    if (event.origin !== window.location.origin || !event.data || event.data.type !== 'terminal-talk-mascot-preview-done') return;
     revealHero();
   });
 
@@ -1662,37 +1662,6 @@ async function copyInstallCommand(commandId, trigger) {
     },
   };
 
-  const modes = {
-    toolbar: {
-      src: 'ui-kit/?seed=mixed-states&chrome=0&mockAudioMs=45000',
-      detail: details.dots,
-    },
-    settings: {
-      src: 'ui-kit/?seed=settings-panel-sessions-expanded&chrome=0&mockAudioMs=45000',
-      detail: details.settings,
-    },
-    transcript: {
-      src: 'ui-kit/?seed=tabs-active&chrome=0&mockAudioMs=45000',
-      detail: details.transcript,
-      afterLoad: (doc) => {
-        let tries = 0;
-        const openTranscript = () => {
-          const btn = doc.getElementById('transcriptToggle');
-          if (btn) {
-            btn.click();
-            return;
-          }
-          if (tries++ < 30) setTimeout(openTranscript, 100);
-        };
-        openTranscript();
-      },
-    },
-    collapsed: {
-      src: 'ui-kit/?seed=collapsed-signal&chrome=0&demoCollapsed=1&demoCollapsedPalette=16&mockAudioMs=45000',
-      detail: details.collapsed,
-    },
-  };
-
   function setDetail(detail) {
     if (!detail) return;
     if (title) title.textContent = detail.title || '';
@@ -1828,7 +1797,7 @@ async function copyInstallCommand(commandId, trigger) {
   setToolbarDemoHeight(TOOLBAR_HEIGHT_PANEL_OPEN);
   window.addEventListener('resize', updateToolbarDemoScale);
   window.addEventListener('message', (event) => {
-    if (!event || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
+    if (event.origin !== window.location.origin || !event.data || event.data.type !== 'terminal-talk-panel-open') return;
     setToolbarDemoHeight(event.data.open ? TOOLBAR_HEIGHT_PANEL_OPEN : TOOLBAR_HEIGHT_DEFAULT);
   });
   if (frame) frame.addEventListener('load', wireFrame);

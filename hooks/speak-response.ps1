@@ -236,6 +236,26 @@ function Invoke-TTS($text, $edgeVoice, $openAiVoice, $openAiInstructions, $baseP
     return $result
 }
 
+# --- Dispatch synthesis (2026-07-13, mirrors posix_hooks.spawn_synth) ---
+# 1. Toolbar-alive gate: no player means no synthesis. The registry +
+#    working-flag bookkeeping above has already run -- state stays
+#    correct, we only skip producing audio nobody can hear. (Incident:
+#    toolbar off, hooks synthesised thousands of clips + 90-99C CPU.)
+# 2. Long-lived daemon over TCP loopback -- skips Python cold-start.
+# 3. Streaming spawn, then the legacy inline path, as before. Missing
+#    synth-dispatch.psm1 (old install) degrades straight to (3).
+Import-Module (Join-Path $ttHome 'app\synth-dispatch.psm1') -Force -ErrorAction SilentlyContinue
+if ((Get-Command Test-ToolbarAlive -ErrorAction SilentlyContinue) -and -not (Test-ToolbarAlive)) {
+    Log "Stop: toolbar not running -- skipping synth for $sessionShort"
+    exit 0
+}
+if ((Get-Command Invoke-SynthDaemon -ErrorAction SilentlyContinue) -and `
+    (Invoke-SynthDaemon -SessionId $sessionId -Transcript $transcript -Mode 'on-stop' `
+                        -ElapsedSec $elapsedSec -FooterPhrase $footerPhrase)) {
+    Log "Stop: submitted synth via daemon for $sessionShort"
+    exit 0
+}
+
 # --- Streaming path (primary since v0.2): spawn synth_turn.py detached.
 # Gives parallel sentence synthesis, rolling in-order release, and
 # coordinates via sync state with the PreToolUse hook so nothing is

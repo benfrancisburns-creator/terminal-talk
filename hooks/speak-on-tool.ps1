@@ -130,7 +130,28 @@ try {
     }
 } catch {}
 
-# --- Spawn detached synth process ---
+# --- Dispatch synthesis ---
+# Order (2026-07-13, mirrors posix_hooks.spawn_synth):
+#   1. Toolbar-alive gate -- no player means no synthesis. Incident:
+#      toolbar off, hooks kept churning python + edge-tts + MP3s nobody
+#      could play, for hours, at 90-99C package temp.
+#   2. Long-lived daemon over TCP loopback (synth-dispatch.psm1) --
+#      skips Python cold-start per fire.
+#   3. Legacy detached python spawn. A missing/old synth-dispatch.psm1
+#      degrades straight to (3), so an out-of-date install never loses
+#      audio.
+Import-Module (Join-Path $ttHome 'app\synth-dispatch.psm1') -Force -ErrorAction SilentlyContinue
+if ((Get-Command Test-ToolbarAlive -ErrorAction SilentlyContinue) -and -not (Test-ToolbarAlive)) {
+    Log "toolbar not running -- skipping synth (on-tool) for $sessionShort"
+    exit 0
+}
+if ((Get-Command Invoke-SynthDaemon -ErrorAction SilentlyContinue) -and `
+    (Invoke-SynthDaemon -SessionId $sessionId -Transcript $transcript -Mode 'on-tool')) {
+    Log "submitted synth via daemon (on-tool) for $sessionShort"
+    exit 0
+}
+
+# --- Spawn detached synth process (fallback) ---
 # Start-Process returns immediately; the Python process runs in the background.
 # Claude Code is NOT blocked waiting for edge-tts.
 if (-not (Test-Path $synthScript)) {

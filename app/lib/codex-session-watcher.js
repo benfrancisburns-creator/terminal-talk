@@ -68,6 +68,33 @@ function extractCodexAgentMessageEvent(line) {
   };
 }
 
+function extractCodexResponseItemMessageEvent(line) {
+  if (!line || !line.trim()) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const payload = parsed.payload || {};
+  if (parsed.type !== 'response_item' || payload.type !== 'message' || payload.role !== 'assistant') {
+    return null;
+  }
+  const phase = SUPPORTED_PHASES.get(payload.phase);
+  if (!phase || !Array.isArray(payload.content)) return null;
+  const message = payload.content
+    .filter((item) => item && item.type === 'output_text' && typeof item.text === 'string')
+    .map((item) => item.text)
+    .join('\n')
+    .trim();
+  if (!message) return null;
+  return {
+    timestamp: parsed.timestamp || '',
+    phase,
+    message,
+  };
+}
+
 function extractCodexSessionMetaEvent(line) {
   if (!line || !line.trim()) return null;
   let parsed;
@@ -113,7 +140,7 @@ function isCodexDesktopSource(meta) {
 function extractCodexLineEvent(line) {
   const tool = extractCodexToolCallEvent(line);
   if (tool) return { kind: 'tool', event: tool };
-  const message = extractCodexAgentMessageEvent(line);
+  const message = extractCodexAgentMessageEvent(line) || extractCodexResponseItemMessageEvent(line);
   if (message) return { kind: 'message', event: message };
   return null;
 }
@@ -151,6 +178,12 @@ function extractCodexWorkingStateEvent(line) {
   }
   if (parsed.type === 'response_item') {
     if (payload.type === 'message' && payload.role === 'user') return 'mark';
+    if (payload.type === 'message' && payload.role === 'assistant' && payload.phase === 'commentary') return 'mark';
+    if (
+      payload.type === 'message'
+      && payload.role === 'assistant'
+      && (payload.phase === 'final' || payload.phase === 'final_answer')
+    ) return 'clear';
     if (payload.type === 'function_call' || payload.type === 'custom_tool_call' || payload.type === 'reasoning') {
       return 'mark';
     }
@@ -1069,6 +1102,7 @@ function createCodexSessionWatcher(opts = {}) {
 module.exports = {
   createCodexSessionWatcher,
   extractCodexAgentMessageEvent,
+  extractCodexResponseItemMessageEvent,
   extractCodexSessionMetaEvent,
   extractCodexWorkingStateEvent,
   extractCodexToolCallEvent,

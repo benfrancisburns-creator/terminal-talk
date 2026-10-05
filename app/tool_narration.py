@@ -335,7 +335,8 @@ def _clean_context_label(label: str) -> str:
     if not label:
         return ''
     s = str(label)
-    s = re.sub(r'<!--|-->|/\*+|\*/', ' ', s)
+    s = s.replace('<!--', ' ').replace('-->', ' ')
+    s = re.sub(r'/\*+|\*/', ' ', s)
     s = re.sub(r'[`*_#~|]+', ' ', s)
     s = re.sub(r'[-=]{2,}', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip(' .:-[](){}')
@@ -676,16 +677,16 @@ _BASH_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 # Patterns are checked in order; first match wins. Anchored to start of
 # the tail so a tail of `wc -l` matches but `xargs wc -l` doesn't.
 _PIPE_TAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r'^select-object\b(?=.*(?:^|\s)-Skip\s+(\d+))(?=.*(?:^|\s)-First\s+(\d+))', re.IGNORECASE),
+    (re.compile(r'^select-object\b(?=.*(?<!\S)-Skip\s+(\d+))(?=.*(?<!\S)-First\s+(\d+))', re.IGNORECASE),
                                                        r'and taking \2 after line \1'),
-    (re.compile(r'^select-object\b(?=.*(?:^|\s)-First\s+(\d+))', re.IGNORECASE),
+    (re.compile(r'^select-object\b(?=.*(?<!\S)-First\s+(\d+))', re.IGNORECASE),
                                                        r'and taking the first \1'),
-    (re.compile(r'^select-object\b(?=.*(?:^|\s)-Last\s+(\d+))', re.IGNORECASE),
+    (re.compile(r'^select-object\b(?=.*(?<!\S)-Last\s+(\d+))', re.IGNORECASE),
                                                        r'and taking the last \1'),
-    (re.compile(r'^measure-object\b(?=.*(?:^|\s)-Line\b)', re.IGNORECASE),
+    (re.compile(r'^measure-object\b(?=.*(?<!\S)-Line\b)', re.IGNORECASE),
                                                        'and counting lines'),
     (re.compile(r'^measure-object\b', re.IGNORECASE), 'and counting results'),
-    (re.compile(r'^select-string\b(?=.*(?:^|\s)-Pattern\s+([^\s|;]+))', re.IGNORECASE),
+    (re.compile(r'^select-string\b(?=.*(?<!\S)-Pattern\s+([^\s|;]+))', re.IGNORECASE),
                                                        r'and filtering for \1'),
     (re.compile(r'^select-string\s+([^\s|;]+)', re.IGNORECASE),
                                                        r'and filtering for \1'),

@@ -716,7 +716,9 @@ function naturaliseIdentifier(name) {
 
 function cleanContextLabel(label) {
   let text = String(label || '')
-    .replace(/<!--|-->|\/\*+|\*\//g, ' ')
+    .replaceAll('<!--', ' ')
+    .replaceAll('-->', ' ')
+    .replace(/\/\*+|\*\//g, ' ')
     .replace(/[`*_#~|]+/g, ' ')
     .replace(/[-=]{2,}/g, ' ')
     .replace(/\s+/g, ' ')
@@ -834,7 +836,7 @@ function extractPatchScope(lines) {
 function analysePatch(patch) {
   const files = [];
   let current = null;
-  for (const line of String(patch || '').split(/\r?\n/)) {
+  for (const line of String(patch).split(/\r?\n/)) {
     const fileMatch = line.match(/^\*\*\* (Update|Add|Delete) File:\s+(.+)$/);
     if (fileMatch) {
       current = {

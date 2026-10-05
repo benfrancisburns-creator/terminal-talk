@@ -14,11 +14,9 @@
     "build:mac": "electron-builder --mac --arm64 --x64"
   },
   "license": "MIT",
-  "dependencies": {
-    "electron": "41.2.1"
-  },
   "devDependencies": {
-    "electron-builder": "^25.1.8"
+    "electron": "41.10.7",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.benfrancisburns.terminal-talk",

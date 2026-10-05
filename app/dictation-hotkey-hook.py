@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import ctypes.wintypes as wintypes
 import sys
-from ctypes import wintypes
 
 KEYS = {
     "CONTROL": 0x11, "CTRL": 0x11, "SHIFT": 0x10, "ALT": 0x12,

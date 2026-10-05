@@ -1,18 +1,22 @@
 'use strict';
 
 // Phase 11 (#35) lifecycle manager for app/synth_daemon.py — the
-// long-lived synth dispatcher that lets posix_hooks.spawn_synth go
-// over a Unix socket instead of paying the Python cold-start tax on
+// long-lived synth dispatcher that lets hook/watcher dispatchers go
+// over a socket instead of paying the Python cold-start tax on
 // every hook fire.
 //
-// POSIX-only by construction (Unix domain socket). Windows still uses
-// the existing per-hook PowerShell + Popen pipeline.
+// Cross-platform since 2026-07-13: Unix domain socket on POSIX,
+// token-authenticated TCP loopback (TT_HOME/synth-port.json) on
+// Windows. Clients: posix_hooks.py (POSIX hooks), synth-dispatch.psm1
+// (Windows hooks), lib/synth-client.js (in-app transcript watcher).
 //
 // Watchdog pattern: spawn the daemon at toolbar boot; on unexpected
-// exit, restart after a 2 s backoff. Hard-kill on app quit. The
-// posix_hooks.py side falls back to per-hook Popen if the socket
-// isn't available, so a daemon-down period degrades gracefully —
-// audio still gets generated, just at the old (~80 ms/spawn) cost.
+// exit, restart after a 2 s backoff. Hard-kill on app quit (on
+// Windows that skips the daemon's signal handler — clients treat a
+// connect-refused port file as daemon-down and boot atomically
+// overwrites it). Every client falls back to per-hook Popen if the
+// socket isn't available, so a daemon-down period degrades gracefully —
+// audio still gets generated, just at the old per-spawn cost.
 //
 // Factory pattern matching the rest of app/lib/*-watcher.js: caller
 // injects spawn / pythonExe / appDir / getWin / diag.

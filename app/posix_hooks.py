@@ -69,7 +69,7 @@ def log(caller: str, message: str) -> None:
         with LOG_PATH.open('a', encoding='utf-8') as f:
             f.write(f'{stamp} [{caller}] {message}\n')
     except Exception:
-        pass
+        pass  # Hook logging is best-effort and must never block Claude/Codex.
 
 
 def read_payload() -> dict[str, Any] | None:
@@ -405,12 +405,12 @@ def clear_working(short: str, caller: str) -> int:
         if started > 0:
             elapsed = max(0, epoch() - started)
     except Exception:
-        pass
+        pass  # A missing or malformed timestamp simply means zero elapsed time.
     try:
         flag.unlink()
         log(caller, f'working flag cleared for {short} elapsed={elapsed}s')
     except FileNotFoundError:
-        pass
+        pass  # Another hook may have cleared the same working flag first.
     return elapsed
 
 
