@@ -978,14 +978,19 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   },
   onPlayNextPending: () => drainAutoplayQueue(),
   onRenderDots: () => renderDots(),
-  // Session recap ended (exhausted / cancelled / user clicked elsewhere):
-  // staged `-R-` copies that never played are replays, not content — let
-  // auto-prune sweep them like played clips. Live clips stay put.
-  onRecapEnd: ({ remaining }) => {
-    for (const p of remaining || []) {
+  // Session recap ended (exhausted / cancelled / user clicked elsewhere /
+  // replaced): staged `-R-` copies that never played — and the one that
+  // was cut off mid-play — are replays, not content, so let auto-prune
+  // sweep them like played clips. Live clips stay put. Anything the
+  // replacing playlist (`next`) re-uses is left alone.
+  onRecapEnd: ({ remaining, current, next }) => {
+    const keep = new Set(Array.isArray(next) ? next : []);
+    for (const p of [...(remaining || []), current]) {
+      if (!p || keep.has(p)) continue;
       if (isRecapClip(p.split(/[\\/]/).pop())) scheduleAutoDelete(p, true);
     }
   },
+  hasPriorityPending: () => priorityQueue.length > 0,
 });
 audioPlayer.mount();
 
@@ -1008,9 +1013,14 @@ const recapController = (recapMenu && window.TT_RECAP_CONTROLLER)
       menu: recapMenu,
       getQueue: () => queue,
       addToQueue: (entry) => { queue.unshift(entry); },
-      markStaged: (p) => {
-        playedPaths.add(p);
-        heardPaths.add(p);
+      markStaged: (p, { live } = {}) => {
+        // Staged `-R-` copies are pre-marked played/heard so no arrival scan
+        // ever auto-queues them; live clips keep their real state so an
+        // unplayed one still auto-plays if the recap ends before it.
+        if (!live) {
+          playedPaths.add(p);
+          heardPaths.add(p);
+        }
         recapPaths.add(p);
         pendingQueue = pendingQueue.filter((x) => x !== p);
         cancelAutoDelete(p);
@@ -1035,7 +1045,7 @@ const recapController = (recapMenu && window.TT_RECAP_CONTROLLER)
         await _finaliseClear();
       },
       setStaging: (on) => { recapStaging = !!on; },
-      unmarkPlayed: (p) => { playedPaths.delete(p); },
+      unmarkPlayed: (p) => { if (!recapPaths.has(p)) playedPaths.delete(p); },
     })
   : null;
 
@@ -1563,7 +1573,10 @@ window.api.onQueueUpdated((payload) => {
   const cur = audioPlayer.getCurrentPath();
   if (cur && isPathSessionMuted(cur)) {
     audioPlayer.abort();
-    playedPaths.delete(cur);
+    // A staged `-R-` replay must not come back as "unplayed" after an
+    // unmute — prune it like any other abandoned recap copy.
+    if (isRecapClip(cur.split(/[\\/]/).pop())) scheduleAutoDelete(cur, true);
+    else playedPaths.delete(cur);
   }
   renderDots();
 

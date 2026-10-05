@@ -42,7 +42,7 @@
     menu = null,               // RecapMenu instance (optional in tests)
     getQueue = () => [],       // renderer's live queue array
     addToQueue = () => {},     // ({ path, mtime }) => void — insert newest-first
-    markStaged = () => {},     // (path) => void — played + heard + recap sets
+    markStaged = () => {},     // (path, { live }) => void — recap set (+ played/heard for staged copies)
     renderDots = () => {},
     showToast = () => {},      // (text, ms, variant) => void
     getSessionLabel = (short) => short,
@@ -125,18 +125,23 @@
           if (!queue.some((f) => f.path === clip.path)) {
             addToQueue({ path: clip.path, mtime: Number(clip.mtime) || Date.now() });
           }
-          markStaged(clip.path);
+          // Live clips keep their own played/heard state: if the recap ends
+          // early an unplayed one must still auto-play later.
+          markStaged(clip.path, { live: !!clip.live });
         }
         renderDots();
         const paths = clips.map((c) => c.path);
         const cutOff = typeof audioPlayer.getCurrentPath === 'function' ? audioPlayer.getCurrentPath() : null;
         const cutOffManual = typeof audioPlayer.isCurrentManual === 'function' ? audioPlayer.isCurrentManual() : true;
+        const cutOffWasRecap = typeof audioPlayer.isRecapActive === 'function' ? audioPlayer.isRecapActive() : false;
         const started = audioPlayer.startRecap(paths);
         if (!started) {
           showToast('Recap clips are queued but playback could not start.', 5000, 'warning');
           return 0;
         }
-        if (cutOff && !cutOffManual && !paths.includes(cutOff)) {
+        // Only a plain auto-played clip is re-queued; a recap clip that was
+        // cut off belongs to the replaced playlist and is pruned instead.
+        if (cutOff && !cutOffManual && !cutOffWasRecap && !paths.includes(cutOff)) {
           try { unmarkPlayed(cutOff); } catch {}
         }
         let totalSec = 0;

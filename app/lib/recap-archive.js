@@ -248,7 +248,18 @@ function createRecapArchive({
     try {
       fs.renameSync(filePath, dest);
     } catch (e) {
-      if (e && e.code === 'ENOENT') return { action: 'missing', staged: false, name };
+      // ENOENT is ambiguous: the SOURCE may be gone (fine — already
+      // deleted), or the recap dir may be unusable (mkdir failed above,
+      // or `recap` is a stray file). Only report 'missing' when the clip
+      // really is gone; otherwise honour the delete with a plain unlink
+      // so the renderer never sees "true" while the file is still on disk
+      // (it would reload and replay on the next scan). Locks (EBUSY /
+      // EPERM) still throw so the renderer's retry ladder runs.
+      if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) {
+        if (!fs.existsSync(filePath)) return { action: 'missing', staged: false, name };
+        diag(`recap: archive dir unusable (${e.code}) — deleting ${name} instead`);
+        return { action: unlinkIfPresent(filePath), staged: false, name, degraded: true };
+      }
       if (e && e.code === 'EXDEV') {
         fs.copyFileSync(filePath, dest);
         fs.unlinkSync(filePath);
@@ -482,11 +493,13 @@ function createRecapArchive({
     let bytes = 0;
     for (const s of survivors) {
       const n = (perSession.get(s.short) || 0) + 1;
-      perSession.set(s.short, n);
       if (n > maxPerSession || total >= maxTotal || bytes + s.size > maxTotalBytes) {
         try { fs.unlinkSync(s.full); result.removed++; } catch {}
         continue;
       }
+      // Only clips actually kept consume a per-session slot — a big clip
+      // evicted by the byte cap must not push a smaller one that fits out.
+      perSession.set(s.short, n);
       total++;
       bytes += s.size;
       keepSet.add(s.name);

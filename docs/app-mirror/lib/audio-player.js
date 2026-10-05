@@ -69,10 +69,15 @@
         onPlayNextPending = () => {},
         onRenderDots = () => {},
         // Session recap: fired whenever the playlist ends, with the paths
-        // that were still unplayed ({ remaining, reason }). The renderer
-        // prunes leftover staged copies so a cancelled recap doesn't leave
-        // replay dots lying around.
+        // that were still unplayed plus the clip that was playing
+        // ({ remaining, current, next, reason }). The renderer prunes
+        // leftover staged copies so a cancelled recap doesn't leave replay
+        // dots lying around (`next` = the replacing playlist, if any).
         onRecapEnd = () => {},
+        // Session recap: does the renderer hold a priority (J) clip that
+        // has not played yet? Checked before every recap advance so a
+        // second highlight-to-speak chunk is never starved by the playlist.
+        hasPriorityPending = () => false,
 
         // AudioContext factory — injectable for pause-tone tests.
         audioContextFactory = null,
@@ -114,6 +119,7 @@
       this._onPlayNextPending = onPlayNextPending;
       this._onRenderDots = onRenderDots;
       this._onRecapEnd = onRecapEnd;
+      this._hasPriorityPending = hasPriorityPending;
       this._audioContextFactory = audioContextFactory || (() => {
         const Ctor = (typeof window !== 'undefined')
           && (window.AudioContext || window.webkitAudioContext);
@@ -305,7 +311,7 @@
           this._currentIsManual = false;
           this._currentIsUserClick = false;
           try { this._onPlaybackStop(p, { reason: 'play-rejected' }); } catch {}
-          if (this._advanceRecap()) return;
+          if (this._continueRecap(false)) return;
           try { this._onPlayNextPending(); } catch {}
         }
       };
@@ -331,8 +337,7 @@
     skipCurrent() {
       if (!this._recap) { this.abort(); return; }
       this._abortCurrent('skip');
-      if (this._advanceRecap()) return;
-      this._onPlayNextPending();
+      this._continueRecap(true);
     }
 
     _abortCurrent(reason) {
@@ -449,6 +454,16 @@
       const list = (Array.isArray(paths) ? paths : [])
         .filter((p) => typeof p === 'string' && queue.some((f) => f.path === p));
       if (!list.length) return false;
+      // A second recap while one is running replaces it. Report the
+      // superseded remainder (minus anything the new playlist re-uses) so
+      // the renderer can prune those staged copies — without the filter
+      // the renderer would schedule deletes for clips we are about to play.
+      if (this._recap) {
+        const superseded = this._recap.filter((p) => !list.includes(p));
+        const current = this._currentPath;
+        this._recap = null;
+        try { this._onRecapEnd({ remaining: superseded, current, next: list.slice(), reason: 'replaced' }); } catch {}
+      }
       this._recap = list.slice(1);
       if (this._currentPath) this._abortCurrent('recap');
       if (this.playPath(list[0], false, true)) return true;
@@ -466,7 +481,24 @@
       const remaining = this._recap;
       this._recap = null;
       if (!remaining) return;
-      try { this._onRecapEnd({ remaining: remaining.slice(), reason }); } catch {}
+      try {
+        this._onRecapEnd({ remaining: remaining.slice(), current: this._currentPath, next: null, reason });
+      } catch {}
+    }
+
+    // Shared "what plays now that the current clip stopped" rule for the
+    // recap. Priority (J) clips always win: if the renderer holds one, hand
+    // the turn to playNextPending (the playlist stays intact and resumes
+    // after). Otherwise walk the playlist; when it is exhausted hand off to
+    // playNextPending too. Returns false only when no recap was involved.
+    _continueRecap(recapWasActive) {
+      if (this._recap && this._hasPriorityPending()) {
+        this._onPlayNextPending();
+        return true;
+      }
+      if (this._advanceRecap()) return true;
+      if (recapWasActive) { this._onPlayNextPending(); return true; }
+      return false;
     }
 
     // Play the next recap clip that is still in the queue. Returns true
@@ -619,7 +651,7 @@
         this._onRenderDots();
         this._updateScrubberMode();
         try { this._onPlaybackStop(p, { reason: 'play-start-timeout' }); } catch {}
-        if (this._advanceRecap()) return;
+        if (this._continueRecap(false)) return;
         try { this._onPlayNextPending(); } catch {}
       }, PLAY_START_TIMEOUT_MS);
       if (typeof this._playStartTimer.unref === 'function') this._playStartTimer.unref();
@@ -656,9 +688,7 @@
         // forward-in-time continuation below: the staged copies carry
         // fresh mtimes, so "everything newer than the clip that just ended"
         // would replay the whole recap a second time.
-        const recapWasActive = this._recap !== null;
-        if (this._advanceRecap()) return;
-        if (recapWasActive) { this._onPlayNextPending(); return; }
+        if (this._continueRecap(this._recap !== null)) return;
 
         // v0.3.6 — user-click continuation. When a clip started by a
         // user click ends, and auto_continue_after_click is on, play
@@ -732,7 +762,7 @@
         this._onRenderDots();
         this._updateScrubberMode();
         if (failed) this._onPlaybackStop(failed, { reason: 'error' });
-        if (this._advanceRecap()) return;
+        if (failed && this._continueRecap(false)) return;
         this._onPlayNextPending();
       });
     }
@@ -775,7 +805,7 @@
           if (p) this._markPlayed(p);  // don't loop on the same broken clip
           this._onRenderDots();
           if (p) this._onPlaybackStop(p, { reason: 'stall' });
-          if (this._advanceRecap()) return;
+          if (p && this._continueRecap(false)) return;
           this._onPlayNextPending();
         }
       }, STALL_RECOVERY_MS);

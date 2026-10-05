@@ -327,8 +327,17 @@
       const { recapKeepMin } = this._el;
       if (!recapKeepMin) return;
       this._on(recapKeepMin, 'change', async () => {
-        const raw = Number(recapKeepMin.value);
-        const n = Math.max(0, Math.min(1440, Math.floor(Number.isFinite(raw) ? raw : 120)));
+        // An emptied / non-numeric field is "no change", NOT 0 — 0 is the
+        // explicit "archive off" value and the next sweep would wipe every
+        // archived clip. Put the last good value back and bail.
+        const text = String(recapKeepMin.value == null ? '' : recapKeepMin.value).trim();
+        const raw = Number(text);
+        if (text === '' || !Number.isFinite(raw)) {
+          recapKeepMin.value = String(Number.isFinite(this._recapKeepLast) ? this._recapKeepLast : 120);
+          return;
+        }
+        const n = Math.max(0, Math.min(1440, Math.floor(raw)));
+        this._recapKeepLast = n;
         recapKeepMin.value = String(n);  // clamp display too
         if (typeof window !== 'undefined' && window.TT_CONFIG_SNAPSHOT && window.TT_CONFIG_SNAPSHOT.playback) {
           window.TT_CONFIG_SNAPSHOT.playback.recap_keep_min = n;
@@ -931,7 +940,9 @@
       const { recapKeepMin } = this._el;
       if (!recapKeepMin) return;
       const raw = Number(cfg.playback && cfg.playback.recap_keep_min);
-      recapKeepMin.value = String(Number.isFinite(raw) ? Math.max(0, Math.min(1440, Math.floor(raw))) : 120);
+      const n = Number.isFinite(raw) ? Math.max(0, Math.min(1440, Math.floor(raw))) : 120;
+      this._recapKeepLast = n;
+      recapKeepMin.value = String(n);
     }
 
     _populateAutoContinue(cfg) {

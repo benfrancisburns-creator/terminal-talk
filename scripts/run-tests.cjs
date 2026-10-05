@@ -21350,6 +21350,31 @@ describe('SESSION RECAP — archive (app/lib/recap-archive.js)', () => {
     t.cleanup();
   });
 
+  it('an unusable recap dir degrades to a plain delete instead of reporting a clip missing', () => {
+    const t = setup();
+    fs.writeFileSync(t.arc.recapDir, 'not a directory');   // `recap` is a stray FILE
+    const p = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(1), 500);
+    const r = t.arc.archiveOrUnlink(p, { reason: 'played-auto-prune' });
+    assertEqual(r.action, 'unlinked');
+    assertTruthy(r.degraded, 'flagged as degraded');
+    assertFalsy(fs.existsSync(p), 'the clip must not survive a "successful" delete');
+    assertEqual(t.arc.archiveOrUnlink(p, { reason: 'played-auto-prune' }).action, 'missing', 'a really-gone clip still reports missing');
+    t.cleanup();
+  });
+
+  it('prune per-session slots are only consumed by kept clips', () => {
+    const t = setup();
+    const arc = createRecapArchive({ queueDir: t.dir, now: () => t.clock.now, getKeepMs: () => 3600000, maxPerSession: 2, maxTotal: 50, maxTotalBytes: 6000 * 25 });
+    const big = t.put(`20261005T100000030-0003-${S}.mp3`, mp3(40), 10);    // 240 KB, newest -> over the byte budget
+    const s1 = t.put(`20261005T100000020-0002-${S}.mp3`, mp3(5), 20);
+    const s2 = t.put(`20261005T100000010-0001-${S}.mp3`, mp3(5), 30);
+    for (const p of [big, s1, s2]) arc.archiveOrUnlink(p, { reason: 'played-auto-prune' });
+    const r = arc.prune();
+    assertEqual(r.removed, 1, 'only the oversized newest clip goes');
+    assertEqual(r.kept, 2, 'both small clips stay — the evicted one did not eat a per-session slot');
+    t.cleanup();
+  });
+
   it('prune enforces the byte cap newest-first', () => {
     const t = setup({ keepMs: 60 * 60 * 1000, maxPerSession: 50, maxTotal: 50 });
     const arc = createRecapArchive({ queueDir: t.dir, now: () => t.clock.now, getKeepMs: () => 3600000, maxTotalBytes: 6000 * 25 });
@@ -21668,6 +21693,7 @@ describe('SESSION RECAP — AudioPlayer playlist', () => {
       onPlayNextPending: () => { calls.playNext++; },
       onRenderDots() {},
       onRecapEnd: (info) => calls.recapEnd.push(info),
+      hasPriorityPending: overrides.hasPriorityPending || (() => false),
       audioContextFactory: () => null,
     });
     player.mount();
@@ -21748,6 +21774,52 @@ describe('SESSION RECAP — AudioPlayer playlist', () => {
     assertEqual(player.getCurrentPath(), null, 'right-click delete of the last playing clip ends the recap');
     assertEqual(calls.playNext, 1, 'skip past the end hands off to playNextPending');
     assertFalsy(player.isRecapActive());
+    player.unmount();
+  });
+
+  it('a pending priority J clip is drained before the playlist resumes, and the playlist survives it', () => {
+    const J = '/q/20261005T250000000-clip-abcdef12-01.mp3';
+    const queue = baseQueue().concat([{ path: J, mtime: 5000 }]);
+    let priorityPending = false;
+    const { player, audio, calls } = makePlayer(queue, { hasPriorityPending: () => priorityPending });
+    player.startRecap([R1, R2]);
+    // J1 arrives: cuts R1 off; J2 arrives while J1 plays and waits in priorityQueue.
+    player.abortIfAutoPlayed();
+    player.playPath(J, true, false);
+    priorityPending = true;
+    audio.fire('ended');   // J1 ends -> renderer must get the turn for J2, NOT the recap
+    assertEqual(calls.playNext, 1, 'playNextPending drains the pending J clip first');
+    assertEqual(player.getCurrentPath(), null);
+    assertTruthy(player.isRecapActive(), 'playlist intact');
+    assertDeepEqual(player.recapRemaining(), [R1, R2]);
+    priorityPending = false;
+    player.playPath(J, true, false);   // J2 plays
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), R1, 'recap resumes once no priority clip is pending');
+    player.unmount();
+  });
+
+  it('cancelling reports the cut-off current clip so the renderer can prune it', () => {
+    const { player, calls } = makePlayer(baseQueue());
+    player.startRecap([R1, R2]);
+    player.stop();
+    assertEqual(calls.recapEnd[0].current, R1);
+    assertDeepEqual(calls.recapEnd[0].remaining, [R2]);
+    assertEqual(calls.recapEnd[0].next, null);
+    player.unmount();
+  });
+
+  it('a second startRecap replaces the first and reports only the superseded, non-overlapping remainder', () => {
+    const { player, calls } = makePlayer(baseQueue());
+    player.startRecap([R1, R2, LIVE]);
+    assertTruthy(player.startRecap([R2, NEWER]));
+    assertEqual(calls.recapEnd.length, 1);
+    assertEqual(calls.recapEnd[0].reason, 'replaced');
+    assertDeepEqual(calls.recapEnd[0].remaining, [LIVE], 'R2 is re-used by the new playlist, so it is not reported');
+    assertEqual(calls.recapEnd[0].current, R1, 'the cut-off clip is reported');
+    assertDeepEqual(calls.recapEnd[0].next, [R2, NEWER], 'the replacing playlist is reported so the renderer keeps those');
+    assertEqual(player.getCurrentPath(), R2);
+    assertDeepEqual(player.recapRemaining(), [NEWER]);
     player.unmount();
   });
 
@@ -21933,7 +22005,7 @@ describe('SESSION RECAP — tab control, chooser and controller', () => {
     const ctl = createRecapController({
       api, audioPlayer: { startRecap: (paths) => { calls.started.push(paths); return true; } },
       getQueue: () => queue, addToQueue: (e) => { queue.unshift(e); calls.added.push(e.path); },
-      markStaged: (p) => calls.marked.push(p), renderDots: () => { calls.renders++; },
+      markStaged: (p, info) => calls.marked.push(info && info.live ? `${p}#live` : p), renderDots: () => { calls.renders++; },
       showToast: (t) => calls.toasts.push(t), getSessionLabel: () => 'Frontend',
       beforeStart: async () => { calls.before++; },
     });
@@ -21943,7 +22015,7 @@ describe('SESSION RECAP — tab control, chooser and controller', () => {
     assertDeepEqual(calls.stage[0], { short: 'abcdef12', mode: 'count', value: 10 });
     assertDeepEqual(calls.added, ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3'], 'only missing entries are inserted');
     assertEqual(queue[0].path, '/q/2026-R-b.mp3', 'newest-first local order');
-    assertDeepEqual(calls.marked, ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3', '/q/live.mp3']);
+    assertDeepEqual(calls.marked, ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3', '/q/live.mp3#live'], 'live clips are flagged so the renderer leaves their played state alone');
     assertDeepEqual(calls.started[0], ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3', '/q/live.mp3']);
     assertTruthy(calls.renders >= 1);
     assertTruthy(/Catching up on Frontend/.test(calls.toasts[0]) && /last 3 clips/.test(calls.toasts[0]) && /0:15/.test(calls.toasts[0]), calls.toasts[0]);
@@ -21968,6 +22040,14 @@ describe('SESSION RECAP — tab control, chooser and controller', () => {
     });
     await ctl2.start({ short: 'abcdef12', mode: 'count', value: 5 });
     assertEqual(manual.length, 0, 'a manual / J clip is not re-queued');
+    const recapCut = [];
+    const ctl3 = createRecapController({
+      api: { getRecapSummary: async () => ({}), stageRecap: async () => ({ ok: true, clips: [{ path: '/q/2026-R-a.mp3', mtime: 1, durationSec: 3, live: false }] }) },
+      audioPlayer: { startRecap: () => true, getCurrentPath: () => '/q/2026-R-old.mp3', isCurrentManual: () => false, isRecapActive: () => true },
+      getQueue: () => [], unmarkPlayed: (p) => recapCut.push(p),
+    });
+    await ctl3.start({ short: 'abcdef12', mode: 'count', value: 5 });
+    assertEqual(recapCut.length, 0, 'a recap clip cut off by a replacing recap is pruned, not re-queued');
   });
 
   it('controller surfaces muted / busy / empty / failed results without starting playback', async () => {
@@ -22078,6 +22158,15 @@ describe('SESSION RECAP — prune hook, config rule, settings control, renderer 
       elements.recapKeepMin.value = '-5';
       change.fn();
       assertEqual(elements.recapKeepMin.value, '0');
+      const writesBefore = writes.length;
+      elements.recapKeepMin.value = '';
+      change.fn();
+      assertEqual(elements.recapKeepMin.value, '0', 'an emptied field snaps back to the last good value');
+      assertEqual(writes.length, writesBefore, 'and writes nothing — blank is not "archive off"');
+      form.update({ cfg: { playback: { recap_keep_min: 90 } } });
+      elements.recapKeepMin.value = 'abc';
+      change.fn();
+      assertEqual(elements.recapKeepMin.value, '90');
       form.unmount();
     } finally {
       global.document = origDoc;
@@ -22094,13 +22183,16 @@ describe('SESSION RECAP — prune hook, config rule, settings control, renderer 
       /const isRecapClip = _paths\.isRecapClip/,
       /window\.TT_RECAP_MENU\.RecapMenu\(/,
       /window\.TT_RECAP_CONTROLLER\.createRecapController\(/,
-      /onRecapEnd:\s*\(\{ remaining \}\)/,
+      /onRecapEnd:\s*\(\{ remaining, current, next \}\)/,
       /recapMenu\.close\(\)/,
       /isRecapActive\(\)\) audioPlayer\.skipCurrent\(\)/,
       /recapShorts,\s*\n\s*\}\);/,
       /function drainAutoplayQueue\(\) \{\s*\n\s*if \(recapStaging\) return;/,
       /if \(aborted && !recapPaths\.has\(aborted\)\) playedPaths\.delete\(aborted\);/,
       /setStaging:\s*\(on\)\s*=>\s*\{ recapStaging = !!on; \}/,
+      /hasPriorityPending:\s*\(\)\s*=>\s*priorityQueue\.length > 0/,
+      /markStaged:\s*\(p,\s*\{ live \} = \{\}\)\s*=>/,
+      /unmarkPlayed:\s*\(p\)\s*=>\s*\{ if \(!recapPaths\.has\(p\)\) playedPaths\.delete\(p\); \}/,
     ]) {
       if (!needle.test(renderer)) throw new Error(`renderer.js missing recap wiring: ${needle}`);
     }
