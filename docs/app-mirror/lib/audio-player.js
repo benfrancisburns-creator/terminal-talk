@@ -493,8 +493,10 @@
     // playNextPending too. Returns false only when no recap was involved.
     _continueRecap(recapWasActive) {
       if (this._recap && this._hasPriorityPending()) {
-        this._onPlayNextPending();
-        return true;
+        try { this._onPlayNextPending(); } catch {}
+        // Only claim the turn if the renderer actually started the priority
+        // clip (its file may have vanished); otherwise keep the playlist going.
+        if (this._currentPath) return true;
       }
       if (this._advanceRecap()) return true;
       if (recapWasActive) { this._onPlayNextPending(); return true; }

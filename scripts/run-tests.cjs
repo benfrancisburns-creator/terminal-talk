@@ -21690,7 +21690,7 @@ describe('SESSION RECAP — AudioPlayer playlist', () => {
       clipPaths, randomVerb: () => 'x', setDynamicStyle() {},
       onPlayStart: (p, m) => calls.playStart.push([p, m.manual, m.userClick]),
       onClipEnded: (p, m) => calls.clipEnded.push([p, m]),
-      onPlayNextPending: () => { calls.playNext++; },
+      onPlayNextPending: () => { calls.playNext++; if (overrides.onPlayNextPending) overrides.onPlayNextPending(); },
       onRenderDots() {},
       onRecapEnd: (info) => calls.recapEnd.push(info),
       hasPriorityPending: overrides.hasPriorityPending || (() => false),
@@ -21781,21 +21781,32 @@ describe('SESSION RECAP — AudioPlayer playlist', () => {
     const J = '/q/20261005T250000000-clip-abcdef12-01.mp3';
     const queue = baseQueue().concat([{ path: J, mtime: 5000 }]);
     let priorityPending = false;
-    const { player, audio, calls } = makePlayer(queue, { hasPriorityPending: () => priorityPending });
+    let playerRef = null;
+    // Fake renderer: when asked for the next clip while a priority clip is
+    // pending, it starts that J clip (manual=true, userClick=false).
+    const { player, audio, calls } = makePlayer(queue, {
+      hasPriorityPending: () => priorityPending,
+      onPlayNextPending: () => { if (priorityPending && playerRef) { priorityPending = false; playerRef.playPath(J, true, false); } },
+    });
+    playerRef = player;
     player.startRecap([R1, R2]);
     // J1 arrives: cuts R1 off; J2 arrives while J1 plays and waits in priorityQueue.
     player.abortIfAutoPlayed();
     player.playPath(J, true, false);
     priorityPending = true;
-    audio.fire('ended');   // J1 ends -> renderer must get the turn for J2, NOT the recap
+    audio.fire('ended');   // J1 ends -> renderer gets the turn for J2, NOT the recap
     assertEqual(calls.playNext, 1, 'playNextPending drains the pending J clip first');
-    assertEqual(player.getCurrentPath(), null);
+    assertEqual(player.getCurrentPath(), J, 'J2 plays before the recap resumes');
     assertTruthy(player.isRecapActive(), 'playlist intact');
     assertDeepEqual(player.recapRemaining(), [R1, R2]);
-    priorityPending = false;
-    player.playPath(J, true, false);   // J2 plays
-    audio.fire('ended');
+    audio.fire('ended');   // J2 ends -> recap resumes with the clip J1 cut off
     assertEqual(player.getCurrentPath(), R1, 'recap resumes once no priority clip is pending');
+    // A phantom priority entry (file gone, renderer starts nothing) must not strand the playlist in silence.
+    priorityPending = true;
+    playerRef = null;
+    audio.fire('ended');
+    assertEqual(calls.playNext, 2, 'renderer was asked first');
+    assertEqual(player.getCurrentPath(), R2, 'but the playlist carried on when nothing started');
     player.unmount();
   });
 
