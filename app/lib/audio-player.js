@@ -464,8 +464,15 @@
         this._recap = null;
         try { this._onRecapEnd({ remaining: superseded, current, next: list.slice(), reason: 'replaced' }); } catch {}
       }
-      this._recap = list.slice(1);
       if (this._currentPath) this._abortCurrent('recap');
+      // A highlight-to-speak clip that arrived during the staging round
+      // trip goes first; the whole playlist waits and resumes after it.
+      if (this._hasPriorityPending()) {
+        this._recap = list.slice();
+        try { this._onPlayNextPending(); } catch {}
+        if (this._currentPath) return true;
+      }
+      this._recap = list.slice(1);
       if (this.playPath(list[0], false, true)) return true;
       return this._advanceRecap();
     }
@@ -715,7 +722,9 @@
         // Priority (hey-jarvis) clips set currentIsManual=true but
         // userClick=false, so they always fall through to
         // playNextPending to preserve the existing priority-drain-then-
-        // resume behaviour.
+        // resume behaviour — unless a recap is running, in which case
+        // _continueRecap above resumed the playlist (after draining any
+        // further priority clips first).
         if (wasUserClick && this._getAutoContinueAfterClick()) {
           const queue = this._getQueue();
           const justPlayedClip = queue.find((f) => f.path === justPlayed);

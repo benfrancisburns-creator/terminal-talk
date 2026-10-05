@@ -75,6 +75,15 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ### Fixed
 
+- **Installers actually install Electron again.** Since Electron moved to
+  `app/package.json` devDependencies (`build: update Electron security
+  dependencies`), `install.ps1` / `install.sh` ran `npm install --omit=dev
+  --no-save electron@<pinned>` — which npm reconciles to "up to date"
+  without installing anything, so a fresh or upgraded install ended with
+  "electron.exe not found … rebrand skipped" and a toolbar that could not
+  start (hit on the laptop 2026-10-05). Both installers now pass
+  `--save-prod` for that one invocation (installs Electron only, package.json
+  untouched); a contract test pins the flag.
 - **Dictation controller unit tests + lint.** The controller moved to
   the Python whisper runner (`--paste` / `--cleanup` flags,
   `whisper-dictate.py`) but its 13 unit tests still asserted the old

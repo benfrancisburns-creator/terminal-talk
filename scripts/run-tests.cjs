@@ -11258,6 +11258,22 @@ describe('Electron package and installer contract', () => {
       throw new Error('install.sh must install the Electron version pinned in app/package.json');
     }
   });
+
+  it('installers pass --save-prod so a devDependency-listed Electron actually installs under --omit=dev', () => {
+    // Verified empirically 2026-10-05 (npm 11): with electron only in
+    // devDependencies, `npm install --omit=dev --no-save electron@x` reconciles
+    // to "up to date" and installs NOTHING -> no electron.exe, rebrand skipped,
+    // toolbar cannot start. `--save-prod` makes the explicit spec a prod edge
+    // for this invocation (and --no-save keeps package.json untouched).
+    const ps1Cmd = /npm install[^\n]*"electron@\$electronVersion"/.exec(installPs1);
+    const shCmd = /npm install[^\n]*"electron@\$electron_version"/.exec(installSh);
+    if (!ps1Cmd || !/--save-prod/.test(ps1Cmd[0]) || !/--omit=dev/.test(ps1Cmd[0])) {
+      throw new Error('install.ps1 electron npm install must carry --omit=dev AND --save-prod');
+    }
+    if (!shCmd || !/--save-prod/.test(shCmd[0]) || !/--omit=dev/.test(shCmd[0])) {
+      throw new Error('install.sh electron npm install must carry --omit=dev AND --save-prod');
+    }
+  });
 });
 
 describe('install.sh python resolution probes brew before falling back (#48)', () => {
@@ -21810,6 +21826,25 @@ describe('SESSION RECAP — AudioPlayer playlist', () => {
     player.unmount();
   });
 
+  it('a priority clip waiting when the recap starts plays first; the whole playlist resumes after it', () => {
+    const J = '/q/20261005T250000000-clip-abcdef12-01.mp3';
+    const queue = baseQueue().concat([{ path: J, mtime: 5000 }]);
+    let priorityPending = true;
+    let playerRef = null;
+    const { player, audio, calls } = makePlayer(queue, {
+      hasPriorityPending: () => priorityPending,
+      onPlayNextPending: () => { if (priorityPending && playerRef) { priorityPending = false; playerRef.playPath(J, true, false); } },
+    });
+    playerRef = player;
+    assertTruthy(player.startRecap([R1, R2]));
+    assertEqual(player.getCurrentPath(), J, 'the queued J clip goes first');
+    assertEqual(calls.playNext, 1);
+    assertDeepEqual(player.recapRemaining(), [R1, R2], 'nothing from the playlist consumed yet');
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), R1, 'playlist starts once the J clip is done');
+    player.unmount();
+  });
+
   it('cancelling reports the cut-off current clip so the renderer can prune it', () => {
     const { player, calls } = makePlayer(baseQueue());
     player.startRecap([R1, R2]);
@@ -22041,7 +22076,7 @@ describe('SESSION RECAP — tab control, chooser and controller', () => {
       getQueue: () => [], setStaging: (on) => staging.push(on), unmarkPlayed: (p) => unmarked.push(p),
     });
     assertEqual(await ctl.start({ short: 'abcdef12', mode: 'count', value: 5 }), 1);
-    assertDeepEqual(staging, [true, false]);
+    assertDeepEqual(staging, [true, false, false], 'gate lifted right before startRecap, and again in finally');
     assertDeepEqual(unmarked, ['/q/auto.mp3'], 'the interrupted auto clip replays later via the pending fallback');
     const manual = [];
     const ctl2 = createRecapController({
@@ -22201,7 +22236,7 @@ describe('SESSION RECAP — prune hook, config rule, settings control, renderer 
       /function drainAutoplayQueue\(\) \{\s*\n\s*if \(recapStaging\) return;/,
       /if \(aborted && !recapPaths\.has\(aborted\)\) playedPaths\.delete\(aborted\);/,
       /setStaging:\s*\(on\)\s*=>\s*\{ recapStaging = !!on; \}/,
-      /hasPriorityPending:\s*\(\)\s*=>\s*priorityQueue\.length > 0/,
+      /hasPriorityPending:\s*\(\)\s*=>\s*priorityQueue\.some\(\(p\)\s*=>\s*queue\.some\(\(f\)\s*=>\s*f\.path === p\)\)/,
       /markStaged:\s*\(p,\s*\{ live \} = \{\}\)\s*=>/,
       /unmarkPlayed:\s*\(p\)\s*=>\s*\{ if \(!recapPaths\.has\(p\)\) playedPaths\.delete\(p\); \}/,
     ]) {

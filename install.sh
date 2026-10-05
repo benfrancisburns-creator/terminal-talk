@@ -248,7 +248,9 @@ if [ "$install_npm_deps" -eq 1 ]; then
   if [ -z "$electron_version" ]; then
     die "Electron version is missing from app/package.json devDependencies."
   fi
-  (cd "$app_dir" && npm install --omit=dev --no-save --no-audit --no-fund "electron@$electron_version")
+  # --save-prod: electron is a devDependency in app/package.json, and with --omit=dev an
+  # explicit `electron@x` otherwise reconciles to "up to date" without installing (2026-10-05).
+  (cd "$app_dir" && npm install --omit=dev --save-prod --no-save --no-audit --no-fund "electron@$electron_version")
   say "   OK  Electron $electron_version installed"
 else
   say "   !!  Skipped npm install"

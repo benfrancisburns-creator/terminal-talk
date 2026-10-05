@@ -238,6 +238,18 @@ function createRecapArchive({
       return { action, staged: false, name };
     }
     try { fs.mkdirSync(recapDir, { recursive: true }); } catch {}
+    // The archive dir must be a real directory (a stray `recap` FILE, a
+    // permissions problem, …). If it is not, honour the delete with a plain
+    // unlink rather than reporting success while the clip stays on disk —
+    // the renderer would reload and replay it on the next scan. Checked up
+    // front because the rename error code for this differs per platform /
+    // Node version (ENOENT, ENOTDIR, EINVAL on Windows CI, EPERM).
+    let dirOk = false;
+    try { dirOk = fs.statSync(recapDir).isDirectory(); } catch {}
+    if (!dirOk) {
+      diag(`recap: archive dir unusable — deleting ${name} instead`);
+      return { action: unlinkIfPresent(filePath), staged: false, name, degraded: true };
+    }
     if (fs.existsSync(dest)) {
       // Already archived (e.g. pruner raced the renderer). Keep the
       // archived original, discard the queue copy.

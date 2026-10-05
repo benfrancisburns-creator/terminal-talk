@@ -990,7 +990,9 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
       if (isRecapClip(p.split(/[\\/]/).pop())) scheduleAutoDelete(p, true);
     }
   },
-  hasPriorityPending: () => priorityQueue.length > 0,
+  // Only count priority entries whose file is still in the queue — a
+  // stale entry must not make the player wait on a clip that cannot start.
+  hasPriorityPending: () => priorityQueue.some((p) => queue.some((f) => f.path === p)),
 });
 audioPlayer.mount();
 

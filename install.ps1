@@ -341,7 +341,13 @@ if (-not $electronVersion) {
     exit 1
 }
 Push-Location $appDir
-& npm install --omit=dev --no-save --silent --no-audit --no-fund "electron@$electronVersion" 2>&1 | Out-Null
+# --save-prod is load-bearing: electron lives in app/package.json devDependencies,
+# and `npm install --omit=dev electron@x` quietly reconciles to "up to date" without
+# installing anything (the explicit spec is matched against the omitted dev edge).
+# Declaring it prod for this invocation installs electron and nothing else
+# (--no-save keeps package.json untouched). Found on the laptop 2026-10-05: no
+# node_modules/electron, "rebrand skipped", toolbar could not start.
+& npm install --omit=dev --save-prod --no-save --silent --no-audit --no-fund "electron@$electronVersion" 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Write-Fail "npm install failed."

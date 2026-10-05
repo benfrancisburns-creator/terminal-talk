@@ -134,6 +134,9 @@
         const cutOff = typeof audioPlayer.getCurrentPath === 'function' ? audioPlayer.getCurrentPath() : null;
         const cutOffManual = typeof audioPlayer.isCurrentManual === 'function' ? audioPlayer.isCurrentManual() : true;
         const cutOffWasRecap = typeof audioPlayer.isRecapActive === 'function' ? audioPlayer.isRecapActive() : false;
+        // Lift the drain gate right before starting so a priority clip that
+        // arrived during the round trip can be played first by startRecap.
+        try { setStaging(false); } catch {}
         const started = audioPlayer.startRecap(paths);
         if (!started) {
           showToast('Recap clips are queued but playback could not start.', 5000, 'warning');
