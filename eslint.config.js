@@ -106,6 +106,9 @@ module.exports = [
       'app/lib/voice-command-dispatch.js',
       'app/lib/update-badge.js',
       'app/lib/first-run-wizard.js',
+      'app/lib/recap-menu.js',
+      'app/lib/recap-controller.js',
+      'app/lib/settings-demo.js',
       'docs/ui-kit/**/*.js',
     ],
     languageOptions: {

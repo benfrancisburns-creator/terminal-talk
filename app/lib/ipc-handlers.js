@@ -88,6 +88,11 @@ function createIpcHandlers(deps) {
     // File + test-only deps (EX6f-4)
     QUEUE_DIR,
     isPathInside,
+    // Session recap (2026-10-05): app/lib/recap-archive.js instance. When
+    // present, body clips leaving the queue are moved into queue/recap/
+    // instead of unlinked, and the two recap handlers below come alive.
+    // Optional so the unit harness + older callers keep the plain unlink.
+    recapArchive = null,
     getWatchdog,
     getWatchdogIntervalMs,
     captureMode = false,
@@ -134,6 +139,13 @@ function createIpcHandlers(deps) {
       } catch (e) {
         diag(`remove-session: unlink ${name} failed: ${e.message}`);
       }
+    }
+    // Session recap: the archive under queue/recap/ keeps this session's
+    // played clips — forget them too, or an [All] recap could replay a
+    // session the user just removed.
+    if (recapArchive && typeof recapArchive.purgeSession === 'function') {
+      try { purged += recapArchive.purgeSession(shortId); }
+      catch (e) { diag(`remove-session: recap purge ${shortId} failed: ${e.message}`); }
     }
     return purged;
   }
@@ -277,6 +289,29 @@ function createIpcHandlers(deps) {
     return changed;
   }
 
+  // Session recap: remove a queue file. Body clips are archived (moved into
+  // queue/recap/) when the archive is wired and enabled; everything else is
+  // unlinked as before. `meta.durationSec` is the <audio> element's measured
+  // length, recorded so "last N minutes" can be answered exactly. Returns
+  // { action: 'archived'|'unlinked'|'missing', staged } and throws on a real
+  // fs failure so callers can report false (renderer retry ladder).
+  function removeQueueFile(resolved, why, meta) {
+    const rawSec = meta && typeof meta === 'object' ? Number(meta.durationSec) : NaN;
+    const durationSec = Number.isFinite(rawSec) && rawSec > 0 && rawSec < 86400 ? rawSec : null;
+    if (recapArchive && typeof recapArchive.archiveOrUnlink === 'function') {
+      return recapArchive.archiveOrUnlink(resolved, { reason: why || 'manual', durationSec });
+    }
+    fs.unlinkSync(resolved);
+    return { action: 'unlinked', staged: false };
+  }
+
+  // Sessions with archived recap clips — tabs keep a (stale) chip for them
+  // even after their live clips are gone, so the recap control is reachable.
+  function recapShortsSafe() {
+    if (!recapArchive || typeof recapArchive.listShorts !== 'function') return [];
+    try { return recapArchive.listShorts(); } catch { return []; }
+  }
+
   function register() {
     // S1.2 — renderer-side error sink with dedupe so repeated throws
     // in renderer.js don't flood the diag log. The main process has
@@ -319,7 +354,13 @@ function createIpcHandlers(deps) {
         if (ext !== '.mp3' && ext !== '.wav') {
           return { spoken: '', original: '' };
         }
-        const base = audioPath.slice(0, -ext.length);
+        // Recap replays (`<ts>-R-<original>`) read the ORIGINAL clip's
+        // sidecars — .txt files never move with the audio.
+        const stagedBase = recapArchive && typeof recapArchive.sidecarBaseFor === 'function'
+          && /-R-/.test(path.basename(audioPath))
+          ? recapArchive.sidecarBaseFor(audioPath)
+          : null;
+        const base = stagedBase || audioPath.slice(0, -ext.length);
         const spokenPath = base + '.txt';
         const originalPath = base + '.original.txt';
         let spoken = '';
@@ -346,7 +387,7 @@ function createIpcHandlers(deps) {
       const allPaths = typeof getQueueAllPaths === 'function'
         ? getQueueAllPaths()
         : files.map((f) => typeof f === 'string' ? f : (f && f.path));
-      return { files, allPaths, assignments: ensureAssignmentsForFiles(files) };
+      return { files, allPaths, assignments: ensureAssignmentsForFiles(files), recapShorts: recapShortsSafe() };
     });
 
     ipcMain.handle('get-assignments', () => loadAssignments());
@@ -969,19 +1010,27 @@ function createIpcHandlers(deps) {
     // a compromised renderer can forge file paths; isPathInside uses
     // path.resolve to block ..-segment escapes that startsWith alone
     // would let through.
-    ipcMain.handle('delete-file', (_e, filePath, reason = '') => {
+    ipcMain.handle('delete-file', (_e, filePath, reason = '', meta = null) => {
       if (!allowMutation('delete-file')) return null;
       try {
         if (typeof filePath !== 'string' || filePath.length > 4096) return false;
         if (!isPathInside(filePath, QUEUE_DIR)) return false;
         const resolved = path.resolve(filePath);
-        fs.unlinkSync(resolved);
+        // Only direct children of the queue dir — never queue/recap/ or any
+        // other subdirectory (the archive is main's, the renderer only sees
+        // staged copies).
+        if (path.dirname(resolved) !== path.resolve(QUEUE_DIR)) return false;
         const why = typeof reason === 'string' ? reason : '';
+        // Session recap: body clips are archived (moved) rather than
+        // unlinked when the archive is on. Throws -> false -> renderer retries.
+        const removed = removeQueueFile(resolved, why, meta);
         // Diagnostic: every actual file deletion funnels through here. Logging
         // the filename + reason lets us see, in _toolbar.log, whether one user
         // delete produces one unlink or two (the "deletes two at once" report).
-        diag(`delete-file: reason=${why || 'manual'} file=${path.basename(resolved)}`);
-        if (/^(?:played-auto-prune|played-ephemeral)$/.test(why) && /\.(?:mp3|wav)$/i.test(resolved)) {
+        diag(`delete-file: reason=${why || 'manual'} ${removed.action}=${path.basename(resolved)}`);
+        // Played tombstones stay keyed to real clips — a staged `-R-` replay
+        // leaving the queue is not a new "played" event for synth-audit.
+        if (!removed.staged && /^(?:played-auto-prune|played-ephemeral)$/.test(why) && /\.(?:mp3|wav)$/i.test(resolved)) {
           const markerPath = resolved.replace(/\.(?:mp3|wav)$/i, '.played.json');
           try {
             fs.writeFileSync(markerPath, JSON.stringify({
@@ -1015,8 +1064,10 @@ function createIpcHandlers(deps) {
           if (typeof filePath !== 'string' || filePath.length > 4096) { result.failed.push(filePath); continue; }
           if (!isPathInside(filePath, QUEUE_DIR)) { result.failed.push(filePath); continue; }
           const resolved = path.resolve(filePath);
+          if (path.dirname(resolved) !== path.resolve(QUEUE_DIR)) { result.failed.push(filePath); continue; }
           try {
-            fs.unlinkSync(resolved);
+            // Archive-or-unlink (recap). 'missing' counts as done below.
+            removeQueueFile(resolved, why || 'manual-clear', null);
           } catch (e) {
             if (e && e.code === 'ENOENT') { result.deleted++; continue; }  // already gone = done
             throw e;
@@ -1028,6 +1079,59 @@ function createIpcHandlers(deps) {
       }
       diag(`delete-files: reason=${why || 'manual-clear'} requested=${filePaths.length} deleted=${result.deleted} failed=${result.failed.length}`);
       return result;
+    });
+
+    // ---- Session recap (2026-10-05) ------------------------------------
+    // get-recap-summary: how many body clips (still in the queue + archived
+    // under queue/recap/) a session has and their total duration — drives
+    // the tab's "Catch up" chooser. stage-recap: pick the last N clips or the
+    // last M minutes and copy the archived ones back into the queue under
+    // staged `-R-` names; returns the playlist in playback order. `short` is
+    // a validated 8-hex session id or 'all'. Path-safety: the renderer never
+    // names files — the archive module works from its own directory listing.
+    const RECAP_SHORT_RE = /^(?:all|[a-f0-9]{8})$/;
+    const recapLivePaths = () => {
+      try { return typeof getQueueAllPaths === 'function' ? (getQueueAllPaths() || []) : []; }
+      catch { return []; }
+    };
+    ipcMain.handle('get-recap-summary', (_e, short) => {
+      const s = typeof short === 'string' ? short.toLowerCase() : '';
+      if (!RECAP_SHORT_RE.test(s)) return null;
+      if (!recapArchive || typeof recapArchive.summary !== 'function') {
+        return { short: s, count: 0, totalSec: 0, enabled: false, keepMin: 0, maxClips: 0 };
+      }
+      try { return recapArchive.summary(s, recapLivePaths()); }
+      catch (e) { diag(`get-recap-summary fail: ${e && e.message}`); return null; }
+    });
+    ipcMain.handle('stage-recap', (_e, req) => {
+      if (!allowMutation('stage-recap')) return { ok: false, error: 'busy', clips: [] };
+      const short = req && typeof req.short === 'string' ? req.short.toLowerCase() : '';
+      const mode = req && req.mode === 'minutes' ? 'minutes' : 'count';
+      const value = req ? Number(req.value) : NaN;
+      const maxValue = mode === 'minutes' ? 1440 : 500;
+      if (!RECAP_SHORT_RE.test(short)) return { ok: false, error: 'bad-short', clips: [] };
+      if (!Number.isFinite(value) || value < 1 || value > maxValue) return { ok: false, error: 'bad-value', clips: [] };
+      if (!recapArchive || typeof recapArchive.select !== 'function') return { ok: false, error: 'unavailable', clips: [] };
+      // Muted sessions never play (renderer aborts their clips on the next
+      // queue update), so refuse a muted tab outright and skip muted
+      // sessions inside an [All] recap.
+      let assignments = {};
+      try { assignments = loadAssignments() || {}; } catch {}
+      const isMuted = (s) => !!(s && assignments[s] && assignments[s].muted);
+      if (short !== 'all' && isMuted(short)) return { ok: false, error: 'muted', clips: [] };
+      try {
+        const picked = recapArchive.select(short, { mode, value: Math.floor(value), allow: (s) => !isMuted(s) }, recapLivePaths());
+        const clips = recapArchive.stage(picked).map((c) => ({
+          path: c.path, mtime: c.mtime, durationSec: c.durationSec, live: !!c.live,
+        }));
+        const stagedCount = clips.filter((c) => !c.live).length;
+        diag(`stage-recap: short=${short} mode=${mode} value=${Math.floor(value)} picked=${picked.length} staged=${stagedCount}`);
+        if (stagedCount > 0 && typeof notifyQueue === 'function') notifyQueue();
+        return { ok: true, clips };
+      } catch (e) {
+        diag(`stage-recap fail: ${e && e.message}`);
+        return { ok: false, error: 'failed', clips: [] };
+      }
     });
 
     // About panel version query. Returns whatever `app.getVersion()`

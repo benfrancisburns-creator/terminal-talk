@@ -44,6 +44,7 @@ Terminal Talk is deliberately small in concept: inputs create clips, clips enter
 | Session identity | Every assistant gets a visible and audible identity | 24 palette arrangements: 8 solid colours, 8 top/bottom splits, 8 left/right splits. Labels, voices, focus, mute, heartbeat, and speech rules live in the shared registry. |
 | Desktop sync | Persistent desktop chats can carry Terminal Talk identity | Claude Desktop Code and Codex Desktop rows expose sync status/actions when their local title metadata can be written. Renderer refresh timing is app-dependent. |
 | Playback control | Focus one session, replay clips, prune heard audio, inspect transcripts | The queue keeps body clips, ephemeral tool clips, heartbeat clips, and priority `J` highlight clips separate. |
+| Session recap | Catch up on a session you walked away from: replay its last N clips or last M minutes from the tab | Played / cleared body clips are kept under `~/.terminal-talk/queue/recap/` for `playback.recap_keep_min` minutes (default 120) and restaged into the queue on demand. |
 | Collapsed mode | The toolbar can shrink to a short waveform strip | The letterbox flashes only for the clip actually speaking and preserves solid, left/right, and top/bottom palette orientation. |
 | Highlight-to-speak | Read selected text from any app | `Ctrl+Shift+S` or "hey jarvis" captures the foreground selection locally, then routes it through the same TTS and queue path. |
 | Privacy | No telemetry and no cloud wake-word path | Wake-word audio stays local. Spoken text goes to Microsoft Edge TTS by default, or OpenAI only if configured. |
@@ -271,7 +272,8 @@ Claude Code has a command-backed `statusLine`, so Terminal Talk can draw the gly
 - **Clips autoplay the moment they land.** Auto-prune clears played clips after 20 s by default (configurable 3-600 s, or toggle off if you're stepping away).
 - **State at a glance (fade-on-heard):** an **unheard** clip is a bright, full-colour mascot; once it **auto-plays** it fades back so unheard arrivals stand out; a clip you **played manually** (click or "hey jarvis") turns **all-white with a session-colour ring**; the clip **playing right now** keeps full colour and gains a white pulsing halo (same size — no layout jump).
 - **Session tabs row** (above the clip strip) — shows active sessions and any session with unplayed/unpruned clips. Registry-only inactive sessions stay in Settings › Sessions. Click a tab to filter the strip and transcript; click "All" to re-show everything. Each session tab also has a small **bin in its corner** to clear just that session's clips. If there are too many live/clip-backed sessions to fit, left/right arrows page through the row without making the toolbar huge.
-- **Click** a mascot to (re)play it manually. **Right-click** to delete it immediately.
+- **Catch up (session recap)** — hover any session tab (or **All**) and click the small clock-arrow icon in its corner. A compact chooser opens under the tab: **Last clips 5 · 10 · 20 · All** or **Last minutes 2 · 5 · 10 · 30**. Pick one and the clips load back into the strip (dashed-ring mascots) and play in order — no need to send another prompt or say "hey jarvis". Played and cleared assistant clips are kept for this under `~/.terminal-talk/queue/recap/` for 2 hours by default (Settings › Playback › *Keep recap history*; 0 turns it off). Tool narration, heartbeat verbs, highlight-to-speak clips and "worked for…" footers are never kept. A session keeps its tab while it still has recap history, even after its live clips have played out, and muted sessions are skipped.
+- **Click** a mascot to (re)play it manually. **Right-click** to delete it immediately (during a recap this just skips to the next clip).
 - "Hey jarvis" / `Ctrl+Shift+S` clips carry a small round **J** badge (not a mascot) so you can tell your own read-aloud requests from auto-spoken assistant responses.
 - Up to ~40 clips visible; beyond that they scroll.
 - **Drag the toolbar** near the top or bottom edge of any display and it snaps flush. Horizontal-only — no vertical dock. Position is saved across launches. If it ever ends up somewhere weird, `Ctrl+Shift+A` toggles it and the bar re-centres if it's off every display.
@@ -284,7 +286,7 @@ The gear expands the toolbar into a tabbed settings bar. The tabs are deliberate
 
 | Tab | Scope | Technical effect |
 |---|---|---|
-| **Playback** | Speed, master volume, auto-collapse, body-clip auto-prune, click-to-continue, colour-blind palette, heartbeat narration, reload | Writes `playback.*`, `heartbeat_enabled`, and palette variant values in `~/.terminal-talk/config.json`; reload rebuilds the renderer without restarting Electron. |
+| **Playback** | Speed, master volume, auto-collapse, body-clip auto-prune, recap history, click-to-continue, colour-blind palette, heartbeat narration, reload | Writes `playback.*`, `heartbeat_enabled`, and palette variant values in `~/.terminal-talk/config.json`; reload rebuilds the renderer without restarting Electron. |
 | **Sessions** | Active/registered assistant sessions, label, palette, focus, mute, remove, desktop sync, expanded voice and speech rules | Writes `~/.terminal-talk/session-colours.json`. The same entry drives toolbar tabs/dots, Claude statusline identity, Codex title binding, desktop title-sync metadata, voice selection, mute/focus, heartbeat override, and speech-includes override. |
 | **Create** | Launch Codex, Claude Code, or Claude Desktop Code with project folder, label, colour, assistant type, and permissions mode | Seeds the selected identity before launch, then binds provisional terminal/window state to the real assistant session id when hooks or rollout metadata arrive. |
 | **OpenAI** | Saved-key status, Change/Clear key, primary provider, fallback provider, voice test | Stores keys through Electron `safeStorage` plus a user-ACL'd hook sidecar; OpenAI is never used unless explicitly selected as primary or fallback. |
@@ -294,6 +296,7 @@ The gear expands the toolbar into a tabbed settings bar. The tabs are deliberate
 Key behaviour:
 
 - **Auto-prune** applies to body clips only. Tool narration (`T-` files) and heartbeat verbs (`H-` files) always auto-delete after play-end so tool chains do not flood the queue.
+- **Keep recap history** is how long pruned / cleared body clips stay replayable from a session tab's catch-up chooser (0–1440 min, default 120, 0 = off). The archive is capped at 200 clips per session / 1000 total and swept every 30 minutes.
 - **Master volume** is live while audio plays. Heartbeat clips stay at 0.45× the master level so background status remains quieter than response audio.
 - **The Sessions colour dropdown** has 24 arrangements: 8 solid colours, 8 top/bottom splits, and 8 left/right splits. Used colours are called out in the picker.
 - **Desktop sync badges** appear on supported Claude Desktop Code and Codex Desktop rows. Some desktop renderers cache sidebar titles; Terminal Talk still persists the registry and local title metadata so reselect/restart resolves to the same identity.
@@ -402,6 +405,7 @@ Install a speech-to-text tool from the [Companion dictation tools](#companion-di
     "auto_prune":                true,
     "auto_prune_sec":            20,
     "auto_continue_after_click": true,
+    "recap_keep_min":            120,
     "palette_variant":           "default",
     "tts_provider":              "edge",
     "tts_fallback_provider":     "edge"
@@ -432,6 +436,7 @@ Key fields worth calling out:
 
 - **`playback.master_volume`** (0.0–1.0, default 1.0) — master output volume. Heartbeat clips stay at 0.45× this value so the ambient mix ratio is preserved at any master level.
 - **`playback.collapse_delay_sec`** (1–120, default 3) — how long the toolbar stays expanded after the last interaction before auto-collapsing to the slim click-through strip. Playback does not pin the full toolbar open; the collapsed strip stays coloured by the speaking session.
+- **`playback.recap_keep_min`** (0–1440, default 120) — minutes that played or cleared assistant body clips stay in `~/.terminal-talk/queue/recap/` so a session tab's catch-up chooser can replay the last N clips or the last M minutes of audio. 0 disables the archive (clips are deleted as before). Only assistant body clips are kept — never tool narration, heartbeat, highlight-to-speak or "worked for…" footer clips.
 - **`playback.palette_variant`** (`"default"` | `"cb"`, default `"default"`) — swaps the 8-colour session palette for Paul Tol's "muted" scheme under deutan / protan / tritan colour-blindness.
 - **`playback.tts_provider`** (`"edge"` | `"openai"`, default `"edge"`) — which TTS provider to try first. Setting this to `"openai"` needs a saved OpenAI key.
 - **`playback.tts_fallback_provider`** (`"edge"` | `"openai"` | `"none"`, default `"edge"`) — which provider to try if the primary fails. The default keeps fallback free; set to `"openai"` only when you intentionally want paid fallback and are tracking OpenAI credits.

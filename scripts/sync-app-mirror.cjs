@@ -46,6 +46,9 @@ const FILES = [
   'lib/first-run-wizard.js',
   'lib/transcript-panel.js',
   'lib/dictation-panel.js',
+  'lib/recap-menu.js',
+  'lib/recap-controller.js',
+  'lib/settings-demo.js',
 ];
 
 const check = process.argv.includes('--check');

@@ -238,6 +238,11 @@
         dot.classList.add('mascot');
         dot.innerHTML = MASCOT_SVG;
       }
+      // Session recap: a restaged `-R-` replay keeps the session mascot but
+      // gets a dashed ring + title prefix so it reads as a replay, not a
+      // fresh arrival.
+      const isRecap = !!(this._clipPaths.isRecapClip && this._clipPaths.isRecapClip(fname));
+      if (isRecap) dot.classList.add('recap-clip');
       if (heardPaths.has(f.path)) {
         dot.classList.add('heard');
         dot.classList.add(manualPlayedPaths && manualPlayedPaths.has(f.path) ? 'played-manual' : 'played-auto');
@@ -258,7 +263,7 @@
       const label = entry && entry.label ? ` [${entry.label}]` : '';
       const staleMark = isStale ? ' (closed)' : '';
       const d = new Date(f.mtime);
-      const titleText = `Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
+      const titleText = `${isRecap ? 'Recap replay · ' : ''}Created ${d.toLocaleTimeString()}${label}${staleMark} — click to play, right-click to delete`;
       dot.title = titleText;
       dot.setAttribute('aria-label', titleText);
       if (f.path === currentPath) dot.setAttribute('aria-current', 'true');

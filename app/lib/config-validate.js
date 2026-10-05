@@ -30,6 +30,10 @@ const RULES = [
   { path: 'playback.auto_prune', type: 'boolean' },
   { path: 'playback.auto_prune_sec', type: 'number', min: 1, max: 600 },
   { path: 'playback.auto_continue_after_click', type: 'boolean' },
+  // Session recap (2026-10-05): how long played / cleared body clips are kept
+  // in queue/recap/ so a session tab's Recap control can replay them.
+  // 0 disables the archive entirely.
+  { path: 'playback.recap_keep_min', type: 'number', min: 0, max: 1440 },
   { path: 'playback.palette_variant', type: 'string', maxLen: 16 },
   // TTS provider preference. 'edge' (default) tries Microsoft edge-tts
   // first. 'openai' tries OpenAI first (needs openai_api_key set).

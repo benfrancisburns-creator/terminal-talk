@@ -161,6 +161,13 @@
             <span class="prune-suffix">s after play</span>
           </div>
         </div>
+        <div class="row">
+          <label for="recapKeepMin" title="Session recap: played or cleared assistant clips are kept under queue/recap for this many minutes. Hover a session tab and click its clock icon to replay the last N clips or the last M minutes without sending a new prompt. Tool narration, heartbeat and highlight-to-speak clips are never kept. 0 turns the archive off.">Keep recap history <span class="hint-sub">(replay missed clips from a session tab)</span></label>
+          <div class="prune-value">
+            <input type="number" id="recapKeepMin" min="0" max="1440" step="5" value="120">
+            <span class="prune-suffix">min (0 = off)</span>
+          </div>
+        </div>
         <!-- 2-column grid for the four single-toggle playback rows. Keeps
              the sliders + auto-prune (which has a side seconds input) at
              full width above, compacts the four simpler controls into
@@ -486,6 +493,9 @@
   <script src="lib/first-run-wizard.js"></script>
   <script src="lib/transcript-panel.js"></script>
   <script src="lib/dictation-panel.js"></script>
+  <script src="lib/recap-menu.js"></script>
+  <script src="lib/recap-controller.js"></script>
+  <script src="lib/settings-demo.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

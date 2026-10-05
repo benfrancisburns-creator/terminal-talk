@@ -192,6 +192,16 @@
     return normal ? normal[1].toLowerCase() : '';
   }
 
+  // Body clips (no J clips) for one session, or every session for 'all'.
+  function recapFilesFor(short) {
+    return queueFiles.filter((f) => {
+      const fname = String(f.path || '').split(/[\\/]/).pop() || '';
+      if (/-clip-/.test(fname) || /-[TH]-\d{4}-/.test(fname)) return false;
+      const s = sessionShortFromPath(f.path);
+      return !!s && (short === 'all' || s === short);
+    });
+  }
+
   function sidecarForClip(audioPath) {
     const short = sessionShortFromPath(audioPath);
     const entry = short && sessions[short] ? sessions[short] : null;
@@ -480,6 +490,28 @@
       if (i >= 0) queueFiles.splice(i, 1);
       notifyQueue();
       return Promise.resolve(true);
+    },
+    // Session recap (kit): there is no recap archive in the browser demo,
+    // so the chooser counts the session's live body clips and "staging"
+    // simply returns them — the replay chain then walks what is on screen.
+    getRecapSummary: (short) => {
+      const files = recapFilesFor(short);
+      return Promise.resolve({
+        short, count: files.length, totalSec: files.length * (MOCK_AUDIO_MS / 1000),
+        enabled: true, keepMin: 120, maxClips: 40,
+      });
+    },
+    stageRecap: (req) => {
+      const short = req && req.short;
+      const mode = req && req.mode;
+      const value = Math.max(1, Number(req && req.value) || 1);
+      const files = recapFilesFor(short).sort((a, b) => a.mtime - b.mtime);
+      const perClipSec = MOCK_AUDIO_MS / 1000;
+      const n = mode === 'minutes' ? Math.ceil((value * 60) / perClipSec) : value;
+      const clips = files.slice(-Math.max(1, Math.min(40, n))).map((f) => ({
+        path: f.path, mtime: f.mtime, durationSec: perClipSec, live: true,
+      }));
+      return Promise.resolve({ ok: true, clips });
     },
 
     // --- UI-only / electron-only noops -------------------------------

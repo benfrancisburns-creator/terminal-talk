@@ -4,7 +4,64 @@ All notable changes to Terminal Talk are recorded here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- **Session recap — catch up on what you missed.** Ben (2026-10-05):
+  "I can be away from a session, miss the audio clip, and then,
+  without having to re-prompt it or say hello, I can just click that
+  session, click recap, how many messages… and play either the number
+  of messages or minutes." Every session tab (and **All**) now has a
+  small clock-arrow control in its corner. It opens a compact chooser
+  under the tab — *Last clips 5 · 10 · 20 · All* or *Last minutes
+  2 · 5 · 10 · 30* — and the picked clips load back into the strip
+  (dashed-ring mascots) and play in order as one playlist. Mechanism:
+  body clips leaving the queue (auto-prune, bin, stale sweep) are
+  moved into `~/.terminal-talk/queue/recap/` instead of unlinked and
+  kept for `playback.recap_keep_min` minutes (default 120, Settings ›
+  Playback › *Keep recap history*, 0 = off; capped at 200 clips per
+  session / 1000 total, swept every 30 min). A recap copies the chosen
+  clips back under staged `<ts>-R-<original>` names (fresh timestamp
+  so they sit inside the queue watcher's newest-50 window) and the
+  audio player walks them as a playlist that survives a "hey jarvis"
+  interruption, skips a right-click-deleted clip instead of dying, and
+  hands off to normal pending playback when done. Durations are
+  measured by the `<audio>` element and recorded at delete time so
+  "last 5 minutes" is exact; byte-based WAV/MP3 header estimates cover
+  clips that were never played. Tool narration, heartbeat, J clips and
+  "worked for…" footers are never archived; muted sessions are
+  refused; removing a session purges its archive; a session keeps a
+  (stale) tab while it still has recap history. New
+  `app/lib/recap-archive.js`, `app/lib/recap-menu.js`,
+  `app/lib/recap-controller.js`; new IPC `get-recap-summary` /
+  `stage-recap`; `delete-file` now carries `{ durationSec }`.
+- **`playback.recap_keep_min`** config key (validator, schema, example
+  config, Settings › Playback control).
+
+### Changed
+
+- **main.js / renderer.js back under the 2725-line file-length
+  ceiling.** Both had drifted over the CI ceiling (2816 / 2792) in the
+  dictation + mascot commits. Extracted with no behaviour change:
+  the capture-mode settings-demo timelines
+  (`app/lib/settings-demo.js`), the edge-tts / OpenAI TTS callers
+  (`app/lib/tts-calls.js`), the four-tier active-session detector
+  (`app/lib/active-session.js`) and the clipboard-marker selection
+  capture (`app/lib/capture-selection.js`). main.js is now ~2680
+  lines and renderer.js ~2340.
+- **Repo hygiene.** Removed scratch screenshot scripts, one-shot live
+  patchers and their PNG outputs that had been committed by accident
+  (`scripts/_*.cjs`, `docs/_*-verify.html`, `_mascot-*.png`,
+  `_tabs-verify.png`); registered `scripts/live-preview-server.cjs`
+  with Knip.
+
 ### Fixed
+
+- **Dictation controller unit tests + lint.** The controller moved to
+  the Python whisper runner (`--paste` / `--cleanup` flags,
+  `whisper-dictate.py`) but its 13 unit tests still asserted the old
+  PowerShell flags and stubbed the `.ps1`, and an unused
+  `firstUsefulLine` helper failed the zero-warning ESLint gate. Tests
+  now assert the Python contract; the dead helper is gone.
 
 - **macOS `say(1)` fallback honours the configured edge voice**.
   Ben (2026-05-09): "I have the voice set as Sonia but every now and

@@ -62,14 +62,6 @@ function createDictationController(deps = {}) {
     return null;
   }
 
-  function firstUsefulLine(text) {
-    return String(text || '')
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\r/g, '').trim())
-      .find((line) => line && !/^\d+%|\|/.test(line))
-      || '';
-  }
-
   function lastUsefulLine(text) {
     const lines = String(text || '')
       .split(/\r?\n/)

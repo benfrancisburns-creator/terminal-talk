@@ -39,6 +39,11 @@ function createPruner({
   staleMs,
   isAudioFile,
   isPidAlive,
+  // Session recap (2026-10-05): when provided, stale body clips are handed
+  // to the recap archive (which moves eligible clips into queue/recap/ and
+  // unlinks the rest) instead of being unlinked outright — an unheard clip
+  // that aged past staleMs is exactly what a 'catch up' replay wants back.
+  archiveStale = null,
   fs = realFs,
   path = realPath,
 } = {}) {
@@ -56,7 +61,10 @@ function createPruner({
         if (isAudioFile(f)) {
           try {
             const stat = fs.statSync(full);
-            if (now - stat.mtimeMs > staleMs) fs.unlinkSync(full);
+            if (now - stat.mtimeMs > staleMs) {
+              if (typeof archiveStale === 'function') archiveStale(full);
+              else fs.unlinkSync(full);
+            }
           } catch {}
           continue;
         }

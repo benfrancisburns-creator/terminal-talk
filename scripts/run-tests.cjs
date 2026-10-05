@@ -409,8 +409,8 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
   const { createDictationController } = require('../app/lib/dictation');
 
   // A fake child process whose stdout/stderr/exit/error events we drive
-  // synchronously from the test, mirroring how the real PowerShell whisper
-  // process streams progress then emits a final JSON line + exit code.
+  // synchronously from the test, mirroring how the real Python whisper
+  // runner streams progress then emits a final JSON line + exit code.
   function makeFakeChild() {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
@@ -421,11 +421,11 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
   }
 
   // Builds a controller with a temp install/app dir (so findScript() finds a
-  // stub whisper-dictate.ps1) and a fake spawn that records its invocations.
+  // stub whisper-dictate.py) and a fake spawn that records its invocations.
   // Returns the controller plus capture buffers for assertions.
   function makeController(configDict = {}, { apiKey = null, withScript = true } = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dict-'));
-    if (withScript) fs.writeFileSync(path.join(dir, 'whisper-dictate.ps1'), '# stub');
+    if (withScript) fs.writeFileSync(path.join(dir, 'whisper-dictate.py'), '# stub');
     const spawnCalls = [];
     const children = [];
     const statuses = [];
@@ -470,7 +470,7 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
     };
   }
 
-  // argValue('-CleanupModel', args) -> the token after the flag, or undefined.
+  // argValue('--cleanup-model', args) -> the token after the flag, or undefined.
   function argValue(flag, args) {
     const i = args.indexOf(flag);
     return i >= 0 ? args[i + 1] : undefined;
@@ -480,36 +480,36 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
     const h = makeController({});
     assertEqual(h.ctl.start({ paste: true }).ok, true);
     const args = h.lastCall().args;
-    assertEqual(argValue('-Cleanup', args), 'local');
-    assertEqual(argValue('-CleanupProvider', args), 'local');
-    assertEqual(argValue('-CleanupModel', args), 'gpt-5.4-mini');
-    assertEqual(argValue('-CleanupTimeout', args), '20');
-    assertTruthy(args.includes('-Paste'), 'paste:true should add -Paste');
-    assertTruthy(args.includes('-SaveTiming'), 'save_timing defaults on');
-    assertFalsy(args.includes('-KeepWav'), 'keep_audio defaults off');
+    assertEqual(argValue('--cleanup', args), 'local');
+    assertEqual(argValue('--cleanup-provider', args), 'local');
+    assertEqual(argValue('--cleanup-model', args), 'gpt-5.4-mini');
+    assertEqual(argValue('--cleanup-timeout', args), '20');
+    assertTruthy(args.includes('--paste'), 'paste:true should add --paste');
+    assertTruthy(args.includes('--segments-out'), 'save_timing defaults on');
+    assertFalsy(args.includes('--keep-wav'), 'keep_audio defaults off');
     assertEqual(h.micCaptured(), 1);
     h.complete(0, { stdout: '{"ok":true,"transcript":"hi"}' });
   });
 
-  it('emits -Copy (not -Paste) when paste is false', () => {
+  it('emits --copy (not --paste) when paste is false', () => {
     const h = makeController({});
     h.ctl.start({ paste: false });
-    assertTruthy(h.lastCall().args.includes('-Copy'));
-    assertFalsy(h.lastCall().args.includes('-Paste'));
+    assertTruthy(h.lastCall().args.includes('--copy'));
+    assertFalsy(h.lastCall().args.includes('--paste'));
     h.complete(0, { stdout: '{"ok":true,"transcript":"x"}' });
   });
 
   it('cleanup:false disables cleanup; openai provider becomes smart', () => {
     const off = makeController({ cleanup: false });
     off.ctl.start({});
-    assertEqual(argValue('-Cleanup', off.lastCall().args), 'off');
+    assertEqual(argValue('--cleanup', off.lastCall().args), 'off');
     off.complete(0, { stdout: '{"ok":true,"transcript":""}' });
 
     const smart = makeController({ cleanup_provider: 'openai' }, { apiKey: 'sk-test' });
     smart.ctl.start({});
     const args = smart.lastCall().args;
-    assertEqual(argValue('-Cleanup', args), 'smart');
-    assertEqual(argValue('-CleanupProvider', args), 'openai');
+    assertEqual(argValue('--cleanup', args), 'smart');
+    assertEqual(argValue('--cleanup-provider', args), 'openai');
     assertEqual(smart.lastCall().opts.env.OPENAI_API_KEY, 'sk-test',
       'openai cleanup should inject the API key into the child env');
     smart.complete(0, { stdout: '{"ok":true,"transcript":""}' });
@@ -518,34 +518,34 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
   it('clamps cleanup timeout to 3..60 and trims/falls back the model', () => {
     const hi = makeController({ cleanup_timeout_sec: 500, cleanup_model: '  custom-model  ' });
     hi.ctl.start({});
-    assertEqual(argValue('-CleanupTimeout', hi.lastCall().args), '60');
-    assertEqual(argValue('-CleanupModel', hi.lastCall().args), 'custom-model');
+    assertEqual(argValue('--cleanup-timeout', hi.lastCall().args), '60');
+    assertEqual(argValue('--cleanup-model', hi.lastCall().args), 'custom-model');
     hi.complete(0, { stdout: '{"ok":true,"transcript":""}' });
 
     const lo = makeController({ cleanup_timeout_sec: 1, cleanup_model: '   ' });
     lo.ctl.start({});
-    assertEqual(argValue('-CleanupTimeout', lo.lastCall().args), '3');
-    assertEqual(argValue('-CleanupModel', lo.lastCall().args), 'gpt-5.4-mini');
+    assertEqual(argValue('--cleanup-timeout', lo.lastCall().args), '3');
+    assertEqual(argValue('--cleanup-model', lo.lastCall().args), 'gpt-5.4-mini');
     lo.complete(0, { stdout: '{"ok":true,"transcript":""}' });
   });
 
-  it('keep_audio adds -KeepWav and save_timing:false drops -SaveTiming', () => {
+  it('keep_audio adds --keep-wav and save_timing:false drops --segments-out', () => {
     const h = makeController({ keep_audio: true, save_timing: false });
     h.ctl.start({});
-    assertTruthy(h.lastCall().args.includes('-KeepWav'));
-    assertFalsy(h.lastCall().args.includes('-SaveTiming'));
+    assertTruthy(h.lastCall().args.includes('--keep-wav'));
+    assertFalsy(h.lastCall().args.includes('--segments-out'));
     h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
   });
 
   it('bounds maxSeconds to 1200 and omits the flag for non-positive values', () => {
     const big = makeController({});
     big.ctl.start({ maxSeconds: 5000 });
-    assertEqual(argValue('-MaxSeconds', big.lastCall().args), '1200');
+    assertEqual(argValue('--max-seconds', big.lastCall().args), '1200');
     big.complete(0, { stdout: '{"ok":true,"transcript":""}' });
 
     const none = makeController({});
     none.ctl.start({ maxSeconds: -3 });
-    assertFalsy(none.lastCall().args.includes('-MaxSeconds'));
+    assertFalsy(none.lastCall().args.includes('--max-seconds'));
     none.complete(0, { stdout: '{"ok":true,"transcript":""}' });
   });
 
@@ -604,7 +604,7 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
     assertEqual(h.resumed(), 1);
   });
 
-  it('surfaces the first useful stderr line on a failed exit, skipping progress', () => {
+  it('surfaces the last useful stderr line on a failed exit, skipping progress', () => {
     const h = makeController({});
     h.ctl.start({});
     h.complete(0, { code: 3, stderr: '42%|####\nNo microphone detected\n' });
@@ -628,9 +628,9 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
     const h = makeController({});
     h.ctl.start({ externalStop: true });
     const args = h.lastCall().args;
-    assertTruthy(args.includes('-NoSilenceStop'), 'hold mode disables silence stop');
-    const stopFile = argValue('-StopFile', args);
-    assertTruthy(stopFile, 'hold mode should pass a -StopFile path');
+    assertTruthy(args.includes('--no-silence-stop'), 'hold mode disables silence stop');
+    const stopFile = argValue('--stop-file', args);
+    assertTruthy(stopFile, 'hold mode should pass a --stop-file path');
     assertEqual(h.ctl.stop('release').ok, true);
     assertTruthy(fs.existsSync(stopFile), 'stop() should write the flag file');
     h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
@@ -686,9 +686,9 @@ describe('DICTATION CONTROLLER (local Whisper)', () => {
   it('falls back to silence-stop when the release watcher script is missing', () => {
     const h = makeController({});
     h.ctl.start({ holdAccelerator: 'Control+Alt+Space' });
-    // No watch-hotkey-release.ps1 stub -> not hold mode, so no -StopFile.
-    assertFalsy(h.lastCall().args.includes('-StopFile'));
-    assertFalsy(h.lastCall().args.includes('-NoSilenceStop'));
+    // No watch-hotkey-release.ps1 stub -> not hold mode, so no --stop-file.
+    assertFalsy(h.lastCall().args.includes('--stop-file'));
+    assertFalsy(h.lastCall().args.includes('--no-silence-stop'));
     h.complete(0, { stdout: '{"ok":true,"transcript":""}' });
   });
 
@@ -12729,6 +12729,7 @@ describe('EX6f-1 — ipc-handlers (read-only group)', () => {
       files: ['x.mp3', 'y.mp3'],
       allPaths: ['x.mp3', 'y.mp3'],   // fallback when getQueueAllPaths not provided
       assignments: { count: 2 },
+      recapShorts: [],                // session recap: no archive wired -> empty
     });
   });
 
@@ -20976,6 +20977,929 @@ describe('POSIX INSTALL + HOOK SURFACE', () => {
       'preserved config',
     ]) {
       if (!src.includes(needle)) throw new Error(`uninstall.sh missing ${needle}`);
+    }
+  });
+});
+
+// =============================================================================
+// SESSION RECAP (2026-10-05) — "catch up on what I missed" from a session tab.
+// Covers app/lib/recap-archive.js (main-side archive), the recap IPC handlers,
+// the AudioPlayer playlist, the tab control, the chooser + controller, and
+// the config / prune / settings plumbing.
+// =============================================================================
+describe('SESSION RECAP — clip-paths staged-name helpers', () => {
+  const cp = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+  const staged = '20261005T201500123-R-20261005T100000000-0003-abcdef12.mp3';
+
+  it('isRecapClip / recapOriginalName round-trip a staged name', () => {
+    assertTruthy(cp.isRecapClip(staged));
+    assertEqual(cp.recapOriginalName(staged), '20261005T100000000-0003-abcdef12.mp3');
+    assertFalsy(cp.isRecapClip('20261005T100000000-0003-abcdef12.mp3'));
+    assertEqual(cp.recapOriginalName('20261005T100000000-0003-abcdef12.mp3'), null);
+    assertEqual(cp.recapOriginalName(null), null);
+  });
+
+  it('staged names still resolve the session and are never ephemeral / J / heartbeat', () => {
+    assertEqual(cp.extractSessionShort(staged), 'abcdef12');
+    assertFalsy(cp.isEphemeralClip(staged));
+    assertFalsy(cp.isHeartbeatClip(staged));
+    assertFalsy(cp.isClipFile(staged));
+    // A staged copy of a Q- question clip keeps its tail intact too.
+    const q = '20261005T201500125-R-20261005T100000000-Q-0001-abcdef12.wav';
+    assertTruthy(cp.isRecapClip(q));
+    assertEqual(cp.extractSessionShort(q), 'abcdef12');
+  });
+});
+
+describe('SESSION RECAP — archive (app/lib/recap-archive.js)', () => {
+  const {
+    createRecapArchive, estimateDurationFromBytes, MAX_RECAP_CLIPS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'recap-archive.js'));
+
+  // 8 kHz mono 16-bit PCM => byteRate 16000.
+  function wav(sec) {
+    const n = Math.round(8000 * sec);
+    const b = Buffer.alloc(44 + n * 2);
+    b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8); b.write('fmt ', 12);
+    b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+    b.writeUInt32LE(8000, 24); b.writeUInt32LE(16000, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
+    b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+    return b;
+  }
+  // MPEG-2 Layer III 48 kbit/s CBR frame header (edge-tts default) padded to size.
+  function mp3(sec) {
+    const b = Buffer.alloc(Math.round(sec * 6000));
+    b[0] = 0xff; b[1] = 0xf3; b[2] = 0x60; b[3] = 0xc4;
+    return b;
+  }
+  function setup({ keepMs = 60 * 60 * 1000, maxRecapClips = MAX_RECAP_CLIPS, maxPerSession = 200, maxTotal = 1000 } = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-recap-'));
+    const clock = { now: Date.parse('2026-10-05T12:00:00Z') };
+    const arc = createRecapArchive({
+      queueDir: dir, now: () => clock.now, getKeepMs: () => keepMs, maxRecapClips, maxPerSession, maxTotal,
+    });
+    const put = (name, buf, ageSec = 60) => {
+      const full = path.join(dir, name);
+      fs.writeFileSync(full, buf);
+      const t = (clock.now - ageSec * 1000) / 1000;
+      fs.utimesSync(full, t, t);
+      return full;
+    };
+    const live = () => fs.readdirSync(dir).filter((n) => /\.(mp3|wav)$/i.test(n)).map((n) => path.join(dir, n));
+    const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+    return { dir, arc, put, live, clock, cleanup };
+  }
+  const S = 'abcdef12';
+
+  it('estimateDurationFromBytes reads WAV byte-rate and MP3 frame bitrate, null on junk', () => {
+    const w = wav(2);
+    assertEqual(Math.round(estimateDurationFromBytes(w.subarray(0, 64), w.length, 'x.wav') * 10) / 10, 2);
+    const m = mp3(10);
+    assertEqual(Math.round(estimateDurationFromBytes(m.subarray(0, 64), m.length, 'x.mp3')), 10);
+    // ID3v2 tag (10-byte header, 20-byte body) before the first frame.
+    const tagged = Buffer.concat([Buffer.from([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 20]), Buffer.alloc(20), mp3(5)]);
+    assertEqual(Math.round(estimateDurationFromBytes(tagged.subarray(0, 128), tagged.length, 'x.mp3')), 5);
+    assertEqual(estimateDurationFromBytes(Buffer.alloc(64), 6000, 'x.mp3'), null);
+    assertEqual(estimateDurationFromBytes(null, 100, 'x.mp3'), null);
+  });
+
+  it('archives body clips (mp3 + wav) and unlinks J / T- / H- / footer / notif / Codex-status clips', () => {
+    const t = setup();
+    const body = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(2));
+    const bodyWav = t.put(`20261005T100000001-0002-${S}.wav`, wav(1));
+    const codexBody = t.put(`20261005T100000002-C0001-0001-${S}.mp3`, mp3(1));
+    const mcpBody = t.put(`20261005T100000003-M0001-0001-${S}.mp3`, mp3(1));
+    const junk = [
+      t.put(`20261005T100000010-clip-${S}-01.mp3`, mp3(1)),
+      t.put(`20261005T100000011-T-0001-${S}.mp3`, mp3(1)),
+      t.put(`20261005T100000012-H-0001-${S}.mp3`, mp3(1)),
+      t.put(`20261005T100000013-9999-${S}.mp3`, mp3(1)),
+      t.put(`20261005T100000014-notif-${S}.mp3`, mp3(1)),
+      t.put(`20261005T100000015-E-0000-${S}.mp3`, mp3(1)),
+      t.put(`20261005T100000016-plugin-start-${S}.mp3`, mp3(1)),
+    ];
+    for (const p of [body, bodyWav, codexBody, mcpBody]) {
+      assertEqual(t.arc.archiveOrUnlink(p, { reason: 'played-auto-prune', durationSec: 2.5 }).action, 'archived', p);
+      assertFalsy(fs.existsSync(p), 'archived clip must leave the queue');
+      assertTruthy(fs.existsSync(path.join(t.arc.recapDir, path.basename(p))), 'archived clip must land in recap/');
+    }
+    for (const p of junk) {
+      assertEqual(t.arc.archiveOrUnlink(p, { reason: 'played-ephemeral' }).action, 'unlinked', p);
+      assertFalsy(fs.existsSync(path.join(t.arc.recapDir, path.basename(p))), 'status / ephemeral clips never enter the archive');
+    }
+    const idx = t.arc.readIndex();
+    assertEqual(idx[path.basename(body)].durationSec, 2.5);
+    assertEqual(idx[path.basename(body)].played, true);
+    assertEqual(idx[path.basename(body)].reason, 'played-auto-prune');
+    assertEqual(t.arc.archiveOrUnlink(path.join(t.dir, 'nope.mp3'), {}).action, 'missing');
+    t.cleanup();
+  });
+
+  it('explicit deletes (manual / bin / clear) never archive and also forget an archived original of the same name', () => {
+    const t = setup();
+    const a = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(1), 500);
+    assertEqual(t.arc.archiveOrUnlink(a, { reason: 'played-auto-prune' }).action, 'archived');
+    assertTruthy(fs.existsSync(path.join(t.arc.recapDir, path.basename(a))));
+    // Same clip name shows up again in the queue (e.g. a leftover) and the user bins it.
+    const again = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(1), 10);
+    assertEqual(t.arc.archiveOrUnlink(again, { reason: 'clear-all' }).action, 'unlinked');
+    assertFalsy(fs.existsSync(path.join(t.arc.recapDir, path.basename(a))), 'bin removes the archived original too');
+    assertFalsy(t.arc.readIndex()[path.basename(a)], 'index entry dropped');
+    const b = t.put(`20261005T100000010-0002-${S}.mp3`, mp3(1), 500);
+    assertEqual(t.arc.archiveOrUnlink(b, { reason: 'manual' }).action, 'unlinked');
+    assertEqual(t.arc.archiveOrUnlink(t.put(`20261005T100000020-0003-${S}.mp3`, mp3(1), 500), { reason: 'stale-prune' }).action, 'archived');
+    assertEqual(t.arc.listArchived(S).length, 1);
+    t.cleanup();
+  });
+
+  it('prune enforces the byte cap newest-first', () => {
+    const t = setup({ keepMs: 60 * 60 * 1000, maxPerSession: 50, maxTotal: 50 });
+    const arc = createRecapArchive({ queueDir: t.dir, now: () => t.clock.now, getKeepMs: () => 3600000, maxTotalBytes: 6000 * 25 });
+    for (let i = 0; i < 4; i++) {
+      const p = t.put(`20261005T1000000${i}0-000${i}-${S}.mp3`, mp3(10), 100 - i);  // 60 KB each, newest last
+      arc.archiveOrUnlink(p, { reason: 'played-auto-prune' });
+    }
+    const r = arc.prune();
+    assertEqual(r.kept, 2, 'only the newest two fit in a 150 KB budget');
+    assertEqual(r.removed, 2);
+    t.cleanup();
+  });
+
+  it('keep window 0 disables the archive: body clips are unlinked, prune empties the dir', () => {
+    const t = setup({ keepMs: 0 });
+    const body = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(1));
+    assertFalsy(t.arc.isEnabled());
+    assertEqual(t.arc.archiveOrUnlink(body, { reason: 'played-auto-prune' }).action, 'unlinked');
+    fs.mkdirSync(t.arc.recapDir, { recursive: true });
+    fs.writeFileSync(path.join(t.arc.recapDir, `20261005T100000001-0001-${S}.mp3`), mp3(1));
+    assertEqual(t.arc.prune().removed, 1);
+    assertEqual(fs.readdirSync(t.arc.recapDir).filter((n) => n.endsWith('.mp3')).length, 0);
+    t.cleanup();
+  });
+
+  it('list / summary / select honour chronology, live-wins dedupe, count + minutes modes and the cap', () => {
+    const t = setup({ maxRecapClips: 4 });
+    const names = [];
+    for (let i = 0; i < 6; i++) {
+      const n = `20261005T1000000${i}0-000${i}-${S}.mp3`;
+      names.push(n);
+      t.put(n, mp3(10), 600 - i * 10);  // oldest first
+    }
+    t.put(`20261005T100000099-0001-ffffffff.mp3`, mp3(3), 5);  // another session, live
+    for (let i = 0; i < 4; i++) t.arc.archiveOrUnlink(path.join(t.dir, names[i]), { reason: 'played-auto-prune', durationSec: 9 });
+    // names[4], names[5] stay live (unplayed).
+    const sum = t.arc.summary(S, t.live());
+    assertEqual(sum.count, 6);
+    assertEqual(Math.round(sum.totalSec), 4 * 9 + 2 * 10);
+    assertEqual(sum.enabled, true);
+    assertEqual(sum.maxClips, 4);
+    const all = t.arc.listAll(S, t.live());
+    assertDeepEqual(all.map((e) => e.name), names, 'chronological order');
+    assertDeepEqual(all.map((e) => e.live), [false, false, false, false, true, true]);
+    const c3 = t.arc.select(S, { mode: 'count', value: 3 }, t.live());
+    assertDeepEqual(c3.map((e) => e.name), names.slice(3), 'last 3 in playback order');
+    const c50 = t.arc.select(S, { mode: 'count', value: 50 }, t.live());
+    assertEqual(c50.length, 4, 'count is capped at maxRecapClips');
+    // minutes: 10 + 10 + 9 = 29 s < 30 s -> the crossing clip (4th) is included.
+    const m = t.arc.select(S, { mode: 'minutes', value: 0.5 }, t.live());
+    assertEqual(m.length, 4);
+    const allSessions = t.arc.summary('all', t.live());
+    assertEqual(allSessions.count, 7);
+    // allow predicate drops a session from an [All] pick.
+    const filtered = t.arc.select('all', { mode: 'count', value: 10, allow: (s) => s !== 'ffffffff' }, t.live());
+    assertFalsy(filtered.some((e) => e.short === 'ffffffff'));
+    assertDeepEqual(t.arc.listShorts(), [S]);
+    t.cleanup();
+  });
+
+  it('stage copies archived clips under fresh -R- names with monotonic now-stamped mtimes; live entries pass through; bad names are refused', () => {
+    const t = setup();
+    const a = t.put(`20261005T100000000-0001-${S}.mp3`, mp3(1), 500);
+    const b = t.put(`20261005T100000010-0002-${S}.mp3`, mp3(1), 400);
+    const liveClip = t.put(`20261005T100000020-0003-${S}.mp3`, mp3(1), 300);
+    t.arc.archiveOrUnlink(a, { reason: 'played-auto-prune' });
+    t.arc.archiveOrUnlink(b, { reason: 'stale-prune' });
+    const picked = t.arc.select(S, { mode: 'count', value: 3 }, t.live());
+    const staged = t.arc.stage(picked);
+    assertEqual(staged.length, 3);
+    assertTruthy(/-R-20261005T100000000-0001-abcdef12\.mp3$/.test(staged[0].name), staged[0].name);
+    assertTruthy(/^\d{8}T\d{9}-R-/.test(staged[1].name));
+    assertEqual(staged[2].path, liveClip, 'live clip is referenced, not copied');
+    assertTruthy(staged[1].mtime > staged[0].mtime, 'staged mtimes are strictly increasing');
+    assertEqual(staged[0].mtime, t.clock.now);
+    const st0 = fs.statSync(staged[0].path);
+    assertEqual(Math.round(st0.mtimeMs), t.clock.now, 'on-disk mtime stamped to now');
+    assertTruthy(fs.existsSync(path.join(t.arc.recapDir, path.basename(a))), 'archive keeps the original');
+    // Hostile names never leave the archive dir.
+    const bad = t.arc.stage([{ name: '../index.json', live: false }, { name: 'nope.mp3', live: false }]);
+    assertEqual(bad.length, 0);
+    // Re-archiving a staged copy after replay: unlink only, duration recorded on the original.
+    const r = t.arc.archiveOrUnlink(staged[0].path, { reason: 'played-auto-prune', durationSec: 7.25 });
+    assertEqual(r.action, 'unlinked');
+    assertEqual(r.staged, true);
+    assertFalsy(fs.existsSync(staged[0].path));
+    assertEqual(t.arc.readIndex()[path.basename(a)].durationSec, 7.25);
+    assertEqual(t.arc.sidecarBaseFor(staged[1].path), path.join(t.dir, '20261005T100000010-0002-abcdef12'));
+    assertEqual(t.arc.cleanStagedCopies(), 1, 'boot cleanup drops the remaining staged copy only');
+    assertTruthy(fs.existsSync(liveClip), 'boot cleanup never touches real clips');
+    t.cleanup();
+  });
+
+  it('prune enforces the keep window + per-session and total caps, self-heals the index; purgeSession forgets one session', () => {
+    const t = setup({ keepMs: 30 * 60 * 1000, maxPerSession: 3, maxTotal: 5 });
+    const mk = (short, i, ageMin) => {
+      const p = t.put(`20261005T1000${String(i).padStart(5, '0')}-000${i % 10}-${short}.mp3`, mp3(1), ageMin * 60);
+      t.arc.archiveOrUnlink(p, { reason: 'played-auto-prune', durationSec: 1 });
+    };
+    for (let i = 0; i < 5; i++) mk(S, i, 5 + i);          // 5 fresh for S -> per-session cap 3
+    for (let i = 5; i < 8; i++) mk('bbbbbbbb', i, 5 + i); // 3 fresh for B -> total cap 5 keeps 2 of them
+    mk('cccccccc', 9, 90);                                 // past the 30-min window
+    const before = fs.readdirSync(t.arc.recapDir).filter((n) => n.endsWith('.mp3')).length;
+    assertEqual(before, 9);
+    const r = t.arc.prune();
+    assertEqual(r.kept, 5);
+    assertEqual(r.removed, 4);
+    const left = fs.readdirSync(t.arc.recapDir).filter((n) => n.endsWith('.mp3'));
+    assertEqual(left.filter((n) => n.endsWith(`-${S}.mp3`)).length, 3, 'per-session cap keeps the newest 3');
+    assertEqual(left.filter((n) => n.endsWith('-cccccccc.mp3')).length, 0, 'expired clip removed');
+    assertEqual(Object.keys(t.arc.readIndex()).length, 5, 'index entries for pruned files are dropped');
+    assertEqual(t.arc.purgeSession(S), 3);
+    assertEqual(t.arc.purgeSession('not-a-short'), 0);
+    assertFalsy(Object.keys(t.arc.readIndex()).some((n) => n.endsWith(`-${S}.mp3`)));
+    assertDeepEqual(t.arc.listShorts(), ['bbbbbbbb']);
+    t.cleanup();
+  });
+});
+
+describe('SESSION RECAP — IPC handlers', () => {
+  const { createIpcHandlers } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'));
+  const {
+    validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+  } = require(path.join(__dirname, '..', 'app', 'lib', 'ipc-validate.js'));
+
+  function fakeArchive() {
+    const calls = { archive: [], select: [], stage: [], purge: [] };
+    return {
+      calls,
+      archiveOrUnlink: (p, opts) => {
+        calls.archive.push([p, opts]);
+        const staged = /-R-/.test(path.basename(p));
+        return { action: staged ? 'unlinked' : 'archived', staged, name: path.basename(p) };
+      },
+      summary: (short) => ({ short, count: 2, totalSec: 12, enabled: true, keepMin: 120, maxClips: 25 }),
+      select: (short, opts, live) => {
+        calls.select.push([short, opts, live]);
+        const entries = [
+          { name: 'a.mp3', short: 'abcdef12', live: false, durationSec: 5 },
+          { name: 'b.mp3', short: 'bbbbbbbb', live: true, path: '/safe/queue/b.mp3', durationSec: 7, mtime: 5 },
+        ];
+        return typeof opts.allow === 'function' ? entries.filter((e) => opts.allow(e.short)) : entries;
+      },
+      stage: (entries) => {
+        calls.stage.push(entries);
+        return entries.map((e, i) => e.live
+          ? { path: e.path, mtime: e.mtime, durationSec: e.durationSec, live: true }
+          : { path: `/safe/queue/2026-R-${e.name}`, mtime: 100 + i, durationSec: e.durationSec, live: false });
+      },
+      listShorts: () => ['abcdef12'],
+      purgeSession: (s) => { calls.purge.push(s); return 2; },
+      sidecarBaseFor: () => '/safe/queue/original-base',
+    };
+  }
+
+  function build({ allow = true, muted = {}, archive = fakeArchive() } = {}) {
+    const handlers = {};
+    const unlinked = [];
+    const written = [];
+    const notified = [];
+    const reads = [];
+    createIpcHandlers({
+      ipcMain: { handle: (n, fn) => { handlers[n] = fn; } },
+      diag: () => {}, callEdgeTTS: () => {}, getAppVersion: () => '0', getCFG: () => ({}),
+      loadAssignments: () => muted,
+      getQueueFiles: () => [], getQueueAllPaths: () => ['/safe/queue/b.mp3', '/safe/queue/x-T-0001-abcdef12.mp3'],
+      ensureAssignmentsForFiles: () => ({}), shortFromFile: () => null, isPidAlive: () => false,
+      computeStaleSessions: () => [], SESSIONS_DIR: os.tmpdir(), getWin: () => null,
+      saveAssignments: () => true, notifyQueue: () => notified.push(1), allowMutation: () => allow,
+      validShort, validVoice, sanitiseLabel, ALLOWED_INCLUDE_KEYS,
+      setCFG: () => {}, saveConfig: () => true,
+      apiKeyStore: { set: () => {}, get: () => null }, redactForLog: (x) => x, setApplyingDock: () => {},
+      testMode: true, QUEUE_DIR: '/safe/queue',
+      isPathInside: (p) => typeof p === 'string' && p.startsWith('/safe/queue'),
+      recapArchive: archive,
+      fs: {
+        unlinkSync: (p) => unlinked.push(p),
+        writeFileSync: (p, body) => written.push([p, body]),
+        readFileSync: (p) => { reads.push(p); return 'text'; },
+        existsSync: () => false, readdirSync: () => [],
+      },
+      getWatchdog: () => null, getWatchdogIntervalMs: () => 0,
+    }).register();
+    return { handlers, unlinked, written, notified, reads, archive };
+  }
+
+  it('delete-file routes through archiveOrUnlink with the measured duration and keeps the played tombstone for real clips', () => {
+    const b = build();
+    const r = b.handlers['delete-file'](null, '/safe/queue/20261005T100000000-0001-abcdef12.mp3', 'played-auto-prune', { durationSec: 4.5 });
+    assertEqual(r, true);
+    assertEqual(b.unlinked.length, 0, 'archive owns the file operation');
+    assertEqual(b.archive.calls.archive.length, 1);
+    assertEqual(b.archive.calls.archive[0][1].durationSec, 4.5);
+    assertEqual(b.archive.calls.archive[0][1].reason, 'played-auto-prune');
+    assertEqual(b.written.length, 1, 'played tombstone still written for a real clip');
+  });
+
+  it('delete-file skips the tombstone for a staged -R- replay and rejects junk durations', () => {
+    const b = build();
+    const r = b.handlers['delete-file'](null, '/safe/queue/20261005T200000000-R-20261005T100000000-0001-abcdef12.mp3', 'played-auto-prune', { durationSec: -3 });
+    assertEqual(r, true);
+    assertEqual(b.written.length, 0, 'no tombstone for a replay');
+    assertEqual(b.archive.calls.archive[0][1].durationSec, null);
+  });
+
+  it('delete-file / delete-files refuse paths inside queue/recap (subdirectories are off-limits)', () => {
+    const b = build();
+    assertEqual(b.handlers['delete-file'](null, '/safe/queue/recap/20261005T100000000-0001-abcdef12.mp3', 'manual'), false);
+    const batch = b.handlers['delete-files'](null, ['/safe/queue/recap/x.mp3', '/safe/queue/y.mp3'], 'clear-all');
+    assertEqual(batch.failed.length, 1);
+    assertEqual(batch.deleted, 1);
+    assertEqual(b.archive.calls.archive.length, 1);
+  });
+
+  it('get-queue ships recapShorts; get-recap-summary validates the short', () => {
+    const b = build();
+    assertDeepEqual(b.handlers['get-queue'](null).recapShorts, ['abcdef12']);
+    assertEqual(b.handlers['get-recap-summary'](null, 'ZZ'), null);
+    assertEqual(b.handlers['get-recap-summary'](null, '../x'), null);
+    assertEqual(b.handlers['get-recap-summary'](null, 'ABCDEF12').short, 'abcdef12');
+    assertEqual(b.handlers['get-recap-summary'](null, 'all').count, 2);
+  });
+
+  it('stage-recap validates input, refuses muted sessions, skips muted sessions on [All], stages and notifies', () => {
+    const b = build({ muted: { bbbbbbbb: { muted: true } } });
+    assertEqual(b.handlers['stage-recap'](null, { short: 'nope', mode: 'count', value: 5 }).error, 'bad-short');
+    assertEqual(b.handlers['stage-recap'](null, { short: 'abcdef12', mode: 'count', value: 0 }).error, 'bad-value');
+    assertEqual(b.handlers['stage-recap'](null, { short: 'abcdef12', mode: 'minutes', value: 99999 }).error, 'bad-value');
+    assertEqual(b.handlers['stage-recap'](null, { short: 'bbbbbbbb', mode: 'count', value: 5 }).error, 'muted');
+    const r = b.handlers['stage-recap'](null, { short: 'ALL', mode: 'count', value: 5 });
+    assertEqual(r.ok, true);
+    assertEqual(r.clips.length, 1, 'muted session filtered out of the [All] pick');
+    assertEqual(r.clips[0].live, false);
+    assertEqual(b.notified.length, 1, 'notifyQueue fires when a copy was staged');
+    const sel = b.archive.calls.select[0];
+    assertEqual(sel[0], 'all');
+    assertEqual(sel[1].mode, 'count');
+    assertEqual(sel[1].value, 5);
+    assertTruthy(sel[2].includes('/safe/queue/b.mp3'), 'live paths handed to select');
+    const blocked = build({ allow: false });
+    assertEqual(blocked.handlers['stage-recap'](null, { short: 'abcdef12', mode: 'count', value: 5 }).error, 'busy');
+  });
+
+  it('stage-recap with only live clips does not notify; read-clip-sidecar maps a staged copy to the original sidecar', () => {
+    const archive = fakeArchive();
+    archive.select = () => [{ name: 'b.mp3', short: 'bbbbbbbb', live: true, path: '/safe/queue/b.mp3', durationSec: 7, mtime: 5 }];
+    const b = build({ archive });
+    const r = b.handlers['stage-recap'](null, { short: 'bbbbbbbb', mode: 'minutes', value: 2 });
+    assertEqual(r.ok, true);
+    assertEqual(b.notified.length, 0);
+    const sc = b.handlers['read-clip-sidecar'](null, '/safe/queue/20261005T200000000-R-20261005T100000000-0001-abcdef12.mp3');
+    assertEqual(sc.spoken, 'text');
+    assertTruthy(b.reads.some((p) => p === '/safe/queue/original-base.txt'), 'sidecar read keyed off the original clip');
+  });
+
+  it('handlers without an archive keep the legacy unlink path and report recap unavailable', () => {
+    const b = build({ archive: null });
+    assertEqual(b.handlers['delete-file'](null, '/safe/queue/ok.mp3', 'manual'), true);
+    assertEqual(b.unlinked.length, 1);
+    assertDeepEqual(b.handlers['get-queue'](null).recapShorts, []);
+    assertEqual(b.handlers['get-recap-summary'](null, 'abcdef12').enabled, false);
+    assertEqual(b.handlers['stage-recap'](null, { short: 'abcdef12', mode: 'count', value: 5 }).error, 'unavailable');
+  });
+
+  it('remove-session purges the archived clips of that session (source + handler)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'ipc-handlers.js'), 'utf8');
+    const body = /function purgeQueueArtifactsForShort\(shortId\)\s*\{[\s\S]*?\n {2}\}/.exec(src);
+    if (!body || !/recapArchive\.purgeSession\(shortId\)/.test(body[0])) {
+      throw new Error('purgeQueueArtifactsForShort must call recapArchive.purgeSession(shortId)');
+    }
+  });
+});
+
+describe('SESSION RECAP — AudioPlayer playlist', () => {
+  const { AudioPlayer } = require(path.join(__dirname, '..', 'app', 'lib', 'audio-player.js'));
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+
+  function fakeEl() {
+    const listeners = [];
+    return {
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      addEventListener: (ev, fn) => listeners.push([ev, fn]),
+      removeEventListener() {},
+      setAttribute() {}, removeAttribute() {}, appendChild() {},
+      getBoundingClientRect: () => ({ left: 0, width: 200, top: 0, bottom: 10, right: 200 }),
+      value: '0', max: '1000', textContent: '',
+    };
+  }
+  function fakeAudio() {
+    const a = {
+      src: '', currentTime: 0, duration: NaN, playbackRate: 1, paused: true, ended: false, readyState: 0,
+      _listeners: new Map(),
+      play: () => Promise.resolve().then(() => { a.paused = false; }),
+      pause: () => { a.paused = true; },
+      addEventListener(ev, fn) { if (!a._listeners.has(ev)) a._listeners.set(ev, new Set()); a._listeners.get(ev).add(fn); },
+      removeEventListener(ev, fn) { if (a._listeners.has(ev)) a._listeners.get(ev).delete(fn); },
+      fire(ev) { if (a._listeners.has(ev)) for (const fn of a._listeners.get(ev)) fn({}); },
+    };
+    return a;
+  }
+  function makePlayer(queue, overrides = {}) {
+    const audio = fakeAudio();
+    const calls = { playStart: [], clipEnded: [], playNext: 0, recapEnd: [] };
+    const player = new AudioPlayer({
+      audio,
+      playPauseBtn: fakeEl(), playIcon: fakeEl(), pauseIcon: fakeEl(), back10Btn: fakeEl(), fwd10Btn: fakeEl(),
+      scrubber: fakeEl(), scrubberWrap: fakeEl(), scrubberMascot: fakeEl(), scrubberJarvis: fakeEl(), timeEl: fakeEl(),
+      getPlaybackSpeed: () => 1, getAutoContinueAfterClick: () => overrides.autoContinue !== false,
+      getQueue: () => queue, getHeardPaths: () => new Set(),
+      markPlayed() {}, markHeard() {}, markManualPlayed() {}, removePending() {},
+      fmt: (s) => String(s), fileUrl: (p) => `file://${p}`,
+      isPathSessionMuted: () => false, isPathSessionStale: () => false,
+      clipPaths, randomVerb: () => 'x', setDynamicStyle() {},
+      onPlayStart: (p, m) => calls.playStart.push([p, m.manual, m.userClick]),
+      onClipEnded: (p, m) => calls.clipEnded.push([p, m]),
+      onPlayNextPending: () => { calls.playNext++; },
+      onRenderDots() {},
+      onRecapEnd: (info) => calls.recapEnd.push(info),
+      audioContextFactory: () => null,
+    });
+    player.mount();
+    return { player, audio, calls };
+  }
+  const R1 = '/q/20261005T200000000-R-20261005T100000000-0001-abcdef12.mp3';
+  const R2 = '/q/20261005T200000002-R-20261005T100000010-0002-abcdef12.mp3';
+  const LIVE = '/q/20261005T100000020-0003-abcdef12.mp3';
+  const NEWER = '/q/20261005T300000000-0009-abcdef12.mp3';
+  const baseQueue = () => [
+    { path: NEWER, mtime: 9000 }, { path: R2, mtime: 2002 }, { path: R1, mtime: 2000 }, { path: LIVE, mtime: 1500 },
+  ];
+
+  it('startRecap plays the playlist in order (manual=false, userClick=true), then hands off to playNextPending — never the forward-in-time chain', () => {
+    const { player, audio, calls } = makePlayer(baseQueue());
+    assertTruthy(player.startRecap([R1, R2, LIVE]));
+    assertTruthy(player.isRecapActive());
+    assertEqual(player.getCurrentPath(), R1);
+    assertDeepEqual(calls.playStart[0], [R1, false, true]);
+    assertDeepEqual(player.recapRemaining(), [R2, LIVE]);
+    audio.duration = 6.5;
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), R2);
+    assertEqual(calls.clipEnded[0][1].durationSec, 6.5, 'measured duration reaches onClipEnded');
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), LIVE);
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), null, 'exhausted playlist does not chain into the NEWER clip');
+    assertFalsy(player.isRecapActive());
+    assertEqual(calls.playNext, 1, 'falls through to playNextPending exactly once');
+    assertEqual(calls.recapEnd.length, 1);
+    assertEqual(calls.recapEnd[0].reason, 'exhausted');
+    assertDeepEqual(calls.recapEnd[0].remaining, []);
+    player.unmount();
+  });
+
+  it('a real dot click cancels the recap and reports the unplayed remainder; stop() does too', () => {
+    const { player, calls } = makePlayer(baseQueue());
+    player.startRecap([R1, R2, LIVE]);
+    player.playPath(NEWER, true, true);
+    assertFalsy(player.isRecapActive());
+    assertEqual(calls.recapEnd[0].reason, 'user-click');
+    assertDeepEqual(calls.recapEnd[0].remaining, [R2, LIVE]);
+    player.startRecap([R1, R2]);
+    player.stop();
+    assertEqual(calls.recapEnd[1].reason, 'abort');
+    assertDeepEqual(calls.recapEnd[1].remaining, [R2]);
+    assertEqual(player.getCurrentPath(), null);
+    player.unmount();
+  });
+
+  it('a priority J clip interrupts a recap clip and the recap resumes from that clip afterwards', () => {
+    const J = '/q/20261005T250000000-clip-abcdef12-01.mp3';
+    const queue = baseQueue().concat([{ path: J, mtime: 5000 }]);
+    const { player, audio, calls } = makePlayer(queue);
+    player.startRecap([R1, R2]);
+    const aborted = player.abortIfAutoPlayed();
+    assertEqual(aborted, R1, 'recap clip is non-manual, so the J clip may cut it off');
+    assertTruthy(player.isRecapActive(), 'playlist survives the interruption');
+    assertDeepEqual(player.recapRemaining(), [R1, R2], 'interrupted clip goes back to the head');
+    player.playPath(J, true, false);   // priority: manual=true, userClick=false
+    assertTruthy(player.isRecapActive(), 'priority play does not cancel the recap');
+    audio.fire('ended');
+    assertEqual(player.getCurrentPath(), R1, 'recap resumes with the interrupted clip');
+    assertEqual(calls.playNext, 0);
+    player.unmount();
+  });
+
+  it('error / stall / skipCurrent advance the playlist; missing paths are skipped', () => {
+    const queue = baseQueue();
+    const { player, audio, calls } = makePlayer(queue);
+    player.startRecap([R1, '/q/gone.mp3', R2, LIVE]);
+    assertDeepEqual(player.recapRemaining(), [R2, LIVE], 'paths not in the queue are dropped up front');
+    queue.splice(queue.findIndex((f) => f.path === R2), 1);   // R2 vanishes mid-recap (pruned / binned)
+    audio.fire('error');
+    assertEqual(player.getCurrentPath(), LIVE, 'error skips the now-missing R2 and plays the next real one');
+    player.skipCurrent();
+    assertEqual(player.getCurrentPath(), null, 'right-click delete of the last playing clip ends the recap');
+    assertEqual(calls.playNext, 1, 'skip past the end hands off to playNextPending');
+    assertFalsy(player.isRecapActive());
+    player.unmount();
+  });
+
+  it('voice "next" during a recap skips to the next recap clip instead of cancelling', () => {
+    const { player, calls } = makePlayer(baseQueue());
+    player.startRecap([R1, R2]);
+    player.next();
+    assertEqual(player.getCurrentPath(), R2);
+    assertTruthy(player.isRecapActive());
+    assertEqual(calls.recapEnd.length, 0);
+    player.unmount();
+  });
+
+  it('startRecap with no playable paths returns false and leaves playback alone', () => {
+    const { player } = makePlayer(baseQueue());
+    assertFalsy(player.startRecap(['/q/nope.mp3']));
+    assertFalsy(player.startRecap([]));
+    assertFalsy(player.isRecapActive());
+    player.unmount();
+  });
+});
+
+describe('SESSION RECAP — tab control, chooser and controller', () => {
+  // Rich-enough fake DOM for Tabs + RecapMenu: children, remove, contains,
+  // closest, getBoundingClientRect, innerHTML clear, listeners.
+  function makeEl(tag = 'div') {
+    const el = {
+      _tag: tag, _children: [], _listeners: [], _attrs: {}, _classes: new Set(),
+      parent: null, className: '', textContent: '', title: '', type: '', id: '', disabled: false, dataset: {},
+    };
+    Object.defineProperty(el, 'className', {
+      get() { return [...el._classes].join(' '); },
+      set(v) { el._classes = new Set(String(v).split(/\s+/).filter(Boolean)); },
+    });
+    el.classList = {
+      add: (c) => el._classes.add(c), remove: (c) => el._classes.delete(c),
+      contains: (c) => el._classes.has(c),
+      toggle: (c, force) => { const want = force === undefined ? !el._classes.has(c) : !!force; if (want) el._classes.add(c); else el._classes.delete(c); return want; },
+    };
+    el.setAttribute = (k, v) => { el._attrs[k] = v; };
+    el.getAttribute = (k) => el._attrs[k];
+    el.appendChild = (c) => { el._children.push(c); c.parent = el; return c; };
+    el.remove = () => { if (el.parent) el.parent._children = el.parent._children.filter((c) => c !== el); el.parent = null; };
+    el.contains = (t) => t === el || el._children.some((c) => c.contains(t));
+    el.closest = (sel) => { const cls = sel.replace(/^\./, ''); let n = el; while (n) { if (n._classes && n._classes.has(cls)) return n; n = n.parent; } return null; };
+    el.addEventListener = (ev, fn) => { el._listeners.push({ ev, fn }); };
+    el.removeEventListener = (ev, fn) => { el._listeners = el._listeners.filter((l) => !(l.ev === ev && l.fn === fn)); };
+    el.fire = (ev, extra = {}) => { for (const l of el._listeners) if (l.ev === ev) l.fn({ stopPropagation() {}, preventDefault() {}, target: el, ...extra }); };
+    el.getBoundingClientRect = () => el._rect || { left: 0, top: 0, right: 100, bottom: 20, width: 100, height: 20 };
+    el.find = (cls) => { const out = []; const walk = (n) => { for (const c of n._children) { if (c._classes.has(cls)) out.push(c); walk(c); } }; walk(el); return out; };
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return el._html || ''; },
+      set(v) { el._html = v; if (v === '') el._children = []; },
+    });
+    return el;
+  }
+  const docListeners = [];
+  const fakeDoc = {
+    createElement: (tag) => makeEl(tag),
+    addEventListener: (ev, fn) => docListeners.push([ev, fn]),
+    removeEventListener: (ev, fn) => { const i = docListeners.findIndex((l) => l[0] === ev && l[1] === fn); if (i >= 0) docListeners.splice(i, 1); },
+    activeElement: null,
+  };
+  const origDoc = global.document;
+  const origRaf = global.requestAnimationFrame;
+  const origCaf = global.cancelAnimationFrame;
+  global.document = fakeDoc;
+  global.requestAnimationFrame = (fn) => { fn(); return 1; };
+  global.cancelAnimationFrame = () => {};
+
+  const clipPaths = require(path.join(__dirname, '..', 'app', 'lib', 'clip-paths.js'));
+  const tabsPath = path.join(__dirname, '..', 'app', 'lib', 'tabs.js');
+  delete require.cache[require.resolve(tabsPath)];
+  const { Tabs } = require(tabsPath);
+  const { RecapMenu } = require(path.join(__dirname, '..', 'app', 'lib', 'recap-menu.js'));
+  const { createRecapController } = require(path.join(__dirname, '..', 'app', 'lib', 'recap-controller.js'));
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const assignments = {
+    abcdef12: { index: 0, label: 'Frontend', last_seen: nowSec },
+    bbbbbbbb: { index: 1, label: 'Old session', last_seen: nowSec - 7200 },
+  };
+
+  it('every tab (including [All]) renders a .tab-recap control that fires onRecapSession(id, tabEl)', () => {
+    const fired = [];
+    const tabs = new Tabs({
+      clipPaths, staleSessionPoller: { has: () => false }, paletteSize: 24,
+      onRecapSession: (id, el) => fired.push([id, el]),
+      onDeleteSession: () => {},
+    });
+    const root = makeEl();
+    tabs.mount(root);
+    tabs.update({ queue: [{ path: '/q/20261005T100000000-0001-abcdef12.mp3', mtime: 1 }], allPaths: [], heardPaths: new Set(), sessionAssignments: assignments, selectedTab: 'all', recapShorts: [] });
+    tabs.renderNow();
+    const tabEls = root._children;
+    assertEqual(tabEls.length, 2, '[All] + the live session (old session has no live clips and no recap entries)');
+    for (const t of tabEls) {
+      const ctl = t.find('tab-recap');
+      assertEqual(ctl.length, 1, `${t.dataset.tabId} must have one recap control`);
+      assertEqual(ctl[0].getAttribute('role'), 'button');
+      ctl[0].fire('click');
+    }
+    assertDeepEqual(fired.map((f) => f[0]), ['all', 'abcdef12']);
+    assertTruthy(fired[1][1] === tabEls[1], 'the tab element is passed as the anchor');
+    assertEqual(tabEls[0].find('tab-bin').length, 0, '[All] still has no bin');
+    assertEqual(tabEls[1].find('tab-bin').length, 1);
+    tabs.unmount();
+  });
+
+  it('recapShorts keeps a (stale) tab for a session whose live clips are all gone', () => {
+    const tabs = new Tabs({ clipPaths, staleSessionPoller: { has: () => false }, paletteSize: 24, onRecapSession: () => {} });
+    const root = makeEl();
+    tabs.mount(root);
+    tabs.update({ queue: [], allPaths: [], heardPaths: new Set(), sessionAssignments: assignments, selectedTab: 'all', recapShorts: ['bbbbbbbb', 'not-a-short'] });
+    tabs.renderNow();
+    const ids = root._children.map((t) => t.dataset.tabId);
+    assertDeepEqual(ids, ['all', 'abcdef12', 'bbbbbbbb']);
+    const old = root._children[2];
+    assertTruthy(old._classes.has('stale'), 'recap-only session renders as a stale chip');
+    assertEqual(old.find('tab-recap').length, 1);
+    tabs.unmount();
+  });
+
+  it('RecapMenu renders inside the container, offers clip + minute presets, picks and closes; toggles on re-open', async () => {
+    const styles = [];
+    const picks = [];
+    const bar = makeEl();
+    bar._rect = { left: 10, top: 10, right: 690, bottom: 180, width: 680, height: 170 };
+    const anchor = makeEl();
+    anchor._rect = { left: 100, top: 50, right: 160, bottom: 72, width: 60, height: 22 };
+    const menu = new RecapMenu({ containerEl: bar, setDynamicStyle: (sel, css) => styles.push([sel, css]), onPick: (p) => picks.push(p) });
+    menu.mount();
+    const opened = menu.open({ short: 'abcdef12', label: 'Frontend', anchorEl: anchor, summary: Promise.resolve({ count: 12, totalSec: 95, enabled: true, maxClips: 25 }) });
+    assertTruthy(opened);
+    assertTruthy(menu.isOpen());
+    assertEqual(bar._children.length, 1, 'popover is a child of the bar');
+    const el = bar._children[0];
+    assertEqual(el.id, 'recapMenu');
+    await new Promise((r) => setImmediate(r));
+    const chips = el.find('recap-chip');
+    assertDeepEqual(chips.map((c) => c.textContent), ['5', '10', '20', 'All', '2', '5', '10', '30']);
+    assertFalsy(chips.some((c) => c.disabled), 'all chips enabled once the summary lands');
+    const summaryText = el.find('recap-menu-summary')[0].textContent;
+    assertTruthy(/12 clips/.test(summaryText) && /1:35/.test(summaryText), summaryText);
+    const pos = styles.filter((s) => s[0] === '#recapMenu' && s[1]).pop();
+    assertTruthy(/left: 90px; top: 66px;/.test(pos[1]), `anchored under the tab, relative to the bar: ${pos[1]}`);
+    chips[3].fire('click');   // All -> count = maxClips
+    assertDeepEqual(picks[0], { short: 'abcdef12', mode: 'count', value: 25 });
+    assertFalsy(menu.isOpen(), 'picking closes the menu');
+    assertEqual(bar._children.length, 0);
+    assertEqual(styles[styles.length - 1][1], null, 'position rule cleared on close');
+    // Same tab again toggles closed; an empty session disables the chips.
+    menu.open({ short: 'abcdef12', label: 'Frontend', anchorEl: anchor, summary: { count: 0, totalSec: 0, enabled: true } });
+    assertTruthy(menu.isOpen());
+    assertFalsy(menu.open({ short: 'abcdef12', label: 'Frontend', anchorEl: anchor, summary: {} }));
+    assertFalsy(menu.isOpen());
+    menu.open({ short: 'bbbbbbbb', label: 'Old', anchorEl: anchor, summary: { count: 0, totalSec: 0, enabled: true } });
+    await new Promise((r) => setImmediate(r));   // summary is applied asynchronously
+    assertTruthy(bar._children[0].find('recap-chip').every((c) => c.disabled), 'nothing kept -> chips disabled');
+    assertTruthy(/nothing kept/.test(bar._children[0].find('recap-menu-summary')[0].textContent));
+    menu.open({ short: 'cccccccc', label: 'Off', anchorEl: anchor, summary: { count: 3, totalSec: 9, enabled: false } });
+    await new Promise((r) => setImmediate(r));
+    assertTruthy(/off/.test(bar._children[0].find('recap-menu-summary')[0].textContent));
+    assertTruthy(bar._children[0].find('recap-chip').every((c) => c.disabled), 'archive off -> chips disabled');
+    menu.unmount();
+    assertFalsy(menu.isOpen());
+  });
+
+  it('controller stages via IPC, pre-marks every path, inserts missing entries newest-first and starts the playlist', async () => {
+    const calls = { stage: [], marked: [], added: [], started: [], toasts: [], before: 0, renders: 0 };
+    const queue = [{ path: '/q/live.mp3', mtime: 50 }];
+    const api = {
+      getRecapSummary: async () => ({ count: 2 }),
+      stageRecap: async (req) => {
+        calls.stage.push(req);
+        return { ok: true, clips: [
+          { path: '/q/2026-R-a.mp3', mtime: 100, durationSec: 4, live: false },
+          { path: '/q/2026-R-b.mp3', mtime: 102, durationSec: 5, live: false },
+          { path: '/q/live.mp3', mtime: 50, durationSec: 6, live: true },
+        ] };
+      },
+    };
+    const ctl = createRecapController({
+      api, audioPlayer: { startRecap: (paths) => { calls.started.push(paths); return true; } },
+      getQueue: () => queue, addToQueue: (e) => { queue.unshift(e); calls.added.push(e.path); },
+      markStaged: (p) => calls.marked.push(p), renderDots: () => { calls.renders++; },
+      showToast: (t) => calls.toasts.push(t), getSessionLabel: () => 'Frontend',
+      beforeStart: async () => { calls.before++; },
+    });
+    const n = await ctl.start({ short: 'abcdef12', mode: 'count', value: 10 });
+    assertEqual(n, 3);
+    assertEqual(calls.before, 1, 'pending undo-clear is settled before staging');
+    assertDeepEqual(calls.stage[0], { short: 'abcdef12', mode: 'count', value: 10 });
+    assertDeepEqual(calls.added, ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3'], 'only missing entries are inserted');
+    assertEqual(queue[0].path, '/q/2026-R-b.mp3', 'newest-first local order');
+    assertDeepEqual(calls.marked, ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3', '/q/live.mp3']);
+    assertDeepEqual(calls.started[0], ['/q/2026-R-a.mp3', '/q/2026-R-b.mp3', '/q/live.mp3']);
+    assertTruthy(calls.renders >= 1);
+    assertTruthy(/Catching up on Frontend/.test(calls.toasts[0]) && /last 3 clips/.test(calls.toasts[0]) && /0:15/.test(calls.toasts[0]), calls.toasts[0]);
+  });
+
+  it('controller gates the autoplay drain while staging and un-marks a cut-off auto-played clip', async () => {
+    const staging = [];
+    const unmarked = [];
+    const ctl = createRecapController({
+      api: { getRecapSummary: async () => ({}), stageRecap: async () => ({ ok: true, clips: [{ path: '/q/2026-R-a.mp3', mtime: 1, durationSec: 3, live: false }] }) },
+      audioPlayer: { startRecap: () => true, getCurrentPath: () => '/q/auto.mp3', isCurrentManual: () => false },
+      getQueue: () => [], setStaging: (on) => staging.push(on), unmarkPlayed: (p) => unmarked.push(p),
+    });
+    assertEqual(await ctl.start({ short: 'abcdef12', mode: 'count', value: 5 }), 1);
+    assertDeepEqual(staging, [true, false]);
+    assertDeepEqual(unmarked, ['/q/auto.mp3'], 'the interrupted auto clip replays later via the pending fallback');
+    const manual = [];
+    const ctl2 = createRecapController({
+      api: { getRecapSummary: async () => ({}), stageRecap: async () => ({ ok: true, clips: [{ path: '/q/2026-R-a.mp3', mtime: 1, durationSec: 3, live: false }] }) },
+      audioPlayer: { startRecap: () => true, getCurrentPath: () => '/q/j.mp3', isCurrentManual: () => true },
+      getQueue: () => [], unmarkPlayed: (p) => manual.push(p),
+    });
+    await ctl2.start({ short: 'abcdef12', mode: 'count', value: 5 });
+    assertEqual(manual.length, 0, 'a manual / J clip is not re-queued');
+  });
+
+  it('controller surfaces muted / busy / empty / failed results without starting playback', async () => {
+    const started = [];
+    const toasts = [];
+    const mk = (res) => createRecapController({
+      api: { getRecapSummary: async () => ({}), stageRecap: async () => res },
+      audioPlayer: { startRecap: (p) => { started.push(p); return true; } },
+      showToast: (t, _ms, variant) => toasts.push([t, variant]), getSessionLabel: () => 'Frontend',
+    });
+    assertEqual(await mk({ ok: false, error: 'muted' }).start({ short: 'abcdef12', mode: 'count', value: 5 }), 0);
+    assertTruthy(/muted/.test(toasts[0][0]));
+    assertEqual(await mk({ ok: false, error: 'busy' }).start({ short: 'abcdef12', mode: 'count', value: 5 }), 0);
+    assertEqual(await mk({ ok: true, clips: [] }).start({ short: 'all', mode: 'minutes', value: 2 }), 0);
+    assertTruthy(/Nothing to catch up on/.test(toasts[2][0]));
+    assertEqual(await mk(null).start({ short: 'abcdef12', mode: 'count', value: 5 }), 0);
+    assertEqual(started.length, 0);
+    const missingApi = createRecapController({ api: {}, audioPlayer: { startRecap: () => true }, showToast: (t) => toasts.push([t]) });
+    assertFalsy(missingApi.isAvailable());
+    assertEqual(await missingApi.start({ short: 'abcdef12', mode: 'count', value: 5 }), 0);
+  });
+
+  it('controller open() hands the chooser the session label and the summary promise', () => {
+    const opened = [];
+    const ctl = createRecapController({
+      api: { getRecapSummary: (s) => Promise.resolve({ short: s }), stageRecap: async () => ({ ok: true, clips: [] }) },
+      audioPlayer: { startRecap: () => true },
+      menu: { open: (args) => { opened.push(args); return true; }, close() {} },
+      getSessionLabel: (s) => (s === 'abcdef12' ? 'Frontend' : s),
+    });
+    assertTruthy(ctl.open('abcdef12', 'anchor'));
+    assertEqual(opened[0].label, 'Frontend');
+    assertEqual(opened[0].anchorEl, 'anchor');
+    assertTruthy(opened[0].summary && typeof opened[0].summary.then === 'function');
+    ctl.open('all', null);
+    assertEqual(opened[1].label, 'all sessions');
+  });
+
+  // Deliberately NOT restoring global.document here: the RecapMenu test
+  // above is async (awaits the summary promise) and the harness runs the
+  // rest of this file synchronously, so a restore at group end would swap
+  // the fake DOM out from under it mid-render. The DotStrip group installs
+  // its own fake document the same way; later groups that need a specific
+  // document (SettingsForm) install + restore their own.
+  void origDoc; void origRaf; void origCaf;
+});
+
+describe('SESSION RECAP — prune hook, config rule, settings control, renderer wiring', () => {
+  it('prune.js hands stale body clips to archiveStale when wired, unlinks otherwise', () => {
+    const { createPruner } = require(path.join(__dirname, '..', 'app', 'lib', 'prune.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-prune-recap-'));
+    const old = path.join(dir, '20261005T100000000-0001-abcdef12.mp3');
+    fs.writeFileSync(old, 'x');
+    const past = (Date.now() - 10 * 60_000) / 1000;
+    fs.utimesSync(old, past, past);
+    const handed = [];
+    const p = createPruner({
+      queueDir: dir, sessionsDir: dir, staleMs: 60_000, isAudioFile: (f) => /\.mp3$/.test(f), isPidAlive: () => true,
+      archiveStale: (full) => { handed.push(full); fs.unlinkSync(full); },
+    });
+    p.pruneOldFiles();
+    assertDeepEqual(handed, [old]);
+    assertFalsy(fs.existsSync(old));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('config-validate accepts playback.recap_keep_min in 0..1440 and rejects everything else', () => {
+    const { validateConfig, RULES } = require(path.join(__dirname, '..', 'app', 'lib', 'config-validate.js'));
+    assertTruthy(RULES.some((r) => r.path === 'playback.recap_keep_min'));
+    assertTruthy(validateConfig({ playback: { recap_keep_min: 0 } }).ok);
+    assertTruthy(validateConfig({ playback: { recap_keep_min: 1440 } }).ok);
+    assertFalsy(validateConfig({ playback: { recap_keep_min: 1441 } }).ok);
+    assertFalsy(validateConfig({ playback: { recap_keep_min: -1 } }).ok);
+    assertFalsy(validateConfig({ playback: { recap_keep_min: '120' } }).ok);
+    const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.example.json'), 'utf8'));
+    assertEqual(example.playback.recap_keep_min, 120, 'config.example.json documents the default');
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.schema.json'), 'utf8'));
+    assertEqual(schema.properties.playback.properties.recap_keep_min.default, 120);
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+    assertTruthy(/recap_keep_min:\s*120/.test(mainSrc), 'DEFAULTS.playback.recap_keep_min = 120');
+  });
+
+  it('settings-form wires #recapKeepMin: clamps 0..1440, writes playback.recap_keep_min, populates from cfg', () => {
+    const elements = {};
+    const origDoc = global.document;
+    const mk = () => ({
+      _listeners: [], value: '', disabled: false, parentElement: null, dataset: {},
+      addEventListener(ev, fn) { this._listeners.push({ ev, fn }); }, removeEventListener() {},
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      setAttribute() {}, removeAttribute() {},
+    });
+    elements.recapKeepMin = mk();
+    global.document = { getElementById: (id) => elements[id] || null, body: { dataset: {} }, querySelector: () => null, querySelectorAll: () => [] };
+    try {
+      const { SettingsForm } = require(path.join(__dirname, '..', 'app', 'lib', 'settings-form.js'));
+      const writes = [];
+      const form = new SettingsForm({ api: { updateConfig: async (p) => { writes.push(p); return p; }, reloadRenderer() {} }, edgeVoices: [], openaiVoices: [] });
+      form.mount();
+      form.update({ cfg: { playback: { recap_keep_min: 45 } } });
+      assertEqual(elements.recapKeepMin.value, '45');
+      form.update({ cfg: { playback: {} } });
+      assertEqual(elements.recapKeepMin.value, '120', 'missing -> default');
+      elements.recapKeepMin.value = '99999';
+      const change = elements.recapKeepMin._listeners.find((l) => l.ev === 'change');
+      change.fn();
+      assertEqual(elements.recapKeepMin.value, '1440', 'clamped display');
+      assertDeepEqual(writes[0], { playback: { recap_keep_min: 1440 } });
+      elements.recapKeepMin.value = '-5';
+      change.fn();
+      assertEqual(elements.recapKeepMin.value, '0');
+      form.unmount();
+    } finally {
+      global.document = origDoc;
+    }
+  });
+
+  it('renderer / preload / index / kit / main carry the recap wiring (source invariants)', () => {
+    const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+    const renderer = read('app', 'renderer.js');
+    for (const needle of [
+      /onRecapSession:\s*\(shortId,\s*tabEl\)\s*=>/,
+      /const recapPaths = new Set\(\)/,
+      /const clipDurations = new Map\(\)/,
+      /const isRecapClip = _paths\.isRecapClip/,
+      /window\.TT_RECAP_MENU\.RecapMenu\(/,
+      /window\.TT_RECAP_CONTROLLER\.createRecapController\(/,
+      /onRecapEnd:\s*\(\{ remaining \}\)/,
+      /recapMenu\.close\(\)/,
+      /isRecapActive\(\)\) audioPlayer\.skipCurrent\(\)/,
+      /recapShorts,\s*\n\s*\}\);/,
+      /function drainAutoplayQueue\(\) \{\s*\n\s*if \(recapStaging\) return;/,
+      /if \(aborted && !recapPaths\.has\(aborted\)\) playedPaths\.delete\(aborted\);/,
+      /setStaging:\s*\(on\)\s*=>\s*\{ recapStaging = !!on; \}/,
+    ]) {
+      if (!needle.test(renderer)) throw new Error(`renderer.js missing recap wiring: ${needle}`);
+    }
+    // Staged copies never enter pendingQueue, whatever the IPC ordering.
+    if (!/!playedPaths\.has\(f\.path\) && !recapPaths\.has\(f\.path\)\)/.test(renderer)) {
+      throw new Error('onQueueUpdated newArrivals must exclude recapPaths');
+    }
+    const arrivals = /for \(const f of newArrivals\) \{[\s\S]*?\n {2}\}/.exec(renderer);
+    if (!arrivals || !/isRecapClip\([\s\S]{0,80}\)\) \{\s*playedPaths\.add\(f\.path\);\s*heardPaths\.add\(f\.path\);\s*recapPaths\.add\(f\.path\);\s*continue;/.test(arrivals[0])) {
+      throw new Error('onQueueUpdated arrivals loop must mark staged -R- arrivals played + recap and skip pendingQueue');
+    }
+    if (!/deleteFile\(\s*\n?\s*p,\s*\n?\s*ephemeral \? 'played-ephemeral' : 'played-auto-prune',\s*\n?\s*\{ durationSec: clipDurations\.get\(p\) \|\| null \}/.test(renderer)) {
+      throw new Error('auto-delete must pass the measured duration to delete-file');
+    }
+    const preload = read('app', 'preload.js');
+    if (!/getRecapSummary:\s*\(short\)\s*=>\s*ipcRenderer\.invoke\('get-recap-summary'/.test(preload)) throw new Error('preload missing getRecapSummary');
+    if (!/stageRecap:\s*\(req\)\s*=>\s*ipcRenderer\.invoke\('stage-recap'/.test(preload)) throw new Error('preload missing stageRecap');
+    if (!/deleteFile:\s*\(p,\s*reason,\s*meta\)\s*=>\s*ipcRenderer\.invoke\('delete-file',\s*p,\s*reason,\s*meta\)/.test(preload)) throw new Error('preload deleteFile must forward meta');
+    const html = read('app', 'index.html');
+    if (!/id="recapKeepMin"/.test(html)) throw new Error('index.html missing the recap keep-history control');
+    for (const lib of ['recap-menu.js', 'recap-controller.js']) {
+      if (!html.includes(`<script src="lib/${lib}"></script>`)) throw new Error(`index.html must load lib/${lib}`);
+    }
+    const kit = read('docs', 'ui-kit', 'kit-bootstrap.js');
+    if (!/app-mirror\/lib\/recap-menu\.js/.test(kit) || !/app-mirror\/lib\/recap-controller\.js/.test(kit)) throw new Error('kit-bootstrap must load the recap libs');
+    const mock = read('docs', 'ui-kit', 'mock-ipc.js');
+    if (!/getRecapSummary:/.test(mock) || !/stageRecap:/.test(mock)) throw new Error('mock-ipc must stub the recap IPC');
+    const main = read('app', 'main.js');
+    for (const needle of [
+      /createRecapArchive\(\{/, /archiveStale:\s*\(full\)\s*=>/, /recapArchive:\s*_recapArchive,/,
+      /_recapArchive\.prune\(\)/, /_recapArchive\.cleanStagedCopies\(\)/, /recapShorts = _recapArchive\.listShorts\(\)/,
+    ]) {
+      if (!needle.test(main)) throw new Error(`main.js missing recap wiring: ${needle}`);
+    }
+    const css = read('app', 'styles.css');
+    if (!/\.tab-recap\s*\{/.test(css) || !/\.recap-menu\s*\{/.test(css) || !/-webkit-app-region:\s*no-drag/.test(css.slice(css.indexOf('.recap-menu {')))) {
+      throw new Error('styles.css must style .tab-recap + .recap-menu (no-drag so chips do not start a window drag)');
     }
   });
 });

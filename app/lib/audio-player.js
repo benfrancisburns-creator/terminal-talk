@@ -68,6 +68,11 @@
         onPlaybackStop = () => {},
         onPlayNextPending = () => {},
         onRenderDots = () => {},
+        // Session recap: fired whenever the playlist ends, with the paths
+        // that were still unplayed ({ remaining, reason }). The renderer
+        // prunes leftover staged copies so a cancelled recap doesn't leave
+        // replay dots lying around.
+        onRecapEnd = () => {},
 
         // AudioContext factory — injectable for pause-tone tests.
         audioContextFactory = null,
@@ -108,6 +113,7 @@
       this._onPlaybackStop = onPlaybackStop;
       this._onPlayNextPending = onPlayNextPending;
       this._onRenderDots = onRenderDots;
+      this._onRecapEnd = onRecapEnd;
       this._audioContextFactory = audioContextFactory || (() => {
         const Ctor = (typeof window !== 'undefined')
           && (window.AudioContext || window.webkitAudioContext);
@@ -119,6 +125,9 @@
       this._currentIsManual = false;
       this._currentIsUserClick = false;
       this._userScrubbing = false;
+      // Session recap playlist (see startRecap). null = no recap running;
+      // an array = the queue paths still to play after the current one.
+      this._recap = null;
       // Separate mic-capture and media-session pause flags; each source
       // clears only its own flag. isSystemAutoPaused() reports their union.
       this._micCaptured = false;
@@ -247,6 +256,11 @@
       const queue = this._getQueue();
       const idx = queue.findIndex((f) => f.path === p);
       if (idx < 0) return false;
+      // A real dot / transcript click replaces a running recap — the user
+      // changed their mind about what to hear. Recap clips themselves play
+      // with (manual=false, userClick=true) and priority J clips with
+      // (manual=true, userClick=false), so neither trips this.
+      if (manual && userClick) this._endRecap('user-click');
       if (userClick) {
         // A real user action should unstick a stale OS/media-session pause.
         // Mic capture remains authoritative via _micCaptured.
@@ -291,6 +305,7 @@
           this._currentIsManual = false;
           this._currentIsUserClick = false;
           try { this._onPlaybackStop(p, { reason: 'play-rejected' }); } catch {}
+          if (this._advanceRecap()) return;
           try { this._onPlayNextPending(); } catch {}
         }
       };
@@ -306,6 +321,21 @@
     }
 
     abort() {
+      // stop / cancel / mute / delete-current: the whole recap goes too.
+      this._endRecap('abort');
+      this._abortCurrent('abort');
+    }
+
+    // Right-click delete of the clip that is playing: during a recap, move
+    // on to the next recap clip instead of killing the whole playlist.
+    skipCurrent() {
+      if (!this._recap) { this.abort(); return; }
+      this._abortCurrent('skip');
+      if (this._advanceRecap()) return;
+      this._onPlayNextPending();
+    }
+
+    _abortCurrent(reason) {
       const was = this._currentPath;
       this._clearPlayStartTimeout();
       try { this._audio.pause(); } catch {}
@@ -313,12 +343,16 @@
       this._currentPath = null;
       this._currentIsManual = false;
       this._currentIsUserClick = false;
-      if (was) this._onPlaybackStop(was, { reason: 'abort' });
+      if (was) this._onPlaybackStop(was, { reason });
     }
 
     abortIfAutoPlayed() {
       if (!this._currentPath || this._currentIsManual) return null;
       const was = this._currentPath;
+      // A priority J clip interrupted a recap clip: put it back at the head
+      // of the playlist so the recap resumes where it left off once the
+      // J clip ends (see the _advanceRecap() call in the ended handler).
+      if (this._recap) this._recap.unshift(was);
       this._clearPlayStartTimeout();
       try { this._audio.pause(); } catch {}
       this._audio.src = '';
@@ -371,6 +405,8 @@
     }
 
     next() {
+      // Voice "next" during a recap = skip to the next recap clip.
+      if (this._recap) { this.skipCurrent(); return; }
       const queue = this._getQueue();
       const heard = this._getHeardPaths();
       const unheard = queue
@@ -398,6 +434,56 @@
     // discard the in-flight clip.
     stop() { this.abort(); }
     cancel() { this.abort(); }
+
+    // ---- Session recap playlist (2026-10-05) --------------------------
+    // startRecap(paths): play `paths` (queue paths, playback order) back to
+    // back. Whatever is playing now is cut off — the user asked for a
+    // catch-up. Each clip plays with manual=false / userClick=true: the
+    // small auto-dot visual, but user-click semantics (mic-capture bypass,
+    // and once the playlist is exhausted the normal auto-continue picks up
+    // anything that arrived meanwhile). The playlist survives a priority
+    // J-clip interruption and is dropped by any real user action (dot
+    // click, stop / cancel, next).
+    startRecap(paths) {
+      const queue = this._getQueue();
+      const list = (Array.isArray(paths) ? paths : [])
+        .filter((p) => typeof p === 'string' && queue.some((f) => f.path === p));
+      if (!list.length) return false;
+      this._recap = list.slice(1);
+      if (this._currentPath) this._abortCurrent('recap');
+      if (this.playPath(list[0], false, true)) return true;
+      return this._advanceRecap();
+    }
+
+    isRecapActive() { return this._recap !== null; }
+
+    // Paths the recap still has to play (excludes the current clip).
+    recapRemaining() { return this._recap ? this._recap.slice() : []; }
+
+    cancelRecap() { this._endRecap('cancel'); }
+
+    _endRecap(reason) {
+      const remaining = this._recap;
+      this._recap = null;
+      if (!remaining) return;
+      try { this._onRecapEnd({ remaining: remaining.slice(), reason }); } catch {}
+    }
+
+    // Play the next recap clip that is still in the queue. Returns true
+    // when one started; clears the playlist and returns false when it is
+    // exhausted (or nothing is left on disk) so callers fall through to the
+    // normal next-clip logic.
+    _advanceRecap() {
+      if (!this._recap) return false;
+      const queue = this._getQueue();
+      while (this._recap.length) {
+        const next = this._recap.shift();
+        if (!queue.some((f) => f.path === next)) continue;
+        if (this.playPath(next, false, true)) return true;
+      }
+      this._endRecap('exhausted');
+      return false;
+    }
 
     _playFirstUnheard() {
       const queue = this._getQueue();
@@ -533,6 +619,7 @@
         this._onRenderDots();
         this._updateScrubberMode();
         try { this._onPlaybackStop(p, { reason: 'play-start-timeout' }); } catch {}
+        if (this._advanceRecap()) return;
         try { this._onPlayNextPending(); } catch {}
       }, PLAY_START_TIMEOUT_MS);
       if (typeof this._playStartTimer.unref === 'function') this._playStartTimer.unref();
@@ -546,6 +633,11 @@
         const justPlayed = this._currentPath;
         const wasManual = this._currentIsManual;
         const wasUserClick = this._currentIsUserClick;
+        // Measured length, handed to the recap archive via onClipEnded so
+        // "last N minutes" uses real durations rather than byte estimates.
+        const durationSec = Number.isFinite(this._audio.duration) && this._audio.duration > 0
+          ? this._audio.duration
+          : null;
         this._clearPlayStartTimeout(justPlayed);
         this._currentPath = null;
         this._currentIsManual = false;
@@ -555,7 +647,18 @@
         // Both auto-played and manually-played clips get auto-deleted
         // now — only the delay differs. Previously auto-played clips
         // accumulated indefinitely, flooding the toolbar.
-        if (justPlayed) this._onClipEnded(justPlayed, { manual: wasManual });
+        if (justPlayed) this._onClipEnded(justPlayed, { manual: wasManual, durationSec });
+
+        // Session recap: keep walking the playlist before any other
+        // continuation rule. Also resumes a recap that a priority J clip
+        // interrupted (abortIfAutoPlayed re-queued the cut-off clip). When
+        // the playlist is exhausted go to playNextPending, NOT the
+        // forward-in-time continuation below: the staged copies carry
+        // fresh mtimes, so "everything newer than the clip that just ended"
+        // would replay the whole recap a second time.
+        const recapWasActive = this._recap !== null;
+        if (this._advanceRecap()) return;
+        if (recapWasActive) { this._onPlayNextPending(); return; }
 
         // v0.3.6 — user-click continuation. When a clip started by a
         // user click ends, and auto_continue_after_click is on, play
@@ -629,6 +732,7 @@
         this._onRenderDots();
         this._updateScrubberMode();
         if (failed) this._onPlaybackStop(failed, { reason: 'error' });
+        if (this._advanceRecap()) return;
         this._onPlayNextPending();
       });
     }
@@ -671,6 +775,7 @@
           if (p) this._markPlayed(p);  // don't loop on the same broken clip
           this._onRenderDots();
           if (p) this._onPlaybackStop(p, { reason: 'stall' });
+          if (this._advanceRecap()) return;
           this._onPlayNextPending();
         }
       }, STALL_RECOVERY_MS);

@@ -28,6 +28,22 @@ const { contextBridge, ipcRenderer } = require('electron');
  * @property {string} original  Raw markdown source (.original.txt). Empty if missing.
  */
 /**
+ * @typedef {Object} RecapSummary
+ * @property {string} short       Session short id or 'all'.
+ * @property {number} count       Body clips available (live queue + recap archive).
+ * @property {number} totalSec    Total audio seconds (measured where known, else estimated from file bytes).
+ * @property {boolean} enabled    False when playback.recap_keep_min is 0.
+ * @property {number} keepMin     Archive retention window in minutes.
+ * @property {number} maxClips    Hard cap on clips one recap request can stage.
+ */
+/**
+ * @typedef {Object} RecapClip
+ * @property {string} path         Queue path to play (a staged `-R-` copy, or the live clip itself).
+ * @property {number} mtime        Unix ms mtime (staged copies are stamped now, in playback order).
+ * @property {number} durationSec  Known or estimated length.
+ * @property {boolean} live        True when the clip was still in the queue (not restaged).
+ */
+/**
  * @typedef {Object} OpenAiKeyStatus
  * @property {boolean} hasKey       True if a saved key is on disk.
  * @property {boolean} preferOpenai True if user has opted into OpenAI TTS.
@@ -107,6 +123,8 @@ const { contextBridge, ipcRenderer } = require('electron');
  * @property {() => Promise<QueueClip[]>} getQueue                 Current queue contents, mtime-sorted oldest-first.
  * @property {(audioPath: string) => Promise<ClipSidecar>} readClipSidecar  Reads .txt + .original.txt next to a clip.
  * @property {(p: string) => Promise<{ok: boolean, error?: string}>} deleteFile  Deletes a queue file (with main-side path validation).
+ * @property {(short: string) => Promise<RecapSummary>} getRecapSummary  Live + archived body-clip count / duration for a session ('all' for every session).
+ * @property {(req: {short: string, mode: 'count'|'minutes', value: number}) => Promise<{ok: boolean, clips: RecapClip[], error?: string}>} stageRecap  Stage archived clips back into the queue for replay.
  *
  * Window control
  * @property {() => Promise<void>} hideWindow                      Hide the toolbar (recover via Ctrl+Shift+A).
@@ -197,11 +215,20 @@ const api = {
   // Returns { spoken: string, original: string } — both empty if the
   // sidecars don't exist (older clips, ephemerals, etc.).
   readClipSidecar: (audioPath) => ipcRenderer.invoke('read-clip-sidecar', audioPath),
-  deleteFile: (p, reason) => ipcRenderer.invoke('delete-file', p, reason),
+  // `meta` (optional) carries { durationSec } measured by the <audio>
+  // element so the recap archive can answer 'last N minutes' exactly.
+  deleteFile: (p, reason, meta) => ipcRenderer.invoke('delete-file', p, reason, meta),
   // Batch delete (toolbar bin + per-session tab bins). One IPC for the whole
   // set so the per-handler rate limiter can't silently drop a bulk clear.
   // Returns { deleted, failed:[], rateLimited }.
   deleteFiles: (paths, reason) => ipcRenderer.invoke('delete-files', paths, reason),
+  // Session recap (2026-10-05). getRecapSummary reports how many body clips
+  // (live + archived under queue/recap/) a session has and their total
+  // duration; stageRecap copies the chosen clips back into the queue under
+  // staged `-R-` names and returns them in playback order. `short` is an
+  // 8-hex session id or 'all'.
+  getRecapSummary: (short) => ipcRenderer.invoke('get-recap-summary', short),
+  stageRecap: (req) => ipcRenderer.invoke('stage-recap', req),
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   // Phase 6 (#30): first-run-wizard deep-links into macOS System
   // Settings via x-apple.systempreferences:// URLs. Main-side handler

@@ -92,6 +92,9 @@
     await loadScript('../app-mirror/lib/first-run-wizard.js');
     await loadScript('../app-mirror/lib/transcript-panel.js');
     await loadScript('../app-mirror/lib/dictation-panel.js');
+    await loadScript('../app-mirror/lib/recap-menu.js');
+    await loadScript('../app-mirror/lib/recap-controller.js');
+    await loadScript('../app-mirror/lib/settings-demo.js');
     await loadScript('mock-ipc.js');
     await loadScript('../app-mirror/renderer.js');
   } catch (e) {

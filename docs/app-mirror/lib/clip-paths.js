@@ -81,6 +81,25 @@
     return /-H-\d{4}-[a-f0-9]{8}\.(wav|mp3)$/i.test(filename);
   }
 
+  // Recap replays — copies of archived body clips that the session-recap
+  // feature stages back into the queue dir. Staged names lead with a
+  // fresh timestamp (so they sort newest in the queue watcher's lexical
+  // pre-slice) followed by the `-R-` marker and the ORIGINAL filename:
+  //   <newts>-R-<origts>-<prefix><seq>-<short>.mp3
+  // extractSessionShort() still resolves the session from the tail.
+  // recapOriginalName() recovers the archived name so sidecars / index
+  // entries / dedupe all key off the original.
+  const RECAP_STAGED_RE = /^\d{8}T\d{9}-R-(.+\.(?:wav|mp3))$/i;
+
+  function isRecapClip(filename) {
+    return RECAP_STAGED_RE.test(filename);
+  }
+
+  function recapOriginalName(filename) {
+    const m = RECAP_STAGED_RE.exec(filename || '');
+    return m ? m[1] : null;
+  }
+
   return {
     paletteKeyForIndex,
     paletteKeyForShort,
@@ -88,5 +107,7 @@
     isClipFile,
     isEphemeralClip,
     isHeartbeatClip,
+    isRecapClip,
+    recapOriginalName,
   };
 }));

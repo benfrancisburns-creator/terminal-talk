@@ -463,6 +463,138 @@ body.demo-settings-mode * {
   outline-offset: 1px;
 }
 
+/* Session recap control in the tab corner (2026-10-05). Same reveal rules
+   as the bin — hidden until the tab is hovered / selected / the control is
+   focused — but it is a constructive action, so hover tints it blue rather
+   than red. Present on [All] too (recap across every session). */
+.tab-recap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin: 0 -1px 0 1px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.tab:hover .tab-recap,
+.tab.selected .tab-recap,
+.tab-recap:focus-visible {
+  opacity: 1;
+}
+.tab-recap:hover {
+  color: #7cc4ff;
+  background: rgba(255, 255, 255, 0.14);
+}
+.tab-recap:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+  color: #7cc4ff;
+}
+
+/* Recap chooser — a compact popover rendered INSIDE #bar (the bar is
+   position: relative + overflow: hidden, and the click-through region is
+   the bar rect, so anything outside it would be clipped and unclickable).
+   Anchored under the tab that opened it, laid over the dot strip. Two
+   lines: a summary ("Terminal A · 23 clips · ≈ 7:40 kept") and a row of
+   preset chips for clips / minutes. No text inputs — the toolbar never
+   takes keyboard focus away from the user's terminal. */
+.recap-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 10px 8px;
+  max-width: calc(100% - 28px);
+  background: rgba(18, 20, 26, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  font-size: 11px;
+  color: #fff;
+  -webkit-app-region: no-drag;
+}
+.recap-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.recap-menu-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.recap-menu-summary {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recap-menu-close {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font: inherit;
+  cursor: pointer;
+}
+.recap-menu-close:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.recap-menu-rows {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.recap-menu-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.recap-menu-label {
+  opacity: 0.65;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.recap-chip {
+  height: 20px;
+  min-width: 26px;
+  padding: 0 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.recap-chip:hover { border-color: #7cc4ff; background: rgba(124, 196, 255, 0.16); }
+.recap-chip:focus-visible { outline: 2px solid #60a5fa; outline-offset: 1px; }
+.recap-chip:disabled { opacity: 0.35; cursor: default; }
+.recap-menu-empty {
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.bar.collapsed .recap-menu { display: none; }
+
+/* Recap replay dots: a restaged `-R-` copy keeps the session mascot but
+   carries a faint ring so the user can tell a replay from a fresh arrival. */
+.dot.recap-clip { outline: 1px dashed rgba(255, 255, 255, 0.35); outline-offset: 1px; }
+
 /* Full-width dot strip on the bottom row. Up to ~40 standard dots; if
    more arrive the row clips at the right edge (auto-prune usually keeps
    count well under that). Oldest left, newest right — matches playback

@@ -2,7 +2,6 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, Menu, Tray, nativeI
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const platform = require('./lib/platform');
@@ -94,6 +93,10 @@ const DEFAULTS = {
     // clip individually. OFF preserves the pre-0.3.6 single-clip
     // behaviour for users who want that control.
     auto_continue_after_click: true,
+    // Session recap — minutes that played / cleared body clips stay in
+    // queue/recap/ so a tab's Recap control can replay the last N clips or
+    // the last M minutes without re-prompting. 0 turns the archive off.
+    recap_keep_min: 120,
     // EX5 / H3 Option 2 — colour-blind-friendly palette. 'default' uses
     // the v0.3.9 palette (purple→magenta already applied for deutan
     // on slot 5). 'cb' switches to Paul Tol's "muted" palette — proven
@@ -831,7 +834,11 @@ function notifyQueue() {
     const files = getQueueFiles();
     const allPaths = getQueueAllPaths();
     const assignments = ensureAssignmentsForFiles(files);
-    win.webContents.send('queue-updated', { files, allPaths, assignments });
+    // recapShorts: sessions with archived recap clips, so their tab survives
+    // once every live clip has played out (see app/lib/recap-archive.js).
+    let recapShorts = [];
+    try { recapShorts = _recapArchive.listShorts(); } catch {}
+    win.webContents.send('queue-updated', { files, allPaths, assignments, recapShorts });
     // Auto-resurface for passive arrivals, but respect a user-explicit hide —
     // Ctrl+Shift+A / × close set userHiddenToolbar=true and new assistant
     // response clips shouldn't override that intent. Audio still plays.
@@ -971,84 +978,13 @@ function chunkText(text, maxLen = 3800) {
   return chunks;
 }
 
-const EDGE_SCRIPT = path.join(__dirname, 'edge_tts_speak.py');
-
-// 45 s hard timeout on the Python subprocess — edge-tts can hang indefinitely
-// on a stuck WebSocket / DNS wedge. Without this the Promise never resolves
-// and the Python process lives forever, accumulating over hours of use
-// (30-50 MB + open FDs per wedged call). Responsiveness audit R17.
-const EDGE_TTS_HARD_TIMEOUT_MS = 45_000;
-
-function callEdgeTTS(input, voice, outPath) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_EXE, [EDGE_SCRIPT, voice, outPath], {
-      windowsHide: true,
-      stdio: ['pipe', 'ignore', 'pipe']
-    });
-    let err = '';
-    let settled = false;
-    const killTimer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try { proc.kill('SIGKILL'); } catch {}
-      diag(`edge-tts hard-timeout after ${EDGE_TTS_HARD_TIMEOUT_MS}ms — killed zombie spawn`);
-      reject(new Error(`edge-tts timeout after ${EDGE_TTS_HARD_TIMEOUT_MS / 1000}s`));
-    }, EDGE_TTS_HARD_TIMEOUT_MS);
-    proc.stderr.on('data', (d) => { err += d.toString(); });
-    proc.on('error', (e) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(killTimer);
-      reject(e);
-    });
-    proc.on('exit', (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(killTimer);
-      if (code === 0) resolve(outPath);
-      else reject(new Error(`edge-tts exit ${code}: ${err.trim().slice(0, 200)}`));
-    });
-    proc.stdin.end(input, 'utf8');
-  });
-}
-
-function callOpenAITTS(apiKey, input, voice, outPath) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model: 'gpt-4o-mini-tts',
-      voice,
-      input,
-      instructions: 'Speak clearly and naturally at a moderate pace. Do not read punctuation aloud.',
-      response_format: 'wav'
-    });
-    const req = https.request({
-      hostname: 'api.openai.com',
-      port: 443,
-      path: '/v1/audio/speech',
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': Buffer.byteLength(body, 'utf8')
-      }
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        let errData = '';
-        res.on('data', d => errData += d);
-        res.on('end', () => reject(new Error(`TTS ${res.statusCode}: ${errData}`)));
-        return;
-      }
-      const tmpPath = outPath + '.partial';
-      const stream = fs.createWriteStream(tmpPath);
-      res.pipe(stream);
-      stream.on('finish', () => { fs.renameSync(tmpPath, outPath); resolve(outPath); });
-      stream.on('error', reject);
-    });
-    req.on('error', reject);
-    req.write(body, 'utf8');
-    req.end();
-  });
-}
+// edge-tts subprocess + OpenAI HTTPS callers extracted to app/lib/tts-calls.js
+// (2026-10-05, file-length ceiling). Same two functions, same signatures;
+// speakClipboard / ipc-handlers / codex-session-watcher / footer-watcher are
+// handed them exactly as before.
+const { callEdgeTTS, callOpenAITTS } = require('./lib/tts-calls').createTtsCalls({
+  spawn, fs, pythonExe: PYTHON_EXE, edgeScript: path.join(__dirname, 'edge_tts_speak.py'), diag,
+});
 
 let keyHelper = null;
 // Z2-5 — parent-side health signal without touching key_helper.py (that's
@@ -1150,111 +1086,35 @@ const SESSIONS_DIR = path.join(INSTALL_DIR, 'sessions');
 // at call time (not lazily). Was at the top of the file pre-merge but the
 // origin/main #29 extraction moved the require to a position where SESSIONS_DIR
 // hadn't been initialised yet — caused a TDZ ReferenceError on boot.
+// Session recap archive (2026-10-05). Body clips leaving the queue (auto-
+// prune, bin, stale sweep) are moved into queue/recap/ and kept for
+// playback.recap_keep_min minutes so a tab's Recap control can replay the
+// last N clips / last M minutes. See app/lib/recap-archive.js.
+const { createRecapArchive } = require('./lib/recap-archive');
+const _recapArchive = createRecapArchive({
+  queueDir: QUEUE_DIR,
+  diag,
+  getKeepMs: () => {
+    const n = Number(((CFG && CFG.playback) || {}).recap_keep_min);
+    const min = Number.isFinite(n) ? Math.max(0, Math.min(1440, n)) : DEFAULTS.playback.recap_keep_min;
+    return min * 60 * 1000;
+  },
+});
 const { pruneOldFiles, pruneSessionsDir } = require('./lib/prune').createPruner({
   queueDir: QUEUE_DIR, sessionsDir: SESSIONS_DIR, staleMs: STALE_MS, isAudioFile, isPidAlive,
+  archiveStale: (full) => { _recapArchive.archiveOrUnlink(full, { reason: 'stale-prune', played: false }); },
 });
-async function detectActiveSession() {
-  try {
-    const fg = await getForegroundTree();
-    const fgCandidates = new Set();
-    if (fg && Array.isArray(fg.descendants)) {
-      for (const p of fg.descendants) fgCandidates.add(p);
-      if (fg.fg_pid) fgCandidates.add(fg.fg_pid);
-    }
-    diag(`detectActiveSession: fg_pid=${fg && fg.fg_pid} descendants=${fgCandidates.size}`);
+// Active-session detection (4-tier foreground / single / most-recent /
+// registry fallback) extracted to app/lib/active-session.js (2026-10-05).
+const { detectActiveSession } = require('./lib/active-session').createActiveSessionDetector({
+  sessionsDir: SESSIONS_DIR, fs, path, isPidAlive, loadAssignments, getForegroundTree, diag,
+});
 
-    // Gather live sessions from the sessions/ dir (pruning dead PIDs).
-    const liveSessions = [];
-    if (fs.existsSync(SESSIONS_DIR)) {
-      for (const f of fs.readdirSync(SESSIONS_DIR)) {
-        if (!f.endsWith('.json')) continue;
-        const pid = parseInt(f.replace('.json', ''), 10);
-        if (!pid) continue;
-        const full = path.join(SESSIONS_DIR, f);
-        if (!isPidAlive(pid)) { try { fs.unlinkSync(full); } catch {} continue; }
-        try {
-          const data = JSON.parse(fs.readFileSync(full, 'utf8'));
-          const stat = fs.statSync(full);
-          if (data.short) liveSessions.push({ pid, short: data.short, mtime: stat.mtimeMs });
-        } catch {}
-      }
-    }
-
-    // Tier 1: foreground process tree contains a known session PID.
-    const fgMatches = liveSessions.filter(s => fgCandidates.has(s.pid));
-    if (fgMatches.length > 0) {
-      fgMatches.sort((a, b) => b.mtime - a.mtime);
-      diag(`detectActiveSession: fg match -> ${fgMatches[0].short}`);
-      return fgMatches[0].short;
-    }
-
-    // Tier 2: only one live assistant session exists -- must be that one.
-    if (liveSessions.length === 1) {
-      diag(`detectActiveSession: single-session fallback -> ${liveSessions[0].short}`);
-      return liveSessions[0].short;
-    }
-
-    // Tier 3: most recently interacted session (highest mtime). Covers Windows
-    // Terminal multi-tab cases where PID tree can't distinguish tabs.
-    if (liveSessions.length > 1) {
-      liveSessions.sort((a, b) => b.mtime - a.mtime);
-      diag(`detectActiveSession: most-recent fallback -> ${liveSessions[0].short}`);
-      return liveSessions[0].short;
-    }
-
-    // Tier 4: no sessions/ files but registry has entries -- fall back to the most recent.
-    const all = loadAssignments();
-    const byRecent = Object.entries(all)
-      .filter(([, e]) => e && e.last_seen)
-      .sort((a, b) => b[1].last_seen - a[1].last_seen);
-    if (byRecent.length > 0) {
-      diag(`detectActiveSession: registry-recency fallback -> ${byRecent[0][0]}`);
-      return byRecent[0][0];
-    }
-
-    diag('detectActiveSession: no live sessions found');
-    return null;
-  } catch (e) {
-    diag(`detectActiveSession fail: ${e.message}`);
-    return null;
-  }
-}
-
-async function captureSelection() {
-  const original = clipboard.readText();
-  const marker = '___TT_CLIP_MARKER___' + Date.now();
-  clipboard.writeText(marker);
-  diag(`captureSelection: marker written (original len=${original.length})`);
-  await sendCtrlC();
-  let captured = '';
-  const start = Date.now();
-  const deadline = start + 3000;
-  let polls = 0;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 20));
-    polls++;
-    const after = clipboard.readText();
-    if (after && after !== marker) { captured = after; break; }
-  }
-  diag(`captureSelection: polls=${polls} elapsed=${Date.now()-start}ms captured.len=${captured.length}`);
-  // Restore the user's pre-capture clipboard after a short grace, BUT
-  // only if the clipboard still holds the text we captured. If the user
-  // pressed Ctrl+C on something else in the 300 ms gap, their new copy
-  // is on the board and we must not clobber it. Audit R11.
-  setTimeout(() => {
-    try {
-      const now = clipboard.readText();
-      if (now === captured) {
-        clipboard.writeText(original);
-      } else {
-        diag('captureSelection: clipboard changed mid-gap -- skipping restore');
-      }
-    } catch (e) {
-      diag(`captureSelection restore fail: ${e && e.message}`);
-    }
-  }, 300);
-  return { captured, original };
-}
+// Clipboard-marker selection capture extracted to app/lib/capture-selection.js
+// (2026-10-05). Same { captured, original } contract.
+const { captureSelection } = require('./lib/capture-selection').createSelectionCapture({
+  clipboard, sendCtrlC, diag,
+});
 
 let clipboardBusy = false;
 let clipboardBusyTimer = null;
@@ -2116,6 +1976,7 @@ createIpcHandlers({
   setInteractiveRegion,
   QUEUE_DIR,
   isPathInside,
+  recapArchive: _recapArchive,
   getWatchdog: () => _watchdog,
   getWatchdogIntervalMs: () => WATCHDOG_INTERVAL_MS,
   testMode: process.env.TT_TEST_MODE === '1',
@@ -2504,6 +2365,14 @@ const _watchdog = createWatchdog({
   sweeps: [
     { name: 'audio', statKey: 'audio_removed', dir: QUEUE_DIR, predicate: (f) => AUDIO_OR_PARTIAL_RE.test(f), fn: () => pruneOldFiles() },
     { name: 'session files', statKey: 'sessions_removed', dir: SESSIONS_DIR, predicate: () => true, fn: () => pruneSessionsDir() },
+    // Session recap archive: drop clips past playback.recap_keep_min + caps.
+    // fs.watch on the queue dir is not recursive, so unlinks inside
+    // queue/recap/ never fire it: re-notify after a sweep that removed
+    // clips so a recap-only tab disappears once its history expires.
+    { name: 'recap clips', statKey: 'recap_removed', dir: _recapArchive.recapDir, predicate: (f) => AUDIO_OR_PARTIAL_RE.test(f), fn: () => {
+      const r = _recapArchive.prune();
+      if (r && r.removed > 0) { try { notifyQueue(); } catch {} }
+    } },
   ],
   postSweepFns: [
     { name: 'killOrphanVoiceListeners', fn: () => killOrphanVoiceListeners() },
@@ -2655,6 +2524,10 @@ app.whenReady().then(() => {
 
   logIntegrity();
   killOrphanVoiceListeners();
+  // Recap housekeeping first: leftover `-R-` replay copies from a previous
+  // run are not real arrivals, and the archive sweep keeps queue/recap/
+  // inside its retention window before the main prune runs.
+  try { _recapArchive.cleanStagedCopies(); _recapArchive.prune(); } catch (e) { diag(`recap boot sweep failed: ${e && e.message}`); }
   pruneOldFiles();
   pruneSessionsDir();
   createWindow();

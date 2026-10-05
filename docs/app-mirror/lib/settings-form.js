@@ -105,6 +105,7 @@
         collapseDelayInput: document.getElementById('collapseDelaySec'),
         pruneToggle:      document.getElementById('autoPruneToggle'),
         pruneSecInput:    document.getElementById('autoPruneSec'),
+        recapKeepMin:     document.getElementById('recapKeepMin'),
         continueToggle:   document.getElementById('autoContinueToggle'),
         reloadBtn:        document.getElementById('reloadToolbar'),
         paletteToggle:    document.getElementById('paletteVariantToggle'),
@@ -159,6 +160,7 @@
       this._wireVolumeSlider();
       this._wireCollapseDelay();
       this._wireAutoPrune();
+      this._wireRecapKeep();
       this._wireAutoContinue();
       this._wireReloadButton();
       this._wirePaletteVariant();
@@ -179,6 +181,7 @@
       this._populateVolume(cfg);
       this._populateCollapseDelay(cfg);
       this._populateAutoPrune(cfg);
+      this._populateRecapKeep(cfg);
       this._populateAutoContinue(cfg);
       this._populatePaletteVariant(cfg);
       this._populateHeartbeat(cfg);
@@ -316,6 +319,22 @@
           await this._api.updateConfig({ playback: { auto_prune_sec: n } });
         });
       }
+    }
+
+    // Session recap (2026-10-05): minutes that played / cleared body clips
+    // stay in queue/recap/ for the tab "Catch up" control. 0 = off.
+    _wireRecapKeep() {
+      const { recapKeepMin } = this._el;
+      if (!recapKeepMin) return;
+      this._on(recapKeepMin, 'change', async () => {
+        const raw = Number(recapKeepMin.value);
+        const n = Math.max(0, Math.min(1440, Math.floor(Number.isFinite(raw) ? raw : 120)));
+        recapKeepMin.value = String(n);  // clamp display too
+        if (typeof window !== 'undefined' && window.TT_CONFIG_SNAPSHOT && window.TT_CONFIG_SNAPSHOT.playback) {
+          window.TT_CONFIG_SNAPSHOT.playback.recap_keep_min = n;
+        }
+        await this._api.updateConfig({ playback: { recap_keep_min: n } });
+      });
     }
 
     _wireAutoContinue() {
@@ -906,6 +925,13 @@
         pruneSecInput.value = String(secs);
         pruneSecInput.disabled = !enabled;
       }
+    }
+
+    _populateRecapKeep(cfg) {
+      const { recapKeepMin } = this._el;
+      if (!recapKeepMin) return;
+      const raw = Number(cfg.playback && cfg.playback.recap_keep_min);
+      recapKeepMin.value = String(Number.isFinite(raw) ? Math.max(0, Math.min(1440, Math.floor(raw))) : 120);
     }
 
     _populateAutoContinue(cfg) {

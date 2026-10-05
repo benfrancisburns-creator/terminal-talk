@@ -272,6 +272,7 @@ async function applyCollapsed(collapsed) {
   isCollapsed = collapsed;
   if (collapsed) {
     barEl.classList.add('collapsed');
+    if (typeof recapMenu !== 'undefined' && recapMenu) recapMenu.close();
     signalCollapsedCurrentPlayback();
   } else {
     barEl.classList.remove('collapsed');
@@ -543,12 +544,25 @@ let queue = [];
 // Falls back to `queue.map(f => f.path)` if main is running a pre-fix
 // build that doesn't emit allPaths.
 let allQueuePaths = [];
+// Sessions with archived recap clips (from main's queue-updated payload).
+// Keeps a tab alive for a session whose live clips have all played out.
+let recapShorts = [];
 const playedPaths = new Set();
 const heardPaths = new Set();
 const manualPlayedPaths = new Set();
 const priorityPaths = new Set();
 const priorityQueue = [];
 let pendingQueue = [];
+// Session recap (2026-10-05). recapPaths = queue paths that belong to a
+// recap replay (staged `-R-` copies or live clips the user asked to hear
+// again); they are pre-marked played/heard so the queue-updated scan never
+// auto-queues them. clipDurations = measured <audio> lengths, handed to
+// main with the delete so the recap archive can answer "last N minutes".
+const recapPaths = new Set();
+const clipDurations = new Map();
+// True while a stage-recap round trip is in flight (see recap-controller):
+// gates the autoplay drain so nothing starts in the gap and gets cut off.
+let recapStaging = false;
 const deleteTimers = new Map();
 const unplayedEphemeralTimers = new Map();
 const STALE_MS = 5 * 60 * 1000;
@@ -641,6 +655,7 @@ const _paths = window.TT_CLIP_PATHS;
 const extractSessionShort = _paths.extractSessionShort;
 const isEphemeralClip = _paths.isEphemeralClip;
 const isHeartbeatClip = _paths.isHeartbeatClip;
+const isRecapClip = _paths.isRecapClip;
 
 // Auto-prune toggle. true = 20 s after play, clips disappear on their own.
 // false = clips stack up until user clears them (useful when walking away
@@ -661,6 +676,8 @@ function _removeClipFromQueuesAndState(p) {
   heardPaths.delete(p);
   manualPlayedPaths.delete(p);
   priorityPaths.delete(p);
+  recapPaths.delete(p);
+  clipDurations.delete(p);
   pendingQueue = pendingQueue.filter(x => x !== p);
   for (let i = priorityQueue.length - 1; i >= 0; i--) {
     if (priorityQueue[i] === p) priorityQueue.splice(i, 1);
@@ -721,7 +738,11 @@ async function _attemptAutoDelete(p, ephemeral, attempt) {
   try { console.log('[scheduleAutoDelete] FIRING:', p.split(/[\\/]/).pop(), 'attempt=' + attempt, 'autoPruneEnabled=' + autoPruneEnabled); } catch {}
   let deleted = false;
   try {
-    deleted = await window.api.deleteFile(p, ephemeral ? 'played-ephemeral' : 'played-auto-prune') === true;
+    deleted = await window.api.deleteFile(
+      p,
+      ephemeral ? 'played-ephemeral' : 'played-auto-prune',
+      { durationSec: clipDurations.get(p) || null },
+    ) === true;
   } catch (e) {
     try { console.warn('[scheduleAutoDelete] deleteFile failed', p.split(/[\\/]/).pop(), 'attempt=' + attempt, e && e.message); } catch {}
   }
@@ -770,8 +791,11 @@ function setAutoPruneEnabled(on) {
     deleteTimers.clear();
   } else {
     // Schedule deletes for any already-played clips (not currently playing).
+    // Recap replays are pre-marked played before they play — leave the ones
+    // the playlist still has to reach alone.
+    const recapPending = new Set(typeof audioPlayer.recapRemaining === 'function' ? audioPlayer.recapRemaining() : []);
     for (const f of queue) {
-      if (f.path !== audioPlayer.getCurrentPath() && playedPaths.has(f.path)) {
+      if (f.path !== audioPlayer.getCurrentPath() && playedPaths.has(f.path) && !recapPending.has(f.path)) {
         scheduleAutoDelete(f.path, heardPaths.has(f.path));
       }
     }
@@ -845,6 +869,10 @@ const tabs = new window.TT_TABS({
   // Per-session bin in the tab corner — soft-clears that session's clips
   // (played or not) with the same undo window as the toolbar bin.
   onDeleteSession: (shortId) => clearSessionClips(shortId),
+  // Session recap control in the tab corner — opens the "catch up" chooser
+  // (recapController is created further down; the callback only runs on
+  // click, long after module init).
+  onRecapSession: (shortId, tabEl) => { if (recapController) recapController.open(shortId, tabEl); },
 });
 tabs.mount(tabsEl);
 
@@ -939,9 +967,10 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
     else collapseForBackgroundPlayback(p);
     if (isSettingsDemoMode) triggerSettingsDemoTimeline();
   },
-  onClipEnded: (p, { manual }) => {
+  onClipEnded: (p, { manual, durationSec }) => {
     clearCollapsedPlaybackSignal(p);
     lastActivityTs = Date.now();
+    if (Number.isFinite(durationSec) && durationSec > 0) clipDurations.set(p, durationSec);
     scheduleAutoDelete(p, manual);
   },
   onPlaybackStop: (p) => {
@@ -949,8 +978,66 @@ const audioPlayer = new window.TT_AUDIO_PLAYER({
   },
   onPlayNextPending: () => drainAutoplayQueue(),
   onRenderDots: () => renderDots(),
+  // Session recap ended (exhausted / cancelled / user clicked elsewhere):
+  // staged `-R-` copies that never played are replays, not content — let
+  // auto-prune sweep them like played clips. Live clips stay put.
+  onRecapEnd: ({ remaining }) => {
+    for (const p of remaining || []) {
+      if (isRecapClip(p.split(/[\\/]/).pop())) scheduleAutoDelete(p, true);
+    }
+  },
 });
 audioPlayer.mount();
+
+// Session recap (2026-10-05) — "catch up" chooser + playlist driver. See
+// app/lib/recap-menu.js (popover inside #bar) and
+// app/lib/recap-controller.js (stage-recap IPC -> audioPlayer.startRecap).
+const recapMenu = window.TT_RECAP_MENU
+  ? new window.TT_RECAP_MENU.RecapMenu({
+      containerEl: barEl,
+      setDynamicStyle,
+      fmtDuration: fmt,
+      onPick: (pick) => { if (recapController) recapController.start(pick); },
+    })
+  : null;
+if (recapMenu) recapMenu.mount();
+const recapController = (recapMenu && window.TT_RECAP_CONTROLLER)
+  ? window.TT_RECAP_CONTROLLER.createRecapController({
+      api: window.api,
+      audioPlayer,
+      menu: recapMenu,
+      getQueue: () => queue,
+      addToQueue: (entry) => { queue.unshift(entry); },
+      markStaged: (p) => {
+        playedPaths.add(p);
+        heardPaths.add(p);
+        recapPaths.add(p);
+        pendingQueue = pendingQueue.filter((x) => x !== p);
+        cancelAutoDelete(p);
+      },
+      renderDots: () => renderDots(),
+      showToast: (text, ms, variant) => _showStatusToast(text, ms, variant),
+      getSessionLabel: (short) => {
+        const entry = sessionAssignments[short];
+        return (entry && typeof entry.label === 'string' && entry.label.trim()) || short.slice(0, 6);
+      },
+      bumpActivity: () => bumpActivity(),
+      fmtDuration: fmt,
+      logError: (message) => {
+        try { window.api.logRendererError({ type: 'recap', message }); } catch {}
+      },
+      // A pending undo-clear hides clips that are still on disk; settle it
+      // before main picks the recap so the two agree on what exists.
+      beforeStart: async () => {
+        if (!_pendingClear) return;
+        clearTimeout(_pendingClear.timer);
+        _removeToast();
+        await _finaliseClear();
+      },
+      setStaging: (on) => { recapStaging = !!on; },
+      unmarkPlayed: (p) => { playedPaths.delete(p); },
+    })
+  : null;
 
 // Transcript panel — expandable section under the dot strip showing
 // the text of recent audio clips with copy buttons. Sidecar text
@@ -1048,7 +1135,8 @@ function renderDots() {
       const fname = p.split(/[\\/]/).pop();
       return window.TT_CLIP_PATHS.extractSessionShort(fname) === selectedTab;
     });
-    if (!selectedIsLive && !selectedHasClips) {
+    const selectedHasRecap = recapShorts.includes(selectedTab);
+    if (!selectedIsLive && !selectedHasClips && !selectedHasRecap) {
       selectedTab = 'all';
       persistTabsState();
     }
@@ -1088,6 +1176,7 @@ function renderDots() {
     sessionAssignments,
     selectedTab,
     expanded: tabsExpanded,
+    recapShorts,
   });
   scheduleTabScrollControlsUpdate();
   // Transcript panel: refresh in lock-step with the dot strip so the
@@ -1101,7 +1190,9 @@ function userPlay(p) { audioPlayer.playPath(p, true, true); }
 async function deleteDot(p) {
   cancelAutoDelete(p);
   if (audioPlayer.getCurrentPath() === p) {
-    audioPlayer.abort();
+    // Mid-recap: drop just this clip and carry on with the playlist.
+    if (audioPlayer.isRecapActive()) audioPlayer.skipCurrent();
+    else audioPlayer.abort();
   }
   // Route through the canonical removal so a manually-deleted clip is purged
   // from EVERY queue/Set — including priorityPaths + priorityQueue, which the
@@ -1113,7 +1204,7 @@ async function deleteDot(p) {
   renderDots();
   // Pass an explicit reason so the _toolbar.log delete-file diagnostic
   // attributes this unlink to a user action rather than auto-prune.
-  await window.api.deleteFile(p, 'manual');
+  await window.api.deleteFile(p, 'manual', { durationSec: clipDurations.get(p) || null });
 }
 
 // EX4 — undo-clear state. clearAllPlayed now soft-deletes: the clips
@@ -1344,6 +1435,7 @@ function playNextPending() {
 }
 
 function drainAutoplayQueue() {
+  if (recapStaging) return;
   if (!shouldAutoplayQueue() || !audioPlayer.isIdle() || audioPlayer.isSystemAutoPaused()) return;
   playNextPending();
 }
@@ -1353,6 +1445,7 @@ async function initialLoad() {
   const files = Array.isArray(resp) ? resp : (resp && resp.files) || [];
   sessionAssignments = (resp && resp.assignments) || {};
   allQueuePaths = (resp && Array.isArray(resp.allPaths)) ? resp.allPaths : files.map((f) => f.path);
+  recapShorts = (resp && Array.isArray(resp.recapShorts)) ? resp.recapShorts : [];
   const cutoff = Date.now() - STALE_MS;
   queue = files;
   // main.js returns newest-first (getQueueFiles sorts `b.mtime - a.mtime`).
@@ -1365,10 +1458,20 @@ async function initialLoad() {
   // buffer drained. Visible on a preloaded queue (kit demo, or toolbar
   // boot with 4+ unplayed clips).
   const unplayed = files
-    .filter(f => f.mtime >= cutoff)
+    .filter(f => f.mtime >= cutoff && !isRecapClip(f.path.split(/[\\/]/).pop()))
     .sort((a, b) => a.mtime - b.mtime);
   for (const f of files) {
+    const stagedReplay = isRecapClip(f.path.split(/[\\/]/).pop());
+    if (stagedReplay) recapPaths.add(f.path);
     if (f.mtime < cutoff) {
+      playedPaths.add(f.path);
+      heardPaths.add(f.path);
+      scheduleAutoDelete(f.path, true);
+      continue;
+    }
+    // Staged `-R-` recap copies left by a previous run are replays, never
+    // fresh arrivals: mark them heard and let auto-prune sweep them.
+    if (stagedReplay) {
       playedPaths.add(f.path);
       heardPaths.add(f.path);
       scheduleAutoDelete(f.path, true);
@@ -1410,9 +1513,10 @@ window.api.onQueueUpdated((payload) => {
     nextAllPaths = nextAllPaths.filter((p) => !_pendingClear.paths.has(p));
   }
   allQueuePaths = nextAllPaths;
+  if (payload && Array.isArray(payload.recapShorts)) recapShorts = payload.recapShorts;
   const prevPaths = new Set(queue.map(f => f.path));
   const newArrivals = files
-    .filter(f => !prevPaths.has(f.path) && !playedPaths.has(f.path))
+    .filter(f => !prevPaths.has(f.path) && !playedPaths.has(f.path) && !recapPaths.has(f.path))
     .sort((a, b) => a.mtime - b.mtime);
   queue = files;
   // Transcript panel: kick a sidecar prefetch + refresh on every queue
@@ -1426,6 +1530,16 @@ window.api.onQueueUpdated((payload) => {
 
   for (const f of newArrivals) {
     if (priorityPaths.has(f.path)) continue;
+    // Staged `-R-` recap copies are replays by construction: never let
+    // them enter pendingQueue, whichever order the stage-recap reply and
+    // this queue-updated event arrive in. The recap controller marks them
+    // too; this is the belt-and-braces half.
+    if (isRecapClip(f.path.split(/[\\/]/).pop())) {
+      playedPaths.add(f.path);
+      heardPaths.add(f.path);
+      recapPaths.add(f.path);
+      continue;
+    }
     // Drop muted-session arrivals outright — they never enter the queue.
     if (isClipSessionMuted(f.path.split(/[\\/]/).pop())) continue;
     if (!pendingQueue.includes(f.path)) pendingQueue.push(f.path);
@@ -1436,7 +1550,9 @@ window.api.onQueueUpdated((payload) => {
   // session colour instead. If the full toolbar is already open, keep
   // the old activity behaviour so it stays open while fresh clips land.
   const visibleArrivals = newArrivals.filter(f =>
-    !priorityPaths.has(f.path) && !isClipSessionMuted(f.path.split(/[\\/]/).pop())
+    !priorityPaths.has(f.path)
+    && !recapPaths.has(f.path)
+    && !isClipSessionMuted(f.path.split(/[\\/]/).pop())
   );
   if (visibleArrivals.length > 0) {
     if (isCollapsed) signalCollapsedClip(visibleArrivals[0].path);
@@ -1542,7 +1658,9 @@ window.api.onPriorityPlay((paths) => {
     if (!priorityQueue.includes(p)) priorityQueue.push(p);
   }
   const aborted = audioPlayer.abortIfAutoPlayed();
-  if (aborted) playedPaths.delete(aborted);
+  // A cut-off recap clip resumes through the player's own playlist; only a
+  // plain auto-played clip needs un-marking so the fallback replays it.
+  if (aborted && !recapPaths.has(aborted)) playedPaths.delete(aborted);
   renderDots();
   drainAutoplayQueue();
 });
@@ -2123,553 +2241,32 @@ if (isWindowMode && Number.isFinite(autoOpenSettingsMs) && autoOpenSettingsMs > 
   }, autoOpenSettingsMs);
 }
 
-function scrollSettingsPanelForDemo(top) {
-  if (!isSettingsDemoMode) return;
-  const panel = document.getElementById('panel');
-  if (!panel) return;
-  panel.scrollTo({ top, behavior: 'smooth' });
-}
-
-function expandFirstSessionForDemo() {
-  if (!isSettingsDemoMode || !sessionsTableEl) return;
-  const btn = sessionsTableEl.querySelector('.session-row .chevron');
-  if (btn && btn.getAttribute('aria-expanded') !== 'true') {
-    btn.click();
-  }
-}
-
-if (isSettingsDemoMode) {
-  function demoWait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  const demoCursor = document.createElement('div');
-  demoCursor.className = 'demo-cursor';
-  demoCursor.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(demoCursor);
-  let demoCursorPos = { x: 42, y: 42 };
-
-  function setDemoCursor(x, y) {
-    const pad = 10;
-    demoCursorPos = {
-      x: Math.max(pad, Math.min(window.innerWidth - 36, x)),
-      y: Math.max(pad, Math.min(window.innerHeight - 36, y)),
-    };
-    demoCursor.style.transform = `translate3d(${demoCursorPos.x}px, ${demoCursorPos.y}px, 0)`;
-  }
-
-  function elementCenter(el) {
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }
-
-  function demoElement(selectorOrFn) {
-    if (typeof selectorOrFn === 'function') return selectorOrFn();
-    return document.querySelector(selectorOrFn);
-  }
-
-  function moveDemoCursorTo(point, duration = 700) {
-    if (!point) return Promise.resolve();
-    const start = { ...demoCursorPos };
-    const startedAt = performance.now();
-    return new Promise((resolve) => {
-      function tick(now) {
-        const t = Math.min(1, (now - startedAt) / Math.max(1, duration));
-        const eased = 1 - Math.pow(1 - t, 3);
-        setDemoCursor(
-          start.x + (point.x - start.x) * eased,
-          start.y + (point.y - start.y) * eased
-        );
-        if (t < 1) requestAnimationFrame(tick);
-        else resolve();
-      }
-      requestAnimationFrame(tick);
-    });
-  }
-
-  async function pointDemoCursorAt(selectorOrFn, duration = 700) {
-    const el = demoElement(selectorOrFn);
-    ensureSettingsTabForElement(el);
-    await moveDemoCursorTo(elementCenter(el), duration);
-    return el;
-  }
-
-  async function pointDemoCursorAtPart(selectorOrFn, xRatio = 0.5, yRatio = 0.5, duration = 700) {
-    const el = demoElement(selectorOrFn);
-    if (!el) return null;
-    ensureSettingsTabForElement(el);
-    const rect = el.getBoundingClientRect();
-    await moveDemoCursorTo({
-      x: rect.left + (rect.width * xRatio),
-      y: rect.top + (rect.height * yRatio),
-    }, duration);
-    return el;
-  }
-
-  function flashDemoClick() {
-    demoCursor.classList.add('clicking');
-    setTimeout(() => demoCursor.classList.remove('clicking'), 260);
-  }
-
-  let demoSelectPopup = null;
-
-  function closeDemoSelectPopup() {
-    setDynamicStyle('#demoSelectPopover', null);
-    if (demoSelectPopup && demoSelectPopup.select) {
-      try { demoSelectPopup.select.blur(); } catch {}
-    }
-    if (demoSelectPopup && demoSelectPopup.popover) {
-      demoSelectPopup.popover.remove();
-    }
-    document.querySelectorAll('.demo-select-active').forEach((el) => {
-      el.classList.remove('demo-select-active');
-    });
-    demoSelectPopup = null;
-  }
-
-  function demoSelectWindow(select, desiredValue, maxRows) {
-    const options = Array.from(select.options || []);
-    if (options.length <= maxRows) return options;
-    const currentIndex = Math.max(0, select.selectedIndex || 0);
-    const desiredIndex = Math.max(0, options.findIndex((opt) => opt.value === String(desiredValue)));
-    const anchor = Math.min(currentIndex, desiredIndex);
-    const start = Math.max(0, Math.min(options.length - maxRows, anchor - 1));
-    return options.slice(start, start + maxRows);
-  }
-
-  function openDemoSelectPopup(select, desiredValue, maxRows = 7) {
-    closeDemoSelectPopup();
-    if (!select) return null;
-    try { select.focus({ preventScroll: true }); } catch {}
-    select.classList.add('demo-select-active');
-
-    const rect = select.getBoundingClientRect();
-    const options = demoSelectWindow(select, desiredValue, maxRows);
-    const rowHeight = 28;
-    const popoverHeight = Math.min(options.length, maxRows) * rowHeight + 8;
-    const popover = document.createElement('div');
-    popover.id = 'demoSelectPopover'; popover.className = 'demo-select-popover';
-
-    for (const opt of options) {
-      const item = document.createElement('div');
-      item.className = 'demo-select-option';
-      if (opt.selected) item.classList.add('selected');
-      if (opt.value === String(desiredValue)) item.classList.add('target');
-      item.dataset.value = opt.value;
-      item.textContent = opt.textContent || opt.label || opt.value;
-      popover.appendChild(item);
-    }
-
-    const placement = select.dataset.demoPlacement || '';
-    if (placement === 'inline') {
-      const row = select.closest('.expanded-row');
-      popover.classList.add('demo-select-inline');
-      if (row && row.parentElement) row.insertAdjacentElement('afterend', popover);
-      else document.body.appendChild(popover);
-    } else {
-      const belowTop = rect.bottom + 4;
-      const aboveTop = rect.top - popoverHeight - 4;
-      const top = placement === 'below'
-        ? Math.min(belowTop, Math.max(10, window.innerHeight - popoverHeight - 10))
-        : belowTop + popoverHeight <= window.innerHeight - 10
-        ? belowTop
-        : Math.max(10, aboveTop);
-      const popupCss = `left: ${Math.max(8, rect.left)}px; width: ${Math.max(190, rect.width)}px; top: ${top}px;`;
-      setDynamicStyle('#demoSelectPopover', popupCss);
-      document.body.appendChild(popover);
-    }
-    demoSelectPopup = { popover, select };
-    return popover;
-  }
-
-  function demoSelectOption(value) {
-    if (!demoSelectPopup || !demoSelectPopup.popover) return null;
-    return Array.from(demoSelectPopup.popover.querySelectorAll('.demo-select-option'))
-      .find((el) => el.dataset.value === String(value)) || null;
-  }
-
-  async function chooseDemoSelectOption(selectorOrFn, desiredValue, options = {}) {
-    const {
-      maxRows = 7,
-      openHold = 1200,
-      afterPickHold = 700,
-      placement = '',
-    } = options;
-    const select = await pointDemoCursorAt(selectorOrFn, 700);
-    if (!select) return null;
-    if (placement) select.dataset.demoPlacement = placement;
-    await demoWait(140);
-    flashDemoClick();
-    await demoWait(120);
-    openDemoSelectPopup(select, desiredValue, maxRows);
-    await demoWait(openHold);
-    const optionEl = demoSelectOption(desiredValue);
-    if (optionEl) {
-      await pointDemoCursorAt(() => optionEl, 560);
-      await demoWait(140);
-      flashDemoClick();
-      select.value = String(desiredValue);
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      demoSelectPopup.popover.querySelectorAll('.demo-select-option').forEach((el) => {
-        el.classList.toggle('selected', el.dataset.value === String(desiredValue));
-      });
-      await demoWait(afterPickHold);
-    }
-    closeDemoSelectPopup();
-    if (placement) delete select.dataset.demoPlacement;
-    await demoWait(220);
-    return select;
-  }
-
-  async function clickDemoElement(selectorOrFn, action) {
-    if (document.activeElement && typeof document.activeElement.blur === 'function') {
-      try { document.activeElement.blur(); } catch {}
-    }
-    const el = await pointDemoCursorAt(selectorOrFn, 620);
-    await demoWait(120);
-    flashDemoClick();
-    if (typeof action === 'function') {
-      setTimeout(action, 110);
-    } else if (el && typeof el.click === 'function') {
-      setTimeout(() => el.click(), 110);
-    }
-    await demoWait(360);
-    return el;
-  }
-
-  function firstSessionBlock() {
-    return sessionsTableEl && sessionsTableEl.querySelector('.session-block');
-  }
-
-  function firstSessionRowControl(selector) {
-    const block = firstSessionBlock();
-    return block ? block.querySelector(selector) : null;
-  }
-
-  function _scrollDemoElementIntoView(selectorOrFn, topPadding = 80) {
-    const panel = document.getElementById('panel');
-    const el = demoElement(selectorOrFn);
-    if (!panel || !el) return;
-    ensureSettingsTabForElement(el);
-    const panelRect = panel.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const top = panel.scrollTop + (elRect.top - panelRect.top) - topPadding;
-    panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  }
-
-  async function waitForSettingsDemoStart() {
-    if (settingsDemoUseStartFlag && window.api && typeof window.api.demoStartReady === 'function') {
-      while (true) {
-        try {
-          if (await window.api.demoStartReady()) return;
-        } catch {}
-        await demoWait(50);
-      }
-    }
-    const fallback = settingsDemoFallbackMs > 0
-      ? new Promise((resolve) => setTimeout(resolve, settingsDemoFallbackMs))
-      : new Promise(() => {});
-    await Promise.race([settingsDemoStartPromise, fallback]);
-  }
-
-  function startSettingsDemoPlaybackChrome(startedAt) {
-    if (!settingsDemoVisualDurationMs || !scrubber || !timeEl) return;
-    const durationSec = settingsDemoVisualDurationMs / 1000;
-    if (playIcon) playIcon.classList.add('hidden');
-    if (pauseIcon) pauseIcon.classList.remove('hidden');
-    if (scrubberWrap) {
-      scrubberWrap.classList.remove('jarvis-mode', 'scrubbing', 'scrubbing-forward', 'scrubbing-backward');
-      scrubberWrap.classList.add('walking');
-    }
-    const heartbeatInitialMs = window.TT_HEARTBEAT.HEARTBEAT_INITIAL_MS || 5000;
-    const heartbeatIntervalMs = window.TT_HEARTBEAT.HEARTBEAT_INTERVAL_MS || 8000;
-    let nextDemoHeartbeatVerbAt = startedAt + heartbeatInitialMs;
-    const tick = () => {
-      const now = performance.now();
-      const elapsedSec = Math.min(durationSec, Math.max(0, (now - startedAt) / 1000));
-      scrubber.value = String(Math.round((elapsedSec / Math.max(0.001, durationSec)) * 1000));
-      timeEl.textContent = `${fmt(elapsedSec)} / ${fmt(durationSec)}`;
-      if (audioPlayer && typeof audioPlayer.positionScrubberMascot === 'function') {
-        audioPlayer.positionScrubberMascot();
-      }
-      if (
-        audioPlayer &&
-        typeof audioPlayer.emitDemoSpinnerVerbCloud === 'function' &&
-        (window.TT_CONFIG_SNAPSHOT || {}).heartbeat_enabled !== false &&
-        now >= nextDemoHeartbeatVerbAt
-      ) {
-        audioPlayer.emitDemoSpinnerVerbCloud(now, { intervalMs: heartbeatIntervalMs });
-        do {
-          nextDemoHeartbeatVerbAt += heartbeatIntervalMs;
-        } while (nextDemoHeartbeatVerbAt <= now);
-      }
-      if (elapsedSec < durationSec) {
-        requestAnimationFrame(tick);
-      } else if (scrubberWrap) {
-        scrubberWrap.classList.remove('walking');
-      }
-    };
-    requestAnimationFrame(tick);
-  }
-
-  function openAiSectionRow(selector) {
-    const el = document.querySelector(selector);
-    return el ? el.closest('.row') || el : null;
-  }
-
-  async function ensureOpenAiSectionReadyForDemo() {
-    const section = document.getElementById('openaiSection');
-    if (section && typeof section.scrollIntoView === 'function') {
-      section.scrollIntoView({ block: 'start' });
-      await demoWait(80);
-    }
-  }
-
-  async function runOpenAiDemoTimeline() {
-    setDemoCursor(window.innerWidth - 90, 62);
-    await waitForSettingsDemoStart();
-    const startedAt = performance.now();
-    startSettingsDemoPlaybackChrome(startedAt);
-    async function waitUntil(ms) {
-      const remaining = startedAt + ms - performance.now();
-      if (remaining > 0) await demoWait(remaining);
-    }
-
-    await waitUntil(250);
-    await clickDemoElement('#settingsBtn', () => setSettingsOpen(true).catch(() => {}));
-    await waitUntil(1500);
-    await clickDemoElement('[data-settings-tab="openai"]');
-    await waitUntil(2400);
-    await pointDemoCursorAt('#openaiSection header', 700);
-    await waitUntil(4200);
-    await ensureOpenAiSectionReadyForDemo();
-    await waitUntil(6500);
-    await pointDemoCursorAt('#openaiSection .panel-hint', 820);
-    await waitUntil(11800);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiKeyInput') || openAiSectionRow('#openaiKeyChange'), 760);
-    await waitUntil(17800);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiKeyStatus'), 720);
-    await waitUntil(23000);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiPreferToggle'), 720);
-    await waitUntil(27200);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiFallbackToggle'), 720);
-    await waitUntil(31500);
-    await clickDemoElement(() => openAiSectionRow('#openaiPreferToggle')?.querySelector('.tri-btn.on'));
-    await waitUntil(36500);
-    await clickDemoElement(() => openAiSectionRow('#openaiFallbackToggle')?.querySelector('.tri-btn.on'));
-    await waitUntil(40500);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiTestBtn'), 760);
-    await waitUntil(45200);
-    await clickDemoElement(() => openAiSectionRow('#openaiFallbackToggle')?.querySelector('.tri-btn.off'));
-    await waitUntil(49200);
-    await clickDemoElement(() => openAiSectionRow('#openaiPreferToggle')?.querySelector('.tri-btn.off'));
-    await waitUntil(51200);
-    await pointDemoCursorAt('#openaiSection header', 700);
-  }
-
-  async function runSessionsSyncDemoTimeline() {
-    setDemoCursor(window.innerWidth - 90, 62);
-    await waitForSettingsDemoStart();
-    const startedAt = performance.now();
-    startSettingsDemoPlaybackChrome(startedAt);
-    async function waitUntil(ms) {
-      const remaining = startedAt + ms - performance.now();
-      if (remaining > 0) await demoWait(remaining);
-    }
-
-    await waitUntil(350);
-    await pointDemoCursorAt(() => tabsEl, 700);
-    await waitUntil(3000);
-    await pointDemoCursorAt('#dots', 700);
-    await waitUntil(6000);
-    await clickDemoElement('#settingsBtn', () => setSettingsOpen(true).catch(() => {}));
-    await waitUntil(7800);
-    await clickDemoElement('[data-settings-tab="sessions"]');
-    await waitUntil(9300);
-    await pointDemoCursorAt(() => sessionsTableEl, 700);
-    await waitUntil(13200);
-    await pointDemoCursorAt(() => firstSessionRowControl('input[type="text"]'), 700);
-    await waitUntil(17600);
-    await chooseDemoSelectOption(() => firstSessionRowControl('.session-row select'), '17', {
-      maxRows: 7,
-      openHold: 1500,
-      afterPickHold: 800,
-    });
-    await waitUntil(24400);
-    await pointDemoCursorAt(() => firstSessionRowControl('.focus-btn'), 680);
-    await waitUntil(29000);
-    await pointDemoCursorAt(() => firstSessionRowControl('.mute-btn'), 680);
-    await waitUntil(33400);
-    await clickDemoElement(() => firstSessionRowControl('.chevron'), expandFirstSessionForDemo);
-    await waitUntil(35400);
-    scrollSettingsPanelForDemo(320);
-    await waitUntil(37200);
-    await chooseDemoSelectOption(() => firstSessionRowControl('.session-expanded select'), 'en-GB-SoniaNeural', {
-      maxRows: 6,
-      openHold: 2100,
-      afterPickHold: 900,
-      placement: 'inline',
-    });
-    await waitUntil(45200);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type'), 740);
-    await waitUntil(49200);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type .tri-btn.off'));
-    await waitUntil(53200);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type'), 740);
-    await waitUntil(57000);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type .tri-cell:nth-child(7) .tri-btn.on'));
-    await waitUntil(61000);
-    await clickDemoElement('[data-settings-tab="about"]');
-    await waitUntil(62600);
-    await pointDemoCursorAt('.panel-section.about .panel-hint:last-of-type', 760);
-  }
-
-  async function runTranscriptDemoTimeline() {
-    setDemoCursor(window.innerWidth - 90, 62);
-    await waitForSettingsDemoStart();
-    const startedAt = performance.now();
-    startSettingsDemoPlaybackChrome(startedAt);
-    async function waitUntil(ms) {
-      const remaining = startedAt + ms - performance.now();
-      if (remaining > 0) await demoWait(remaining);
-    }
-
-    await waitUntil(450);
-    await pointDemoCursorAt('#dots', 740);
-    await waitUntil(4300);
-    await clickDemoElement('#transcriptToggle', () => {
-      if (transcriptPanel && typeof transcriptPanel.setExpanded === 'function') {
-        transcriptPanel.setExpanded(true);
-      }
-    });
-    await waitUntil(7600);
-    await pointDemoCursorAt('#transcriptList', 780);
-    await waitUntil(13500);
-    await pointDemoCursorAt('#transcriptViewToggle', 700);
-    await waitUntil(17500);
-    await clickDemoElement('#transcriptViewToggle');
-    await waitUntil(22500);
-    await pointDemoCursorAt(() => transcriptListEl && transcriptListEl.querySelector('.transcript-copy'), 700);
-    await waitUntil(28500);
-    await pointDemoCursorAt(() => tabsEl, 740);
-    await waitUntil(34000);
-    await clickDemoElement(() => tabsEl && tabsEl.querySelector('[role="tab"]:not([data-tab-id="all"])'));
-    await waitUntil(40500);
-    await clickDemoElement(() => tabsEl && tabsEl.querySelector('[data-tab-id="all"]'));
-    await waitUntil(46800);
-    await pointDemoCursorAt('#transcriptList', 700);
-  }
-
-  async function runSettingsDemoTimeline() {
-    setDemoCursor(window.innerWidth - 90, 62);
-    await waitForSettingsDemoStart();
-    const startedAt = performance.now();
-    startSettingsDemoPlaybackChrome(startedAt);
-    async function waitUntil(ms) {
-      const remaining = startedAt + ms - performance.now();
-      if (remaining > 0) await demoWait(remaining);
-    }
-
-    await waitUntil(250);
-    await clickDemoElement('#settingsBtn', () => setSettingsOpen(true).catch(() => {}));
-
-    await waitUntil(1700);
-    scrollSettingsPanelForDemo(0);
-    await pointDemoCursorAt('#speedSlider', 780);
-    await waitUntil(3300);
-    await pointDemoCursorAt('#volumeSlider', 720);
-    await waitUntil(4700);
-    await pointDemoCursorAt('#collapseDelaySec', 720);
-    await waitUntil(6200);
-    await pointDemoCursorAtPart(() => document.querySelector('label[for="autoPruneToggle"]')?.closest('.row'), 0.36, 0.5, 800);
-    await waitUntil(8300);
-    await pointDemoCursorAt('#autoPruneSec', 720);
-    await waitUntil(10100);
-    await pointDemoCursorAt(() => document.querySelector('#heartbeatToggle')?.closest('.row'), 700);
-    await waitUntil(11800);
-    await pointDemoCursorAt(() => document.querySelector('#incToolCalls')?.closest('.row'), 700);
-
-    await waitUntil(14000);
-    await pointDemoCursorAtPart(() => document.querySelector('label[for="autoPruneToggle"]')?.closest('.row'), 0.36, 0.5, 450);
-    await waitUntil(19000);
-    await pointDemoCursorAt(() => document.querySelector('#heartbeatToggle')?.closest('.row'), 650);
-    await waitUntil(22500);
-    await pointDemoCursorAt(() => document.querySelector('#incToolCalls')?.closest('.row'), 650);
-
-    await waitUntil(25000);
-    await clickDemoElement('[data-settings-tab="openai"]');
-    await waitUntil(26000);
-    await ensureOpenAiSectionReadyForDemo();
-    await waitUntil(27000);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiPreferToggle'), 680);
-    await waitUntil(30000);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiFallbackToggle'), 680);
-    await waitUntil(33500);
-    await pointDemoCursorAt(() => openAiSectionRow('#openaiTestBtn'), 680);
-
-    await waitUntil(36500);
-    await clickDemoElement('[data-settings-tab="shortcuts"]');
-    await waitUntil(38200);
-    await pointDemoCursorAt('#hotkeyToggleWindow', 700);
-    await waitUntil(41000);
-    await clickDemoElement('#hotkeyToggleWindow');
-    await waitUntil(43800);
-    await pointDemoCursorAt('#hotkeyResetDefaults', 650);
-
-    await waitUntil(47000);
-    await clickDemoElement('[data-settings-tab="sessions"]');
-    await waitUntil(48800);
-    await pointDemoCursorAt(() => sessionsTableEl, 650);
-    await waitUntil(50600);
-    await pointDemoCursorAt(() => firstSessionRowControl('input[type="text"]'), 740);
-    await waitUntil(52600);
-    await pointDemoCursorAt(() => firstSessionRowControl('.focus-btn'), 620);
-    await waitUntil(54400);
-    await pointDemoCursorAt(() => firstSessionRowControl('.mute-btn'), 620);
-    await waitUntil(56200);
-    await chooseDemoSelectOption(() => firstSessionRowControl('.session-row select'), '1', {
-      maxRows: 6,
-      openHold: 1500,
-      afterPickHold: 900,
-    });
-
-    await waitUntil(60000);
-    await clickDemoElement(() => firstSessionRowControl('.chevron'), expandFirstSessionForDemo);
-    await waitUntil(61200);
-    scrollSettingsPanelForDemo(300);
-    await waitUntil(62500);
-    await chooseDemoSelectOption(() => firstSessionRowControl('.session-expanded select'), 'en-GB-RyanNeural', {
-      maxRows: 5,
-      openHold: 2300,
-      afterPickHold: 950,
-      placement: 'inline',
-    });
-
-    await waitUntil(67500);
-    scrollSettingsPanelForDemo(350);
-    await waitUntil(68600);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type'), 720);
-    await waitUntil(70400);
-    await clickDemoElement(() => firstSessionRowControl('.session-expanded .tri-grid:first-of-type .tri-btn.off'));
-    await waitUntil(72400);
-    await pointDemoCursorAt(() => firstSessionRowControl('.session-expanded .tri-grid:last-of-type'), 620);
-
-    await waitUntil(74200);
-    await clickDemoElement('[data-settings-tab="about"]');
-    await waitUntil(75800);
-    await pointDemoCursorAt('.about-wallpaper-card', 900);
-  }
-
-  const timeline = settingsDemoVariant === 'openai'
-    ? runOpenAiDemoTimeline
-    : settingsDemoVariant === 'sessions'
-    ? runSessionsSyncDemoTimeline
-    : settingsDemoVariant === 'transcript'
-    ? runTranscriptDemoTimeline
-    : runSettingsDemoTimeline;
-  timeline().catch(() => {});
+// Settings-demo timelines (capture-mode recordings only) live in
+// app/lib/settings-demo.js. Everything the timelines touch is handed over
+// explicitly so the module has no reach into renderer globals.
+if (isSettingsDemoMode && window.TT_SETTINGS_DEMO) {
+  window.TT_SETTINGS_DEMO.runSettingsDemo({
+    isSettingsDemoMode,
+    settingsDemoVariant,
+    settingsDemoUseStartFlag,
+    settingsDemoFallbackMs,
+    settingsDemoVisualDurationMs,
+    settingsDemoStartPromise,
+    setDynamicStyle,
+    fmt,
+    audioPlayer,
+    transcriptPanel,
+    setSettingsOpen,
+    ensureSettingsTabForElement,
+    scrubber,
+    scrubberWrap,
+    timeEl,
+    playIcon,
+    pauseIcon,
+    tabsEl,
+    sessionsTableEl,
+    transcriptListEl,
+  });
 }
 
 // -------------------------------------------------------------------

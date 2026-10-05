@@ -79,8 +79,13 @@
   // currently live, but still relevant because at least one clip remains
   // on disk". Registry-only stale sessions stay out of the top strip and
   // remain available in Settings > Sessions.
-  function partitionSessions(sessionAssignments, pathsOrFiles, clipPaths, now, staleMs) {
+  function partitionSessions(sessionAssignments, pathsOrFiles, clipPaths, now, staleMs, extraShorts = []) {
     const clipShorts = collectClipSessionShorts(pathsOrFiles, clipPaths);
+    // Session recap: sessions whose only remaining clips live in the recap
+    // archive still get a (stale) tab so the recap control stays reachable.
+    for (const short of extraShorts || []) {
+      if (typeof short === 'string' && /^[a-f0-9]{8}$/.test(short)) clipShorts.add(short);
+    }
     const active = [];
     const stale = [];
 
@@ -120,6 +125,9 @@
         onTabSelect = null,
         onExpandChange = null,
         onDeleteSession = null,
+        // Session recap (2026-10-05): (tabId, tabEl) => void. Opens the
+        // "catch up" chooser for one session, or every session on [All].
+        onRecapSession = null,
         nowProvider = () => Date.now(),
       } = deps;
       this._clipPaths = clipPaths;
@@ -130,6 +138,7 @@
       this._onTabSelect = onTabSelect;
       this._onExpandChange = onExpandChange;
       this._onDeleteSession = onDeleteSession;
+      this._onRecapSession = onRecapSession;
       this._nowProvider = nowProvider;
       this._pendingRaf = null;
       this.state = {
@@ -142,6 +151,9 @@
         heardPaths: new Set(),
         sessionAssignments: {},
         selectedTab: 'all',
+        // Sessions with archived recap clips (main ships these with every
+        // queue-updated payload).
+        recapShorts: [],
       };
     }
 
@@ -165,11 +177,12 @@
 
     _renderNow() {
       if (!this.root) return;
-      const { queue, allPaths, heardPaths, sessionAssignments, selectedTab } = this.state;
+      const { queue, allPaths, heardPaths, sessionAssignments, selectedTab, recapShorts } = this.state;
       const now = this._nowProvider();
       const pathsForCount = (Array.isArray(allPaths) && allPaths.length > 0) ? allPaths : queue;
       const { active, stale } = partitionSessions(
         sessionAssignments, pathsForCount, this._clipPaths, now, this._staleCollapseMs,
+        Array.isArray(recapShorts) ? recapShorts : [],
       );
 
       // Prefer the uncapped on-disk path list for unread accounting;
@@ -262,6 +275,31 @@
       tab.title = count > 0
         ? `${titleBase} — ${count} unplayed`
         : titleBase;
+
+      // Session recap control — a small history glyph in the tab corner,
+      // on every tab including [All]. Opens the "catch up" chooser so the
+      // user can replay the last N clips / last M minutes of this session
+      // from the recap archive without sending a new prompt. Same
+      // role=button span pattern as the bin (a nested <button> would be
+      // invalid inside the tab <button>); stopPropagation so the click
+      // opens the chooser instead of selecting the tab.
+      if (this._onRecapSession) {
+        const recap = document.createElement('span');
+        recap.className = 'tab-recap';
+        recap.setAttribute('role', 'button');
+        recap.setAttribute('tabindex', '0');
+        recap.setAttribute('aria-label', `Catch up on ${titleBase}`);
+        recap.title = id === 'all'
+          ? 'Catch up — replay recent clips from every session'
+          : `Catch up — replay ${titleBase}'s recent clips`;
+        recap.innerHTML = '<svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>';
+        const fire = (ev) => { ev.stopPropagation(); ev.preventDefault(); this._onRecapSession(id, tab); };
+        recap.addEventListener('click', fire);
+        recap.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') fire(ev);
+        });
+        tab.appendChild(recap);
+      }
 
       // Per-session bin in the tab corner. Not on [All] (that's what the
       // toolbar bin is for). Soft-clears this session's clips (played or
